@@ -67,7 +67,14 @@
       "Bash(gh auth status)",
       "Bash(git init)",
       "Bash(git branch -M main)",
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git commit:*)",
+      "Bash(gh repo create nexchat --public --description \"NexChat - Random chat app with .NET backend, Vue.js mobile app & admin dashboard\" --push --source \"C:\\\\Users\\\\Legion\\\\nswan\")",
+      "Bash(npm install lucide-vue-next)",
+      "Bash(printf '%s' 'import base64, sys:*)",
+      "Bash(python3 -c:*)",
+      "Bash(node --version)",
+      "Bash(powershell.exe -Command \"Write-Host ''PS OK''\")"
     ]
   }
 }

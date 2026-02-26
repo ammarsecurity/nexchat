@@ -13,6 +13,8 @@ const navItems = [
   { title: 'الجلسات', icon: 'mdi-chat', to: '/sessions' },
   { title: 'الرسائل', icon: 'mdi-message-text', to: '/messages' },
   { title: 'البلاغات', icon: 'mdi-flag', to: '/reports' },
+  { title: 'الإعلانات', icon: 'mdi-image-multiple', to: '/ads' },
+  { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
 ]
 
 const currentTitle = computed(() => {

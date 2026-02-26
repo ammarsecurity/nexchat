@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { Settings, LogOut, Zap, Globe, User, Users } from 'lucide-vue-next'
+import BannerStrip from '../components/BannerStrip.vue'
 import { useAuthStore } from '../stores/auth'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
@@ -88,18 +90,14 @@ function logout() {
 }
 
 const genderFilters = [
-  { value: 'all', label: 'الكل', icon: '🌍' },
-  { value: 'male', label: 'ذكور', icon: '👨' },
-  { value: 'female', label: 'إناث', icon: '👩' }
+  { value: 'all', label: 'الكل', Icon: Globe },
+  { value: 'male', label: 'ذكور', Icon: User },
+  { value: 'female', label: 'إناث', Icon: Users }
 ]
 </script>
 
 <template>
   <div class="home page">
-    <!-- Background -->
-    <div class="bg-orb bg-1"></div>
-    <div class="bg-orb bg-2"></div>
-
     <!-- Header -->
     <header class="header">
       <div class="user-info">
@@ -118,8 +116,8 @@ const genderFilters = [
       </div>
 
       <div class="header-actions">
-        <RouterLink to="/settings" class="icon-btn">⚙️</RouterLink>
-        <button class="icon-btn" @click="logout">🚪</button>
+        <RouterLink to="/settings" class="icon-btn"><Settings :size="20" /></RouterLink>
+        <button class="icon-btn" @click="logout"><LogOut :size="20" /></button>
       </div>
     </header>
 
@@ -127,21 +125,16 @@ const genderFilters = [
     <div class="code-card glass-card" @click="copyCode">
       <div class="code-label">كودي الخاص</div>
       <div class="code-value gradient-text">{{ user?.uniqueCode }}</div>
-      <div class="copy-hint">{{ copied ? '✅ تم النسخ!' : '📋 اضغط للنسخ' }}</div>
+      <div class="copy-hint">{{ copied ? 'تم النسخ!' : 'اضغط للنسخ' }}</div>
     </div>
 
     <!-- Main Action -->
     <div class="main-section">
-      <div class="pulse-wrapper">
-        <div class="pulse-ring ring-1"></div>
-        <div class="pulse-ring ring-2"></div>
-        <div class="pulse-ring ring-3"></div>
-        <button class="start-btn" @click="startRandom">
-          <span class="start-icon">⚡</span>
-          <span class="start-text">ابدأ محادثة</span>
-          <span class="start-sub">عشوائية</span>
-        </button>
-      </div>
+      <button class="start-btn" @click="startRandom">
+        <Zap :size="28" class="start-icon" />
+        <span class="start-text">ابدأ محادثة</span>
+        <span class="start-sub">عشوائية</span>
+      </button>
 
       <!-- Gender Filter -->
       <div class="filter-label text-secondary text-sm">فلتر المطابقة</div>
@@ -153,7 +146,8 @@ const genderFilters = [
           :class="{ active: matching.genderFilter === f.value }"
           @click="matching.genderFilter = f.value"
         >
-          {{ f.icon }} {{ f.label }}
+          <component :is="f.Icon" :size="16" />
+          <span>{{ f.label }}</span>
         </button>
       </div>
     </div>
@@ -168,21 +162,21 @@ const genderFilters = [
     <!-- Code Connect -->
     <div class="code-connect glass-card">
       <div class="code-connect-title text-sm text-secondary">اتصل بكود شخص معين</div>
-      <div class="code-input-wrap">
-        <input
-          v-model="codeInput"
-          class="input-field"
-          placeholder="مثال: NX-A3B9"
-          maxlength="7"
-          @input="codeInput = codeInput.toUpperCase()"
-          @keyup.enter="connectByCode"
-        />
-        <button class="connect-btn" @click="connectByCode" :disabled="!codeInput">
-          اتصل
-        </button>
-      </div>
-      <div v-if="codeError" class="code-error">⚠️ {{ codeError }}</div>
+      <input
+        v-model="codeInput"
+        class="input-field code-input"
+        placeholder="مثال: NX-A3B9"
+        maxlength="7"
+        @input="codeInput = codeInput.toUpperCase()"
+        @keyup.enter="connectByCode"
+      />
+      <button class="connect-btn" @click="connectByCode" :disabled="!codeInput">
+        اتصل
+      </button>
+      <div v-if="codeError" class="code-error">{{ codeError }}</div>
     </div>
+
+    <BannerStrip placement="home" />
   </div>
 </template>
 
@@ -194,43 +188,30 @@ const genderFilters = [
   padding: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  position: relative;
 }
-
-.bg-orb {
-  border-radius: 50%;
-  filter: blur(80px);
-  position: absolute;
-  pointer-events: none;
-  z-index: 0;
-}
-.bg-1 { background: rgba(108,99,255,0.15); width:250px; height:250px; top:-60px; right:-60px; }
-.bg-2 { background: rgba(255,101,132,0.1); width:200px; height:200px; bottom:100px; left:-50px; }
 
 .header {
   align-items: center;
   display: flex;
   justify-content: space-between;
-  padding: 20px 20px 16px;
-  position: relative;
-  z-index: 10;
+  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
 }
 
-.user-info { display: flex; align-items: center; gap: 10px; }
-.home-avatar { overflow: hidden; font-size: 20px; }
+.user-info { display: flex; align-items: center; gap: 12px; }
+.home-avatar { overflow: hidden; font-size: 18px; }
 .home-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
-.user-name { font-size: 16px; font-weight: 600; }
+.user-name { font-size: 17px; font-weight: 600; }
 
 .online-badge {
   align-items: center;
-  color: #4ade80;
+  color: var(--success);
   display: flex;
-  font-size: 12px;
-  gap: 4px;
+  font-size: 13px;
+  gap: 6px;
 }
 .dot {
-  background: #4ade80;
+  background: var(--success);
   border-radius: 50%;
   height: 6px;
   width: 6px;
@@ -240,91 +221,65 @@ const genderFilters = [
 
 .header-actions { display: flex; gap: 8px; }
 .icon-btn {
+  align-items: center;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 18px;
-  padding: 8px;
+  display: flex;
+  height: var(--touch-min);
+  justify-content: center;
+  min-width: var(--touch-min);
+  padding: 0;
   text-decoration: none;
-  transition: 0.2s;
+  transition: background 0.2s;
 }
-.icon-btn:hover { background: var(--bg-card-hover); }
+.icon-btn:active { background: var(--bg-card-hover); }
 
 .code-card {
   cursor: pointer;
-  margin: 0 20px 16px;
-  padding: 14px 18px;
+  margin: 0 var(--spacing) var(--spacing);
+  padding: var(--spacing);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  position: relative;
-  z-index: 10;
-  transition: 0.2s;
+  transition: background 0.2s;
 }
-.code-card:hover { background: var(--bg-card-hover); }
+.code-card:active { background: var(--bg-card-hover); }
 .code-label { color: var(--text-muted); font-size: 12px; }
-.code-value { font-size: 22px; font-weight: 800; letter-spacing: 2px; }
+.code-value { font-size: 18px; font-weight: 700; letter-spacing: 2px; }
 .copy-hint { color: var(--text-muted); font-size: 12px; }
 
 .main-section {
   align-items: center;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 24px 20px 0;
-  position: relative;
-  z-index: 10;
-}
-
-.pulse-wrapper {
-  position: relative;
-  width: 180px;
-  height: 180px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pulse-ring {
-  border-radius: 50%;
-  border: 2px solid rgba(108, 99, 255, 0.3);
-  position: absolute;
-  animation: pulse-out 2.5s ease-out infinite;
-}
-.ring-1 { width: 140px; height: 140px; animation-delay: 0s; }
-.ring-2 { width: 162px; height: 162px; animation-delay: 0.8s; }
-.ring-3 { width: 180px; height: 180px; animation-delay: 1.6s; }
-
-@keyframes pulse-out {
-  0% { opacity: 0.8; transform: scale(0.95); }
-  100% { opacity: 0; transform: scale(1.2); }
+  gap: var(--spacing-lg);
+  padding: var(--spacing) var(--spacing) 0;
 }
 
 .start-btn {
   align-items: center;
-  background: var(--gradient);
+  background: var(--primary);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius);
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  height: 130px;
-  justify-content: center;
-  width: 130px;
-  box-shadow: 0 0 40px rgba(108, 99, 255, 0.5), 0 0 80px rgba(108, 99, 255, 0.2);
-  transition: 0.2s;
-  z-index: 5;
+  font-family: 'Cairo';
+  gap: 4px;
+  min-height: 120px;
+  padding: 24px 48px;
+  transition: opacity 0.2s;
 }
-.start-btn:hover { transform: scale(1.05); box-shadow: 0 0 60px rgba(108, 99, 255, 0.6); }
-.start-btn:active { transform: scale(0.98); }
+.start-btn:active { opacity: 0.9; }
 
-.start-icon { font-size: 32px; }
-.start-text { color: white; font-size: 16px; font-weight: 700; }
-.start-sub { color: rgba(255,255,255,0.75); font-size: 12px; }
+.start-icon { color: white; }
+.start-text { color: white; font-size: 17px; font-weight: 600; }
+.start-sub { color: rgba(255,255,255,0.8); font-size: 13px; }
 
-.filter-label { margin-top: -4px; }
+.filter-label { margin-top: 0; }
 
 .gender-filters {
   display: flex;
@@ -332,18 +287,23 @@ const genderFilters = [
 }
 
 .filter-btn {
+  align-items: center;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
-  padding: 8px 16px;
+  display: flex;
+  font-family: 'Cairo';
+  font-size: 14px;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
   transition: 0.2s;
 }
 .filter-btn.active {
   background: rgba(108, 99, 255, 0.2);
-  border-color: #6C63FF;
+  border-color: var(--primary);
   color: white;
 }
 
@@ -351,57 +311,53 @@ const genderFilters = [
   align-items: center;
   display: flex;
   gap: 12px;
-  margin: 20px;
-  position: relative;
-  z-index: 10;
+  margin: 24px var(--spacing);
 }
 .divider-line {
   background: var(--border);
   flex: 1;
   height: 1px;
 }
-.divider-text { font-size: 12px; }
+.divider-text { font-size: 12px; color: var(--text-muted); }
 
 .code-connect {
-  margin: 0 20px 24px;
-  padding: 16px;
-  position: relative;
-  z-index: 10;
+  margin: 0 var(--spacing) calc(var(--spacing) + var(--safe-bottom));
+  padding: var(--spacing);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--spacing-sm);
 }
 
-.code-connect-title { font-size: 13px; }
-
-.code-input-wrap {
-  display: flex;
-  gap: 10px;
+.code-connect-title {
+  font-size: 13px;
+  margin-bottom: 4px;
 }
 
-.code-input-wrap .input-field {
-  flex: 1;
+.code-input {
   letter-spacing: 2px;
   font-weight: 600;
+  text-align: center;
 }
 
 .connect-btn {
-  background: var(--gradient);
+  background: var(--primary);
   border: none;
   border-radius: var(--radius-sm);
   color: white;
   cursor: pointer;
-  font-size: 14px;
+  font-family: 'Cairo';
+  font-size: 15px;
   font-weight: 600;
-  padding: 0 20px;
-  white-space: nowrap;
-  transition: 0.2s;
+  min-height: var(--touch-min);
+  padding: 0 var(--spacing);
+  width: 100%;
+  transition: opacity 0.2s;
 }
-.connect-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.connect-btn:not(:disabled):hover { opacity: 0.9; }
+.connect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.connect-btn:not(:disabled):active { opacity: 0.9; }
 
 .code-error {
-  color: #FF6584;
+  color: var(--danger);
   font-size: 13px;
 }
 </style>

@@ -24,3 +24,5 @@ public record UserProfileDto(
 );
 
 public record UpdateAvatarRequest(string? Avatar);
+
+public record DeleteAccountRequest(string Password);

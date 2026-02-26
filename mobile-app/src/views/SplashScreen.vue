@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import logoImg from '../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -21,16 +22,7 @@ onMounted(() => {
     <div class="orb orb-3"></div>
 
     <div class="content">
-      <div class="logo-wrap">
-        <div class="logo-icon">
-          <span class="logo-letter">N</span>
-        </div>
-        <div class="logo-glow"></div>
-      </div>
-
-      <div class="app-name">
-        <span class="gradient-text">Nex</span><span>Chat</span>
-      </div>
+      <img :src="logoImg" alt="NexChat" class="splash-logo" />
       <p class="tagline">تواصل مع العالم</p>
 
       <div class="loader">
@@ -103,57 +95,12 @@ onMounted(() => {
   z-index: 10;
 }
 
-.logo-wrap {
-  position: relative;
-  margin-bottom: 8px;
-}
-
-.logo-icon {
-  align-items: center;
-  background: var(--gradient);
-  border-radius: 28px;
-  display: flex;
-  height: 96px;
-  justify-content: center;
-  width: 96px;
-  animation: pulse-logo 2s ease-in-out infinite;
-}
-
-.logo-letter {
-  color: white;
-  font-size: 52px;
-  font-weight: 900;
-  letter-spacing: -2px;
-}
-
-.logo-glow {
-  background: rgba(108, 99, 255, 0.4);
-  border-radius: 50%;
-  filter: blur(30px);
+.splash-logo {
   height: 120px;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 120px;
-  animation: glow-pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse-logo {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
-}
-@keyframes glow-pulse {
-  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
-  50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.2); }
-}
-
-.app-name {
-  font-size: 38px;
-  font-weight: 800;
-  letter-spacing: -1px;
+  width: auto;
+  object-fit: contain;
   animation: fade-in 0.8s ease forwards;
-  animation-delay: 0.3s;
+  animation-delay: 0.2s;
   opacity: 0;
 }
 
@@ -161,7 +108,7 @@ onMounted(() => {
   color: var(--text-secondary);
   font-size: 15px;
   animation: fade-in 0.8s ease forwards;
-  animation-delay: 0.6s;
+  animation-delay: 0.5s;
   opacity: 0;
 }
 

@@ -16,6 +16,8 @@ const routes = [
       { path: 'sessions', component: () => import('../views/SessionsView.vue') },
       { path: 'messages', component: () => import('../views/MessagesView.vue') },
       { path: 'reports', component: () => import('../views/ReportsView.vue') },
+      { path: 'ads', component: () => import('../views/AdsView.vue') },
+      { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },
     ]
   }
 ]

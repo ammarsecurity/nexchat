@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { initWebRTC, destroyWebRTC, getLocalStream } from '../services/webrtc'
@@ -107,11 +108,11 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 
     <!-- Top Bar -->
     <div class="top-bar">
-      <button class="back-btn" @click="endCall">←</button>
+      <button class="back-btn" @click="endCall"><ChevronRight :size="22" /></button>
       <div class="call-info">
         <div class="call-name">{{ partner?.name }}</div>
         <div class="call-status text-sm">
-          <span v-if="connected" class="live-badge">🔴 LIVE {{ formatTime(callDuration) }}</span>
+          <span v-if="connected" class="live-badge">LIVE {{ formatTime(callDuration) }}</span>
           <span v-else class="text-muted">{{ error || 'جارٍ الاتصال...' }}</span>
         </div>
       </div>
@@ -126,7 +127,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
         playsinline
         muted
       ></video>
-      <div v-if="cameraOff" class="camera-off-pip">📷</div>
+      <div v-if="cameraOff" class="camera-off-pip"><VideoOff :size="32" /></div>
     </div>
 
     <!-- Controls -->
@@ -136,12 +137,13 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
         :class="{ active: muted }"
         @click="toggleMute"
       >
-        <span>{{ muted ? '🔇' : '🎤' }}</span>
+        <MicOff v-if="muted" :size="24" />
+        <Mic v-else :size="24" />
         <span class="ctrl-label">{{ muted ? 'إلغاء الكتم' : 'كتم' }}</span>
       </button>
 
       <button class="ctrl-btn end-btn" @click="endCall">
-        <span>📞</span>
+        <PhoneOff :size="24" />
         <span class="ctrl-label">إنهاء</span>
       </button>
 
@@ -150,7 +152,8 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
         :class="{ active: cameraOff }"
         @click="toggleCamera"
       >
-        <span>{{ cameraOff ? '📷' : '📹' }}</span>
+        <VideoOff v-if="cameraOff" :size="24" />
+        <Video v-else :size="24" />
         <span class="ctrl-label">{{ cameraOff ? 'تشغيل' : 'إيقاف' }}</span>
       </button>
     </div>
@@ -184,7 +187,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   z-index: 10;
 }
 
-.gradient-bg { background: var(--gradient); }
+.gradient-bg { background: var(--primary) !important; }
 .waiting-text { text-align: center; }
 .error-text { color: #FF6584; }
 
@@ -207,7 +210,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   top: 0;
   left: 0;
   right: 0;
-  padding: 50px 20px 20px;
+  padding: calc(30px + var(--safe-top)) var(--spacing) var(--spacing);
   background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
   display: flex;
   align-items: center;
@@ -216,17 +219,16 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 }
 
 .back-btn {
-  background: rgba(255,255,255,0.15);
+  align-items: center;
+  background: rgba(255,255,255,0.2);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   color: white;
   cursor: pointer;
-  font-size: 20px;
-  height: 36px;
-  width: 36px;
   display: flex;
-  align-items: center;
+  height: var(--touch-min);
   justify-content: center;
+  min-width: var(--touch-min);
   flex-shrink: 0;
 }
 
@@ -263,11 +265,11 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 .camera-off-pip {
   position: absolute;
   inset: 0;
-  display: flex;
   align-items: center;
+  color: var(--text-muted);
+  display: flex;
   justify-content: center;
   background: #111;
-  font-size: 30px;
 }
 
 .controls {
@@ -275,7 +277,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 24px 20px 48px;
+  padding: 24px var(--spacing) calc(48px + var(--safe-bottom));
   background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
   display: flex;
   align-items: center;
@@ -286,39 +288,34 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 
 .ctrl-btn {
   align-items: center;
-  background: rgba(255,255,255,0.15);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: var(--radius);
+  color: white;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   height: 64px;
   justify-content: center;
-  width: 64px;
-  font-size: 24px;
-  transition: 0.2s;
+  min-width: 64px;
+  padding: 8px;
+  transition: opacity 0.2s;
 }
-.ctrl-btn.active { background: rgba(255,255,255,0.25); }
-.ctrl-btn:hover { transform: scale(1.05); }
+.ctrl-btn:active { opacity: 0.9; }
+.ctrl-btn.active { background: rgba(255,255,255,0.3); }
 
 .ctrl-label {
   color: white;
-  font-size: 9px;
-  position: absolute;
-  bottom: -20px;
+  font-size: 10px;
   white-space: nowrap;
 }
-.ctrl-btn { position: relative; }
 
 .end-btn {
-  background: rgba(255, 60, 60, 0.7) !important;
-  border-color: rgba(255, 60, 60, 0.5) !important;
+  background: rgba(255, 60, 60, 0.85) !important;
+  border-color: rgba(255, 60, 60, 0.6) !important;
   height: 72px;
-  width: 72px;
-  font-size: 28px;
-  transform: rotate(135deg);
+  min-width: 72px;
 }
-.end-btn:hover { background: rgba(255, 60, 60, 0.9) !important; }
+.end-btn:active { opacity: 0.9; }
 </style>

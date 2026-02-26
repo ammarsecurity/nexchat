@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { chatHub, startHub } from '../services/signalr'
@@ -243,9 +244,9 @@ function openImage(url) {
       </div>
 
       <div class="header-actions">
-        <button class="icon-btn" @click="startVideo" title="فيديو كول">📹</button>
-        <button class="icon-btn" @click="showReport = !showReport" title="بلاغ">🚩</button>
-        <button class="icon-btn danger" @click="leaveSession" title="إنهاء">✖</button>
+        <button class="icon-btn" @click="startVideo" title="فيديو كول"><Video :size="20" /></button>
+        <button class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
+        <button class="icon-btn danger" @click="leaveSession" title="إنهاء"><X :size="20" /></button>
       </div>
     </header>
 
@@ -259,10 +260,10 @@ function openImage(url) {
             <span v-else>{{ partnerLetter }}</span>
           </div>
           <div class="call-popup-name">{{ partner?.name }}</div>
-          <div class="call-popup-label">يطلب مكالمة فيديو 📹</div>
+          <div class="call-popup-label">يطلب مكالمة فيديو</div>
           <div class="call-popup-actions">
-            <button class="call-btn decline" @click="declineCall">✕ رفض</button>
-            <button class="call-btn accept" @click="acceptCall">✓ قبول</button>
+            <button class="call-btn decline" @click="declineCall"><X :size="18" /> رفض</button>
+            <button class="call-btn accept" @click="acceptCall"><Check :size="18" /> قبول</button>
           </div>
         </div>
       </div>
@@ -270,7 +271,7 @@ function openImage(url) {
 
     <!-- Call Declined Toast -->
     <Transition name="fade">
-      <div v-if="callDeclined" class="declined-toast">❌ رفض {{ partner?.name }} المكالمة</div>
+      <div v-if="callDeclined" class="declined-toast">رفض {{ partner?.name }} المكالمة</div>
     </Transition>
 
     <!-- Report Sheet -->
@@ -316,13 +317,13 @@ function openImage(url) {
     <!-- Session Ended Banner -->
     <div v-if="sessionEnded" class="ended-banner">
       <span>انتهت المحادثة</span>
-      <button class="next-btn gradient-text" @click="nextPerson">التالي ➡</button>
+      <button class="next-btn gradient-text" @click="nextPerson"><ChevronLeft :size="18" /> التالي</button>
     </div>
 
     <!-- Input -->
     <div v-else class="input-area">
       <div class="next-btn-wrap">
-        <button class="btn-ghost next-small" @click="nextPerson">التالي ➡</button>
+        <button class="btn-ghost next-small" @click="nextPerson"><ChevronLeft :size="16" /> التالي</button>
       </div>
 
       <!-- Emoji Picker -->
@@ -349,9 +350,10 @@ function openImage(url) {
       </Transition>
 
       <div class="message-input-row">
-        <button class="input-action-btn" @click="showEmojiPicker = !showEmojiPicker" :class="{ active: showEmojiPicker }">😊</button>
+        <button class="input-action-btn" @click="showEmojiPicker = !showEmojiPicker" :class="{ active: showEmojiPicker }"><Smile :size="20" /></button>
         <button class="input-action-btn" @click="imageInput.click()" :disabled="uploadingImage">
-          {{ uploadingImage ? '⏳' : '🖼️' }}
+          <Loader2 v-if="uploadingImage" :size="20" class="spin" />
+          <Image v-else :size="20" />
         </button>
         <input
           ref="imageInput"
@@ -375,7 +377,7 @@ function openImage(url) {
           @click="sendMessage"
           :disabled="!messageText.trim() || sessionEnded"
         >
-          ↑
+          <Send :size="20" />
         </button>
       </div>
     </div>
@@ -394,7 +396,7 @@ function openImage(url) {
   border-radius: 0 0 var(--radius) var(--radius);
   display: flex;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: calc(8px + var(--safe-top)) var(--spacing) var(--spacing);
   flex-shrink: 0;
   z-index: 20;
   border-top: none;
@@ -407,16 +409,21 @@ function openImage(url) {
 
 .header-actions { display: flex; gap: 8px; }
 .icon-btn {
-  background: rgba(255,255,255,0.08);
-  border: none;
-  border-radius: 8px;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 16px;
-  padding: 7px;
-  transition: 0.2s;
+  display: flex;
+  height: var(--touch-min);
+  justify-content: center;
+  min-width: var(--touch-min);
+  padding: 0;
+  transition: background 0.2s;
 }
-.icon-btn:hover { background: rgba(255,255,255,0.12); }
-.icon-btn.danger { background: rgba(255,101,132,0.15); }
+.icon-btn:active { background: var(--bg-card-hover); }
+.icon-btn.danger { background: rgba(255,101,132,0.15); color: var(--danger); }
 
 .report-sheet {
   margin: 8px 16px;
@@ -457,7 +464,7 @@ function openImage(url) {
   line-height: 1.5;
 }
 .mine .bubble {
-  background: var(--gradient);
+  background: var(--primary);
   border-bottom-right-radius: 4px;
 }
 .theirs .bubble {
@@ -506,7 +513,7 @@ function openImage(url) {
 }
 
 .input-area {
-  padding: 8px 16px 16px;
+  padding: 8px var(--spacing) calc(var(--spacing) + var(--safe-bottom));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -515,9 +522,11 @@ function openImage(url) {
 
 .next-btn-wrap { display: flex; justify-content: flex-end; }
 .next-small {
+  align-items: center;
+  display: flex;
   font-size: 13px;
+  gap: 4px;
   padding: 6px 14px;
-  border-radius: var(--radius-full);
 }
 
 .message-input-row {
@@ -533,30 +542,33 @@ function openImage(url) {
 }
 
 .send-btn {
-  background: var(--gradient);
+  background: var(--primary);
   border: none;
   border-radius: 50%;
   color: white;
   cursor: pointer;
-  font-size: 20px;
-  font-weight: 700;
-  height: 44px;
-  width: 44px;
+  height: var(--touch-min);
+  width: var(--touch-min);
+  min-width: var(--touch-min);
   flex-shrink: 0;
-  transition: 0.2s;
+  transition: opacity 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.send-btn:not(:disabled):hover { transform: scale(1.08); }
+.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.send-btn:not(:disabled):active { opacity: 0.9; }
 
 .next-btn {
+  align-items: center;
   background: none;
   border: none;
+  color: var(--primary);
   cursor: pointer;
+  display: flex;
   font-size: 14px;
   font-weight: 600;
+  gap: 4px;
 }
 
 .call-overlay {
@@ -610,19 +622,25 @@ function openImage(url) {
 }
 
 .call-btn {
-  flex: 1;
+  align-items: center;
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  display: flex;
+  flex: 1;
+  font-family: 'Cairo';
   font-size: 14px;
   font-weight: 600;
-  padding: 12px;
-  transition: 0.2s;
+  gap: 6px;
+  justify-content: center;
+  min-height: var(--touch-min);
+  padding: 0 12px;
+  transition: opacity 0.2s;
 }
-.call-btn.accept { background: #22c55e; color: white; }
-.call-btn.accept:hover { background: #16a34a; }
-.call-btn.decline { background: rgba(255,101,132,0.2); color: #FF6584; border: 1px solid rgba(255,101,132,0.3); }
-.call-btn.decline:hover { background: rgba(255,101,132,0.3); }
+.call-btn.accept { background: var(--success); color: white; }
+.call-btn.accept:active { opacity: 0.9; }
+.call-btn.decline { background: rgba(255,101,132,0.2); color: var(--danger); border: 1px solid rgba(255,101,132,0.3); }
+.call-btn.decline:active { opacity: 0.9; }
 
 .declined-toast {
   position: absolute;
@@ -701,18 +719,25 @@ function openImage(url) {
 
 /* Input action buttons */
 .input-action-btn {
-  background: none;
-  border: none;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 20px;
-  padding: 6px;
-  border-radius: 8px;
-  transition: 0.15s;
+  display: flex;
+  height: var(--touch-min);
+  justify-content: center;
+  min-width: var(--touch-min);
+  padding: 0;
+  transition: background 0.2s;
   flex-shrink: 0;
 }
-.input-action-btn:hover { background: rgba(255,255,255,0.08); }
-.input-action-btn.active { background: rgba(108,99,255,0.2); }
+.input-action-btn:active { background: var(--bg-card-hover); }
+.input-action-btn.active { background: rgba(108,99,255,0.2); color: var(--primary); }
 .input-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Image in chat */
 .image-bubble { padding: 4px !important; overflow: hidden; }

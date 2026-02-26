@@ -1,7 +1,9 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { User, Users, UserCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import logoImg from '../../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -14,9 +16,9 @@ const error = ref('')
 const showPass = ref(false)
 
 const genders = [
-  { value: 'male', label: 'ذكر', icon: '👨', color: '#6C63FF' },
-  { value: 'female', label: 'أنثى', icon: '👩', color: '#FF6584' },
-  { value: 'other', label: 'آخر', icon: '🧑', color: '#00D4FF' }
+  { value: 'male', label: 'ذكر', Icon: User, color: '#6C63FF' },
+  { value: 'female', label: 'أنثى', Icon: Users, color: '#FF6584' },
+  { value: 'other', label: 'آخر', Icon: UserCircle, color: '#00D4FF' }
 ]
 
 async function handleRegister() {
@@ -36,17 +38,11 @@ async function handleRegister() {
 
 <template>
   <div class="register page">
-    <div class="bg-orb bg-orb-1"></div>
-    <div class="bg-orb bg-orb-2"></div>
-
     <div class="content">
-      <div class="logo-mini">
-        <div class="logo-icon">N</div>
-        <span class="gradient-text font-bold" style="font-size:22px">NexChat</span>
-      </div>
+      <img :src="logoImg" alt="NexChat" class="logo-img" />
 
       <div class="card glass-card">
-        <h2 class="title">إنشاء حساب جديد ✨</h2>
+        <h2 class="title">إنشاء حساب جديد</h2>
         <p class="subtitle text-secondary">سريع وسهل، ثلاثة حقول فقط!</p>
 
         <form @submit.prevent="handleRegister" class="form">
@@ -74,7 +70,8 @@ async function handleRegister() {
                 autocomplete="new-password"
               />
               <button type="button" class="show-pass" @click="showPass = !showPass">
-                {{ showPass ? '🙈' : '👁' }}
+                <EyeOff v-if="showPass" :size="20" />
+                <Eye v-else :size="20" />
               </button>
             </div>
           </div>
@@ -92,20 +89,20 @@ async function handleRegister() {
                 :style="gender === g.value ? { borderColor: g.color, background: `${g.color}20` } : {}"
                 @click="gender = g.value"
               >
-                <span class="gender-icon">{{ g.icon }}</span>
+                <component :is="g.Icon" :size="24" />
                 <span class="gender-label">{{ g.label }}</span>
               </button>
             </div>
           </div>
 
-          <div v-if="error" class="error-msg">⚠️ {{ error }}</div>
+          <div v-if="error" class="error-msg">{{ error }}</div>
 
           <button
             type="submit"
             class="btn-gradient"
             :disabled="loading || !name || !password || !gender || password.length < 4"
           >
-            <span v-if="!loading">ابدأ الآن 🚀</span>
+            <span v-if="!loading">ابدأ الآن</span>
             <span v-else class="spinner"></span>
           </button>
         </form>
@@ -114,6 +111,9 @@ async function handleRegister() {
       <div class="login-link">
         <span class="text-secondary">لديك حساب؟</span>
         <RouterLink to="/login" class="link">تسجيل الدخول</RouterLink>
+      </div>
+      <div class="privacy-link">
+        <RouterLink to="/privacy" class="link text-sm">سياسة الخصوصية</RouterLink>
       </div>
     </div>
   </div>
@@ -129,27 +129,6 @@ async function handleRegister() {
   overflow: hidden;
 }
 
-.bg-orb {
-  border-radius: 50%;
-  filter: blur(80px);
-  position: absolute;
-  pointer-events: none;
-}
-.bg-orb-1 {
-  background: rgba(255, 101, 132, 0.2);
-  height: 250px;
-  width: 250px;
-  top: -80px;
-  left: -60px;
-}
-.bg-orb-2 {
-  background: rgba(108, 99, 255, 0.15);
-  height: 200px;
-  width: 200px;
-  bottom: 80px;
-  right: -60px;
-}
-
 .content {
   display: flex;
   flex-direction: column;
@@ -160,24 +139,11 @@ async function handleRegister() {
   z-index: 10;
 }
 
-.logo-mini {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-}
-
-.logo-icon {
-  align-items: center;
-  background: var(--gradient);
-  border-radius: 12px;
-  color: white;
-  display: flex;
-  font-size: 22px;
-  font-weight: 900;
-  height: 40px;
-  justify-content: center;
-  width: 40px;
+.logo-img {
+  height: 64px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 8px;
 }
 
 .card { padding: 28px 24px; }
@@ -204,21 +170,21 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 
 .gender-btn {
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   flex-direction: column;
+  font-family: 'Cairo';
   gap: 6px;
   padding: 14px 8px;
   transition: all 0.2s;
 }
-.gender-btn:hover { background: rgba(255,255,255,0.08); }
-.gender-btn.active { transform: scale(1.03); }
-
-.gender-icon { font-size: 26px; }
-.gender-label { color: white; font-size: 13px; font-weight: 500; }
+.gender-btn:active { opacity: 0.9; }
+.gender-btn.active .gender-label { color: white; }
+.gender-label { font-size: 13px; font-weight: 500; }
 
 .error-msg {
   background: rgba(255, 101, 132, 0.12);
@@ -230,11 +196,9 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 }
 
 .login-link { display: flex; gap: 6px; justify-content: center; font-size: 14px; }
+.privacy-link { margin-top: 8px; text-align: center; }
 .link {
-  background: var(--gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--primary);
   font-weight: 600;
   text-decoration: none;
 }

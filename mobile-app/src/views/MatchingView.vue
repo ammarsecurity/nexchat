@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { Search, Target, Lightbulb, X } from 'lucide-vue-next'
+import BannerStrip from '../components/BannerStrip.vue'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
 import { matchingHub } from '../services/signalr'
@@ -41,9 +43,7 @@ async function cancel() {
 
 <template>
   <div class="matching page">
-    <div class="bg-orb bg-1"></div>
-    <div class="bg-orb bg-2"></div>
-
+    <div class="chat-pattern" aria-hidden="true"></div>
     <div class="content">
       <!-- Animated Search Rings -->
       <div class="search-visual">
@@ -52,7 +52,7 @@ async function cancel() {
         <div class="search-ring s-ring-3"></div>
         <div class="search-ring s-ring-4"></div>
         <div class="search-center">
-          <span class="search-icon">🔍</span>
+          <Search :size="28" class="search-icon" />
         </div>
       </div>
 
@@ -62,14 +62,18 @@ async function cancel() {
       </div>
 
       <div class="filter-chip glass-card">
-        <span>🎯 الفلتر: </span>
+        <Target :size="18" />
+        <span>الفلتر: </span>
         <span class="filter-val">
           {{ matching.genderFilter === 'all' ? 'الكل' : matching.genderFilter === 'male' ? 'ذكور' : 'إناث' }}
         </span>
       </div>
 
       <div class="tips glass-card">
-        <div class="tip-title text-secondary text-sm">نصائح أثناء الانتظار 💡</div>
+        <div class="tip-title text-secondary text-sm">
+          <Lightbulb :size="16" />
+          <span>نصائح أثناء الانتظار</span>
+        </div>
         <ul class="tip-list text-sm text-muted">
           <li>يمكنك مشاركة كودك مع أصدقائك</li>
           <li>استخدم فلتر الجنس للمطابقة الأسرع</li>
@@ -78,8 +82,10 @@ async function cancel() {
       </div>
 
       <button class="btn-ghost cancel-btn" @click="cancel">
-        ❌ إلغاء البحث
+        <X :size="18" /> إلغاء البحث
       </button>
+
+      <BannerStrip placement="matching" />
     </div>
   </div>
 </template>
@@ -94,14 +100,16 @@ async function cancel() {
   overflow: hidden;
 }
 
-.bg-orb {
-  border-radius: 50%;
-  filter: blur(80px);
+.chat-pattern {
   position: absolute;
+  inset: 0;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cpath fill='none' stroke='%236C63FF' stroke-width='0.5' d='M10 22c0-2 1.6-4 4-4h20c2.4 0 4 2 4 4v14c0 2-1.6 4-4 4H16l-4 4v-4c-2.4 0-4-2-4-4V22z'/%3E%3Cpath fill='none' stroke='%236C63FF' stroke-width='0.5' d='M38 12c0-1.2 1-2.5 2.5-2.5h10c1.5 0 2.5 1.3 2.5 2.5v8c0 1.2-1 2.5-2.5 2.5H42l-2 2v-2c-1.5 0-2.5-1.3-2.5-2.5V12z'/%3E%3C/svg%3E");
+  background-size: 60px 60px;
+  background-repeat: repeat;
   pointer-events: none;
+  z-index: 0;
 }
-.bg-1 { background: rgba(108,99,255,0.2); width:300px; height:300px; top:-80px; right:-80px; }
-.bg-2 { background: rgba(255,101,132,0.15); width:250px; height:250px; bottom:-60px; left:-60px; }
 
 .content {
   align-items: center;
@@ -139,33 +147,28 @@ async function cancel() {
 }
 
 .search-center {
-  background: var(--gradient);
-  border-radius: 50%;
-  width: 64px;
-  height: 64px;
-  display: flex;
   align-items: center;
+  background: var(--primary);
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  height: 64px;
   justify-content: center;
-  font-size: 28px;
-  box-shadow: 0 0 30px rgba(108,99,255,0.5);
-  animation: center-pulse 2s ease-in-out infinite;
+  width: 64px;
   z-index: 5;
 }
-@keyframes center-pulse {
-  0%,100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-}
+.search-icon { color: white; }
 
 .search-text { text-align: center; }
 .search-text h2 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
 
 .filter-chip {
-  display: flex;
-  gap: 6px;
   align-items: center;
-  padding: 10px 18px;
-  font-size: 14px;
   color: var(--text-secondary);
+  display: flex;
+  font-size: 14px;
+  gap: 8px;
+  padding: 12px 18px;
 }
 .filter-val { color: white; font-weight: 600; }
 
@@ -173,7 +176,7 @@ async function cancel() {
   padding: 16px;
   width: 100%;
 }
-.tip-title { margin-bottom: 10px; }
+.tip-title { align-items: center; display: flex; gap: 6px; margin-bottom: 10px; }
 .tip-list {
   display: flex;
   flex-direction: column;
@@ -184,8 +187,13 @@ async function cancel() {
 .tip-list li::before { content: '• '; color: #6C63FF; }
 
 .cancel-btn {
-  width: 100%;
-  padding: 14px;
+  align-items: center;
+  display: flex;
   font-size: 15px;
+  gap: 8px;
+  justify-content: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--spacing);
+  width: 100%;
 }
 </style>

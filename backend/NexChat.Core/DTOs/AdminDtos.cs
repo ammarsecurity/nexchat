@@ -50,3 +50,21 @@ public record AdminMessageDto(
     string Type,
     DateTime SentAt
 );
+
+public record BannerDto(
+    Guid Id,
+    string ImageUrl,
+    string Placement,
+    int Order,
+    bool IsActive,
+    string? Link,
+    DateTime CreatedAt
+);
+
+public record CreateBannerDto(string ImageUrl, string Placement, int Order, bool IsActive, string? Link);
+
+public record UpdateBannerDto(string? ImageUrl, string? Placement, int? Order, bool? IsActive, string? Link);
+
+public record ReorderBannersDto(IEnumerable<Guid> Ids);
+
+public record UpdateSiteContentDto(string Content);

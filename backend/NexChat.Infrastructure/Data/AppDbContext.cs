@@ -9,6 +9,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<Report> Reports => Set<Report>();
+    public DbSet<Banner> Banners => Set<Banner>();
+    public DbSet<SiteContent> SiteContents => Set<SiteContent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -63,6 +65,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(x => x.ReportedId)
                 .OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Reason).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<Banner>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ImageUrl).HasMaxLength(500);
+            e.Property(x => x.Placement).HasMaxLength(20);
+            e.Property(x => x.Link).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<SiteContent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Key).IsUnique();
+            e.Property(x => x.Key).HasMaxLength(50);
         });
     }
 }

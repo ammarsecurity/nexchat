@@ -10,6 +10,7 @@ const routes = [
   { path: '/chat/:sessionId', component: () => import('../views/ChatView.vue') },
   { path: '/video/:sessionId', component: () => import('../views/VideoCallView.vue') },
   { path: '/settings', component: () => import('../views/SettingsView.vue') },
+  { path: '/privacy', component: () => import('../views/PrivacyPolicyView.vue'), meta: { public: true } },
 ]
 
 const router = createRouter({

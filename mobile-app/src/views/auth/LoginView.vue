@@ -1,7 +1,9 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import logoImg from '../../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -29,9 +31,6 @@ async function handleLogin() {
 
 <template>
   <div class="login page">
-    <div class="bg-orb bg-orb-1"></div>
-    <div class="bg-orb bg-orb-2"></div>
-
     <div class="content">
       <!-- Logo -->
       <div class="logo-mini">
@@ -40,7 +39,7 @@ async function handleLogin() {
       </div>
 
       <div class="card glass-card slide-up-enter-active">
-        <h2 class="title">مرحباً بعودتك 👋</h2>
+        <h2 class="title">مرحباً بعودتك</h2>
         <p class="subtitle text-secondary">سجّل دخولك للمتابعة</p>
 
         <form @submit.prevent="handleLogin" class="form">
@@ -66,12 +65,13 @@ async function handleLogin() {
                 autocomplete="current-password"
               />
               <button type="button" class="show-pass" @click="showPass = !showPass">
-                {{ showPass ? '🙈' : '👁' }}
+                <EyeOff v-if="showPass" :size="20" />
+                <Eye v-else :size="20" />
               </button>
             </div>
           </div>
 
-          <div v-if="error" class="error-msg">⚠️ {{ error }}</div>
+          <div v-if="error" class="error-msg">{{ error }}</div>
 
           <button type="submit" class="btn-gradient" :disabled="loading || !name || !password">
             <span v-if="!loading">دخول</span>
@@ -83,6 +83,9 @@ async function handleLogin() {
       <div class="register-link">
         <span class="text-secondary">ليس لديك حساب؟</span>
         <RouterLink to="/register" class="link">إنشاء حساب</RouterLink>
+      </div>
+      <div class="privacy-link">
+        <RouterLink to="/privacy" class="link text-sm">سياسة الخصوصية</RouterLink>
       </div>
     </div>
   </div>
@@ -98,27 +101,6 @@ async function handleLogin() {
   overflow: hidden;
 }
 
-.bg-orb {
-  border-radius: 50%;
-  filter: blur(80px);
-  position: absolute;
-  pointer-events: none;
-}
-.bg-orb-1 {
-  background: rgba(108, 99, 255, 0.2);
-  height: 250px;
-  width: 250px;
-  top: -80px;
-  right: -60px;
-}
-.bg-orb-2 {
-  background: rgba(255, 101, 132, 0.15);
-  height: 200px;
-  width: 200px;
-  bottom: 80px;
-  left: -60px;
-}
-
 .content {
   display: flex;
   flex-direction: column;
@@ -129,24 +111,11 @@ async function handleLogin() {
   z-index: 10;
 }
 
-.logo-mini {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-}
-
-.logo-icon {
-  align-items: center;
-  background: var(--gradient);
-  border-radius: 12px;
-  color: white;
-  display: flex;
-  font-size: 22px;
-  font-weight: 900;
-  height: 40px;
-  justify-content: center;
-  width: 40px;
+.logo-img {
+  height: 64px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 8px;
 }
 
 .card {
@@ -213,12 +182,10 @@ label {
   justify-content: center;
   font-size: 14px;
 }
+.privacy-link { margin-top: 8px; text-align: center; }
 
 .link {
-  background: var(--gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--primary);
   font-weight: 600;
   text-decoration: none;
 }

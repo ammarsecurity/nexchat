@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NexChat.Core.DTOs;
+using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 
 namespace NexChat.API.Controllers;
@@ -191,5 +192,99 @@ public class AdminController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         return Ok(new PagedResult<AdminMessageDto>(messages, total, page, pageSize));
+    }
+
+    [HttpGet("banners")]
+    public async Task<ActionResult<IEnumerable<BannerDto>>> GetBanners([FromQuery] string? placement = null)
+    {
+        var query = db.Banners.AsQueryable();
+        if (!string.IsNullOrEmpty(placement))
+            query = query.Where(b => b.Placement == placement);
+
+        var banners = await query
+            .OrderBy(b => b.Order)
+            .ThenBy(b => b.CreatedAt)
+            .Select(b => new BannerDto(b.Id, b.ImageUrl, b.Placement, b.Order, b.IsActive, b.Link, b.CreatedAt))
+            .ToListAsync();
+
+        return Ok(banners);
+    }
+
+    [HttpPost("banners")]
+    public async Task<ActionResult<BannerDto>> CreateBanner([FromBody] CreateBannerDto dto)
+    {
+        var banner = new Banner
+        {
+            ImageUrl = dto.ImageUrl,
+            Placement = dto.Placement,
+            Order = dto.Order,
+            IsActive = dto.IsActive,
+            Link = dto.Link
+        };
+        db.Banners.Add(banner);
+        await db.SaveChangesAsync();
+        return Ok(new BannerDto(banner.Id, banner.ImageUrl, banner.Placement, banner.Order, banner.IsActive, banner.Link, banner.CreatedAt));
+    }
+
+    [HttpPut("banners/{id}")]
+    public async Task<IActionResult> UpdateBanner(Guid id, [FromBody] UpdateBannerDto dto)
+    {
+        var banner = await db.Banners.FindAsync(id);
+        if (banner == null) return NotFound();
+
+        if (dto.ImageUrl != null) banner.ImageUrl = dto.ImageUrl;
+        if (dto.Placement != null) banner.Placement = dto.Placement;
+        if (dto.Order.HasValue) banner.Order = dto.Order.Value;
+        if (dto.IsActive.HasValue) banner.IsActive = dto.IsActive.Value;
+        if (dto.Link != null) banner.Link = dto.Link;
+
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpDelete("banners/{id}")]
+    public async Task<IActionResult> DeleteBanner(Guid id)
+    {
+        var rows = await db.Banners.Where(b => b.Id == id).ExecuteDeleteAsync();
+        return rows > 0 ? Ok() : NotFound();
+    }
+
+    [HttpGet("site-content/{key}")]
+    public async Task<ActionResult<object>> GetSiteContent(string key)
+    {
+        var content = await db.SiteContents.FirstOrDefaultAsync(c => c.Key == key);
+        if (content == null) return Ok(new { content = "", updatedAt = (DateTime?)null });
+        return Ok(new { content.Content, content.UpdatedAt });
+    }
+
+    [HttpPut("site-content/{key}")]
+    public async Task<IActionResult> UpdateSiteContent(string key, [FromBody] UpdateSiteContentDto dto)
+    {
+        var existing = await db.SiteContents.FirstOrDefaultAsync(c => c.Key == key);
+        if (existing != null)
+        {
+            existing.Content = dto.Content;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            db.SiteContents.Add(new Core.Entities.SiteContent { Key = key, Content = dto.Content });
+        }
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPut("banners/reorder")]
+    public async Task<IActionResult> ReorderBanners([FromBody] ReorderBannersDto dto)
+    {
+        var ids = dto.Ids.ToList();
+        var banners = await db.Banners.Where(b => ids.Contains(b.Id)).ToListAsync();
+        foreach (var b in banners)
+        {
+            var idx = ids.IndexOf(b.Id);
+            if (idx >= 0) b.Order = idx;
+        }
+        await db.SaveChangesAsync();
+        return Ok();
     }
 }
