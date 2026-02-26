@@ -7,10 +7,36 @@ import logoImg from '../assets/logo.png'
 const router = useRouter()
 const auth = useAuthStore()
 
-onMounted(() => {
-  setTimeout(() => {
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const ONBOARDING_SEEN = 'nexchat_onboarding_seen'
+
+async function goNext() {
+  const seen = localStorage.getItem(ONBOARDING_SEEN)
+  if (seen) {
     router.replace(auth.isLoggedIn ? '/home' : '/login')
-  }, 2200)
+    return
+  }
+  try {
+    const res = await fetch(`${API_BASE}/sitecontent/onboarding`)
+    const data = await res.json()
+    const content = data?.content ?? data?.Content ?? ''
+    if (content) {
+      try {
+        const parsed = JSON.parse(content)
+        if (parsed.enabled === false) {
+          router.replace(auth.isLoggedIn ? '/home' : '/login')
+          return
+        }
+      } catch {}
+    }
+    router.replace('/onboarding')
+  } catch {
+    router.replace('/onboarding')
+  }
+}
+
+onMounted(() => {
+  setTimeout(goNext, 2200)
 })
 </script>
 
