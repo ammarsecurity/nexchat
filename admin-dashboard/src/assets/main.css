@@ -1,0 +1,56 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --bg: #0D0D1A;
+  --surface: #13132A;
+  --card: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --purple: #6C63FF;
+  --pink: #FF6584;
+  --cyan: #00D4FF;
+  --gradient: linear-gradient(135deg, #6C63FF, #FF6584);
+  --text: #FFFFFF;
+  --text-secondary: #B0B0C3;
+  --text-muted: #6B6B8A;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Override Vuetify for dark theme */
+.v-card {
+  background: var(--card) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.gradient-text {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 700;
+}
+
+.stat-card {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(20px);
+}
+
+.online-dot {
+  background: #4ade80;
+  border-radius: 50%;
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+  animation: blink 1.5s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }

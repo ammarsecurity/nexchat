@@ -1,0 +1,6 @@
+@NexChat.API_HostAddress = http://localhost:5253
+
+GET {{NexChat.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

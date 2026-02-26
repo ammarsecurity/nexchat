@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "backend/NexChat.API", "--launch-profile", "http"],
+      "port": 5000
+    },
+    {
+      "name": "mobile-app",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["mobile-app/node_modules/vite/bin/vite.js", "--port", "5173", "--host"],
+      "port": 5173
+    },
+    {
+      "name": "admin-dashboard",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["admin-dashboard/node_modules/vite/bin/vite.js", "--port", "5174", "--host"],
+      "port": 5174
+    }
+  ]
+}
