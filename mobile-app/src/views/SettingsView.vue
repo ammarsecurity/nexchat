@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, User, Key, Pencil, Image, Upload, X, Trash2, Shield, Copy, Users } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import logoImg from '../assets/logo.png'
 import api from '../services/api'
@@ -81,8 +81,9 @@ function proceedToPassword() {
 }
 
 function copyCode() {
-  if (user?.uniqueCode) {
-    navigator.clipboard.writeText(user.uniqueCode)
+  const code = user.value?.uniqueCode
+  if (code) {
+    navigator.clipboard.writeText(code)
     copiedCode.value = true
     setTimeout(() => { copiedCode.value = false }, 2000)
   }
@@ -118,82 +119,68 @@ async function confirmDelete() {
 
     <div class="scroll-area">
 
-      <!-- Profile Hero -->
-      <div class="profile-hero">
-        <div class="avatar-wrap" @click="showAvatarPicker = true">
-          <img v-if="isImageUrl(auth.avatar)" :src="auth.avatar" class="avatar-img" />
-          <div v-else-if="isEmoji(auth.avatar)" class="avatar-circle" :style="{ background: auth.avatarColor }">
-            <span class="av-emoji">{{ auth.avatar }}</span>
+      <!-- 1. Profile Card -->
+      <div class="profile-card glass-card">
+        <div class="profile-card-inner">
+          <div class="avatar-wrap" @click="showAvatarPicker = true">
+            <img v-if="isImageUrl(auth.avatar)" :src="auth.avatar" class="avatar-img" />
+            <div v-else-if="isEmoji(auth.avatar)" class="avatar-circle" :style="{ background: auth.avatarColor }">
+              <span class="av-emoji">{{ auth.avatar }}</span>
+            </div>
+            <div v-else class="avatar-circle" :style="{ background: auth.avatarColor }">
+              <span class="av-letter">{{ user?.name?.[0]?.toUpperCase() }}</span>
+            </div>
+            <div class="edit-badge"><Pencil :size="12" /></div>
           </div>
-          <div v-else class="avatar-circle" :style="{ background: auth.avatarColor }">
-            <span class="av-letter">{{ user?.name?.[0]?.toUpperCase() }}</span>
-          </div>
-          <div class="edit-badge"><Pencil :size="14" /></div>
-        </div>
-        <div class="hero-name">{{ user?.name }}</div>
-        <div class="hero-code gradient-text">{{ user?.uniqueCode }}</div>
-        <div class="hero-gender text-muted text-sm">{{ genderLabel[user?.gender] || user?.gender }}</div>
-      </div>
-
-      <!-- Info -->
-      <div class="section-label">معلومات الحساب</div>
-      <div class="info-card glass-card">
-        <div class="info-row">
-          <span class="row-icon"><User :size="20" /></span>
-          <div class="row-body">
-            <div class="row-label">الاسم</div>
-            <div class="row-val">{{ user?.name }}</div>
-          </div>
-        </div>
-        <div class="sep"></div>
-        <div class="info-row info-row-code" @click="copyCode">
-          <span class="row-icon"><Key :size="20" /></span>
-          <div class="row-body">
-            <div class="row-label">الكود الفريد</div>
-            <div class="row-val gradient-text code-val">{{ user?.uniqueCode }}</div>
-          </div>
-          <button type="button" class="copy-code-btn" :title="copiedCode ? 'تم النسخ' : 'نسخ'">
-            <Copy v-if="!copiedCode" :size="18" />
-            <span v-else class="copied-text">تم</span>
-          </button>
-        </div>
-        <div class="sep"></div>
-        <div class="info-row">
-          <span class="row-icon"><Users :size="20" /></span>
-          <div class="row-body">
-            <div class="row-label">الجنس</div>
-            <div class="row-val">{{ genderLabel[user?.gender] }}</div>
+          <div class="profile-details">
+            <div class="profile-name">{{ user?.name }}</div>
+            <div class="profile-meta">{{ genderLabel[user?.gender] || user?.gender }}</div>
+            <div class="profile-code-row" @click="copyCode">
+              <span class="profile-code gradient-text">{{ user?.uniqueCode }}</span>
+              <button type="button" class="copy-code-btn" :title="copiedCode ? 'تم النسخ' : 'نسخ'">
+                <Copy v-if="!copiedCode" :size="16" />
+                <span v-else class="copied-text">تم</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- About -->
-      <div class="section-label">عن التطبيق</div>
+      <!-- 2. Settings Links -->
+      <div class="section-label">عام</div>
+      <div class="links-group glass-card">
+        <RouterLink to="/privacy" class="link-row">
+          <Shield :size="20" class="link-icon" />
+          <span>سياسة الخصوصية</span>
+          <ChevronRight :size="18" class="link-arrow" />
+        </RouterLink>
+      </div>
+
+      <!-- 3. About -->
+      <div class="section-label">التطبيق</div>
       <div class="about-card glass-card">
-        <img :src="logoImg" alt="NexChat" class="about-logo-img" />
-        <div class="text-muted text-sm" style="text-align:center">تواصل مع العالم بخطوة واحدة</div>
-        <div class="ver-badge">v1.0.0</div>
+        <div class="about-inner">
+          <img :src="logoImg" alt="NexChat" class="about-logo-img" />
+          <div class="about-text">
+            <div class="about-name">NexChat</div>
+            <div class="about-tagline text-muted text-sm">تواصل مع العالم بخطوة واحدة</div>
+            <span class="ver-badge">v1.0.0</span>
+          </div>
+        </div>
       </div>
 
-      <!-- Privacy Policy -->
-      <RouterLink to="/privacy" class="link-row glass-card">
-        <Shield :size="20" class="link-icon" />
-        <span>سياسة الخصوصية</span>
-        <ChevronRight :size="18" class="link-arrow" />
-      </RouterLink>
-
-      <!-- Logout -->
-      <button class="logout-btn" @click="logout">
-        <LogOut :size="20" />
-        <span>تسجيل الخروج</span>
-      </button>
-
-      <!-- Delete Account -->
-      <button class="delete-account-btn" @click="openDeleteConfirm">
-        <Trash2 :size="20" />
-        <span>حذف الحساب</span>
-      </button>
-
+      <!-- 4. Account Actions -->
+      <div class="section-label">الحساب</div>
+      <div class="actions-group">
+        <button class="logout-btn" @click="logout">
+          <LogOut :size="20" />
+          <span>تسجيل الخروج</span>
+        </button>
+        <button class="delete-account-btn" @click="openDeleteConfirm">
+          <Trash2 :size="20" />
+          <span>حذف الحساب</span>
+        </button>
+      </div>
     </div>
 
     <!-- Delete Confirm Dialog 1 - Warnings -->
@@ -330,54 +317,6 @@ async function confirmDelete() {
   padding: 0 var(--spacing) calc(40px + var(--safe-bottom));
 }
 
-/* Hero */
-.profile-hero {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: var(--spacing) 0;
-}
-
-.avatar-wrap {
-  cursor: pointer;
-  height: 96px;
-  position: relative;
-  width: 96px;
-}
-.avatar-img,
-.avatar-circle {
-  border: 2px solid var(--border);
-  border-radius: 50%;
-  height: 96px;
-  width: 96px;
-}
-.avatar-img { object-fit: cover; display: block; }
-.avatar-circle {
-  align-items: center;
-  display: flex;
-  justify-content: center;
-}
-.av-letter { color: white; font-size: 36px; font-weight: 700; }
-.av-emoji  { font-size: 48px; line-height: 1; }
-
-.edit-badge {
-  align-items: center;
-  background: var(--primary);
-  border-radius: 50%;
-  bottom: 0;
-  color: white;
-  display: flex;
-  height: 28px;
-  justify-content: center;
-  position: absolute;
-  right: 0;
-  width: 28px;
-}
-
-.hero-name { font-size: 20px; font-weight: 700; margin-top: 4px; }
-.hero-code { font-size: 15px; font-weight: 600; letter-spacing: 2px; }
-
 /* Section label */
 .section-label {
   color: var(--text-muted);
@@ -388,21 +327,64 @@ async function confirmDelete() {
   letter-spacing: 0.5px;
 }
 
-/* Info card */
-.info-card { overflow: hidden; padding: 0; }
-.info-row {
+/* Profile card */
+.profile-card {
+  overflow: hidden;
+  padding: var(--spacing);
+}
+.profile-card-inner {
   align-items: center;
   display: flex;
-  gap: 14px;
-  padding: var(--spacing) var(--spacing);
+  gap: var(--spacing);
 }
-.row-icon { color: var(--text-muted); flex-shrink: 0; }
-.row-body { flex: 1; min-width: 0; }
-.row-label { color: var(--text-muted); font-size: 12px; margin-bottom: 2px; }
-.row-val { font-size: 15px; font-weight: 600; }
-.row-val.code-val { letter-spacing: 2px; font-weight: 800; }
-.info-row-code { cursor: pointer; }
-.info-row-code:active { background: var(--bg-card-hover); }
+.avatar-wrap {
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 72px;
+  position: relative;
+  width: 72px;
+}
+.avatar-img,
+.avatar-circle {
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  height: 72px;
+  width: 72px;
+}
+.avatar-img { object-fit: cover; display: block; }
+.avatar-circle {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+.av-letter { color: white; font-size: 28px; font-weight: 700; }
+.av-emoji { font-size: 36px; line-height: 1; }
+
+.edit-badge {
+  align-items: center;
+  background: var(--primary);
+  border-radius: 50%;
+  bottom: 0;
+  color: white;
+  display: flex;
+  height: 24px;
+  justify-content: center;
+  position: absolute;
+  right: 0;
+  width: 24px;
+}
+
+.profile-details { flex: 1; min-width: 0; }
+.profile-name { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+.profile-meta { color: var(--text-muted); font-size: 13px; margin-bottom: 8px; }
+.profile-code-row {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+}
+.profile-code { font-size: 14px; font-weight: 700; letter-spacing: 2px; }
+.profile-code-row:active .profile-code { opacity: 0.9; }
 .copy-code-btn {
   align-items: center;
   background: var(--bg-card);
@@ -411,40 +393,20 @@ async function confirmDelete() {
   color: var(--text-muted);
   cursor: pointer;
   display: flex;
-  height: 36px;
+  height: 32px;
   justify-content: center;
-  min-width: 36px;
+  min-width: 32px;
   padding: 0;
   transition: color 0.2s, background 0.2s;
 }
 .copy-code-btn:active { background: var(--bg-card-hover); color: var(--primary); }
-.copied-text { color: var(--success); font-size: 12px; font-weight: 600; }
-.sep { background: var(--border); height: 1px; margin: 0 var(--spacing); }
+.copied-text { color: var(--success); font-size: 11px; font-weight: 600; }
 
-/* About */
-.about-card {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: var(--spacing);
+/* Links group */
+.links-group {
+  overflow: hidden;
+  padding: 0;
 }
-.about-logo-img {
-  height: 56px;
-  width: auto;
-  object-fit: contain;
-}
-.ver-badge {
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.2);
-  border-radius: var(--radius-full);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 14px;
-}
-
-/* Link row */
 .link-row {
   align-items: center;
   color: var(--text-secondary);
@@ -458,7 +420,57 @@ async function confirmDelete() {
 .link-icon { color: var(--text-muted); flex-shrink: 0; }
 .link-arrow { color: var(--text-muted); margin-right: auto; }
 
-/* Delete account */
+/* About */
+.about-card { overflow: hidden; padding: var(--spacing); }
+.about-inner {
+  align-items: center;
+  display: flex;
+  gap: var(--spacing);
+}
+.about-logo-img {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.about-text { flex: 1; min-width: 0; }
+.about-name { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+.about-tagline { margin-bottom: 8px; }
+.ver-badge {
+  background: rgba(108,99,255,0.15);
+  border: 1px solid rgba(108,99,255,0.2);
+  border-radius: var(--radius-full);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+}
+
+/* Actions group */
+.actions-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.logout-btn {
+  align-items: center;
+  background: rgba(255,101,132,0.1);
+  border: 1px solid rgba(255,101,132,0.2);
+  border-radius: var(--radius);
+  color: var(--danger);
+  cursor: pointer;
+  display: flex;
+  font-family: 'Cairo';
+  font-size: 15px;
+  font-weight: 600;
+  gap: 10px;
+  justify-content: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--spacing);
+  transition: background 0.2s;
+}
+.logout-btn:active { background: rgba(255,101,132,0.18); }
+
 .delete-account-btn {
   align-items: center;
   background: transparent;
@@ -472,8 +484,7 @@ async function confirmDelete() {
   font-weight: 600;
   gap: 10px;
   justify-content: center;
-  margin-top: 16px;
-  min-height: 44px;
+  min-height: var(--touch-min);
   padding: 0 var(--spacing);
   transition: background 0.2s;
 }
@@ -513,27 +524,6 @@ async function confirmDelete() {
 }
 .delete-confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .delete-error { color: var(--danger); font-size: 13px; margin-bottom: 8px; }
-
-/* Logout */
-.logout-btn {
-  align-items: center;
-  background: rgba(255,101,132,0.1);
-  border: 1px solid rgba(255,101,132,0.2);
-  border-radius: var(--radius);
-  color: var(--danger);
-  cursor: pointer;
-  display: flex;
-  font-family: 'Cairo';
-  font-size: 15px;
-  font-weight: 600;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 4px;
-  min-height: var(--touch-min);
-  padding: 0 var(--spacing);
-  transition: background 0.2s;
-}
-.logout-btn:active { background: rgba(255,101,132,0.18); }
 
 /* Modal */
 .modal-overlay {

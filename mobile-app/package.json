@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "assets": "node scripts/sync-icon.js && capacitor-assets generate --iconBackgroundColor #6C63FF --iconBackgroundColorDark #0D0D1A --splashBackgroundColor #6C63FF --splashBackgroundColorDark #0D0D1A && node scripts/copy-icons.js"
   },
   "dependencies": {
+    "@capacitor/android": "^8.1.0",
     "@capacitor/cli": "^8.1.0",
     "@capacitor/core": "^8.1.0",
     "@microsoft/signalr": "^10.0.0",
@@ -21,6 +23,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@vitejs/plugin-vue": "^6.0.2",
     "vite": "^7.3.1"
   }

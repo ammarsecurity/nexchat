@@ -123,10 +123,14 @@ async function handleRegister() {
 .register {
   align-items: center;
   background: var(--bg-primary);
-  justify-content: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 100%;
+  overflow-y: auto;
   padding: 24px;
+  padding-bottom: calc(24px + var(--safe-bottom));
   position: relative;
-  overflow: hidden;
 }
 
 .content {

@@ -18,6 +18,7 @@ const routes = [
       { path: 'reports', component: () => import('../views/ReportsView.vue') },
       { path: 'ads', component: () => import('../views/AdsView.vue') },
       { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },
+      { path: 'social', component: () => import('../views/SocialLinksView.vue') },
     ]
   }
 ]

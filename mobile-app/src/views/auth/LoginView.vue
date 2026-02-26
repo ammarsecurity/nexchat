@@ -34,8 +34,7 @@ async function handleLogin() {
     <div class="content">
       <!-- Logo -->
       <div class="logo-mini">
-        <div class="logo-icon">N</div>
-        <span class="gradient-text font-bold" style="font-size:22px">NexChat</span>
+        <img :src="logoImg" alt="NexChat" class="logo-img" />
       </div>
 
       <div class="card glass-card slide-up-enter-active">
@@ -95,10 +94,14 @@ async function handleLogin() {
 .login {
   align-items: center;
   background: var(--bg-primary);
-  justify-content: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 100%;
+  overflow-y: auto;
   padding: 24px;
+  padding-bottom: calc(24px + var(--safe-bottom));
   position: relative;
-  overflow: hidden;
 }
 
 .content {
@@ -111,11 +114,15 @@ async function handleLogin() {
   z-index: 10;
 }
 
-.logo-img {
-  height: 64px;
+.logo-mini {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.logo-mini .logo-img {
+  height: 57px;
   width: auto;
   object-fit: contain;
-  margin-bottom: 8px;
 }
 
 .card {
@@ -158,6 +165,7 @@ label {
 .show-pass {
   background: none;
   border: none;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 16px;
   padding: 0;
@@ -165,6 +173,10 @@ label {
   right: 14px;
   top: 50%;
   transform: translateY(-50%);
+}
+.show-pass:hover,
+.show-pass:active {
+  color: var(--text-secondary);
 }
 
 .error-msg {

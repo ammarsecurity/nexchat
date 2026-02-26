@@ -3,10 +3,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Settings, LogOut, Zap, Globe, User, Users } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
+import AppFooter from '../components/AppFooter.vue'
 import { useAuthStore } from '../stores/auth'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
 import { matchingHub, startHub } from '../services/signalr'
+import { requestMediaPermissions } from '../utils/mediaPermissions'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -22,6 +24,8 @@ const user = computed(() => auth.user)
 const avatarLetter = computed(() => user.value?.name?.[0]?.toUpperCase() || '?')
 
 onMounted(async () => {
+  requestMediaPermissions()
+
   await startHub(matchingHub)
 
   // Remove old listeners to avoid duplicates on re-mount
@@ -176,7 +180,10 @@ const genderFilters = [
       <div v-if="codeError" class="code-error">{{ codeError }}</div>
     </div>
 
-    <BannerStrip placement="home" />
+    <div class="home-bottom">
+      <BannerStrip placement="home" />
+      <AppFooter />
+    </div>
   </div>
 </template>
 
@@ -186,8 +193,15 @@ const genderFilters = [
   display: flex;
   flex-direction: column;
   padding: 0;
+  padding-bottom: var(--safe-bottom);
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.home-bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .header {

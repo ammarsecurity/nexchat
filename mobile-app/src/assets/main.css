@@ -149,7 +149,7 @@ html, body {
   height: 100%;
   position: absolute;
   width: 100%;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 /* Icon Button - Flat, native touch target */

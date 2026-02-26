@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createVuetify } from 'vuetify'
+import { ar, en } from 'vuetify/locale'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import 'vuetify/styles'
@@ -12,6 +13,11 @@ import './assets/main.css'
 const vuetify = createVuetify({
   components,
   directives,
+  locale: {
+    locale: 'ar',
+    fallback: 'en',
+    messages: { ar, en }
+  },
   theme: {
     defaultTheme: 'nexchatDark',
     themes: {

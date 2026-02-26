@@ -4,6 +4,8 @@ import { RouterView } from 'vue-router'
 
 <template>
   <v-app>
-    <RouterView />
+    <v-locale-provider rtl>
+      <RouterView />
+    </v-locale-provider>
   </v-app>
 </template>

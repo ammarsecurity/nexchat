@@ -94,10 +94,14 @@ async function cancel() {
 .matching {
   background: var(--bg-primary);
   align-items: center;
-  justify-content: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 100%;
+  overflow-y: auto;
   padding: 32px 24px;
+  padding-bottom: calc(32px + var(--safe-bottom));
   position: relative;
-  overflow: hidden;
 }
 
 .chat-pattern {

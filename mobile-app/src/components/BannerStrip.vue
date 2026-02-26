@@ -51,7 +51,8 @@ watch(() => props.placement, fetchBanners)
 
 <style scoped>
 .banner-strip {
-  margin: var(--spacing) var(--spacing) calc(var(--spacing) + var(--safe-bottom));
+  flex-shrink: 0;
+  margin: var(--spacing);
   overflow: hidden;
 }
 

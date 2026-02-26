@@ -18,7 +18,7 @@ html, body, #app {
   height: 100%;
   margin: 0;
   padding: 0;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
 }

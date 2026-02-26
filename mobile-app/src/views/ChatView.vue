@@ -389,6 +389,7 @@ function openImage(url) {
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .chat-header {
