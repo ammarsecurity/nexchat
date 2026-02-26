@@ -246,6 +246,7 @@ function openImage(url) {
       <div class="header-actions">
         <button class="icon-btn" @click="startVideo" title="فيديو كول"><Video :size="20" /></button>
         <button class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
+        <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
         <button class="icon-btn danger" @click="leaveSession" title="إنهاء"><X :size="20" /></button>
       </div>
     </header>
@@ -322,10 +323,6 @@ function openImage(url) {
 
     <!-- Input -->
     <div v-else class="input-area">
-      <div class="next-btn-wrap">
-        <button class="btn-ghost next-small" @click="nextPerson"><ChevronLeft :size="16" /> التالي</button>
-      </div>
-
       <!-- Emoji Picker -->
       <Transition name="slide-up">
         <div v-if="showEmojiPicker" class="emoji-picker glass-card">
@@ -364,7 +361,7 @@ function openImage(url) {
         />
         <input
           v-model="messageText"
-          class="input-field msg-input"
+          class="msg-input"
           placeholder="اكتب رسالة..."
           @input="handleInput"
           @keyup.enter="sendMessage"
@@ -521,26 +518,32 @@ function openImage(url) {
   gap: 8px;
 }
 
-.next-btn-wrap { display: flex; justify-content: flex-end; }
-.next-small {
-  align-items: center;
-  display: flex;
-  font-size: 13px;
-  gap: 4px;
-  padding: 6px 14px;
-}
+.next-header-btn { color: var(--primary); }
 
 .message-input-row {
   display: flex;
-  gap: 8px;
-  align-items: flex-end;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
 }
 
 .msg-input {
   flex: 1;
-  border-radius: var(--radius-full);
-  padding: 12px 18px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
+.msg-input::placeholder { color: var(--text-muted); }
+.msg-input:focus { border-color: var(--primary); }
 
 .send-btn {
   background: var(--primary);
@@ -548,17 +551,21 @@ function openImage(url) {
   border-radius: 50%;
   color: white;
   cursor: pointer;
-  height: var(--touch-min);
-  width: var(--touch-min);
-  min-width: var(--touch-min);
+  height: 48px;
+  width: 48px;
+  min-width: 48px;
   flex-shrink: 0;
-  transition: opacity 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s, opacity 0.2s;
 }
-.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.send-btn:not(:disabled):active { opacity: 0.9; }
+.send-btn:not(:disabled):active { transform: scale(0.95); opacity: 0.95; }
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .next-btn {
   align-items: center;
@@ -723,16 +730,17 @@ function openImage(url) {
   align-items: center;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
-  height: var(--touch-min);
+  height: 48px;
   justify-content: center;
-  min-width: var(--touch-min);
+  min-width: 48px;
   padding: 0;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 .input-action-btn:active { background: var(--bg-card-hover); }
 .input-action-btn.active { background: rgba(108,99,255,0.2); color: var(--primary); }

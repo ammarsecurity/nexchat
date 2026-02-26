@@ -28,7 +28,6 @@ onMounted(async () => {
 
   await startHub(matchingHub)
 
-  // Remove old listeners to avoid duplicates on re-mount
   matchingHub.off('MatchFound')
   matchingHub.off('SearchCancelled')
   matchingHub.off('CodeError')
@@ -49,7 +48,6 @@ onMounted(async () => {
     codeError.value = msg
   })
 
-  // Simulate online count change
   setInterval(() => {
     onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
   }, 5000)
@@ -58,7 +56,6 @@ onMounted(async () => {
 async function startRandom() {
   matching.setSearching()
   await matchingHub.invoke('StartSearching', matching.genderFilter)
-  // Only navigate to /matching if we weren't already matched during invoke
   if (matching.status !== 'matched') {
     router.push('/matching')
   }
@@ -102,55 +99,58 @@ const genderFilters = [
 
 <template>
   <div class="home page">
-    <!-- Header -->
+    <!-- Native-style header -->
     <header class="header">
-      <div class="user-info">
-        <div class="avatar avatar-sm home-avatar" :style="{ background: auth.avatarColor }">
-          <img v-if="auth.avatar && auth.avatar.startsWith('http')" :src="auth.avatar" class="home-avatar-img" />
+      <div class="user-row" @click="copyCode">
+        <div class="avatar avatar-sm" :style="{ background: auth.avatarColor }">
+          <img v-if="auth.avatar && auth.avatar.startsWith('http')" :src="auth.avatar" class="avatar-img" />
           <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
           <span v-else>{{ avatarLetter }}</span>
         </div>
-        <div>
-          <div class="user-name">{{ user?.name }}</div>
-          <div class="online-badge">
-            <span class="dot"></span>
-            <span>{{ onlineCount }} متصل الآن</span>
-          </div>
+        <div class="user-meta">
+          <span class="user-name">{{ user?.name }}</span>
+          <span class="user-code">{{ user?.uniqueCode }}</span>
+          <span v-if="copied" class="copy-feedback">تم النسخ!</span>
         </div>
       </div>
-
       <div class="header-actions">
-        <RouterLink to="/settings" class="icon-btn"><Settings :size="20" /></RouterLink>
-        <button class="icon-btn" @click="logout"><LogOut :size="20" /></button>
+        <RouterLink to="/settings" class="nav-btn" aria-label="الإعدادات">
+          <Settings :size="22" stroke-width="2" />
+        </RouterLink>
+        <button class="nav-btn" @click="logout" aria-label="تسجيل الخروج">
+          <LogOut :size="22" stroke-width="2" />
+        </button>
       </div>
     </header>
 
-    <!-- My Code -->
-    <div class="code-card glass-card" @click="copyCode">
-      <div class="code-label">كودي الخاص</div>
-      <div class="code-value gradient-text">{{ user?.uniqueCode }}</div>
-      <div class="copy-hint">{{ copied ? 'تم النسخ!' : 'اضغط للنسخ' }}</div>
+    <!-- Online indicator - native list style -->
+    <div class="list-section">
+      <div class="list-row">
+        <span class="status-dot"></span>
+        <span class="list-label">{{ onlineCount }} متصل الآن</span>
+      </div>
     </div>
 
-    <!-- Main Action -->
-    <div class="main-section">
-      <button class="start-btn" @click="startRandom">
-        <Zap :size="28" class="start-icon" />
-        <span class="start-text">ابدأ محادثة</span>
-        <span class="start-sub">عشوائية</span>
+    <!-- Main CTA - native full-width pill -->
+    <div class="main-cta-wrap">
+      <button class="main-cta" @click="startRandom">
+        <Zap :size="24" class="cta-icon" />
+        <span>ابدأ محادثة عشوائية</span>
       </button>
+    </div>
 
-      <!-- Gender Filter -->
-      <div class="filter-label text-secondary text-sm">فلتر المطابقة</div>
-      <div class="gender-filters">
+    <!-- Segmented control - iOS/Android style -->
+    <div class="segment-wrap">
+      <span class="segment-label">فلتر المطابقة</span>
+      <div class="segment-control">
         <button
           v-for="f in genderFilters"
           :key="f.value"
-          class="filter-btn"
+          class="segment-btn"
           :class="{ active: matching.genderFilter === f.value }"
           @click="matching.genderFilter = f.value"
         >
-          <component :is="f.Icon" :size="16" />
+          <component :is="f.Icon" :size="18" stroke-width="2" />
           <span>{{ f.label }}</span>
         </button>
       </div>
@@ -158,26 +158,27 @@ const genderFilters = [
 
     <!-- Divider -->
     <div class="divider">
-      <span class="divider-line"></span>
-      <span class="divider-text text-muted">أو</span>
-      <span class="divider-line"></span>
+      <span class="divider-txt">أو اتصل بكود</span>
     </div>
 
-    <!-- Code Connect -->
-    <div class="code-connect glass-card">
-      <div class="code-connect-title text-sm text-secondary">اتصل بكود شخص معين</div>
+    <!-- Code input - native form style -->
+    <div class="code-section">
       <input
         v-model="codeInput"
-        class="input-field code-input"
-        placeholder="مثال: NX-A3B9"
+        class="code-input"
+        placeholder="NX-A3B9"
         maxlength="7"
         @input="codeInput = codeInput.toUpperCase()"
         @keyup.enter="connectByCode"
       />
-      <button class="connect-btn" @click="connectByCode" :disabled="!codeInput">
+      <button
+        class="code-submit"
+        :class="{ disabled: !codeInput.trim() }"
+        @click="connectByCode"
+      >
         اتصل
       </button>
-      <div v-if="codeError" class="code-error">{{ codeError }}</div>
+      <p v-if="codeError" class="code-err">{{ codeError }}</p>
     </div>
 
     <div class="home-bottom">
@@ -192,186 +193,247 @@ const genderFilters = [
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  padding: 0;
+  min-height: 100%;
   padding-bottom: var(--safe-bottom);
   overflow-y: auto;
-  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .home-bottom {
-  flex-shrink: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
+  min-height: 0;
 }
 
+/* Native header - compact, full-width */
 .header {
-  align-items: center;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
+  padding: calc(var(--safe-top) + 8px) var(--spacing) 12px;
+  background: var(--bg-primary);
+  flex-shrink: 0;
 }
 
-.user-info { display: flex; align-items: center; gap: 12px; }
-.home-avatar { overflow: hidden; font-size: 18px; }
-.home-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-
-.user-name { font-size: 17px; font-weight: 600; }
-
-.online-badge {
-  align-items: center;
-  color: var(--success);
+.user-row {
   display: flex;
-  font-size: 13px;
-  gap: 6px;
-}
-.dot {
-  background: var(--success);
-  border-radius: 50%;
-  height: 6px;
-  width: 6px;
-  animation: blink 1.5s ease-in-out infinite;
-}
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-.header-actions { display: flex; gap: 8px; }
-.icon-btn {
   align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.user-row:active { opacity: 0.8; }
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.user-name { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+.user-code { font-size: 13px; color: var(--primary); font-weight: 600; letter-spacing: 1px; }
+.copy-feedback { font-size: 12px; color: var(--success); }
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nav-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
   color: var(--text-secondary);
   cursor: pointer;
+  border-radius: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-btn:active { background: var(--bg-card); color: var(--text-primary); }
+.nav-btn:hover { color: var(--text-primary); }
+
+/* List section - native list style */
+.list-section {
+  padding: 0 var(--spacing);
+  margin-bottom: 20px;
+}
+
+.list-row {
   display: flex;
-  height: var(--touch-min);
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border-radius: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+.list-label { font-size: 15px; color: var(--text-secondary); }
+
+/* Main CTA - native full-width pill */
+.main-cta-wrap {
+  padding: 0 var(--spacing) 20px;
+}
+
+.main-cta {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  min-width: var(--touch-min);
-  padding: 0;
-  text-decoration: none;
-  transition: background 0.2s;
-}
-.icon-btn:active { background: var(--bg-card-hover); }
-
-.code-card {
-  cursor: pointer;
-  margin: 0 var(--spacing) var(--spacing);
-  padding: var(--spacing);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  transition: background 0.2s;
-}
-.code-card:active { background: var(--bg-card-hover); }
-.code-label { color: var(--text-muted); font-size: 12px; }
-.code-value { font-size: 18px; font-weight: 700; letter-spacing: 2px; }
-.copy-hint { color: var(--text-muted); font-size: 12px; }
-
-.main-section {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-  padding: var(--spacing) var(--spacing) 0;
-}
-
-.start-btn {
-  align-items: center;
+  gap: 10px;
   background: var(--primary);
   border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Cairo';
-  gap: 4px;
-  min-height: 120px;
-  padding: 24px 48px;
-  transition: opacity 0.2s;
-}
-.start-btn:active { opacity: 0.9; }
-
-.start-icon { color: white; }
-.start-text { color: white; font-size: 17px; font-weight: 600; }
-.start-sub { color: rgba(255,255,255,0.8); font-size: 13px; }
-
-.filter-label { margin-top: 0; }
-
-.gender-filters {
-  display: flex;
-  gap: 8px;
-}
-
-.filter-btn {
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  font-family: 'Cairo';
-  font-size: 14px;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 14px;
-  transition: 0.2s;
-}
-.filter-btn.active {
-  background: rgba(108, 99, 255, 0.2);
-  border-color: var(--primary);
+  border-radius: 16px;
   color: white;
-}
-
-.divider {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  margin: 24px var(--spacing);
-}
-.divider-line {
-  background: var(--border);
-  flex: 1;
-  height: 1px;
-}
-.divider-text { font-size: 12px; color: var(--text-muted); }
-
-.code-connect {
-  margin: 0 var(--spacing) calc(var(--spacing) + var(--safe-bottom));
-  padding: var(--spacing);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.code-connect-title {
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
-.code-input {
-  letter-spacing: 2px;
+  font-size: 17px;
   font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 4px 14px rgba(108, 99, 255, 0.4);
+}
+.main-cta:active { transform: scale(0.98); opacity: 0.95; }
+
+.cta-icon { flex-shrink: 0; }
+
+/* Segmented control */
+.segment-wrap {
+  padding: 0 var(--spacing) 24px;
+}
+
+.segment-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.segment-control {
+  display: flex;
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.segment-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s ease;
+}
+.segment-btn.active {
+  background: var(--bg-primary);
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.segment-btn:active:not(.active) { opacity: 0.8; }
+
+/* Divider */
+.divider {
+  padding: 0 var(--spacing) 16px;
+}
+.divider-txt {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: block;
   text-align: center;
 }
 
-.connect-btn {
+/* Code section - native input style */
+.code-section {
+  padding: 0 var(--spacing) 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.code-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  letter-spacing: 2px;
+  text-align: center;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.code-input::placeholder { color: var(--text-muted); }
+.code-input:focus { border-color: var(--primary); }
+
+.code-submit {
+  min-height: 48px;
+  padding: 0 20px;
   background: var(--primary);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   color: white;
-  cursor: pointer;
-  font-family: 'Cairo';
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  min-height: var(--touch-min);
-  padding: 0 var(--spacing);
-  width: 100%;
-  transition: opacity 0.2s;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.connect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.connect-btn:not(:disabled):active { opacity: 0.9; }
+.code-submit:active:not(.disabled) { opacity: 0.9; }
+.code-submit.disabled { opacity: 0.4; cursor: not-allowed; }
 
-.code-error {
-  color: var(--danger);
+.code-err {
   font-size: 13px;
+  color: var(--danger);
+  margin: 0;
 }
 </style>

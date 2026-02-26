@@ -295,6 +295,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   cursor: pointer;
   display: flex;
   flex-direction: column;
+  font-family: 'Cairo', sans-serif;
   gap: 4px;
   height: 64px;
   justify-content: center;
@@ -307,6 +308,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 
 .ctrl-label {
   color: white;
+  font-family: 'Cairo', sans-serif;
   font-size: 10px;
   white-space: nowrap;
 }

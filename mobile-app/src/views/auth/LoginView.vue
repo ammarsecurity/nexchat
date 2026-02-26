@@ -31,170 +31,180 @@ async function handleLogin() {
 
 <template>
   <div class="login page">
-    <div class="content">
-      <!-- Logo -->
-      <div class="logo-mini">
+    <div class="login-content">
+      <div class="logo-wrap">
         <img :src="logoImg" alt="NexChat" class="logo-img" />
       </div>
 
-      <div class="card glass-card slide-up-enter-active">
-        <h2 class="title">مرحباً بعودتك</h2>
-        <p class="subtitle text-secondary">سجّل دخولك للمتابعة</p>
+      <h1 class="login-title">مرحباً بعودتك</h1>
+      <p class="login-sub">سجّل دخولك للمتابعة</p>
 
-        <form @submit.prevent="handleLogin" class="form">
-          <div class="field">
-            <label>الاسم</label>
-            <input
-              v-model="name"
-              class="input-field"
-              placeholder="أدخل اسمك"
-              autocomplete="username"
-              maxlength="50"
-            />
-          </div>
+      <form @submit.prevent="handleLogin" class="login-form">
+        <div class="input-wrap">
+          <input
+            v-model="name"
+            class="input-native"
+            placeholder="الاسم"
+            autocomplete="username"
+            maxlength="50"
+          />
+        </div>
 
-          <div class="field">
-            <label>كلمة المرور</label>
-            <div class="pass-wrap">
-              <input
-                v-model="password"
-                :type="showPass ? 'text' : 'password'"
-                class="input-field"
-                placeholder="••••••••"
-                autocomplete="current-password"
-              />
-              <button type="button" class="show-pass" @click="showPass = !showPass">
-                <EyeOff v-if="showPass" :size="20" />
-                <Eye v-else :size="20" />
-              </button>
-            </div>
-          </div>
-
-          <div v-if="error" class="error-msg">{{ error }}</div>
-
-          <button type="submit" class="btn-gradient" :disabled="loading || !name || !password">
-            <span v-if="!loading">دخول</span>
-            <span v-else class="spinner"></span>
+        <div class="input-wrap">
+          <input
+            v-model="password"
+            :type="showPass ? 'text' : 'password'"
+            class="input-native"
+            placeholder="كلمة المرور"
+            autocomplete="current-password"
+          />
+          <button type="button" class="input-toggle" @click="showPass = !showPass" aria-label="إظهار كلمة المرور">
+            <EyeOff v-if="showPass" :size="20" />
+            <Eye v-else :size="20" />
           </button>
-        </form>
-      </div>
+        </div>
 
-      <div class="register-link">
+        <p v-if="error" class="login-err">{{ error }}</p>
+
+        <button type="submit" class="login-btn" :disabled="loading || !name || !password">
+          <span v-if="!loading">دخول</span>
+          <span v-else class="spinner"></span>
+        </button>
+      </form>
+
+      <div class="login-links">
         <span class="text-secondary">ليس لديك حساب؟</span>
         <RouterLink to="/register" class="link">إنشاء حساب</RouterLink>
       </div>
-      <div class="privacy-link">
-        <RouterLink to="/privacy" class="link text-sm">سياسة الخصوصية</RouterLink>
-      </div>
+      <RouterLink to="/privacy" class="privacy-link">سياسة الخصوصية</RouterLink>
     </div>
   </div>
 </template>
 
 <style scoped>
 .login {
-  align-items: center;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
   min-height: 100%;
   overflow-y: auto;
-  padding: 24px;
-  padding-bottom: calc(24px + var(--safe-bottom));
-  position: relative;
+  padding: calc(var(--safe-top) + 24px) var(--spacing) calc(24px + var(--safe-bottom));
+  -webkit-overflow-scrolling: touch;
 }
 
-.content {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+.login-content {
   width: 100%;
-  max-width: 380px;
-  position: relative;
-  z-index: 10;
+  max-width: 360px;
+  margin: 0 auto;
 }
 
-.logo-mini {
+.logo-wrap {
   display: flex;
   justify-content: center;
-  margin-bottom: 8px;
-}
-.logo-mini .logo-img {
-  height: 57px;
-  width: auto;
-  object-fit: contain;
-}
-
-.card {
-  padding: 28px 24px;
-}
-
-.title {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.subtitle {
-  font-size: 14px;
   margin-bottom: 24px;
 }
+.logo-img { height: 52px; width: auto; object-fit: contain; }
 
-.form {
+.login-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.login-sub {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.login-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-label {
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.pass-wrap {
+.input-wrap {
   position: relative;
 }
-.pass-wrap .input-field { padding-right: 44px; }
-.show-pass {
+.input-native {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 48px 0 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.input-native::placeholder { color: var(--text-muted); }
+.input-native:focus { border-color: var(--primary); }
+
+.input-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 16px;
-  padding: 0;
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
+  -webkit-tap-highlight-color: transparent;
 }
-.show-pass:hover,
-.show-pass:active {
-  color: var(--text-secondary);
-}
+.input-toggle:active { color: var(--text-secondary); }
 
-.error-msg {
-  background: rgba(255, 101, 132, 0.12);
-  border: 1px solid rgba(255, 101, 132, 0.3);
-  border-radius: 8px;
-  color: #FF6584;
+.login-err {
   font-size: 13px;
-  padding: 10px 12px;
+  color: var(--danger);
+  margin: 0;
+  padding: 10px 14px;
+  background: rgba(255, 101, 132, 0.1);
+  border-radius: 10px;
 }
 
-.register-link {
+.login-btn {
+  min-height: 52px;
+  padding: 0 24px;
+  background: var(--primary);
+  border: none;
+  border-radius: 14px;
+  color: white;
+  font-size: 17px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.login-btn:active:not(:disabled) { opacity: 0.9; }
+.login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.login-links {
   display: flex;
   gap: 6px;
   justify-content: center;
+  margin-top: 24px;
   font-size: 14px;
 }
-.privacy-link { margin-top: 8px; text-align: center; }
+
+.privacy-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
+}
 
 .link {
   color: var(--primary);
@@ -204,8 +214,8 @@ label {
 
 .spinner {
   display: inline-block;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: 2px solid rgba(255,255,255,0.3);
   border-top-color: white;
   border-radius: 50%;

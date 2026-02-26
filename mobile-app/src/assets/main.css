@@ -47,11 +47,15 @@ html, body {
 #app {
   height: 100%;
   width: 100%;
-  max-width: 430px;
+  max-width: 100%;
   margin: 0 auto;
   position: relative;
   overflow: hidden;
   background: var(--bg-primary);
+}
+
+@media (min-width: 432px) {
+  #app { max-width: 432px; }
 }
 
 /* Scrollbar */
@@ -59,11 +63,21 @@ html, body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
 
-/* Flat Card */
+/* Flat Card - use sparingly for native feel */
 .glass-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* Native list row */
+.list-row-native {
+  display: flex;
+  align-items: center;
+  padding: 14px var(--spacing);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  min-height: var(--touch-min);
 }
 
 /* Accent text (no gradient) */
