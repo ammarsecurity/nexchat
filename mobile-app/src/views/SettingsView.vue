@@ -14,6 +14,7 @@ const showAvatarPicker = ref(false)
 const avatarTab = ref('preset')
 const uploadingAvatar = ref(false)
 const avatarFileInput = ref(null)
+const showLogoutConfirm = ref(false)
 const showDeleteConfirm = ref(false)
 const showDeletePassword = ref(false)
 const deletePassword = ref('')
@@ -63,7 +64,12 @@ async function handleAvatarUpload(e) {
   }
 }
 
-function logout() {
+function openLogoutConfirm() {
+  showLogoutConfirm.value = true
+}
+
+function confirmLogout() {
+  showLogoutConfirm.value = false
   auth.logout()
   router.replace('/login')
 }
@@ -172,7 +178,7 @@ async function confirmDelete() {
       <!-- 4. Account Actions -->
       <div class="section-label">الحساب</div>
       <div class="actions-group">
-        <button class="logout-btn" @click="logout">
+        <button class="logout-btn" @click="openLogoutConfirm">
           <LogOut :size="20" />
           <span>تسجيل الخروج</span>
         </button>
@@ -182,6 +188,21 @@ async function confirmDelete() {
         </button>
       </div>
     </div>
+
+    <!-- Logout Confirm Dialog -->
+    <Transition name="modal">
+      <div v-if="showLogoutConfirm" class="modal-overlay delete-overlay" @click.self="showLogoutConfirm = false">
+        <div class="delete-dialog glass-card">
+          <div class="delete-dialog-icon">🚪</div>
+          <h3 class="delete-dialog-title">تسجيل الخروج</h3>
+          <p class="delete-dialog-text">هل أنت متأكد من تسجيل الخروج؟</p>
+          <div class="delete-dialog-actions">
+            <button class="btn-ghost" @click="showLogoutConfirm = false">إلغاء</button>
+            <button class="logout-confirm-btn" @click="confirmLogout">تسجيل الخروج</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Delete Confirm Dialog 1 - Warnings -->
     <Transition name="modal">
@@ -523,6 +544,20 @@ async function confirmDelete() {
   padding: 0;
 }
 .delete-confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.logout-confirm-btn {
+  background: var(--danger);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  cursor: pointer;
+  flex: 1;
+  font-family: 'Cairo';
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 0;
+}
+.logout-confirm-btn:active { opacity: 0.9; }
 .delete-error { color: var(--danger); font-size: 13px; margin-bottom: 8px; }
 
 /* Modal */

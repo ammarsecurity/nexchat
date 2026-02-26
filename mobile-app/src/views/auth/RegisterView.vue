@@ -37,7 +37,7 @@ async function handleRegister() {
 </script>
 
 <template>
-  <div class="register page">
+  <div class="register page auth-pattern">
     <div class="content">
       <img :src="logoImg" alt="NexChat" class="logo-img" />
 
@@ -161,10 +161,19 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 .pass-wrap { position: relative; }
 .pass-wrap .input-field { padding-right: 44px; }
 .show-pass {
-  background: none; border: none; cursor: pointer;
-  font-size: 16px; padding: 0; position: absolute;
-  right: 14px; top: 50%; transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  -webkit-tap-highlight-color: transparent;
 }
+.show-pass:active { opacity: 0.8; }
 
 .gender-grid {
   display: grid;

@@ -18,6 +18,7 @@ const chat = useChatStore()
 const codeInput = ref('')
 const codeError = ref('')
 const copied = ref(false)
+const showLogoutConfirm = ref(false)
 const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
 
 const user = computed(() => auth.user)
@@ -84,7 +85,12 @@ onUnmounted(() => {
   matchingHub.off('CodeError')
 })
 
-function logout() {
+function openLogoutConfirm() {
+  showLogoutConfirm.value = true
+}
+
+function confirmLogout() {
+  showLogoutConfirm.value = false
   matchingHub.stop()
   auth.logout()
   router.replace('/login')
@@ -98,7 +104,7 @@ const genderFilters = [
 </script>
 
 <template>
-  <div class="home page">
+  <div class="home page auth-pattern">
     <!-- Native-style header -->
     <header class="header">
       <div class="user-row" @click="copyCode">
@@ -117,11 +123,26 @@ const genderFilters = [
         <RouterLink to="/settings" class="nav-btn" aria-label="الإعدادات">
           <Settings :size="22" stroke-width="2" />
         </RouterLink>
-        <button class="nav-btn" @click="logout" aria-label="تسجيل الخروج">
+        <button class="nav-btn" @click="openLogoutConfirm" aria-label="تسجيل الخروج">
           <LogOut :size="22" stroke-width="2" />
         </button>
       </div>
     </header>
+
+    <!-- Logout Confirm Dialog -->
+    <Transition name="modal">
+      <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="showLogoutConfirm = false">
+        <div class="logout-dialog glass-card">
+          <div class="logout-dialog-icon">🚪</div>
+          <h3 class="logout-dialog-title">تسجيل الخروج</h3>
+          <p class="logout-dialog-text">هل أنت متأكد من تسجيل الخروج؟</p>
+          <div class="logout-dialog-actions">
+            <button class="btn-ghost" @click="showLogoutConfirm = false">إلغاء</button>
+            <button class="logout-confirm-btn" @click="confirmLogout">تسجيل الخروج</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Online indicator - native list style -->
     <div class="list-section">
@@ -436,4 +457,42 @@ const genderFilters = [
   color: var(--danger);
   margin: 0;
 }
+
+/* Logout confirm dialog */
+.logout-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+}
+.logout-dialog {
+  margin: var(--spacing);
+  max-width: 360px;
+  padding: var(--spacing);
+  width: 100%;
+}
+.logout-dialog-icon { font-size: 48px; text-align: center; margin-bottom: 8px; }
+.logout-dialog-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; text-align: center; }
+.logout-dialog-text { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; text-align: center; }
+.logout-dialog-actions { display: flex; gap: 12px; }
+.logout-confirm-btn {
+  background: var(--danger);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  cursor: pointer;
+  flex: 1;
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 0;
+}
+.logout-confirm-btn:active { opacity: 0.9; }
+
+.modal-enter-active, .modal-leave-active { transition: opacity 0.25s; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
 </style>

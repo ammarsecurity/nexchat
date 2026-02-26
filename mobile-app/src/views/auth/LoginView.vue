@@ -30,7 +30,7 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div class="login page">
+  <div class="login page auth-pattern">
     <div class="login-content">
       <div class="logo-wrap">
         <img :src="logoImg" alt="NexChat" class="logo-img" />
@@ -86,6 +86,8 @@ async function handleLogin() {
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   min-height: 100%;
   overflow-y: auto;
   padding: calc(var(--safe-top) + 24px) var(--spacing) calc(24px + var(--safe-bottom));
@@ -95,7 +97,6 @@ async function handleLogin() {
 .login-content {
   width: 100%;
   max-width: 360px;
-  margin: 0 auto;
 }
 
 .logo-wrap {
@@ -157,11 +158,11 @@ async function handleLogin() {
   justify-content: center;
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--primary);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.input-toggle:active { color: var(--text-secondary); }
+.input-toggle:active { opacity: 0.8; }
 
 .login-err {
   font-size: 13px;
