@@ -1,0 +1,30 @@
+services:
+  nexchat-api:
+    build: .
+    ports:
+      - "4567:4567"
+    volumes:
+      # ربط مجلد تخزين الملفات والصور من السيرفر
+      - /www/wwwroot/nexchat-cloud.xaronhost.com/wwwroot:/app/wwwroot
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:4567
+      - Jwt__Secret=YOUR_JWT_SECRET_KEY
+    restart: unless-stopped
+    # إزالة depends_on إذا لم تستخدم MySQL في Docker
+    # depends_on:
+    #   - mysql
+
+  # قاعدة البيانات MySQL (اختياري - إذا أردت تشغيلها في Docker)
+  # mysql:
+  #   image: mysql:8.0
+  #   environment:
+  #     MYSQL_DATABASE: nexchat
+  #     MYSQL_ROOT_PASSWORD: YOUR_PASSWORD
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+  #   ports:
+  #     - "3306:3306"
+
+# volumes:
+#   mysql_data:

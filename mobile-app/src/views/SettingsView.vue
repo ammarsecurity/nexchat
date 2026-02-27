@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 import logoImg from '../assets/logo.png'
 import api from '../services/api'
 
@@ -116,6 +117,8 @@ async function confirmDelete() {
 
 <template>
   <div class="settings page">
+    <LoaderOverlay :show="uploadingAvatar" text="جاري رفع الصورة..." />
+    <LoaderOverlay :show="deleting" text="جاري حذف الحساب..." />
     <!-- Header -->
     <header class="top-bar">
       <button class="back-btn" @click="router.back()"><ChevronRight :size="22" /></button>
@@ -193,7 +196,7 @@ async function confirmDelete() {
     <Transition name="modal">
       <div v-if="showLogoutConfirm" class="modal-overlay delete-overlay" @click.self="showLogoutConfirm = false">
         <div class="delete-dialog glass-card">
-          <div class="delete-dialog-icon">🚪</div>
+          <div class="delete-dialog-icon"><LogOut :size="48" stroke-width="2" /></div>
           <h3 class="delete-dialog-title">تسجيل الخروج</h3>
           <p class="delete-dialog-text">هل أنت متأكد من تسجيل الخروج؟</p>
           <div class="delete-dialog-actions">
@@ -519,7 +522,14 @@ async function confirmDelete() {
   padding: var(--spacing);
   width: 100%;
 }
-.delete-dialog-icon { font-size: 48px; text-align: center; margin-bottom: 8px; }
+.delete-dialog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
 .delete-dialog-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; text-align: center; }
 .delete-dialog-text { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5; }
 .delete-dialog-list {
@@ -625,6 +635,7 @@ async function confirmDelete() {
   cursor: pointer;
   display: flex;
   flex: 1;
+  font-family: 'Cairo', sans-serif;
   font-size: 14px;
   gap: 6px;
   justify-content: center;
@@ -694,6 +705,7 @@ async function confirmDelete() {
   border-radius: var(--radius-sm);
   color: white;
   cursor: pointer;
+  font-family: 'Cairo', sans-serif;
   font-size: 15px;
   font-weight: 600;
   min-height: var(--touch-min);

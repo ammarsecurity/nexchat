@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import LoaderOverlay from '../../components/LoaderOverlay.vue'
 import logoImg from '../../assets/logo.png'
 
 const router = useRouter()
@@ -31,6 +32,7 @@ async function handleLogin() {
 
 <template>
   <div class="login page auth-pattern">
+    <LoaderOverlay :show="loading" text="جاري تسجيل الدخول..." />
     <div class="login-content">
       <div class="logo-wrap">
         <img :src="logoImg" alt="NexChat" class="logo-img" />

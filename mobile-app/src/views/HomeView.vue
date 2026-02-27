@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { Settings, LogOut, Zap, Globe, User, Users } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useAuthStore } from '../stores/auth'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
@@ -18,6 +19,7 @@ const chat = useChatStore()
 const codeInput = ref('')
 const codeError = ref('')
 const copied = ref(false)
+const loading = ref(false)
 const showLogoutConfirm = ref(false)
 const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
 
@@ -55,10 +57,15 @@ onMounted(async () => {
 })
 
 async function startRandom() {
+  loading.value = true
   matching.setSearching()
-  await matchingHub.invoke('StartSearching', matching.genderFilter)
-  if (matching.status !== 'matched') {
-    router.push('/matching')
+  try {
+    await matchingHub.invoke('StartSearching', matching.genderFilter)
+    if (matching.status !== 'matched') {
+      router.push('/matching')
+    }
+  } finally {
+    loading.value = false
   }
 }
 
@@ -70,7 +77,12 @@ async function connectByCode() {
     codeError.value = 'الكود يجب أن يكون بالشكل NX-XXXX'
     return
   }
-  await matchingHub.invoke('ConnectByCode', code)
+  loading.value = true
+  try {
+    await matchingHub.invoke('ConnectByCode', code)
+  } finally {
+    loading.value = false
+  }
 }
 
 function copyCode() {
@@ -105,6 +117,7 @@ const genderFilters = [
 
 <template>
   <div class="home page auth-pattern">
+    <LoaderOverlay :show="loading" text="جاري الاتصال..." />
     <!-- Native-style header -->
     <header class="header">
       <div class="user-row" @click="copyCode">
@@ -133,7 +146,7 @@ const genderFilters = [
     <Transition name="modal">
       <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="showLogoutConfirm = false">
         <div class="logout-dialog glass-card">
-          <div class="logout-dialog-icon">🚪</div>
+          <div class="logout-dialog-icon"><LogOut :size="48" stroke-width="2" /></div>
           <h3 class="logout-dialog-title">تسجيل الخروج</h3>
           <p class="logout-dialog-text">هل أنت متأكد من تسجيل الخروج؟</p>
           <div class="logout-dialog-actions">
@@ -154,7 +167,7 @@ const genderFilters = [
 
     <!-- Main CTA - native full-width pill -->
     <div class="main-cta-wrap">
-      <button class="main-cta" @click="startRandom">
+      <button class="main-cta" :disabled="loading" @click="startRandom">
         <Zap :size="24" class="cta-icon" />
         <span>ابدأ محادثة عشوائية</span>
       </button>
@@ -194,7 +207,8 @@ const genderFilters = [
       />
       <button
         class="code-submit"
-        :class="{ disabled: !codeInput.trim() }"
+        :class="{ disabled: !codeInput.trim() || loading }"
+        :disabled="loading"
         @click="connectByCode"
       >
         اتصل
@@ -474,7 +488,13 @@ const genderFilters = [
   padding: var(--spacing);
   width: 100%;
 }
-.logout-dialog-icon { font-size: 48px; text-align: center; margin-bottom: 8px; }
+.logout-dialog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
 .logout-dialog-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; text-align: center; }
 .logout-dialog-text { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; text-align: center; }
 .logout-dialog-actions { display: flex; gap: 12px; }

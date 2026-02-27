@@ -5,12 +5,12 @@ using Microsoft.IdentityModel.Tokens;
 using NexChat.API.Hubs;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
-
 var builder = WebApplication.CreateBuilder(args);
 
-// Database
+// Database - MySQL
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    opt.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
 // Services (In-Memory Matching - no Redis needed)
 builder.Services.AddScoped<JwtService>();
@@ -52,20 +52,16 @@ builder.Services.AddAuthorization(opt =>
 
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
-builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
-// CORS
+// CORS - مفتوح للجميع
 builder.Services.AddCors(opt =>
     opt.AddPolicy("NexChatPolicy", policy =>
-        policy.WithOrigins(
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "capacitor://localhost",
-            "ionic://localhost"
-        )
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .AllowCredentials()
+        policy.SetIsOriginAllowed(_ => true)
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials()
     )
 );
 
@@ -91,8 +87,8 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
-    app.MapOpenApi();
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "NexChat API v1"));
 
 app.UseStaticFiles();
 app.UseCors("NexChatPolicy");

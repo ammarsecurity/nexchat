@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Users, UserCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import LoaderOverlay from '../../components/LoaderOverlay.vue'
 import logoImg from '../../assets/logo.png'
 
 const router = useRouter()
@@ -38,6 +39,7 @@ async function handleRegister() {
 
 <template>
   <div class="register page auth-pattern">
+    <LoaderOverlay :show="loading" text="جاري إنشاء الحساب..." />
     <div class="content">
       <img :src="logoImg" alt="NexChat" class="logo-img" />
 

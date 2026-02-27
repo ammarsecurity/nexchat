@@ -12,6 +12,9 @@ const ICE_SERVERS = {
 
 export async function initWebRTC(sessionId, isInitiator, localStream, onRemoteStream, onError) {
   await startHub(webrtcHub)
+  await webrtcHub.invoke('JoinVideoSession', sessionId)
+  // Give the other peer time to join the session group before signaling
+  if (isInitiator) await new Promise(r => setTimeout(r, 800))
 
   peer = new SimplePeer({
     initiator: isInitiator,

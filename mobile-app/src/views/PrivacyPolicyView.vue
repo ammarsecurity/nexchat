@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight } from 'lucide-vue-next'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 
 const router = useRouter()
 const content = ref('')
@@ -24,6 +25,7 @@ onMounted(async () => {
 
 <template>
   <div class="privacy page">
+    <LoaderOverlay :show="loading" text="جاري تحميل سياسة الخصوصية..." />
     <header class="top-bar">
       <button class="back-btn" @click="router.back()"><ChevronRight :size="22" /></button>
       <span class="top-title">سياسة الخصوصية</span>
@@ -31,8 +33,7 @@ onMounted(async () => {
     </header>
 
     <div class="scroll-area">
-      <div v-if="loading" class="loading-text text-muted">جاري التحميل...</div>
-      <div v-else class="policy-content" v-html="content.replace(/\n/g, '<br>')"></div>
+      <div v-if="!loading" class="policy-content" v-html="content.replace(/\n/g, '<br>')"></div>
     </div>
   </div>
 </template>

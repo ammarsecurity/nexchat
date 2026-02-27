@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 import logoImg from '../assets/logo.png'
 
 const router = useRouter()
@@ -78,11 +79,9 @@ function skip() {
 
 <template>
   <div class="onboarding page auth-pattern">
-    <div v-if="loading" class="onboarding-loading">
-      <div class="loader"></div>
-    </div>
+    <LoaderOverlay :show="loading" text="جاري تحميل المحتوى..." />
 
-    <template v-else>
+    <template v-if="!loading">
       <button class="skip-btn" @click="skip">تخطي</button>
 
       <div class="slides-wrap">

@@ -5,6 +5,7 @@ import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-vue
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { initWebRTC, destroyWebRTC, getLocalStream } from '../services/webrtc'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +21,7 @@ const cameraOff = ref(false)
 const callDuration = ref(0)
 const connected = ref(false)
 const error = ref('')
+const initializing = ref(true)
 
 let timerInterval
 
@@ -50,6 +52,8 @@ onMounted(async () => {
     }, 1000)
   } catch (e) {
     error.value = 'لا يمكن الوصول للكاميرا أو الميكروفون'
+  } finally {
+    initializing.value = false
   }
 })
 
@@ -85,6 +89,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 
 <template>
   <div class="video-call page">
+    <LoaderOverlay :show="initializing" text="جاري تجهيز المكالمة..." />
     <!-- Remote Video (Full Screen) -->
     <video
       ref="remoteVideo"

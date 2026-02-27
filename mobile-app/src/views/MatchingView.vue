@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Target, Lightbulb, X } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
 import { matchingHub } from '../services/signalr'
@@ -11,6 +12,7 @@ const router = useRouter()
 const matching = useMatchingStore()
 const chat = useChatStore()
 const dots = ref('.')
+const cancelling = ref(false)
 
 let dotsInterval
 
@@ -35,14 +37,20 @@ onUnmounted(() => {
 })
 
 async function cancel() {
-  await matchingHub.invoke('CancelSearching')
-  matching.setIdle()
-  router.replace('/home')
+  cancelling.value = true
+  try {
+    await matchingHub.invoke('CancelSearching')
+    matching.setIdle()
+    router.replace('/home')
+  } finally {
+    cancelling.value = false
+  }
 }
 </script>
 
 <template>
   <div class="matching page">
+    <LoaderOverlay :show="cancelling" text="جاري الإلغاء..." />
     <div class="chat-pattern" aria-hidden="true"></div>
     <div class="content">
       <!-- Animated Search Rings -->
@@ -81,7 +89,7 @@ async function cancel() {
         </ul>
       </div>
 
-      <button class="btn-ghost cancel-btn" @click="cancel">
+      <button class="btn-ghost cancel-btn" :disabled="cancelling" @click="cancel">
         <X :size="18" /> إلغاء البحث
       </button>
 

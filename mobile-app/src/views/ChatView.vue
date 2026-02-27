@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2 } from 'lucide-vue-next'
+import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { chatHub, startHub } from '../services/signalr'
+import { HubConnectionState } from '@microsoft/signalr'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,10 +22,14 @@ const showReport = ref(false)
 const reportReason = ref('')
 const incomingCall = ref(false)
 const callDeclined = ref(false)
+const showVideoConfirm = ref(false)
+const callingOut = ref(false)
 const showEmojiPicker = ref(false)
 const activeEmojiTab = ref(0)
 const imageInput = ref(null)
 const uploadingImage = ref(false)
+const loading = ref(false)
+const imageModalUrl = ref(null)
 let timerInterval
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
@@ -57,7 +63,21 @@ async function handleImageUpload(e) {
     })
     if (!res.ok) throw new Error()
     const { url } = await res.json()
-    await chatHub.invoke('SendMessage', sessionId, url, 'image')
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    chat.addMessage({
+      tempId,
+      senderId: auth.user?.id,
+      content: url,
+      type: 'image',
+      sentAt: new Date(),
+      status: 'pending'
+    })
+    scrollToBottom()
+    try {
+      await chatHub.invoke('SendMessage', sessionId, url, 'image')
+    } catch {
+      chat.updateMessage(tempId, { status: 'failed' })
+    }
   } finally {
     uploadingImage.value = false
   }
@@ -79,17 +99,40 @@ const partnerAvatarIsEmoji = computed(() =>
   partner.value?.avatar && !partnerAvatarIsImage.value
 )
 
+function normalizeServerMsg(msg) {
+  return {
+    id: msg.id ?? msg.Id,
+    senderId: msg.senderId ?? msg.SenderId,
+    content: msg.content ?? msg.Content,
+    type: msg.type ?? msg.Type ?? 'text',
+    sentAt: msg.sentAt ?? msg.SentAt
+  }
+}
+
 function formatTime(sec) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0')
   const s = (sec % 60).toString().padStart(2, '0')
   return `${m}:${s}`
 }
 
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible' && !sessionEnded.value && chatHub.state === HubConnectionState.Connected) {
+    chatHub.invoke('JoinSession', sessionId).catch(() => {})
+  }
+}
+
 onMounted(async () => {
+  loading.value = true
   await startHub(chatHub)
 
   chatHub.on('ReceiveMessage', (msg) => {
-    chat.addMessage(msg)
+    const senderId = msg.senderId ?? msg.SenderId
+    const myId = auth.user?.id
+    if (myId && String(senderId) === String(myId)) {
+      chat.updatePendingMessage(normalizeServerMsg(msg))
+    } else {
+      chat.addMessage({ ...normalizeServerMsg(msg), status: 'sent' })
+    }
     scrollToBottom()
   })
 
@@ -102,10 +145,14 @@ onMounted(async () => {
     chat.addMessage({ id: Date.now(), type: 'system', content: '🔴 انتهت المحادثة', sentAt: new Date() })
   })
 
-  chatHub.on('SessionJoined', ({ partner: p, messages: msgs }) => {
+  chatHub.on('SessionJoined', (data) => {
+    const p = data.partner ?? data.Partner
+    const msgs = data.messages ?? data.Messages ?? []
     if (!chat.partner) chat.partner = p
-    if (msgs?.length) {
-      msgs.forEach(m => chat.addMessage(m))
+    if (!chat.session && (data.id ?? data.Id)) chat.$patch({ session: data.id ?? data.Id })
+    // إضافة الرسائل فقط عند الانضمام الأول (لا يوجد رسائل بعد) لتجنب التكرار عند إعادة الاتصال
+    if (msgs?.length && chat.messages.length === 0) {
+      msgs.forEach(m => chat.addMessage({ ...normalizeServerMsg(m), status: 'sent' }))
       scrollToBottom()
     }
   })
@@ -120,15 +167,31 @@ onMounted(async () => {
   })
 
   chatHub.on('VideoCallAccepted', () => {
+    callingOut.value = false
     router.push({ path: `/video/${sessionId}`, state: { initiator: true } })
   })
 
   chatHub.on('VideoCallDeclined', () => {
+    callingOut.value = false
     callDeclined.value = true
     setTimeout(() => { callDeclined.value = false }, 3000)
   })
 
-  await chatHub.invoke('JoinSession', sessionId)
+  try {
+    await chatHub.invoke('JoinSession', sessionId)
+  } finally {
+    loading.value = false
+  }
+
+  chatHub.onreconnected(async () => {
+    if (!sessionEnded.value) {
+      try {
+        await chatHub.invoke('JoinSession', sessionId)
+      } catch {}
+    }
+  })
+
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   timerInterval = setInterval(() => {
     if (!sessionEnded.value) timerSeconds.value++
@@ -137,6 +200,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(timerInterval)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   chatHub.off('ReceiveMessage')
   chatHub.off('UserTyping')
   chatHub.off('UserStoppedTyping')
@@ -174,35 +238,85 @@ async function sendMessage() {
     typingTimeout = null
     await chatHub.invoke('StopTyping', sessionId)
   }
-  await chatHub.invoke('SendMessage', sessionId, text, 'text')
+  const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  chat.addMessage({
+    tempId,
+    senderId: auth.user?.id,
+    content: text,
+    type: 'text',
+    sentAt: new Date(),
+    status: 'pending'
+  })
+  scrollToBottom()
+  try {
+    await chatHub.invoke('SendMessage', sessionId, text, 'text')
+  } catch {
+    chat.updateMessage(tempId, { status: 'failed' })
+  }
+}
+
+async function retryMessage(msg) {
+  if (msg.status !== 'failed') return
+  const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  chat.updateMessage(msg.tempId, { tempId, status: 'pending' })
+  try {
+    await chatHub.invoke('SendMessage', sessionId, msg.content, msg.type || 'text')
+  } catch {
+    chat.updateMessage(tempId, { status: 'failed' })
+  }
 }
 
 async function leaveSession() {
+  loading.value = true
   clearInterval(timerInterval)
-  await chatHub.invoke('LeaveSession', sessionId)
-  chat.clearSession()
-  router.replace('/home')
+  try {
+    await chatHub.invoke('LeaveSession', sessionId)
+    chat.clearSession()
+    router.replace('/home')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function nextPerson() {
+  loading.value = true
   clearInterval(timerInterval)
-  await chatHub.invoke('LeaveSession', sessionId)
-  chat.clearSession()
-  router.replace('/matching')
-  // Restart search
-  const { matchingHub: mHub, startHub: sHub } = await import('../services/signalr')
-  await sHub(mHub)
-  await mHub.invoke('StartSearching', 'all')
+  try {
+    await chatHub.invoke('LeaveSession', sessionId)
+    chat.clearSession()
+    router.replace('/matching')
+    const { matchingHub: mHub, startHub: sHub } = await import('../services/signalr')
+    await sHub(mHub)
+    await mHub.invoke('StartSearching', 'all')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function submitReport() {
   if (!reportReason.value.trim()) return
-  await chatHub.invoke('ReportUser', sessionId, reportReason.value)
-  reportReason.value = ''
+  loading.value = true
+  try {
+    await chatHub.invoke('ReportUser', sessionId, reportReason.value)
+    reportReason.value = ''
+    showReport.value = false
+  } finally {
+    loading.value = false
+  }
 }
 
-async function startVideo() {
+function openVideoConfirm() {
+  showVideoConfirm.value = true
+}
+
+async function confirmStartVideo() {
+  showVideoConfirm.value = false
+  callingOut.value = true
   await chatHub.invoke('RequestVideoCall', sessionId)
+}
+
+function cancelVideoConfirm() {
+  showVideoConfirm.value = false
 }
 
 async function acceptCall() {
@@ -217,12 +331,17 @@ async function declineCall() {
 }
 
 function openImage(url) {
-  window.open(url, '_blank')
+  imageModalUrl.value = url
+}
+
+function closeImageModal() {
+  imageModalUrl.value = null
 }
 </script>
 
 <template>
   <div class="chat-view page">
+    <LoaderOverlay :show="loading" text="جاري التحميل..." />
     <!-- Header -->
     <header class="chat-header glass-card">
       <div class="partner-info">
@@ -244,7 +363,7 @@ function openImage(url) {
       </div>
 
       <div class="header-actions">
-        <button class="icon-btn" @click="startVideo" title="فيديو كول"><Video :size="20" /></button>
+        <button class="icon-btn" @click="openVideoConfirm" title="فيديو كول"><Video :size="20" /></button>
         <button class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
         <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
         <button class="icon-btn danger" @click="leaveSession" title="إنهاء"><X :size="20" /></button>
@@ -270,9 +389,55 @@ function openImage(url) {
       </div>
     </Transition>
 
+    <!-- Video Call Confirmation -->
+    <Transition name="fade">
+      <div v-if="showVideoConfirm" class="call-overlay">
+        <div class="call-popup glass-card">
+          <div class="call-popup-avatar" :style="partnerAvatarIsImage ? { padding: 0, overflow: 'hidden' } : { background: partnerColor }">
+            <img v-if="partnerAvatarIsImage" :src="partner.avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />
+            <span v-else-if="partnerAvatarIsEmoji" style="font-size:32px">{{ partner.avatar }}</span>
+            <span v-else>{{ partnerLetter }}</span>
+          </div>
+          <div class="call-popup-name">{{ partner?.name }}</div>
+          <div class="call-popup-label">طلب مكالمة فيديو مع {{ partner?.name }}؟</div>
+          <div class="call-popup-actions">
+            <button class="call-btn decline" @click="cancelVideoConfirm"><X :size="18" /> إلغاء</button>
+            <button class="call-btn accept" @click="confirmStartVideo"><Video :size="18" /> طلب</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Calling Out Loader -->
+    <Transition name="fade">
+      <div v-if="callingOut" class="call-overlay">
+        <div class="call-popup glass-card calling-popup">
+          <div class="calling-loader">
+            <Loader2 :size="48" class="spin" />
+          </div>
+          <div class="call-popup-name">{{ partner?.name }}</div>
+          <div class="call-popup-label">جاري الاتصال...</div>
+          <div class="calling-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <button class="call-btn decline calling-cancel" @click="callingOut = false">
+            <X :size="18" /> إلغاء الطلب
+          </button>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Call Declined Toast -->
     <Transition name="fade">
       <div v-if="callDeclined" class="declined-toast">رفض {{ partner?.name }} المكالمة</div>
+    </Transition>
+
+    <!-- Image Modal -->
+    <Transition name="fade">
+      <div v-if="imageModalUrl" class="image-modal-overlay" @click.self="closeImageModal">
+        <button class="image-modal-close" @click="closeImageModal" aria-label="إغلاق"><X :size="24" /></button>
+        <img :src="imageModalUrl" class="image-modal-img" alt="" @click.stop />
+      </div>
     </Transition>
 
     <!-- Report Sheet -->
@@ -295,7 +460,7 @@ function openImage(url) {
 
       <div
         v-for="msg in messages"
-        :key="msg.id"
+        :key="msg.tempId || msg.id"
         :class="['message-wrap', msg.type === 'system' ? 'system' : msg.senderId === currentUserId ? 'mine' : 'theirs']"
       >
         <div v-if="msg.type === 'system'" class="system-msg">{{ msg.content }}</div>
@@ -303,8 +468,18 @@ function openImage(url) {
           <img :src="msg.content" class="chat-image" @click="openImage(msg.content)" />
         </div>
         <div v-else class="bubble">{{ msg.content }}</div>
-        <div v-if="msg.type !== 'system'" class="msg-time text-muted">
-          {{ new Date(msg.sentAt).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }) }}
+        <div v-if="msg.type !== 'system'" class="msg-meta">
+          <span class="msg-time text-muted">
+            {{ new Date(msg.sentAt).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }) }}
+          </span>
+          <span v-if="msg.senderId === currentUserId" class="msg-status">
+            <Clock v-if="msg.status === 'pending'" :size="14" class="status-pending" />
+            <Check v-else-if="msg.status === 'sent' || !msg.status" :size="14" class="status-sent" />
+            <span v-else-if="msg.status === 'failed'" class="status-failed-wrap">
+              <AlertCircle :size="14" class="status-failed" />
+              <button class="retry-btn" @click="retryMessage(msg)"><RotateCcw :size="12" /> إعادة</button>
+            </span>
+          </span>
         </div>
       </div>
 
@@ -469,7 +644,37 @@ function openImage(url) {
   border-bottom-left-radius: 4px;
 }
 
-.msg-time { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
+.msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.msg-time { color: var(--text-muted); font-size: 11px; }
+.msg-status { display: inline-flex; align-items: center; }
+.status-pending { color: var(--text-muted); opacity: 0.8; }
+.status-sent { color: var(--primary); }
+.status-failed-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.status-failed { color: var(--danger); }
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255,101,132,0.2);
+  border: 1px solid rgba(255,101,132,0.4);
+  border-radius: 6px;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 10px;
+  font-family: 'Cairo', sans-serif;
+  padding: 2px 6px;
+  -webkit-tap-highlight-color: transparent;
+}
+.retry-btn:active { opacity: 0.9; }
 
 .system-msg {
   background: rgba(255,255,255,0.05);
@@ -574,6 +779,7 @@ function openImage(url) {
   color: var(--primary);
   cursor: pointer;
   display: flex;
+  font-family: 'Cairo', sans-serif;
   font-size: 14px;
   font-weight: 600;
   gap: 4px;
@@ -649,6 +855,37 @@ function openImage(url) {
 .call-btn.accept:active { opacity: 0.9; }
 .call-btn.decline { background: rgba(255,101,132,0.2); color: var(--danger); border: 1px solid rgba(255,101,132,0.3); }
 .call-btn.decline:active { opacity: 0.9; }
+
+.calling-popup { gap: 16px; }
+.calling-cancel {
+  width: 100%;
+  margin-top: 8px;
+  box-shadow: 0 2px 12px rgba(255,101,132,0.25);
+}
+.calling-loader {
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.calling-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.calling-dots span {
+  background: rgba(255,255,255,0.4);
+  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.calling-dots span:nth-child(2) { animation-delay: 0.2s; }
+.calling-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
 
 .declined-toast {
   position: absolute;
@@ -760,6 +997,43 @@ function openImage(url) {
   transition: 0.2s;
 }
 .chat-image:hover { opacity: 0.9; transform: scale(1.02); }
+
+/* Image Modal */
+.image-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  -webkit-tap-highlight-color: transparent;
+}
+.image-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: background 0.2s;
+}
+.image-modal-close:active { background: rgba(255, 255, 255, 0.25); }
+.image-modal-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
 
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.2s ease; }
 .slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(10px); }

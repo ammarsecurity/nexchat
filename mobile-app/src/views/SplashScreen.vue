@@ -1,11 +1,13 @@
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
 import logoImg from '../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
+const loading = ref(false)
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 const ONBOARDING_SEEN = 'nexchat_onboarding_seen'
@@ -36,12 +38,17 @@ async function goNext() {
 }
 
 onMounted(() => {
-  setTimeout(goNext, 2200)
+  setTimeout(async () => {
+    loading.value = true
+    await goNext()
+    loading.value = false
+  }, 2200)
 })
 </script>
 
 <template>
   <div class="splash page">
+    <LoaderOverlay :show="loading" text="جاري التحميل..." />
     <!-- Animated background orbs -->
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
