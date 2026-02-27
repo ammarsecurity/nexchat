@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
 const props = defineProps({
   placement: { type: String, required: true }
@@ -43,7 +44,7 @@ watch(() => props.placement, fetchBanners)
         :class="{ clickable: b.link }"
         @click="b.link && openLink(b.link)"
       >
-        <img :src="b.imageUrl" :alt="''" loading="lazy" />
+        <img :src="ensureAbsoluteUrl(b.imageUrl)" :alt="''" loading="lazy" referrerpolicy="no-referrer" />
       </div>
     </div>
   </div>

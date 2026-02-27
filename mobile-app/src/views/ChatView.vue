@@ -7,6 +7,7 @@ import { useChatStore } from '../stores/chat'
 import { chatHub, startHub } from '../services/signalr'
 import { HubConnectionState } from '@microsoft/signalr'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -346,7 +347,7 @@ function closeImageModal() {
     <header class="chat-header glass-card">
       <div class="partner-info">
         <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: partnerColor }">
-          <img v-if="partnerAvatarIsImage" :src="partner.avatar" class="partner-avatar-img" />
+          <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner.avatar)" class="partner-avatar-img" referrerpolicy="no-referrer" />
           <span v-else-if="partnerAvatarIsEmoji">{{ partner.avatar }}</span>
           <span v-else>{{ partnerLetter }}</span>
         </div>
@@ -375,7 +376,7 @@ function closeImageModal() {
       <div v-if="incomingCall" class="call-overlay">
         <div class="call-popup glass-card">
           <div class="call-popup-avatar" :style="partnerAvatarIsImage ? { padding: 0, overflow: 'hidden' } : { background: partnerColor }">
-            <img v-if="partnerAvatarIsImage" :src="partner.avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />
+            <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner.avatar)" style="width:100%;height:100%;object-fit:cover;border-radius:50%" referrerpolicy="no-referrer" />
             <span v-else-if="partnerAvatarIsEmoji" style="font-size:32px">{{ partner.avatar }}</span>
             <span v-else>{{ partnerLetter }}</span>
           </div>
@@ -394,7 +395,7 @@ function closeImageModal() {
       <div v-if="showVideoConfirm" class="call-overlay">
         <div class="call-popup glass-card">
           <div class="call-popup-avatar" :style="partnerAvatarIsImage ? { padding: 0, overflow: 'hidden' } : { background: partnerColor }">
-            <img v-if="partnerAvatarIsImage" :src="partner.avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />
+            <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner.avatar)" style="width:100%;height:100%;object-fit:cover;border-radius:50%" referrerpolicy="no-referrer" />
             <span v-else-if="partnerAvatarIsEmoji" style="font-size:32px">{{ partner.avatar }}</span>
             <span v-else>{{ partnerLetter }}</span>
           </div>
@@ -436,7 +437,7 @@ function closeImageModal() {
     <Transition name="fade">
       <div v-if="imageModalUrl" class="image-modal-overlay" @click.self="closeImageModal">
         <button class="image-modal-close" @click="closeImageModal" aria-label="إغلاق"><X :size="24" /></button>
-        <img :src="imageModalUrl" class="image-modal-img" alt="" @click.stop />
+        <img :src="ensureAbsoluteUrl(imageModalUrl)" class="image-modal-img" alt="" @click.stop referrerpolicy="no-referrer" />
       </div>
     </Transition>
 
@@ -465,7 +466,7 @@ function closeImageModal() {
       >
         <div v-if="msg.type === 'system'" class="system-msg">{{ msg.content }}</div>
         <div v-else-if="msg.type === 'image'" class="bubble image-bubble">
-          <img :src="msg.content" class="chat-image" @click="openImage(msg.content)" />
+          <img :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
         </div>
         <div v-else class="bubble">{{ msg.content }}</div>
         <div v-if="msg.type !== 'system'" class="msg-meta">

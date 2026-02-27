@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import logoImg from '../assets/logo.png'
 import api from '../services/api'
+import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -132,7 +133,7 @@ async function confirmDelete() {
       <div class="profile-card glass-card">
         <div class="profile-card-inner">
           <div class="avatar-wrap" @click="showAvatarPicker = true">
-            <img v-if="isImageUrl(auth.avatar)" :src="auth.avatar" class="avatar-img" />
+            <img v-if="isImageUrl(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
             <div v-else-if="isEmoji(auth.avatar)" class="avatar-circle" :style="{ background: auth.avatarColor }">
               <span class="av-emoji">{{ auth.avatar }}</span>
             </div>
@@ -285,7 +286,7 @@ async function confirmDelete() {
           <!-- Upload -->
           <div v-else class="upload-tab">
             <div class="upload-preview">
-              <img v-if="isImageUrl(auth.avatar)" :src="auth.avatar" class="prev-img" />
+              <img v-if="isImageUrl(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="prev-img" referrerpolicy="no-referrer" />
               <div v-else class="prev-empty">
                 <Image :size="44" style="color: var(--text-muted)" />
                 <span class="text-muted text-sm">لا توجد صورة</span>

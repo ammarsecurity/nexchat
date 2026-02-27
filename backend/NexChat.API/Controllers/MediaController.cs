@@ -6,7 +6,7 @@ namespace NexChat.API.Controllers;
 [ApiController]
 [Route("api/media")]
 [Authorize]
-public class MediaController(IWebHostEnvironment env) : ControllerBase
+public class MediaController(IWebHostEnvironment env, IConfiguration config) : ControllerBase
 {
     private static readonly string[] AllowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
@@ -32,7 +32,10 @@ public class MediaController(IWebHostEnvironment env) : ControllerBase
         await using var stream = new FileStream(filePath, FileMode.Create);
         await file.CopyToAsync(stream);
 
-        var url = $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+        var baseUrl = config["Media:BaseUrl"];
+        var url = !string.IsNullOrEmpty(baseUrl)
+            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
+            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
         return Ok(new { url });
     }
 }

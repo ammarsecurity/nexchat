@@ -10,6 +10,9 @@ import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
 import { matchingHub, startHub } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
+import { ensureAbsoluteUrl } from '../utils/imageUrl'
+
+const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -122,7 +125,7 @@ const genderFilters = [
     <header class="header">
       <div class="user-row" @click="copyCode">
         <div class="avatar avatar-sm" :style="{ background: auth.avatarColor }">
-          <img v-if="auth.avatar && auth.avatar.startsWith('http')" :src="auth.avatar" class="avatar-img" />
+          <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
           <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
           <span v-else>{{ avatarLetter }}</span>
         </div>

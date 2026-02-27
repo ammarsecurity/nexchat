@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using NexChat.API.Hubs;
@@ -66,6 +67,12 @@ builder.Services.AddCors(opt =>
 );
 
 var app = builder.Build();
+
+// Forwarded headers (عند تشغيل خلف nginx/aaPanel)
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost
+});
 
 // Auto migrate + seed admin
 using (var scope = app.Services.CreateScope())
