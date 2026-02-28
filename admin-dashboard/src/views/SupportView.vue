@@ -157,7 +157,7 @@ const filteredMessages = computed(() => {
 
 <template>
   <div class="support-page">
-    <div class="d-flex align-center justify-space-between mb-4">
+    <div class="page-header mb-4">
       <div>
         <div class="text-h5 font-weight-bold">دردشة الدعم</div>
         <div class="text-body-2 text-medium-emphasis">
@@ -330,6 +330,14 @@ const filteredMessages = computed(() => {
 .support-page {
   height: calc(100vh - 130px);
   min-height: 400px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
 .messages-layout {

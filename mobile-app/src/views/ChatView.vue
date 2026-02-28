@@ -623,22 +623,27 @@ function closeImageModal() {
 .typing-status { margin-top: 2px; min-height: 16px; }
 
 .header-actions { display: flex; gap: 8px; }
-.icon-btn {
+.chat-header .icon-btn {
   align-items: center;
-  background: var(--bg-card);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   height: var(--touch-min);
   justify-content: center;
   min-width: var(--touch-min);
   padding: 0;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
-.icon-btn:active { background: var(--bg-card-hover); }
-.icon-btn.danger { background: rgba(255,101,132,0.15); color: var(--danger); }
+.chat-header .icon-btn:active { background: var(--bg-card-hover); }
+.chat-header .icon-btn.danger {
+  background: rgba(255, 101, 132, 0.15);
+  color: var(--danger);
+  border-color: rgba(255, 101, 132, 0.25);
+}
 
 .report-sheet {
   margin: 8px 16px;

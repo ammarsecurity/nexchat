@@ -156,6 +156,28 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext) :
         return Ok(result);
     }
 
+    [HttpGet("support/avatar")]
+    public async Task<ActionResult<object>> GetSupportAvatar()
+    {
+        var supportUser = await db.Users
+            .Where(u => u.UniqueCode == "NX-SUPPORT")
+            .Select(u => new { u.Avatar })
+            .FirstOrDefaultAsync();
+        if (supportUser == null)
+            return Ok(new { avatar = (string?)null });
+        return Ok(new { avatar = supportUser.Avatar });
+    }
+
+    [HttpPut("support/avatar")]
+    public async Task<IActionResult> UpdateSupportAvatar([FromBody] UpdateSupportAvatarDto dto)
+    {
+        var avatar = dto.Avatar?.Length > 500 ? dto.Avatar[..500] : dto.Avatar;
+        var rows = await db.Users
+            .Where(u => u.UniqueCode == "NX-SUPPORT")
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.Avatar, avatar));
+        return rows > 0 ? Ok() : NotFound(new { message = "مستخدم الدعم غير موجود" });
+    }
+
     [HttpGet("support/sessions")]
     public async Task<ActionResult<PagedResult<AdminSessionDto>>> GetSupportSessions(
         [FromQuery] int page = 1,

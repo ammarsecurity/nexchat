@@ -21,6 +21,7 @@ const routes = [
       { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },
       { path: 'social', component: () => import('../views/SocialLinksView.vue') },
       { path: 'onboarding', component: () => import('../views/OnboardingView.vue') },
+      { path: 'settings', component: () => import('../views/SettingsView.vue') },
     ]
   }
 ]

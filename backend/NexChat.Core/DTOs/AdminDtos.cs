@@ -70,3 +70,5 @@ public record ReorderBannersDto(IEnumerable<Guid> Ids);
 public record UpdateSiteContentDto(string Content);
 
 public record SupportSendDto(Guid SessionId, string Content);
+
+public record UpdateSupportAvatarDto(string? Avatar);

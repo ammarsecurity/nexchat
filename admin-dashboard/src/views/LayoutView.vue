@@ -40,6 +40,7 @@ const navItems = [
   { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
   { title: 'التواصل الاجتماعي', icon: 'mdi-share-variant', to: '/social' },
   { title: 'الصفحات الاسترشادية', icon: 'mdi-book-open-page-variant', to: '/onboarding' },
+  { title: 'الإعدادات', icon: 'mdi-cog', to: '/settings' },
 ]
 
 const currentTitle = computed(() => {
