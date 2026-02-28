@@ -1,21 +1,20 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-vue-next'
-import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
-import { initWebRTC, destroyWebRTC, getLocalStream } from '../services/webrtc'
+import { joinLiveKitRoom, leaveLiveKitRoom } from '../services/livekit'
+import { requestMediaPermissions } from '../utils/mediaPermissions'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
 const chat = useChatStore()
 
 const sessionId = route.params.sessionId
 const localVideo = ref(null)
 const remoteVideo = ref(null)
-const localStream = ref(null)
+const roomRef = ref(null)
 const muted = ref(false)
 const cameraOff = ref(false)
 const callDuration = ref(0)
@@ -27,31 +26,58 @@ let timerInterval
 
 onMounted(async () => {
   try {
-    localStream.value = await getLocalStream(true, true)
-    if (localVideo.value)
-      localVideo.value.srcObject = localStream.value
+    await requestMediaPermissions()
+    const remoteStream = new MediaStream()
 
-    const isInitiator = history.state?.initiator ?? true
-    await initWebRTC(
+    roomRef.value = await joinLiveKitRoom(
       sessionId,
-      isInitiator,
-      localStream.value,
-      (stream) => {
-        if (remoteVideo.value) {
-          remoteVideo.value.srcObject = stream
-          connected.value = true
-        }
+      (track) => {
+        remoteStream.addTrack(track.mediaStreamTrack)
+        if (remoteVideo.value) remoteVideo.value.srcObject = remoteStream
+        connected.value = true
       },
-      (err) => {
-        error.value = 'خطأ في الاتصال: ' + err.message
+      () => {},
+      () => {
+        connected.value = false
+      },
+      () => {
+        router.back()
+      },
+      (localTrack) => {
+        nextTick().then(() => {
+          if (localVideo.value && localTrack) {
+            localTrack.attach(localVideo.value)
+            localVideo.value.play?.().catch(() => {})
+          }
+        })
+      },
+      (e) => {
+        error.value = e?.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
       }
     )
+
+    await nextTick()
+    const pubsMap = roomRef.value?.localParticipant?.trackPublications
+    const pubs = pubsMap ? Array.from(pubsMap.values()) : []
+    for (const pub of pubs) {
+      if (pub?.track?.kind === 'video' && localVideo.value) {
+        pub.track.attach(localVideo.value)
+        localVideo.value.play?.().catch(() => {})
+        break
+      }
+    }
 
     timerInterval = setInterval(() => {
       if (connected.value) callDuration.value++
     }, 1000)
   } catch (e) {
-    error.value = 'لا يمكن الوصول للكاميرا أو الميكروفون'
+    if (e.name === 'NotAllowedError') {
+      error.value = 'يجب السماح بالوصول للكاميرا والميكروفون'
+    } else if (e.name === 'NotFoundError') {
+      error.value = 'لم يتم العثور على كاميرا أو ميكروفون'
+    } else {
+      error.value = e.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
+    }
   } finally {
     initializing.value = false
   }
@@ -59,18 +85,17 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(timerInterval)
-  destroyWebRTC()
-  localStream.value?.getTracks().forEach(t => t.stop())
+  leaveLiveKitRoom()
 })
 
 function toggleMute() {
   muted.value = !muted.value
-  localStream.value?.getAudioTracks().forEach(t => { t.enabled = !muted.value })
+  roomRef.value?.localParticipant?.setMicrophoneEnabled(!muted.value)
 }
 
 function toggleCamera() {
   cameraOff.value = !cameraOff.value
-  localStream.value?.getVideoTracks().forEach(t => { t.enabled = !cameraOff.value })
+  roomRef.value?.localParticipant?.setCameraEnabled(!cameraOff.value)
 }
 
 function endCall() {

@@ -6,7 +6,7 @@ import BannerStrip from '../components/BannerStrip.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
-import { matchingHub } from '../services/signalr'
+import { matchingHub, ensureConnected } from '../services/signalr'
 
 const router = useRouter()
 const matching = useMatchingStore()
@@ -39,6 +39,7 @@ onUnmounted(() => {
 async function cancel() {
   cancelling.value = true
   try {
+    await ensureConnected(matchingHub)
     await matchingHub.invoke('CancelSearching')
     matching.setIdle()
     router.replace('/home')

@@ -53,7 +53,7 @@ onMounted(fetchReports)
 
 <template>
   <div>
-    <div class="d-flex align-center justify-space-between mb-6">
+    <div class="d-flex flex-column flex-sm-row align-start align-sm-center justify-space-between mb-4 mb-sm-6 gap-3">
       <div>
         <div class="text-h5 font-weight-bold">البلاغات</div>
         <div class="text-body-2 text-medium-emphasis">{{ total }} بلاغ</div>
@@ -64,11 +64,12 @@ onMounted(fetchReports)
         color="primary"
         hide-details
         density="compact"
+        class="flex-shrink-0"
         @update:model-value="fetchReports"
       />
     </div>
 
-    <v-card rounded="xl" elevation="0" class="pa-4">
+    <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
       <v-data-table
         :headers="headers"
         :items="reports"

@@ -65,14 +65,14 @@ onMounted(fetchUsers)
 
 <template>
   <div>
-    <div class="d-flex align-center justify-space-between mb-6">
+    <div class="d-flex flex-column flex-sm-row align-start align-sm-center justify-space-between mb-4 mb-sm-6 gap-2">
       <div>
         <div class="text-h5 font-weight-bold">المستخدمين</div>
         <div class="text-body-2 text-medium-emphasis">إجمالي {{ total.toLocaleString() }} مستخدم</div>
       </div>
     </div>
 
-    <v-card rounded="xl" elevation="0" class="pa-4">
+    <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
       <v-text-field
         v-model="search"
         label="بحث بالاسم أو الكود..."

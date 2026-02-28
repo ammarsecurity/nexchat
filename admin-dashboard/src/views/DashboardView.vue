@@ -106,33 +106,36 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div>
-    <div class="mb-6">
-      <div class="text-h5 font-weight-bold">مرحباً بك 👋</div>
+  <div class="dashboard-view">
+    <div class="mb-4 mb-sm-6">
+      <div class="text-h5 font-weight-bold dashboard-title">مرحباً بك 👋</div>
       <div class="text-body-2 text-medium-emphasis">هنا ملخص نشاط NexChat اليوم</div>
     </div>
 
     <!-- Stats Grid -->
-    <v-row class="mb-6">
+    <v-row class="mb-4 mb-sm-6" dense>
       <v-col
         v-for="card in statCards"
         :key="card.key"
-        cols="12" sm="6" md="4"
+        cols="6"
+        sm="6"
+        md="4"
+        class="pa-2 pa-sm-3"
       >
-        <v-card class="stat-card pa-5" rounded="xl" elevation="0">
-          <div class="d-flex align-center justify-space-between mb-4">
-            <div>
-              <div class="text-body-2 text-medium-emphasis mb-1">{{ card.label }}</div>
-              <div class="text-h4 font-weight-black">
-                <v-skeleton-loader v-if="loading" type="text" width="80px" />
+        <v-card class="stat-card pa-3 pa-sm-5" rounded="xl" elevation="0">
+          <div class="d-flex align-center justify-space-between mb-2 mb-sm-4">
+            <div class="flex-grow-1 min-width-0">
+              <div class="text-body-2 text-medium-emphasis mb-1 stat-label">{{ card.label }}</div>
+              <div class="text-h5 font-weight-black stat-value">
+                <v-skeleton-loader v-if="loading" type="text" width="60px" class="d-inline-block" />
                 <template v-else>{{ stats?.[card.key]?.toLocaleString() ?? '-' }}</template>
               </div>
             </div>
             <div
-              class="icon-bubble"
+              class="icon-bubble flex-shrink-0"
               :style="{ background: `${card.color}20`, color: card.color }"
             >
-              <v-icon :icon="card.icon" size="28" />
+              <v-icon :icon="card.icon" size="24" class="stat-icon" />
             </div>
           </div>
           <div class="trend-bar" :style="{ background: card.color }"></div>
@@ -141,16 +144,16 @@ onMounted(async () => {
     </v-row>
 
     <!-- Chart -->
-    <v-card class="pa-6" rounded="xl" elevation="0">
-      <div class="d-flex align-center justify-space-between mb-4">
+    <v-card class="pa-4 pa-sm-6 chart-card" rounded="xl" elevation="0">
+      <div class="d-flex flex-column flex-sm-row align-start align-sm-center justify-space-between mb-4 gap-2">
         <div>
           <div class="text-h6 font-weight-bold">نشاط الأسبوع</div>
           <div class="text-body-2 text-medium-emphasis">الجلسات والمستخدمين الجدد</div>
         </div>
-        <v-chip color="primary" variant="tonal" size="small">آخر 7 أيام</v-chip>
+        <v-chip color="primary" variant="tonal" size="small" class="align-self-start align-self-sm-center">آخر 7 أيام</v-chip>
       </div>
-      <div style="height: 280px">
-        <div v-if="chartLoading" class="d-flex align-center justify-center fill-height" style="height:280px">
+      <div class="chart-container">
+        <div v-if="chartLoading" class="d-flex align-center justify-center chart-loading">
           <v-progress-circular indeterminate color="primary" />
         </div>
         <Line v-else :data="chartData" :options="chartOptions" />
@@ -160,6 +163,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.dashboard-view {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 .stat-card {
   background: rgba(255,255,255,0.04) !important;
   border: 1px solid rgba(255,255,255,0.08) !important;
@@ -169,11 +177,11 @@ onMounted(async () => {
 
 .icon-bubble {
   align-items: center;
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
-  height: 56px;
+  height: 44px;
   justify-content: center;
-  width: 56px;
+  width: 44px;
 }
 
 .trend-bar {
@@ -181,5 +189,32 @@ onMounted(async () => {
   border-radius: 3px;
   opacity: 0.6;
   width: 100%;
+}
+
+.chart-container {
+  height: 220px;
+  min-height: 180px;
+}
+
+.chart-loading {
+  height: 220px;
+  min-height: 180px;
+}
+
+@media (min-width: 600px) {
+  .icon-bubble {
+    height: 56px;
+    width: 56px;
+    border-radius: 14px;
+  }
+
+  .stat-icon {
+    font-size: 28px !important;
+  }
+
+  .chart-container,
+  .chart-loading {
+    height: 280px;
+  }
 }
 </style>

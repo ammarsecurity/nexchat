@@ -8,7 +8,7 @@ import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useAuthStore } from '../stores/auth'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
-import { matchingHub, startHub } from '../services/signalr'
+import { matchingHub, startHub, ensureConnected } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
@@ -63,6 +63,7 @@ async function startRandom() {
   loading.value = true
   matching.setSearching()
   try {
+    await ensureConnected(matchingHub)
     await matchingHub.invoke('StartSearching', matching.genderFilter)
     if (matching.status !== 'matched') {
       router.push('/matching')
@@ -82,6 +83,7 @@ async function connectByCode() {
   }
   loading.value = true
   try {
+    await ensureConnected(matchingHub)
     await matchingHub.invoke('ConnectByCode', code)
   } finally {
     loading.value = false

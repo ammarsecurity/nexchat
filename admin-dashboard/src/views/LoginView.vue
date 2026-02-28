@@ -49,7 +49,7 @@ async function handleLogin() {
         </div>
 
         <v-card class="pa-8" rounded="xl" elevation="0">
-          <v-card-title class="text-h6 font-weight-bold mb-6 pa-0">تسجيل الدخول 🔐</v-card-title>
+          <v-card-title class="login-title text-h6 font-weight-bold mb-6 pa-0">تسجيل الدخول 🔐</v-card-title>
 
           <v-form @submit.prevent="handleLogin">
             <v-text-field
@@ -130,5 +130,10 @@ async function handleLogin() {
 
 .gradient-btn {
   background: var(--gradient) !important;
+}
+
+.login-title {
+  font-family: 'Cairo', sans-serif !important;
+  letter-spacing: -0.02em;
 }
 </style>

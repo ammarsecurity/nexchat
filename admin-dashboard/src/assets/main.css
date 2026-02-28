@@ -54,3 +54,61 @@ html, body, #app {
   animation: blink 1.5s ease-in-out infinite;
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ========== تحسينات الجوال ========== */
+@media (max-width: 600px) {
+  .v-app-bar .v-toolbar__content {
+    padding-left: 8px;
+    padding-right: 12px;
+  }
+
+  .table-card,
+  .v-card .v-card-text {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .v-data-table {
+    font-size: 0.8125rem;
+    min-width: 600px;
+  }
+
+  .v-data-table .v-data-table__td {
+    padding: 8px 12px !important;
+  }
+
+  .v-data-table-header__content {
+    font-size: 0.75rem;
+  }
+
+  .v-card {
+    border-radius: 12px !important;
+  }
+
+  .v-pagination {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .v-pagination .v-btn {
+    min-width: 32px !important;
+    padding: 0 6px !important;
+  }
+}
+
+/* منع التمرير الأفقي على الجوال */
+html, body {
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* تحسين اللمس على الجوال */
+@media (hover: none) and (pointer: coarse) {
+  .v-btn, .v-list-item, .v-chip {
+    min-height: 44px;
+  }
+
+  .v-list-item {
+    min-height: 48px !important;
+  }
+}

@@ -1,11 +1,32 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useDisplay } from 'vuetify'
 
 const router = useRouter()
 const route = useRoute()
+const { mobile } = useDisplay()
 const drawer = ref(true)
 const rail = ref(false)
+
+onMounted(() => {
+  if (mobile.value) drawer.value = false
+})
+
+// على الجوال: إغلاق الدرج عند تغيير الصفحة
+watch(route, () => {
+  if (mobile.value) drawer.value = false
+})
+
+// عند الانتقال من سطح المكتب للجوال: إغلاق الدرج
+watch(mobile, (isMobile) => {
+  if (isMobile) {
+    drawer.value = false
+    rail.value = false
+  } else {
+    drawer.value = true
+  }
+})
 
 const navItems = [
   { title: 'الإحصائيات', icon: 'mdi-view-dashboard', to: '/dashboard' },
@@ -34,11 +55,13 @@ function logout() {
     <!-- Navigation Drawer -->
     <v-navigation-drawer
       v-model="drawer"
-      :rail="rail"
-      permanent
+      :rail="rail && !mobile"
+      :permanent="!mobile"
+      :temporary="mobile"
       color="#0D0D1A"
       border="end"
       style="border-color: rgba(255,255,255,0.06) !important"
+      class="mobile-drawer"
     >
       <!-- Logo -->
       <v-list-item
@@ -57,7 +80,7 @@ function logout() {
 
         <template #append>
           <v-btn
-            v-if="!rail"
+            v-if="!rail && !mobile"
             :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
             variant="text"
             density="compact"
@@ -94,7 +117,7 @@ function logout() {
           ></v-list-item>
         </v-list>
         <v-btn
-          v-if="rail"
+          v-if="rail && !mobile"
           icon="mdi-chevron-right"
           variant="text"
           density="compact"
@@ -114,9 +137,15 @@ function logout() {
         border="b"
         style="border-color: rgba(255,255,255,0.06) !important"
       >
-        <v-app-bar-title class="font-weight-bold">{{ currentTitle }}</v-app-bar-title>
+        <v-app-bar-nav-icon
+          v-if="mobile"
+          @click="drawer = !drawer"
+          aria-label="القائمة"
+        />
+        <v-app-bar-title class="font-weight-bold" :class="{ 'text-h6': mobile }">{{ currentTitle }}</v-app-bar-title>
         <template #append>
           <v-chip
+            v-if="!mobile"
             prepend-icon="mdi-circle"
             color="success"
             size="small"
@@ -126,10 +155,21 @@ function logout() {
             <span class="online-dot mr-1"></span>
             نشط
           </v-chip>
+          <v-chip
+            v-else
+            prepend-icon="mdi-circle"
+            color="success"
+            size="x-small"
+            variant="tonal"
+            density="compact"
+          >
+            <span class="online-dot mr-1"></span>
+            نشط
+          </v-chip>
         </template>
       </v-app-bar>
 
-      <v-container fluid class="pa-6">
+      <v-container fluid class="main-container pa-4 pa-sm-6">
         <RouterView />
       </v-container>
     </v-main>
@@ -163,4 +203,16 @@ function logout() {
 }
 
 :deep(.v-list-item--active .v-icon) { color: #6C63FF !important; }
+
+/* تحسينات الجوال */
+@media (max-width: 600px) {
+  .main-container {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+.mobile-drawer :deep(.v-list-item) {
+  min-height: 48px;
+}
 </style>

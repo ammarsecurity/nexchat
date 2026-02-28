@@ -105,6 +105,5 @@ app.MapControllers();
 
 app.MapHub<MatchingHub>("/hubs/matching");
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapHub<WebRtcHub>("/hubs/webrtc");
 
 app.Run();

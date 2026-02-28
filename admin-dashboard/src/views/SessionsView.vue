@@ -50,7 +50,7 @@ onMounted(fetchSessions)
 
 <template>
   <div>
-    <div class="d-flex align-center justify-space-between mb-6">
+    <div class="d-flex flex-column flex-sm-row align-start align-sm-center justify-space-between mb-4 mb-sm-6 gap-3">
       <div>
         <div class="text-h5 font-weight-bold">الجلسات</div>
         <div class="text-body-2 text-medium-emphasis">{{ total.toLocaleString() }} جلسة إجمالاً</div>
@@ -59,11 +59,13 @@ onMounted(fetchSessions)
         prepend-icon="mdi-refresh"
         variant="tonal"
         color="primary"
+        size="small"
+        class="flex-shrink-0"
         @click="fetchSessions"
       >تحديث</v-btn>
     </div>
 
-    <v-card rounded="xl" elevation="0" class="pa-4">
+    <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
       <v-data-table
         :headers="headers"
         :items="sessions"

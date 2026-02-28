@@ -4,8 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
-import { chatHub, startHub } from '../services/signalr'
-import { HubConnectionState } from '@microsoft/signalr'
+import { chatHub, startHub, ensureConnected } from '../services/signalr'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
@@ -75,6 +74,7 @@ async function handleImageUpload(e) {
     })
     scrollToBottom()
     try {
+      await ensureConnected(chatHub)
       await chatHub.invoke('SendMessage', sessionId, url, 'image')
     } catch {
       chat.updateMessage(tempId, { status: 'failed' })
@@ -116,9 +116,12 @@ function formatTime(sec) {
   return `${m}:${s}`
 }
 
-function onVisibilityChange() {
-  if (document.visibilityState === 'visible' && !sessionEnded.value && chatHub.state === HubConnectionState.Connected) {
-    chatHub.invoke('JoinSession', sessionId).catch(() => {})
+async function onVisibilityChange() {
+  if (document.visibilityState === 'visible' && !sessionEnded.value) {
+    try {
+      await ensureConnected(chatHub)
+      await chatHub.invoke('JoinSession', sessionId)
+    } catch {}
   }
 }
 
@@ -222,10 +225,16 @@ function scrollToBottom() {
 
 let typingTimeout
 async function handleInput() {
-  if (!typingTimeout) await chatHub.invoke('StartTyping', sessionId)
+  try {
+    await ensureConnected(chatHub)
+    if (!typingTimeout) await chatHub.invoke('StartTyping', sessionId)
+  } catch {}
   clearTimeout(typingTimeout)
   typingTimeout = setTimeout(async () => {
-    await chatHub.invoke('StopTyping', sessionId)
+    try {
+      await ensureConnected(chatHub)
+      await chatHub.invoke('StopTyping', sessionId)
+    } catch {}
     typingTimeout = null
   }, 1500)
 }
@@ -250,6 +259,7 @@ async function sendMessage() {
   })
   scrollToBottom()
   try {
+    await ensureConnected(chatHub)
     await chatHub.invoke('SendMessage', sessionId, text, 'text')
   } catch {
     chat.updateMessage(tempId, { status: 'failed' })
@@ -261,6 +271,7 @@ async function retryMessage(msg) {
   const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
   chat.updateMessage(msg.tempId, { tempId, status: 'pending' })
   try {
+    await ensureConnected(chatHub)
     await chatHub.invoke('SendMessage', sessionId, msg.content, msg.type || 'text')
   } catch {
     chat.updateMessage(tempId, { status: 'failed' })
@@ -271,6 +282,7 @@ async function leaveSession() {
   loading.value = true
   clearInterval(timerInterval)
   try {
+    await ensureConnected(chatHub)
     await chatHub.invoke('LeaveSession', sessionId)
     chat.clearSession()
     router.replace('/home')
@@ -283,11 +295,13 @@ async function nextPerson() {
   loading.value = true
   clearInterval(timerInterval)
   try {
+    await ensureConnected(chatHub)
     await chatHub.invoke('LeaveSession', sessionId)
     chat.clearSession()
     router.replace('/matching')
     const { matchingHub: mHub, startHub: sHub } = await import('../services/signalr')
     await sHub(mHub)
+    await ensureConnected(mHub)
     await mHub.invoke('StartSearching', 'all')
   } finally {
     loading.value = false
@@ -298,6 +312,7 @@ async function submitReport() {
   if (!reportReason.value.trim()) return
   loading.value = true
   try {
+    await ensureConnected(chatHub)
     await chatHub.invoke('ReportUser', sessionId, reportReason.value)
     reportReason.value = ''
     showReport.value = false
@@ -313,6 +328,7 @@ function openVideoConfirm() {
 async function confirmStartVideo() {
   showVideoConfirm.value = false
   callingOut.value = true
+  await ensureConnected(chatHub)
   await chatHub.invoke('RequestVideoCall', sessionId)
 }
 
@@ -322,12 +338,14 @@ function cancelVideoConfirm() {
 
 async function acceptCall() {
   incomingCall.value = false
+  await ensureConnected(chatHub)
   await chatHub.invoke('AcceptVideoCall', sessionId)
   router.push({ path: `/video/${sessionId}`, state: { initiator: false } })
 }
 
 async function declineCall() {
   incomingCall.value = false
+  await ensureConnected(chatHub)
   await chatHub.invoke('DeclineVideoCall', sessionId)
 }
 
