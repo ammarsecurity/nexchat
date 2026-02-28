@@ -120,8 +120,15 @@ async function cancel() {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cpath fill='none' stroke='%236C63FF' stroke-width='0.5' d='M10 22c0-2 1.6-4 4-4h20c2.4 0 4 2 4 4v14c0 2-1.6 4-4 4H16l-4 4v-4c-2.4 0-4-2-4-4V22z'/%3E%3Cpath fill='none' stroke='%236C63FF' stroke-width='0.5' d='M38 12c0-1.2 1-2.5 2.5-2.5h10c1.5 0 2.5 1.3 2.5 2.5v8c0 1.2-1 2.5-2.5 2.5H42l-2 2v-2c-1.5 0-2.5-1.3-2.5-2.5V12z'/%3E%3C/svg%3E");
   background-size: 60px 60px;
   background-repeat: repeat;
+  background-position: 0 0;
+  animation: pattern-drift 20s linear infinite;
   pointer-events: none;
   z-index: 0;
+}
+
+@keyframes pattern-drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 60px 60px; }
 }
 
 .content {
@@ -187,7 +194,7 @@ async function cancel() {
   width: 100%;
   max-width: 280px;
 }
-.filter-val { color: white; font-weight: 600; }
+.filter-val { color: var(--text-primary); font-weight: 600; }
 
 .tips {
   padding: 16px;

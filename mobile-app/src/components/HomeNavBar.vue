@@ -96,18 +96,36 @@ async function onRocketClick() {
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary) 0%, #5B52E8 100%);
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 35%, #4F46E5 100%);
   border: 3px solid var(--bg-card);
-  box-shadow: 0 4px 20px rgba(108, 99, 255, 0.4), 0 0 0 1px rgba(255,255,255,0.1);
+  box-shadow:
+    0 0 0 2px rgba(108, 99, 255, 0.2),
+    0 6px 24px rgba(108, 99, 255, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
   -webkit-tap-highlight-color: transparent;
+  position: relative;
+  overflow: visible;
+}
+.rocket-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+  pointer-events: none;
 }
 .rocket-btn:active:not(:disabled) {
   transform: scale(0.95);
+  box-shadow:
+    0 0 0 2px rgba(108, 99, 255, 0.15),
+    0 2px 12px rgba(108, 99, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .rocket-btn:disabled {
   opacity: 0.8;
@@ -119,6 +137,7 @@ async function onRocketClick() {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1;
 }
 
 .rocket-icon {
@@ -130,20 +149,21 @@ async function onRocketClick() {
 
 .rocket-flame {
   position: absolute;
-  bottom: -10px;
-  width: 14px;
-  height: 18px;
-  background: linear-gradient(to top, #FF6B35, #FF8C42, #FF6584);
+  bottom: -12px;
+  width: 16px;
+  height: 20px;
+  background: linear-gradient(to top, #FF4500, #FF6B35, #FF8C42, #FFB347);
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  opacity: 0.9;
+  opacity: 0.95;
   transform: scaleY(0.7);
   transition: transform 0.4s ease-out, opacity 0.3s;
-  animation: flame-flicker 0.15s ease-in-out infinite alternate;
+  animation: flame-flicker 0.12s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.5);
 }
 
 @keyframes flame-flicker {
   from { transform: scaleY(0.7) scaleX(1); }
-  to { transform: scaleY(0.75) scaleX(1.05); }
+  to { transform: scaleY(0.8) scaleX(1.08); }
 }
 
 /* حركة الانطلاق */
@@ -167,8 +187,24 @@ async function onRocketClick() {
 }
 
 @keyframes rocket-pulse {
-  0% { box-shadow: 0 4px 20px rgba(108, 99, 255, 0.4); }
-  40% { box-shadow: 0 0 50px rgba(108, 99, 255, 0.7), 0 0 80px rgba(255, 101, 132, 0.4); }
-  100% { box-shadow: 0 4px 20px rgba(108, 99, 255, 0.4); }
+  0% {
+    box-shadow:
+      0 0 0 2px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  40% {
+    box-shadow:
+      0 0 0 4px rgba(108, 99, 255, 0.4),
+      0 0 40px rgba(108, 99, 255, 0.6),
+      0 0 60px rgba(255, 101, 132, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
 }
 </style>

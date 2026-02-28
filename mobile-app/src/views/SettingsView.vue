@@ -385,6 +385,9 @@ async function confirmDelete() {
   -webkit-overflow-scrolling: touch;
   padding: 0 var(--spacing) calc(40px + var(--safe-bottom));
 }
+.scroll-area > * {
+  flex-shrink: 0;
+}
 
 /* Section label */
 .section-label {
