@@ -40,7 +40,7 @@ async function handleLogin() {
       <v-col cols="12" sm="8" md="5" lg="4">
         <div class="text-center mb-8">
           <div class="logo-wrap">
-            <div class="logo-icon">N</div>
+            <img src="/logo.png" alt="NexChat" class="logo-img" />
           </div>
           <div class="text-h5 font-weight-bold mt-3">
             <span class="gradient-text">NexChat</span> Admin
@@ -114,18 +114,10 @@ async function handleLogin() {
 .orb-2 { background: rgba(255,101,132,0.15); width:300px; height:300px; bottom:-80px; left:-80px; }
 
 .logo-wrap { display: inline-block; }
-.logo-icon {
-  align-items: center;
-  background: var(--gradient);
-  border-radius: 20px;
-  color: white;
-  display: inline-flex;
-  font-size: 36px;
-  font-weight: 900;
+.logo-img {
   height: 72px;
-  justify-content: center;
-  width: 72px;
-  box-shadow: 0 0 40px rgba(108,99,255,0.4);
+  width: auto;
+  object-fit: contain;
 }
 
 .gradient-btn {

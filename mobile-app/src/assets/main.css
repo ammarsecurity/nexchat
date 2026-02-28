@@ -29,6 +29,23 @@
   --spacing: 16px;
   --spacing-sm: 12px;
   --spacing-lg: 20px;
+  --msg-theirs-bg: rgba(255,255,255,0.08);
+  --system-msg-bg: rgba(255,255,255,0.05);
+}
+
+/* Light mode */
+[data-theme="light"], html.light {
+  --bg-primary: #F5F5FA;
+  --bg-secondary: #EBEBF0;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F0F0F5;
+  --bg-elevated: #FFFFFF;
+  --text-primary: #1A1A2E;
+  --text-secondary: #4A4A6A;
+  --text-muted: #7A7A9A;
+  --border: rgba(0, 0, 0, 0.08);
+  --msg-theirs-bg: rgba(0, 0, 0, 0.06);
+  --system-msg-bg: rgba(0, 0, 0, 0.04);
 }
 
 html, body {
@@ -62,6 +79,8 @@ html, body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+[data-theme="light"] ::-webkit-scrollbar-thumb,
+html.light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
 
 /* Flat Card - use sparingly for native feel */
 .glass-card {
@@ -124,7 +143,7 @@ html, body {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: white;
+  color: var(--text-primary);
   font-family: 'Cairo';
   font-size: 16px;
   font-weight: 500;
@@ -214,6 +233,11 @@ html, body {
 .text-muted     { color: var(--text-muted); }
 
 .gradient-bg { background: var(--primary) !important; }
+
+/* RTL: عكس اتجاه الأسهم (ChevronRight → ChevronLeft) */
+[dir="rtl"] .link-arrow {
+  transform: scaleX(-1);
+}
 
 /* Auth pages background pattern */
 .auth-pattern {

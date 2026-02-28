@@ -68,3 +68,5 @@ public record UpdateBannerDto(string? ImageUrl, string? Placement, int? Order, b
 public record ReorderBannersDto(IEnumerable<Guid> Ids);
 
 public record UpdateSiteContentDto(string Content);
+
+public record SupportSendDto(Guid SessionId, string Content);

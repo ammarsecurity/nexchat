@@ -1,13 +1,15 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Users, UserCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import { useThemeStore } from '../../stores/theme'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
-import logoImg from '../../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
+const theme = useThemeStore()
+const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
 
 const name = ref('')
 const password = ref('')
@@ -30,7 +32,7 @@ async function handleRegister() {
     await auth.register(name.value.trim(), password.value, gender.value)
     router.replace('/home')
   } catch (e) {
-    error.value = e.response?.data?.message || 'حدث خطأ، حاول مجدداً'
+    error.value = e.userMessage ?? e.response?.data?.message ?? 'حدث خطأ، حاول مجدداً'
   } finally {
     loading.value = false
   }

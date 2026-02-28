@@ -1,16 +1,21 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
+import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
-import logoImg from '../assets/logo.png'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
 const router = useRouter()
 const auth = useAuthStore()
+const chat = useChatStore()
+const theme = useThemeStore()
 const user = computed(() => auth.user)
+const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
+const supportLoading = ref(false)
 
 const showAvatarPicker = ref(false)
 const avatarTab = ref('preset')
@@ -97,6 +102,20 @@ function copyCode() {
   }
 }
 
+async function openSupportChat() {
+  supportLoading.value = true
+  try {
+    const res = await api.get('/support/session')
+    const { sessionId, partner } = res.data
+    chat.setSession(sessionId, partner)
+    router.push(`/chat/${sessionId}`)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    supportLoading.value = false
+  }
+}
+
 async function confirmDelete() {
   if (!deletePassword.value) {
     deleteError.value = 'أدخل كلمة المرور'
@@ -120,9 +139,10 @@ async function confirmDelete() {
   <div class="settings page">
     <LoaderOverlay :show="uploadingAvatar" text="جاري رفع الصورة..." />
     <LoaderOverlay :show="deleting" text="جاري حذف الحساب..." />
+    <LoaderOverlay :show="supportLoading" text="جاري فتح دردشة الدعم..." />
     <!-- Header -->
     <header class="top-bar">
-      <button class="back-btn" @click="router.back()"><ChevronRight :size="22" /></button>
+      <button class="back-btn" @click="router.replace('/home')"><ChevronRight :size="22" /></button>
       <span class="top-title">الإعدادات</span>
       <div style="width:40px"></div>
     </header>
@@ -156,9 +176,29 @@ async function confirmDelete() {
         </div>
       </div>
 
+      <!-- Support Chat - بارز -->
+      <div class="support-card glass-card">
+        <button class="support-row" :disabled="supportLoading" @click="openSupportChat">
+          <div class="support-icon-wrap">
+            <MessageCircle :size="22" />
+          </div>
+          <div class="support-text">
+            <span class="support-title">دردشة الدعم</span>
+            <span class="support-desc">تواصل معنا لأي استفسار أو مساعدة</span>
+          </div>
+          <ChevronRight :size="20" class="link-arrow" />
+        </button>
+      </div>
+
       <!-- 2. Settings Links -->
       <div class="section-label">عام</div>
       <div class="links-group glass-card">
+        <button class="link-row theme-toggle-row" @click="theme.toggleTheme">
+          <Sun v-if="!theme.isLight" :size="20" class="link-icon" />
+          <Moon v-else :size="20" class="link-icon" />
+          <span>{{ theme.isLight ? 'الوضع الداكن' : 'الوضع الفاتح' }}</span>
+          <span class="theme-badge">{{ theme.isLight ? 'داكن' : 'فاتح' }}</span>
+        </button>
         <RouterLink to="/privacy" class="link-row">
           <Shield :size="20" class="link-icon" />
           <span>سياسة الخصوصية</span>
@@ -313,6 +353,7 @@ async function confirmDelete() {
 }
 
 .top-bar {
+  flex-shrink: 0;
   align-items: center;
   display: flex;
   justify-content: space-between;
@@ -335,10 +376,13 @@ async function confirmDelete() {
 .top-title { font-size: 17px; font-weight: 600; }
 
 .scroll-area {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 0 var(--spacing) calc(40px + var(--safe-bottom));
 }
 
@@ -427,6 +471,61 @@ async function confirmDelete() {
 .copy-code-btn:active { background: var(--bg-card-hover); color: var(--primary); }
 .copied-text { color: var(--success); font-size: 11px; font-weight: 600; }
 
+/* Support card - بارز ومرتب */
+.support-card {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(108,99,255,0.25);
+  background: linear-gradient(135deg, rgba(108,99,255,0.08) 0%, rgba(108,99,255,0.02) 100%);
+}
+.support-row {
+  align-items: center;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 14px;
+  padding: var(--spacing);
+  text-align: right;
+  width: 100%;
+  transition: background 0.2s;
+}
+.support-row:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.support-row:active { background: rgba(108,99,255,0.08); }
+.support-icon-wrap {
+  align-items: center;
+  background: rgba(108,99,255,0.2);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  display: flex;
+  flex-shrink: 0;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+.support-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.support-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.support-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.support-row .link-arrow { margin-inline-start: auto; }
+
 /* Links group */
 .links-group {
   overflow: hidden;
@@ -434,16 +533,36 @@ async function confirmDelete() {
 }
 .link-row {
   align-items: center;
+  background: none;
+  border: none;
   color: var(--text-secondary);
+  cursor: pointer;
   display: flex;
+  font: inherit;
   gap: 12px;
   padding: var(--spacing);
+  text-align: right;
   text-decoration: none;
   transition: background 0.2s;
+  width: 100%;
+}
+.link-row:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .link-row:active { background: var(--bg-card-hover); }
 .link-icon { color: var(--text-muted); flex-shrink: 0; }
 .link-arrow { color: var(--text-muted); margin-right: auto; }
+.theme-toggle-row { justify-content: flex-start; }
+.theme-badge {
+  margin-inline-start: auto;
+  background: rgba(108,99,255,0.15);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
 
 /* About */
 .about-card { overflow: hidden; padding: var(--spacing); }

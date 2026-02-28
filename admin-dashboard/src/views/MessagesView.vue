@@ -1,427 +1,481 @@
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import api from '../services/api'
 
+const conversations = ref([])
+const totalConvos = ref(0)
+const convoPage = ref(1)
+const convoPageSize = ref(30)
+const searchQuery = ref('')
+const loadingConvos = ref(false)
+
+const selectedSession = ref(null)
 const messages = ref([])
-const total = ref(0)
-const loading = ref(false)
+const totalMessages = ref(0)
+const msgSearchQuery = ref('')
+const loadingMessages = ref(false)
+const msgPage = ref(1)
+const msgPageSize = ref(50)
 
-const filters = reactive({
-  search: '',
-  type: '',
-  sessionId: '',
-  userId: '',
-  dateFrom: '',
-  dateTo: '',
-  page: 1,
-  pageSize: 30,
-})
-
-const typeOptions = [
-  { title: 'الكل', value: '' },
-  { title: 'نصي', value: 'text' },
-  { title: 'صورة', value: 'image' },
-  { title: 'نظام', value: 'system' },
-]
-
-const totalPages = ref(1)
-
-async function fetchMessages() {
-  loading.value = true
+async function fetchConversations() {
+  loadingConvos.value = true
   try {
-    const params = {}
-    if (filters.search)    params.search    = filters.search
-    if (filters.type)      params.type      = filters.type
-    if (filters.sessionId) params.sessionId = filters.sessionId
-    if (filters.userId)    params.userId    = filters.userId
-    if (filters.dateFrom)  params.dateFrom  = filters.dateFrom
-    if (filters.dateTo)    params.dateTo    = filters.dateTo
-    params.page     = filters.page
-    params.pageSize = filters.pageSize
-
-    const res = await api.get('/admin/messages', { params })
-    messages.value = res.data.items
-    total.value = res.data.total
-    totalPages.value = Math.ceil(res.data.total / filters.pageSize) || 1
-  } catch (e) {
-    messages.value = []
-    total.value = 0
+    const res = await api.get('/admin/sessions', {
+      params: {
+        page: convoPage.value,
+        pageSize: convoPageSize.value,
+        search: searchQuery.value || undefined
+      }
+    })
+    conversations.value = res.data.items
+    totalConvos.value = res.data.total
+  } catch {
+    conversations.value = []
+    totalConvos.value = 0
   } finally {
-    loading.value = false
+    loadingConvos.value = false
   }
 }
 
-function applyFilters() {
-  filters.page = 1
-  fetchMessages()
+async function fetchMessages(sessionId) {
+  if (!sessionId) {
+    messages.value = []
+    totalMessages.value = 0
+    return
+  }
+  loadingMessages.value = true
+  msgPage.value = 1
+  try {
+    const res = await api.get('/admin/messages', {
+      params: {
+        sessionId,
+        page: 1,
+        pageSize: msgPageSize.value
+      }
+    })
+    messages.value = (res.data.items || []).sort((a, b) =>
+      new Date(a.sentAt) - new Date(b.sentAt)
+    )
+    totalMessages.value = res.data.total
+  } catch {
+    messages.value = []
+    totalMessages.value = 0
+  } finally {
+    loadingMessages.value = false
+  }
 }
 
-function resetFilters() {
-  filters.search = ''
-  filters.type = ''
-  filters.sessionId = ''
-  filters.userId = ''
-  filters.dateFrom = ''
-  filters.dateTo = ''
-  filters.page = 1
-  fetchMessages()
+function selectConversation(session) {
+  selectedSession.value = session
+  msgSearchQuery.value = ''
+  fetchMessages(session.id)
 }
 
-watch(() => filters.page, fetchMessages)
-
-fetchMessages()
-
-function typeColor(type) {
-  if (type === 'image') return 'cyan'
-  if (type === 'system') return 'warning'
-  return 'primary'
+function loadMoreMessages() {
+  if (!selectedSession.value || loadingMessages.value) return
+  msgPage.value++
+  api.get('/admin/messages', {
+    params: {
+      sessionId: selectedSession.value.id,
+      page: msgPage.value,
+      pageSize: msgPageSize.value
+    }
+  }).then(res => {
+    const newMsgs = (res.data.items || []).sort((a, b) =>
+      new Date(a.sentAt) - new Date(b.sentAt)
+    )
+    messages.value = [...newMsgs, ...messages.value]
+  })
 }
 
-function typeLabel(type) {
-  if (type === 'image') return 'صورة'
-  if (type === 'system') return 'نظام'
-  return 'نص'
-}
+watch(searchQuery, () => {
+  convoPage.value = 1
+  fetchConversations()
+})
+
+watch(convoPage, fetchConversations)
+
+fetchConversations()
 
 function formatTime(dt) {
   return new Date(dt).toLocaleString('ar-SA', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
+    month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit'
   })
 }
 
-const showFilters = ref(true)
+function formatDate(dt) {
+  return new Date(dt).toLocaleDateString('ar-SA', {
+    weekday: 'short', month: 'short', day: 'numeric'
+  })
+}
+
+function convoTitle(session) {
+  return `${session.user1Name} ↔ ${session.user2Name}`
+}
+
+// رسائل المستخدم 1 = يمين، رسائل المستخدم 2 = يسار
+function isFromUser1(msg) {
+  return selectedSession.value && msg.senderName === selectedSession.value.user1Name
+}
+
+const filteredMessages = computed(() => {
+  const q = msgSearchQuery.value?.trim().toLowerCase()
+  if (!q) return messages.value
+  return messages.value.filter(m =>
+    (m.content && m.content.toLowerCase().includes(q)) || m.senderName?.toLowerCase().includes(q)
+  )
+})
+
 </script>
 
 <template>
-  <div>
+  <div class="messages-page">
     <!-- Header -->
-    <div class="d-flex align-center justify-space-between mb-6">
+    <div class="d-flex align-center justify-space-between mb-4">
       <div>
         <div class="text-h5 font-weight-bold">الرسائل</div>
         <div class="text-body-2 text-medium-emphasis">
-          إجمالي {{ total.toLocaleString() }} رسالة
+          {{ totalConvos.toLocaleString() }} محادثة
         </div>
       </div>
-      <v-btn
-        :prepend-icon="showFilters ? 'mdi-filter-off' : 'mdi-filter'"
-        variant="tonal"
-        color="primary"
-        rounded="lg"
-        @click="showFilters = !showFilters"
-      >
-        {{ showFilters ? 'إخفاء الفلاتر' : 'إظهار الفلاتر' }}
-      </v-btn>
     </div>
 
-    <!-- Filter Panel -->
-    <v-expand-transition>
-      <v-card v-if="showFilters" class="filter-card pa-5 mb-5" rounded="xl" elevation="0">
-        <v-row dense>
-          <!-- Search -->
-          <v-col cols="12" md="4">
+    <div class="messages-layout">
+      <!-- Left: Conversation List -->
+      <div class="conversation-list">
+        <div class="search-wrap pa-3">
+          <v-text-field
+            v-model="searchQuery"
+            placeholder="بحث بالاسم..."
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            rounded="lg"
+            hide-details
+            clearable
+            bg-color="rgba(255,255,255,0.04)"
+          />
+        </div>
+
+        <div v-if="loadingConvos" class="d-flex justify-center pa-6">
+          <v-progress-circular indeterminate color="primary" size="32" />
+        </div>
+
+        <div v-else-if="conversations.length === 0" class="empty-list pa-6 text-center">
+          <v-icon size="48" color="medium-emphasis">mdi-chat-outline</v-icon>
+          <div class="text-body-2 text-medium-emphasis mt-2">لا توجد محادثات</div>
+        </div>
+
+        <div v-else class="convo-items">
+          <div
+            v-for="c in conversations"
+            :key="c.id"
+            class="convo-item"
+            :class="{ active: selectedSession?.id === c.id }"
+            @click="selectConversation(c)"
+          >
+            <div class="convo-avatar">
+              {{ c.user1Name?.[0]?.toUpperCase() }}{{ c.user2Name?.[0]?.toUpperCase() }}
+            </div>
+            <div class="convo-info">
+              <div class="convo-title">{{ convoTitle(c) }}</div>
+              <div class="convo-meta">
+                {{ c.messageCount }} رسالة · {{ formatDate(c.startedAt) }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="totalConvos > convoPageSize" class="pa-2">
+          <v-pagination
+            v-model="convoPage"
+            :length="Math.ceil(totalConvos / convoPageSize)"
+            :total-visible="4"
+            density="compact"
+            size="small"
+          />
+        </div>
+      </div>
+
+      <!-- Right: Chat View -->
+      <div class="chat-panel">
+        <div v-if="!selectedSession" class="chat-placeholder">
+          <v-icon size="80" color="medium-emphasis">mdi-chat-processing-outline</v-icon>
+          <div class="text-h6 font-weight-medium text-medium-emphasis mt-3">
+            اختر محادثة لعرض الرسائل
+          </div>
+        </div>
+
+        <template v-else>
+          <!-- Chat Header -->
+          <div class="chat-header">
+            <v-btn
+              icon="mdi-arrow-right"
+              variant="text"
+              size="small"
+              class="d-md-none"
+              @click="selectedSession = null"
+            />
+            <div class="chat-header-info">
+              <span class="font-weight-bold">{{ convoTitle(selectedSession) }}</span>
+              <span class="text-caption text-medium-emphasis ms-2">
+                {{ selectedSession.messageCount }} رسالة
+              </span>
+            </div>
+          </div>
+
+          <!-- Search in messages -->
+          <div class="chat-search pa-3">
             <v-text-field
-              v-model="filters.search"
-              label="بحث في المحتوى"
+              v-model="msgSearchQuery"
+              placeholder="بحث في الرسائل..."
               prepend-inner-icon="mdi-magnify"
               variant="outlined"
               density="compact"
               rounded="lg"
               hide-details
               clearable
-              @keyup.enter="applyFilters"
+              bg-color="rgba(255,255,255,0.04)"
             />
-          </v-col>
+          </div>
 
-          <!-- Type -->
-          <v-col cols="6" md="2">
-            <v-select
-              v-model="filters.type"
-              :items="typeOptions"
-              item-title="title"
-              item-value="value"
-              label="نوع الرسالة"
-              variant="outlined"
-              density="compact"
-              rounded="lg"
-              hide-details
-            />
-          </v-col>
+          <!-- Messages -->
+          <div class="chat-messages">
+            <div v-if="totalMessages > messages.length && !msgSearchQuery" class="load-more-wrap">
+              <v-btn
+                variant="tonal"
+                size="small"
+                :loading="loadingMessages"
+                @click="loadMoreMessages"
+              >
+                تحميل المزيد
+              </v-btn>
+            </div>
 
-          <!-- Session ID -->
-          <v-col cols="6" md="3">
-            <v-text-field
-              v-model="filters.sessionId"
-              label="معرّف الجلسة"
-              prepend-inner-icon="mdi-chat"
-              variant="outlined"
-              density="compact"
-              rounded="lg"
-              hide-details
-              clearable
-            />
-          </v-col>
+            <div v-if="msgSearchQuery && filteredMessages.length === 0" class="empty-search pa-6 text-center">
+              <v-icon size="48" color="medium-emphasis">mdi-magnify-close</v-icon>
+              <div class="text-body-2 text-medium-emphasis mt-2">لا توجد نتائج لـ "{{ msgSearchQuery }}"</div>
+            </div>
 
-          <!-- User ID -->
-          <v-col cols="6" md="3">
-            <v-text-field
-              v-model="filters.userId"
-              label="معرّف المستخدم"
-              prepend-inner-icon="mdi-account"
-              variant="outlined"
-              density="compact"
-              rounded="lg"
-              hide-details
-              clearable
-            />
-          </v-col>
-
-          <!-- Date From -->
-          <v-col cols="6" md="3">
-            <v-text-field
-              v-model="filters.dateFrom"
-              label="من تاريخ"
-              type="date"
-              prepend-inner-icon="mdi-calendar-start"
-              variant="outlined"
-              density="compact"
-              rounded="lg"
-              hide-details
-            />
-          </v-col>
-
-          <!-- Date To -->
-          <v-col cols="6" md="3">
-            <v-text-field
-              v-model="filters.dateTo"
-              label="إلى تاريخ"
-              type="date"
-              prepend-inner-icon="mdi-calendar-end"
-              variant="outlined"
-              density="compact"
-              rounded="lg"
-              hide-details
-            />
-          </v-col>
-
-          <!-- Page Size -->
-          <v-col cols="6" md="2">
-            <v-select
-              v-model="filters.pageSize"
-              :items="[10, 20, 30, 50, 100]"
-              label="لكل صفحة"
-              variant="outlined"
-              density="compact"
-              rounded="lg"
-              hide-details
-            />
-          </v-col>
-
-          <!-- Buttons -->
-          <v-col cols="12" md="4" class="d-flex gap-2 align-end">
-            <v-btn
-              color="primary"
-              variant="flat"
-              rounded="lg"
-              prepend-icon="mdi-magnify"
-              @click="applyFilters"
-              :loading="loading"
+            <div
+              v-for="msg in filteredMessages"
+              :key="msg.id"
+              class="msg-bubble"
+              :class="{ right: isFromUser1(msg), left: !isFromUser1(msg) }"
             >
-              بحث
-            </v-btn>
-            <v-btn
-              variant="tonal"
-              rounded="lg"
-              prepend-icon="mdi-refresh"
-              @click="resetFilters"
-            >
-              إعادة تعيين
-            </v-btn>
-          </v-col>
-        </v-row>
-      </v-card>
-    </v-expand-transition>
-
-    <!-- Messages Table -->
-    <v-card class="messages-card" rounded="xl" elevation="0">
-      <v-data-table-virtual
-        v-if="false"
-      />
-
-      <!-- Custom table for RTL + styling -->
-      <div v-if="loading" class="d-flex align-center justify-center pa-10">
-        <v-progress-circular indeterminate color="primary" size="40" />
-      </div>
-
-      <div v-else-if="messages.length === 0" class="empty-state pa-10 text-center">
-        <v-icon size="64" color="medium-emphasis" class="mb-3">mdi-message-off-outline</v-icon>
-        <div class="text-h6 font-weight-bold text-medium-emphasis">لا توجد رسائل</div>
-        <div class="text-body-2 text-medium-emphasis mt-1">جرّب تغيير الفلاتر</div>
-      </div>
-
-      <div v-else>
-        <!-- Table Header -->
-        <div class="msg-header px-5 py-3">
-          <div class="msg-col col-user">المرسل</div>
-          <div class="msg-col col-content">المحتوى</div>
-          <div class="msg-col col-type">النوع</div>
-          <div class="msg-col col-session">الجلسة</div>
-          <div class="msg-col col-time">الوقت</div>
-        </div>
-
-        <v-divider style="border-color: rgba(255,255,255,0.06)" />
-
-        <!-- Table Rows -->
-        <div
-          v-for="(msg, i) in messages"
-          :key="msg.id"
-          class="msg-row px-5 py-3"
-          :class="{ 'row-alt': i % 2 === 1 }"
-        >
-          <!-- Sender -->
-          <div class="msg-col col-user">
-            <div class="d-flex align-center gap-2">
-              <div class="mini-avatar">{{ msg.senderName?.[0]?.toUpperCase() }}</div>
-              <span class="text-body-2 font-weight-medium">{{ msg.senderName }}</span>
+              <div class="msg-sender">{{ msg.senderName }}</div>
+              <template v-if="msg.type === 'image'">
+                <a :href="msg.content" target="_blank" class="msg-image-link">
+                  <v-icon size="20">mdi-image</v-icon>
+                  عرض الصورة
+                </a>
+              </template>
+              <div v-else class="msg-text">{{ msg.content }}</div>
+              <div class="msg-time">{{ formatTime(msg.sentAt) }}</div>
             </div>
           </div>
-
-          <!-- Content -->
-          <div class="msg-col col-content">
-            <template v-if="msg.type === 'image'">
-              <a :href="msg.content" target="_blank" class="image-link">
-                <v-icon size="16" class="me-1">mdi-image</v-icon>
-                عرض الصورة
-              </a>
-            </template>
-            <span v-else class="text-body-2 msg-content-text">{{ msg.content }}</span>
-          </div>
-
-          <!-- Type -->
-          <div class="msg-col col-type">
-            <v-chip
-              :color="typeColor(msg.type)"
-              variant="tonal"
-              size="x-small"
-              label
-            >
-              {{ typeLabel(msg.type) }}
-            </v-chip>
-          </div>
-
-          <!-- Session -->
-          <div class="msg-col col-session">
-            <code class="session-code">{{ msg.sessionId?.slice(0, 8) }}…</code>
-          </div>
-
-          <!-- Time -->
-          <div class="msg-col col-time">
-            <span class="text-caption text-medium-emphasis">{{ formatTime(msg.sentAt) }}</span>
-          </div>
-        </div>
+        </template>
       </div>
-
-      <!-- Pagination -->
-      <v-divider v-if="messages.length > 0" style="border-color: rgba(255,255,255,0.06)" />
-      <div v-if="messages.length > 0" class="d-flex align-center justify-space-between px-5 py-3">
-        <div class="text-caption text-medium-emphasis">
-          صفحة {{ filters.page }} من {{ totalPages }} — {{ total.toLocaleString() }} رسالة
-        </div>
-        <v-pagination
-          v-model="filters.page"
-          :length="totalPages"
-          :total-visible="5"
-          density="compact"
-          active-color="primary"
-          rounded="lg"
-        />
-      </div>
-    </v-card>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.filter-card {
-  background: rgba(255,255,255,0.04) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
+.messages-page {
+  height: calc(100vh - 130px);
+  min-height: 400px;
 }
 
-.messages-card {
-  background: rgba(255,255,255,0.03) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  overflow: hidden;
-}
-
-.msg-header {
+.messages-layout {
   display: flex;
-  align-items: center;
+  gap: 0;
+  height: 100%;
   background: rgba(255,255,255,0.03);
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  direction: rtl;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  overflow: hidden;
 }
 
-.msg-row {
+.conversation-list {
+  width: 320px;
+  min-width: 280px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,0,0,0.2);
+}
+
+.search-wrap {
+  flex-shrink: 0;
+}
+
+.convo-items {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.convo-item {
   display: flex;
   align-items: center;
-  direction: rtl;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
   transition: background 0.15s;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-.msg-row:hover { background: rgba(108,99,255,0.06); }
-.row-alt { background: rgba(255,255,255,0.015); }
-.row-alt:hover { background: rgba(108,99,255,0.06); }
-
-.msg-col { padding: 0 8px; }
-.col-user    { width: 160px; flex-shrink: 0; }
-.col-content { flex: 1; min-width: 0; }
-.col-type    { width: 80px; flex-shrink: 0; text-align: center; }
-.col-session { width: 130px; flex-shrink: 0; }
-.col-time    { width: 160px; flex-shrink: 0; text-align: left; }
-
-.msg-content-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
+.convo-item:hover {
+  background: rgba(108,99,255,0.08);
+}
+.convo-item.active {
+  background: rgba(108,99,255,0.15);
 }
 
-.mini-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+.convo-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #6C63FF, #FF6584);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: white;
   flex-shrink: 0;
 }
 
-.session-code {
-  font-size: 11px;
-  background: rgba(255,255,255,0.07);
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #00D4FF;
-  font-family: monospace;
+.convo-info {
+  flex: 1;
+  min-width: 0;
 }
 
-.image-link {
-  color: #00D4FF;
-  text-decoration: none;
-  font-size: 13px;
+.convo-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.convo-meta {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 2px;
+}
+
+.empty-list {
+  flex: 1;
+}
+
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.4);
+}
+
+.chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
   display: flex;
   align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
 }
-.image-link:hover { text-decoration: underline; }
 
-.empty-state { color: rgba(255,255,255,0.3); }
+.chat-header-info {
+  flex: 1;
+}
 
-.gap-2 { gap: 8px; }
+.chat-search {
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.load-more-wrap {
+  margin-bottom: 8px;
+}
+
+.msg-bubble {
+  max-width: 75%;
+  border-radius: 16px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.msg-bubble.right {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(108,99,255,0.25), rgba(255,101,132,0.2));
+  border-color: rgba(108,99,255,0.3);
+}
+.msg-bubble.left {
+  align-self: flex-start;
+  background: rgba(255,255,255,0.06);
+}
+
+.msg-sender {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6C63FF;
+  margin-bottom: 4px;
+}
+
+.msg-text {
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.msg-image-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #00D4FF;
+  text-decoration: none;
+  font-size: 14px;
+}
+.msg-image-link:hover {
+  text-decoration: underline;
+}
+
+.msg-time {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+  margin-top: 6px;
+}
+
+@media (max-width: 960px) {
+  .messages-layout {
+    flex-direction: column;
+  }
+
+  .conversation-list {
+    width: 100%;
+    max-height: 40%;
+    border-left: none;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .chat-panel {
+    min-height: 50%;
+  }
+}
 </style>

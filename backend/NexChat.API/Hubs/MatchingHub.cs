@@ -10,12 +10,19 @@ namespace NexChat.API.Hubs;
 [Authorize]
 public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
 {
-    private Guid CurrentUserId =>
-        Guid.Parse(Context.User!.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private bool TryGetUserId(out Guid userId)
+    {
+        var id = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(id, out userId);
+    }
 
     public override async Task OnConnectedAsync()
     {
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId))
+        {
+            Context.Abort();
+            return;
+        }
         await matching.SetUserOnlineAsync(userId, Context.ConnectionId);
 
         await db.Users
@@ -27,7 +34,11 @@ public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId))
+        {
+            await base.OnDisconnectedAsync(exception);
+            return;
+        }
         await matching.SetUserOfflineAsync(userId);
 
         await db.Users
@@ -39,7 +50,11 @@ public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
 
     public async Task StartSearching(string genderFilter)
     {
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId))
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid request");
+            return;
+        }
         var user = await db.Users.FindAsync(userId);
         if (user == null || user.IsBanned)
         {
@@ -74,36 +89,102 @@ public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
 
     public async Task CancelSearching()
     {
-        await matching.RemoveFromQueueAsync(CurrentUserId);
+        if (!TryGetUserId(out var userId))
+            return;
+        await matching.RemoveFromQueueAsync(userId);
         await Clients.Caller.SendAsync("SearchCancelled");
     }
 
     public async Task ConnectByCode(string code)
     {
-        var userId = CurrentUserId;
-        var session = await matching.ConnectByCodeAsync(userId, code.Trim().ToUpper());
-
-        if (session == null)
+        if (!TryGetUserId(out var userId))
         {
-            await Clients.Caller.SendAsync("CodeError", "User not found or invalid code");
+            await Clients.Caller.SendAsync("CodeError", "Invalid request");
+            return;
+        }
+        var (requestSent, targetId, error) = await matching.RequestConnectionByCodeAsync(userId, code.Trim().ToUpper());
+
+        if (!requestSent)
+        {
+            await Clients.Caller.SendAsync("CodeError", error ?? "User not found or invalid code");
             return;
         }
 
-        var partner = await db.Users.FindAsync(session.User2Id == userId ? session.User1Id : session.User2Id);
+        var targetConnectionId = await matching.GetConnectionIdAsync(targetId!.Value);
         var user = await db.Users.FindAsync(userId);
-        var partnerConnectionId = await matching.GetConnectionIdAsync(partner!.Id);
+
+        await Clients.Caller.SendAsync("ConnectionRequestSent");
+
+        if (targetConnectionId != null && user != null)
+            await Clients.Client(targetConnectionId).SendAsync("IncomingConnectionRequest", new
+            {
+                RequesterId = userId.ToString(),
+                RequesterName = user.Name,
+                RequesterGender = user.Gender,
+                RequesterAvatar = user.Avatar
+            });
+    }
+
+    public async Task AcceptConnectionRequest(string requesterIdStr)
+    {
+        if (!TryGetUserId(out var targetId))
+        {
+            await Clients.Caller.SendAsync("CodeError", "Invalid request");
+            return;
+        }
+        if (!Guid.TryParse(requesterIdStr, out var requesterId))
+        {
+            await Clients.Caller.SendAsync("CodeError", "Invalid request");
+            return;
+        }
+
+        var session = await matching.AcceptConnectionRequestAsync(targetId, requesterId);
+        if (session == null)
+        {
+            await Clients.Caller.SendAsync("CodeError", "Request expired or invalid");
+            return;
+        }
+
+        var partner = await db.Users.FindAsync(requesterId);
+        var user = await db.Users.FindAsync(targetId);
+        var partnerConnectionId = await matching.GetConnectionIdAsync(requesterId);
 
         await Clients.Caller.SendAsync("MatchFound", new
         {
             SessionId = session.Id.ToString(),
-            Partner = new { partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar }
+            Partner = new { partner!.Name, partner.Gender, partner.UniqueCode, partner.Avatar }
         });
 
-        if (partnerConnectionId != null)
+        if (partnerConnectionId != null && user != null)
             await Clients.Client(partnerConnectionId).SendAsync("MatchFound", new
             {
                 SessionId = session.Id.ToString(),
-                Partner = new { user!.Name, user.Gender, user.UniqueCode, user.Avatar }
+                Partner = new { user.Name, user.Gender, user.UniqueCode, user.Avatar }
             });
+    }
+
+    public async Task DeclineConnectionRequest(string requesterIdStr)
+    {
+        if (!TryGetUserId(out var targetId))
+            return;
+        if (!Guid.TryParse(requesterIdStr, out var requesterId))
+            return;
+
+        if (matching.DeclineConnectionRequest(targetId, requesterId))
+        {
+            var requesterConnectionId = await matching.GetConnectionIdAsync(requesterId);
+            if (requesterConnectionId != null)
+                await Clients.Client(requesterConnectionId).SendAsync("ConnectionDeclined");
+        }
+    }
+
+    public async Task CancelConnectionRequest()
+    {
+        if (!TryGetUserId(out var requesterId))
+            return;
+        if (matching.CancelConnectionRequest(requesterId))
+        {
+            await Clients.Caller.SendAsync("ConnectionCancelled");
+        }
     }
 }

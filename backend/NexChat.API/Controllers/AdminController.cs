@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using NexChat.API.Hubs;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -10,7 +12,7 @@ namespace NexChat.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Policy = "AdminOnly")]
-public class AdminController(AppDbContext db) : ControllerBase
+public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext) : ControllerBase
 {
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats()
@@ -63,10 +65,19 @@ public class AdminController(AppDbContext db) : ControllerBase
     [HttpGet("sessions")]
     public async Task<ActionResult<PagedResult<AdminSessionDto>>> GetSessions(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
     {
-        var total = await db.ChatSessions.CountAsync();
-        var sessions = await db.ChatSessions
+        var query = db.ChatSessions.AsQueryable();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(sess =>
+                sess.User1.Name.ToLower().Contains(s) ||
+                sess.User2.Name.ToLower().Contains(s));
+        }
+        var total = await query.CountAsync();
+        var sessions = await query
             .Include(s => s.User1)
             .Include(s => s.User2)
             .OrderByDescending(s => s.StartedAt)
@@ -143,6 +154,75 @@ public class AdminController(AppDbContext db) : ControllerBase
         ));
 
         return Ok(result);
+    }
+
+    [HttpGet("support/sessions")]
+    public async Task<ActionResult<PagedResult<AdminSessionDto>>> GetSupportSessions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 30,
+        [FromQuery] string? search = null)
+    {
+        var query = db.ChatSessions
+            .Include(s => s.User1)
+            .Include(s => s.User2)
+            .Where(s => s.Type == "support");
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(sess => sess.User2.Name.ToLower().Contains(s));
+        }
+
+        var total = await query.CountAsync();
+        var sessions = await query
+            .OrderByDescending(s => s.StartedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new AdminSessionDto(
+                s.Id, s.User1.Name, s.User2.Name, s.Type,
+                s.StartedAt, s.EndedAt,
+                s.Messages.Count
+            ))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminSessionDto>(sessions, total, page, pageSize));
+    }
+
+    [HttpPost("support/send")]
+    public async Task<IActionResult> SendSupportMessage([FromBody] SupportSendDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Content) || dto.Content.Length > 5000)
+            return BadRequest(new { message = "محتوى الرسالة غير صالح" });
+
+        var supportUser = await db.Users.FirstOrDefaultAsync(u => u.UniqueCode == "NX-SUPPORT");
+        if (supportUser == null)
+            return StatusCode(500, new { message = "خدمة الدعم غير متاحة" });
+
+        var session = await db.ChatSessions
+            .FirstOrDefaultAsync(s => s.Id == dto.SessionId && s.Type == "support");
+        if (session == null)
+            return NotFound(new { message = "الجلسة غير موجودة" });
+
+        var message = new Message
+        {
+            SessionId = dto.SessionId,
+            SenderId = supportUser.Id,
+            Content = dto.Content.Trim(),
+            Type = "text"
+        };
+        db.Messages.Add(message);
+        await db.SaveChangesAsync();
+
+        await hubContext.Clients.Group(dto.SessionId.ToString()).SendAsync("ReceiveMessage", new
+        {
+            message.Id,
+            message.SenderId,
+            message.Content,
+            message.Type,
+            message.SentAt
+        });
+
+        return Ok(new { message.Id, message.SentAt });
     }
 
     [HttpGet("messages")]

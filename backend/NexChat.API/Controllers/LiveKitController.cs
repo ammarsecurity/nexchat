@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using NexChat.Infrastructure.Data;
 using System.Security.Claims;
@@ -10,6 +11,7 @@ namespace NexChat.API.Controllers;
 [ApiController]
 [Route("api/livekit")]
 [Authorize]
+[EnableRateLimiting("api")]
 public class LiveKitController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -28,11 +30,8 @@ public class LiveKitController : ControllerBase
             return BadRequest(new { message = "RoomName مطلوب" });
 
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdStr))
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId) || !Guid.TryParse(req.RoomName, out var sessionId))
             return Unauthorized();
-
-        var userId = Guid.Parse(userIdStr);
-        var sessionId = Guid.Parse(req.RoomName);
 
         var session = await _db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sessionId && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);

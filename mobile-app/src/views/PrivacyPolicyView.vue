@@ -27,7 +27,7 @@ onMounted(async () => {
   <div class="privacy page">
     <LoaderOverlay :show="loading" text="جاري تحميل سياسة الخصوصية..." />
     <header class="top-bar">
-      <button class="back-btn" @click="router.back()"><ChevronRight :size="22" /></button>
+      <button class="back-btn" @click="router.replace('/settings')"><ChevronRight :size="22" /></button>
       <span class="top-title">سياسة الخصوصية</span>
       <div style="width:40px"></div>
     </header>

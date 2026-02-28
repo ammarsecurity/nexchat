@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw } from 'lucide-vue-next'
+import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { chatHub, startHub, ensureConnected } from '../services/signalr'
@@ -20,6 +20,7 @@ const sessionEnded = ref(false)
 const timerSeconds = ref(0)
 const showReport = ref(false)
 const reportReason = ref('')
+const showReportSuccess = ref(false)
 const incomingCall = ref(false)
 const callDeclined = ref(false)
 const showVideoConfirm = ref(false)
@@ -99,6 +100,7 @@ const partnerAvatarIsImage = computed(() =>
 const partnerAvatarIsEmoji = computed(() =>
   partner.value?.avatar && !partnerAvatarIsImage.value
 )
+const isSupportChat = computed(() => partner.value?.name === 'دعم')
 
 function normalizeServerMsg(msg) {
   return {
@@ -163,7 +165,8 @@ onMounted(async () => {
 
   chatHub.on('ReportSent', () => {
     showReport.value = false
-    alert('تم إرسال البلاغ بنجاح')
+    showReportSuccess.value = true
+    setTimeout(() => { showReportSuccess.value = false }, 3500)
   })
 
   chatHub.on('IncomingVideoCall', () => {
@@ -285,7 +288,7 @@ async function leaveSession() {
     await ensureConnected(chatHub)
     await chatHub.invoke('LeaveSession', sessionId)
     chat.clearSession()
-    router.replace('/home')
+    router.replace(isSupportChat.value ? '/settings' : '/home')
   } finally {
     loading.value = false
   }
@@ -376,16 +379,22 @@ function closeImageModal() {
               <span class="typing-dots"><span></span><span></span><span></span></span>
               يكتب...
             </span>
+            <span v-else-if="isSupportChat">دردشة الدعم</span>
             <span v-else>{{ formatTime(timerSeconds) }}</span>
           </div>
         </div>
       </div>
 
       <div class="header-actions">
-        <button class="icon-btn" @click="openVideoConfirm" title="فيديو كول"><Video :size="20" /></button>
-        <button class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
-        <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
-        <button class="icon-btn danger" @click="leaveSession" title="إنهاء"><X :size="20" /></button>
+        <template v-if="!isSupportChat">
+          <button class="icon-btn" @click="openVideoConfirm" title="فيديو كول"><Video :size="20" /></button>
+          <button class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
+          <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
+        </template>
+        <button class="icon-btn" :class="{ danger: !isSupportChat }" @click="leaveSession" :title="isSupportChat ? 'رجوع' : 'إنهاء'">
+          <ChevronRight v-if="isSupportChat" :size="20" />
+          <X v-else :size="20" />
+        </button>
       </div>
     </header>
 
@@ -449,6 +458,20 @@ function closeImageModal() {
     <!-- Call Declined Toast -->
     <Transition name="fade">
       <div v-if="callDeclined" class="declined-toast">رفض {{ partner?.name }} المكالمة</div>
+    </Transition>
+
+    <!-- Report Success Modal -->
+    <Transition name="modal">
+      <div v-if="showReportSuccess" class="success-overlay" @click.self="showReportSuccess = false">
+        <div class="success-modal glass-card">
+          <div class="success-icon-wrap">
+            <CheckCircle2 :size="56" class="success-icon" />
+          </div>
+          <h3 class="success-title">تم إرسال البلاغ بنجاح</h3>
+          <p class="success-text">تم استلام البلاغ وسيتم مراجعته من قبل الفريق</p>
+          <button class="success-btn" @click="showReportSuccess = false">حسناً</button>
+        </div>
+      </div>
     </Transition>
 
     <!-- Image Modal -->
@@ -648,7 +671,7 @@ function closeImageModal() {
 .message-wrap.system { align-self: center; max-width: 100%; }
 
 .bubble {
-  background: rgba(255,255,255,0.08);
+  background: var(--msg-theirs-bg);
   border-radius: 16px;
   padding: 10px 14px;
   font-size: 15px;
@@ -696,7 +719,7 @@ function closeImageModal() {
 .retry-btn:active { opacity: 0.9; }
 
 .system-msg {
-  background: rgba(255,255,255,0.05);
+  background: var(--system-msg-bg);
   border-radius: 20px;
   color: var(--text-muted);
   font-size: 12px;
@@ -920,6 +943,72 @@ function closeImageModal() {
   z-index: 50;
   white-space: nowrap;
 }
+
+/* Report Success Modal */
+.success-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 150;
+  backdrop-filter: blur(6px);
+}
+.success-modal {
+  width: 85%;
+  max-width: 320px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.success-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.15);
+}
+.success-icon {
+  color: var(--success);
+  flex-shrink: 0;
+}
+.success-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Cairo', sans-serif;
+}
+.success-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+.success-btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 24px;
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.success-btn:active { opacity: 0.9; }
+
+.modal-enter-active, .modal-leave-active { transition: opacity 0.25s; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }

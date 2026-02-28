@@ -1,12 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
-import logoImg from '../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
+const theme = useThemeStore()
+const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
 const loading = ref(false)
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'

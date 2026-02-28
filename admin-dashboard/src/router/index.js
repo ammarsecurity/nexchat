@@ -15,6 +15,7 @@ const routes = [
       { path: 'users', component: () => import('../views/UsersView.vue') },
       { path: 'sessions', component: () => import('../views/SessionsView.vue') },
       { path: 'messages', component: () => import('../views/MessagesView.vue') },
+      { path: 'support', component: () => import('../views/SupportView.vue') },
       { path: 'reports', component: () => import('../views/ReportsView.vue') },
       { path: 'ads', component: () => import('../views/AdsView.vue') },
       { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },

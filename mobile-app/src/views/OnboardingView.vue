@@ -3,11 +3,13 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
-import logoImg from '../assets/logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
+const theme = useThemeStore()
+const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
 const currentIndex = ref(0)
 const slides = ref([])
 const loading = ref(true)

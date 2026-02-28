@@ -10,19 +10,25 @@ namespace NexChat.API.Hubs;
 [Authorize]
 public class ChatHub(AppDbContext db) : Hub
 {
-    private Guid CurrentUserId =>
-        Guid.Parse(Context.User!.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private bool TryGetUserId(out Guid userId)
+    {
+        var id = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(id, out userId);
+    }
 
     public async Task JoinSession(string sessionId)
     {
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid request");
+            return;
+        }
         var session = await db.ChatSessions
             .Include(s => s.User1)
             .Include(s => s.User2)
             .FirstOrDefaultAsync(s => s.Id == sid &&
                 (s.User1Id == userId || s.User2Id == userId) &&
-                s.EndedAt == null);
+                (s.EndedAt == null || s.Type == "support"));
 
         if (session == null)
         {
@@ -54,11 +60,12 @@ public class ChatHub(AppDbContext db) : Hub
         if (string.IsNullOrWhiteSpace(content) || content.Length > 5000) return;
         if (type != "text" && type != "image") type = "text";
 
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
 
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);
+            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
+            (s.EndedAt == null || s.Type == "support"));
 
         if (session == null) return;
 
@@ -84,66 +91,72 @@ public class ChatHub(AppDbContext db) : Hub
 
     public async Task StartTyping(string sessionId)
     {
-        await Clients.OthersInGroup(sessionId).SendAsync("UserTyping", CurrentUserId);
+        if (TryGetUserId(out var userId))
+            await Clients.OthersInGroup(sessionId).SendAsync("UserTyping", userId);
     }
 
     public async Task StopTyping(string sessionId)
     {
-        await Clients.OthersInGroup(sessionId).SendAsync("UserStoppedTyping", CurrentUserId);
+        if (TryGetUserId(out var userId))
+            await Clients.OthersInGroup(sessionId).SendAsync("UserStoppedTyping", userId);
     }
 
     public async Task LeaveSession(string sessionId)
     {
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
 
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);
+            s.Id == sid && (s.User1Id == userId || s.User2Id == userId));
 
-        if (session != null)
+        if (session != null && session.Type != "support")
         {
             session.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
         }
 
-        await Clients.Group(sessionId).SendAsync("SessionEnded", userId);
+        if (session?.Type != "support")
+            await Clients.Group(sessionId).SendAsync("SessionEnded", userId);
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId);
     }
 
     public async Task RequestVideoCall(string sessionId)
     {
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);
+            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
+            (s.EndedAt == null || s.Type == "support"));
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall");
     }
 
     public async Task AcceptVideoCall(string sessionId)
     {
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);
+            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
+            (s.EndedAt == null || s.Type == "support"));
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallAccepted");
     }
 
     public async Task DeclineVideoCall(string sessionId)
     {
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);
+            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
+            (s.EndedAt == null || s.Type == "support"));
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallDeclined");
     }
 
     public async Task ReportUser(string sessionId, string reason)
     {
-        var sid = Guid.Parse(sessionId);
-        var userId = CurrentUserId;
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
 
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId));

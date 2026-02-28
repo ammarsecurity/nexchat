@@ -41,7 +41,7 @@ onMounted(async () => {
         connected.value = false
       },
       () => {
-        router.back()
+        router.replace(`/chat/${sessionId}`)
       },
       (localTrack) => {
         nextTick().then(() => {
@@ -99,7 +99,7 @@ function toggleCamera() {
 }
 
 function endCall() {
-  router.back()
+  router.replace(`/chat/${sessionId}`)
 }
 
 function formatTime(sec) {

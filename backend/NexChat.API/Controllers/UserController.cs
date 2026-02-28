@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using NexChat.Core.DTOs;
 using NexChat.Infrastructure.Data;
@@ -10,6 +11,7 @@ namespace NexChat.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[EnableRateLimiting("api")]
 public class UserController(AppDbContext db) : ControllerBase
 {
     private Guid CurrentUserId =>

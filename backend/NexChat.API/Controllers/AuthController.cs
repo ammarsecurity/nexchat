@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
@@ -9,6 +10,7 @@ namespace NexChat.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("auth")]
 public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
 {
     [HttpPost("register")]

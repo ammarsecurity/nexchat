@@ -18,9 +18,23 @@ html, body, #app {
   height: 100%;
   margin: 0;
   padding: 0;
-  font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif !important;
+  font-style: normal !important;
   background: var(--bg);
   color: var(--text);
+}
+
+/* إجبار خط Cairo على كل عناصر Vuetify - منع الخط المائل/المختلف */
+#app,
+#app *,
+.v-application,
+.v-application *,
+.v-btn, .v-card, .v-list-item, .v-field, .v-input, .v-label,
+.v-data-table, .v-table, .v-app-bar, .v-toolbar,
+.v-navigation-drawer, .v-chip, .v-alert, .v-dialog,
+.v-text-field, .v-select, .v-autocomplete {
+  font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif !important;
+  font-style: normal !important;
 }
 
 /* Override Vuetify for dark theme */

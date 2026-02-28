@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDisplay } from 'vuetify'
 
+const logoUrl = '/logo.png'
 const router = useRouter()
 const route = useRoute()
 const { mobile } = useDisplay()
@@ -33,6 +34,7 @@ const navItems = [
   { title: 'المستخدمين', icon: 'mdi-account-group', to: '/users' },
   { title: 'الجلسات', icon: 'mdi-chat', to: '/sessions' },
   { title: 'الرسائل', icon: 'mdi-message-text', to: '/messages' },
+  { title: 'دردشة الدعم', icon: 'mdi-headset', to: '/support' },
   { title: 'البلاغات', icon: 'mdi-flag', to: '/reports' },
   { title: 'الإعلانات', icon: 'mdi-image-multiple', to: '/ads' },
   { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
@@ -69,14 +71,8 @@ function logout() {
         :prepend-icon="rail ? undefined : undefined"
       >
         <template #prepend>
-          <div class="logo-chip" :class="{ 'logo-chip-sm': rail }">N</div>
+          <img :src="logoUrl" alt="NexChat" class="logo-img" :class="{ 'logo-img-sm': rail }" />
         </template>
-        <v-list-item-title v-if="!rail" class="gradient-text text-h6 font-weight-black">
-          NexChat
-        </v-list-item-title>
-        <v-list-item-subtitle v-if="!rail" class="text-caption">
-          Admin Panel
-        </v-list-item-subtitle>
 
         <template #append>
           <v-btn
@@ -177,24 +173,14 @@ function logout() {
 </template>
 
 <style scoped>
-.logo-chip {
-  align-items: center;
-  background: linear-gradient(135deg, #6C63FF, #FF6584);
-  border-radius: 10px;
-  color: white;
-  display: flex;
-  font-size: 18px;
-  font-weight: 900;
+.logo-img {
   height: 36px;
-  justify-content: center;
-  width: 36px;
+  width: auto;
+  object-fit: contain;
   flex-shrink: 0;
 }
-.logo-chip-sm {
-  font-size: 14px;
+.logo-img-sm {
   height: 30px;
-  width: 30px;
-  border-radius: 8px;
 }
 
 .nav-active {

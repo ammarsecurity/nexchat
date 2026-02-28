@@ -15,10 +15,11 @@ api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('nexchat_token')
-      localStorage.removeItem('nexchat_user')
-      window.location.hash = '#/login'
+      window.dispatchEvent(new CustomEvent('nexchat:unauthorized'))
     }
+    // توحيد رسالة الخطأ من الاستجابة
+    const msg = err.response?.data?.message ?? err.message ?? 'حدث خطأ، حاول مجدداً'
+    err.userMessage = msg
     return Promise.reject(err)
   }
 )

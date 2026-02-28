@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, User, Users } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, User, Users, Phone, PhoneOff, Check, X } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
+import HomeNavBar from '../components/HomeNavBar.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useAuthStore } from '../stores/auth'
 import { useMatchingStore } from '../stores/matching'
@@ -23,8 +24,11 @@ const codeInput = ref('')
 const codeError = ref('')
 const copied = ref(false)
 const loading = ref(false)
+const waitingForAccept = ref(false)
+const incomingRequest = ref(null)
 const showLogoutConfirm = ref(false)
 const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
+let connectionTimeoutId = null
 
 const user = computed(() => auth.user)
 const avatarLetter = computed(() => user.value?.name?.[0]?.toUpperCase() || '?')
@@ -37,8 +41,15 @@ onMounted(async () => {
   matchingHub.off('MatchFound')
   matchingHub.off('SearchCancelled')
   matchingHub.off('CodeError')
+  matchingHub.off('ConnectionRequestSent')
+  matchingHub.off('IncomingConnectionRequest')
+  matchingHub.off('ConnectionDeclined')
+  matchingHub.off('ConnectionCancelled')
 
   matchingHub.on('MatchFound', (data) => {
+    clearConnectionTimeout()
+    waitingForAccept.value = false
+    loading.value = false
     const sessionId = data.sessionId ?? data.SessionId
     const partner = data.partner ?? data.Partner
     chat.setSession(sessionId, partner)
@@ -52,12 +63,63 @@ onMounted(async () => {
 
   matchingHub.on('CodeError', (msg) => {
     codeError.value = msg
+    loading.value = false
+    waitingForAccept.value = false
+    clearConnectionTimeout()
+  })
+
+  matchingHub.on('ConnectionRequestSent', () => {
+    waitingForAccept.value = true
+    startConnectionTimeout()
+  })
+
+  matchingHub.on('IncomingConnectionRequest', (data) => {
+    incomingRequest.value = {
+      requesterId: data.requesterId ?? data.RequesterId,
+      requesterName: data.requesterName ?? data.RequesterName,
+      requesterGender: data.requesterGender ?? data.RequesterGender,
+      requesterAvatar: data.requesterAvatar ?? data.RequesterAvatar
+    }
+  })
+
+  matchingHub.on('ConnectionDeclined', () => {
+    clearConnectionTimeout()
+    waitingForAccept.value = false
+    loading.value = false
+    codeError.value = 'تم رفض الطلب'
+  })
+
+  matchingHub.on('ConnectionCancelled', () => {
+    clearConnectionTimeout()
+    waitingForAccept.value = false
+    loading.value = false
   })
 
   setInterval(() => {
     onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
   }, 5000)
 })
+
+function clearConnectionTimeout() {
+  if (connectionTimeoutId) {
+    clearTimeout(connectionTimeoutId)
+    connectionTimeoutId = null
+  }
+}
+
+function startConnectionTimeout() {
+  clearConnectionTimeout()
+  connectionTimeoutId = setTimeout(async () => {
+    connectionTimeoutId = null
+    waitingForAccept.value = false
+    loading.value = false
+    codeError.value = 'انتهت مهلة الانتظار'
+    try {
+      await ensureConnected(matchingHub)
+      await matchingHub.invoke('CancelConnectionRequest')
+    } catch {}
+  }, 60000)
+}
 
 async function startRandom() {
   loading.value = true
@@ -82,12 +144,45 @@ async function connectByCode() {
     return
   }
   loading.value = true
+  waitingForAccept.value = false
   try {
     await ensureConnected(matchingHub)
     await matchingHub.invoke('ConnectByCode', code)
-  } finally {
+  } catch {
     loading.value = false
+    codeError.value = 'حدث خطأ في الاتصال'
   }
+}
+
+async function cancelConnectionRequest() {
+  clearConnectionTimeout()
+  waitingForAccept.value = false
+  loading.value = false
+  try {
+    await ensureConnected(matchingHub)
+    await matchingHub.invoke('CancelConnectionRequest')
+  } catch {}
+}
+
+async function acceptConnectionRequest() {
+  if (!incomingRequest.value) return
+  const requesterId = incomingRequest.value.requesterId
+  incomingRequest.value = null
+  try {
+    await ensureConnected(matchingHub)
+    await matchingHub.invoke('AcceptConnectionRequest', requesterId)
+  } catch {
+    codeError.value = 'حدث خطأ في قبول الطلب'
+  }
+}
+
+function declineConnectionRequest() {
+  if (!incomingRequest.value) return
+  const requesterId = incomingRequest.value.requesterId
+  incomingRequest.value = null
+  ensureConnected(matchingHub).then(() => {
+    matchingHub.invoke('DeclineConnectionRequest', requesterId).catch(() => {})
+  })
 }
 
 function copyCode() {
@@ -97,9 +192,14 @@ function copyCode() {
 }
 
 onUnmounted(() => {
+  clearConnectionTimeout()
   matchingHub.off('MatchFound')
   matchingHub.off('SearchCancelled')
   matchingHub.off('CodeError')
+  matchingHub.off('ConnectionRequestSent')
+  matchingHub.off('IncomingConnectionRequest')
+  matchingHub.off('ConnectionDeclined')
+  matchingHub.off('ConnectionCancelled')
 })
 
 function openLogoutConfirm() {
@@ -122,7 +222,10 @@ const genderFilters = [
 
 <template>
   <div class="home page auth-pattern">
-    <LoaderOverlay :show="loading" text="جاري الاتصال..." />
+    <LoaderOverlay
+      :show="loading"
+      :text="waitingForAccept ? 'بانتظار موافقة الطرف الآخر...' : 'جاري الاتصال...'"
+    />
     <!-- Native-style header -->
     <header class="header">
       <div class="user-row" @click="copyCode">
@@ -146,6 +249,39 @@ const genderFilters = [
         </button>
       </div>
     </header>
+
+    <!-- Incoming Connection Request Dialog -->
+    <Transition name="modal">
+      <div v-if="incomingRequest" class="logout-overlay" @click.self="declineConnectionRequest">
+        <div class="request-dialog glass-card">
+          <div class="request-dialog-icon"><Phone :size="48" stroke-width="2" /></div>
+          <h3 class="request-dialog-title">طلب اتصال</h3>
+          <p class="request-dialog-text">
+            <strong>{{ incomingRequest.requesterName }}</strong> يريد الاتصال بك
+          </p>
+          <div class="request-dialog-actions">
+            <button class="btn-decline" @click="declineConnectionRequest">
+              <X :size="20" />
+              <span>رفض</span>
+            </button>
+            <button class="btn-accept" @click="acceptConnectionRequest">
+              <Check :size="20" />
+              <span>قبول</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Cancel waiting (when user is requester) - shown above loader -->
+    <Transition name="fade">
+      <div v-if="waitingForAccept" class="cancel-wait-wrap">
+        <button class="cancel-wait-btn" @click="cancelConnectionRequest">
+          <PhoneOff :size="18" />
+          <span>إلغاء الطلب</span>
+        </button>
+      </div>
+    </Transition>
 
     <!-- Logout Confirm Dialog -->
     <Transition name="modal">
@@ -225,6 +361,8 @@ const genderFilters = [
       <BannerStrip placement="home" />
       <AppFooter />
     </div>
+
+    <HomeNavBar :loading="loading" @launch="startRandom" />
   </div>
 </template>
 
@@ -234,17 +372,15 @@ const genderFilters = [
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  padding-bottom: var(--safe-bottom);
+  padding-bottom: calc(90px + var(--safe-bottom));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 .home-bottom {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  min-height: 0;
+  padding-top: 8px;
 }
 
 /* Native header - compact, full-width */
@@ -520,4 +656,85 @@ const genderFilters = [
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.25s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
+
+/* Incoming request dialog */
+.request-dialog {
+  margin: var(--spacing);
+  max-width: 360px;
+  padding: var(--spacing);
+  width: 100%;
+}
+.request-dialog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+.request-dialog-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; text-align: center; }
+.request-dialog-text { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; text-align: center; }
+.request-dialog-actions {
+  display: flex;
+  gap: 12px;
+}
+.btn-decline {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+}
+.btn-decline:active { opacity: 0.9; }
+.btn-accept {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+}
+.btn-accept:active { opacity: 0.9; }
+
+/* Cancel wait button - above loader overlay */
+.cancel-wait-wrap {
+  position: fixed;
+  bottom: calc(48px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+}
+.cancel-wait-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  color: white;
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+}
+.cancel-wait-btn:active { opacity: 0.9; }
 </style>
