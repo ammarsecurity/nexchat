@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
+import { Capacitor } from '@capacitor/core'
+import { App } from '@capacitor/app'
 import NoConnectionView from './views/NoConnectionView.vue'
 import { useAuthStore } from './stores/auth'
 import { matchingHub, startHub, stopHub } from './services/signalr'
@@ -32,26 +34,8 @@ watch([isOnline, () => auth.token], ([online, token]) => {
   }
 }, { immediate: true })
 
-function handleBackButton(event) {
-  const path = route.path
-  const canGoBack = event?.canGoBack ?? window.history.length > 1
-  if (path === '/settings') {
-    router.replace('/home')
-  } else if (path === '/privacy') {
-    router.replace(auth.token ? '/settings' : '/login')
-  } else if (path.startsWith('/video/')) {
-    const id = route.params.sessionId
-    if (id) router.replace(`/chat/${id}`)
-  } else if (path.startsWith('/chat/')) {
-    router.replace('/home')
-  } else if (path === '/matching') {
-    router.replace('/home')
-  } else if (canGoBack) {
-    router.back()
-  } else {
-    import('@capacitor/app').then(({ App }) => App.minimizeApp?.()).catch(() => {})
-  }
-}
+// الصفحات الرئيسية: الضغط على الرجوع لا يخرج التطبيق
+const tabRoots = ['/', '/onboarding', '/login', '/register', '/home', '/matching']
 
 let backButtonListener = null
 
@@ -60,11 +44,17 @@ onMounted(() => {
   window.addEventListener('offline', handleOffline)
   window.addEventListener('nexchat:unauthorized', handleUnauthorized)
 
-  import('@capacitor/app').then(({ App }) => {
-    if (typeof App?.addListener === 'function') {
-      App.addListener('backButton', (e) => handleBackButton(e)).then((l) => { backButtonListener = l })
-    }
-  }).catch(() => {})
+  if (Capacitor.isNativePlatform() && typeof App?.addListener === 'function') {
+    App.addListener('backButton', () => {
+      const path = route.path
+      const isAtTabRoot = path === '/' || tabRoots.includes(path)
+
+      if (!isAtTabRoot) {
+        router.back()
+      }
+      // في الصفحات الرئيسية: لا نخرج التطبيق
+    }).then((l) => { backButtonListener = l })
+  }
 })
 onUnmounted(() => {
   window.removeEventListener('online', handleOnline)
