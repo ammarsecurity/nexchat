@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Users, UserCircle, Eye, EyeOff } from 'lucide-vue-next'
+import { User, Users, UserCircle, Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useThemeStore } from '../../stores/theme'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
@@ -99,7 +99,10 @@ async function handleRegister() {
             </div>
           </div>
 
-          <div v-if="error" class="error-msg">{{ error }}</div>
+          <div v-if="error" class="error-toast">
+            <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+            <span>{{ error }}</span>
+          </div>
 
           <button
             type="submit"
@@ -202,15 +205,6 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 .gender-btn:active { opacity: 0.9; }
 .gender-btn.active .gender-label { color: white; }
 .gender-label { font-size: 13px; font-weight: 500; }
-
-.error-msg {
-  background: rgba(255, 101, 132, 0.12);
-  border: 1px solid rgba(255, 101, 132, 0.3);
-  border-radius: 8px;
-  color: #FF6584;
-  font-size: 13px;
-  padding: 10px 12px;
-}
 
 .login-link { display: flex; gap: 6px; justify-content: center; font-size: 14px; }
 .privacy-link { margin-top: 8px; text-align: center; }

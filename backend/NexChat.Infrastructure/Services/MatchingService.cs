@@ -78,7 +78,7 @@ public class MatchingService(AppDbContext db)
     {
         var targetUser = await db.Users.FirstOrDefaultAsync(u => u.UniqueCode == code && !u.IsBanned);
         if (targetUser == null || targetUser.Id == requesterId)
-            return (false, null, "User not found or invalid code");
+            return (false, null, "المستخدم غير موجود أو الكود غير صحيح");
 
         var targetOnline = UserConnectionMap.ContainsKey(targetUser.Id);
         if (!targetOnline)

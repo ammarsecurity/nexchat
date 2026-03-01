@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Eye, EyeOff } from 'lucide-vue-next'
+import { Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useThemeStore } from '../../stores/theme'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
@@ -68,7 +68,10 @@ async function handleLogin() {
           </button>
         </div>
 
-        <p v-if="error" class="login-err">{{ error }}</p>
+        <div v-if="error" class="error-toast">
+          <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+          <span>{{ error }}</span>
+        </div>
 
         <button type="submit" class="login-btn" :disabled="loading || !name || !password">
           <span v-if="!loading">دخول</span>
@@ -167,15 +170,6 @@ async function handleLogin() {
   -webkit-tap-highlight-color: transparent;
 }
 .input-toggle:active { opacity: 0.8; }
-
-.login-err {
-  font-size: 13px;
-  color: var(--danger);
-  margin: 0;
-  padding: 10px 14px;
-  background: rgba(255, 101, 132, 0.1);
-  border-radius: 10px;
-}
 
 .login-btn {
   min-height: 52px;

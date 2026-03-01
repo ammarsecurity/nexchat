@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, Check, X, PhoneCall } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, Check, X, PhoneCall, AlertCircle } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -312,18 +312,17 @@ const genderFilters = [
       </div>
     </div>
 
-    <!-- Main CTA - circular button with animation -->
-    <div class="main-cta-wrap">
-      <button class="main-cta-circle" :disabled="loading" @click="startRandom">
-        <Zap :size="32" class="cta-icon" />
-        <span class="cta-text">ابدأ محادثة عشوائية</span>
-      </button>
-    </div>
-
-    <!-- Segmented control -->
-    <div class="segment-wrap">
-      <span class="segment-label">فلتر المطابقة</span>
-      <div class="segment-control">
+    <!-- CTA + Filter - unified section -->
+    <div class="cta-filter-card">
+      <div class="main-cta-wrap">
+        <button class="main-cta-circle" :disabled="loading" @click="startRandom">
+          <Zap :size="32" class="cta-icon" />
+          <span class="cta-text">ابدأ محادثة عشوائية</span>
+        </button>
+      </div>
+      <div class="segment-wrap">
+        <span class="segment-label">فلتر المطابقة</span>
+        <div class="segment-control">
         <button
           v-for="f in genderFilters"
           :key="f.value"
@@ -338,6 +337,7 @@ const genderFilters = [
           <span class="segment-text">{{ f.label }}</span>
         </button>
       </div>
+    </div>
     </div>
 
     <!-- Divider -->
@@ -366,7 +366,10 @@ const genderFilters = [
           <PhoneCall :size="22" stroke-width="2" />
         </button>
       </div>
-      <p v-if="codeError" class="code-err">{{ codeError }}</p>
+      <div v-if="codeError" class="error-toast">
+        <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+        <span>{{ codeError }}</span>
+      </div>
     </div>
 
     <div class="home-bottom">
@@ -532,9 +535,44 @@ const genderFilters = [
   font-weight: 500;
 }
 
+/* CTA + Filter - unified card */
+.cta-filter-card {
+  margin: 0 var(--spacing) 24px;
+  padding: 24px var(--spacing);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  min-height: 280px;
+}
+.cta-filter-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ccircle cx='8' cy='8' r='1' fill='%236C63FF'/%3E%3Ccircle cx='24' cy='8' r='1' fill='%23FF6584'/%3E%3Ccircle cx='8' cy='24' r='1' fill='%23FF6584'/%3E%3Ccircle cx='24' cy='24' r='1' fill='%236C63FF'/%3E%3Ccircle cx='16' cy='16' r='0.5' fill='%236C63FF' opacity='0.6'/%3E%3C/svg%3E");
+  background-size: 40px 40px;
+  background-repeat: repeat;
+  pointer-events: none;
+}
+.cta-filter-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(108, 99, 255, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+}
+.cta-filter-card > * {
+  position: relative;
+  z-index: 1;
+}
+
 /* Main CTA - circular button with animation */
 .main-cta-wrap {
-  padding: 0 var(--spacing) 24px;
+  padding: 0 0 20px;
   display: flex;
   justify-content: center;
 }
@@ -594,7 +632,7 @@ const genderFilters = [
 
 /* Segmented control */
 .segment-wrap {
-  padding: 0 var(--spacing) 24px;
+  padding: 0;
 }
 
 .segment-label {
@@ -764,12 +802,6 @@ const genderFilters = [
 @keyframes call-icon-glow {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.85; }
-}
-
-.code-err {
-  font-size: 13px;
-  color: var(--danger);
-  margin: 0;
 }
 
 /* Logout confirm dialog */

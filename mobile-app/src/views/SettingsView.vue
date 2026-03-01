@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import PrivacyBadge from '../components/PrivacyBadge.vue'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 
@@ -164,16 +165,24 @@ async function confirmDelete() {
           </div>
           <div class="profile-details">
             <div class="profile-name">{{ user?.name }}</div>
-            <div class="profile-meta">{{ genderLabel[user?.gender] || user?.gender }}</div>
-            <div class="profile-code-row" @click="copyCode">
-              <span class="profile-code gradient-text">{{ user?.uniqueCode }}</span>
-              <button type="button" class="copy-code-btn" :title="copiedCode ? 'تم النسخ' : 'نسخ'">
-                <Copy v-if="!copiedCode" :size="16" />
-                <span v-else class="copied-text">تم</span>
-              </button>
-            </div>
+            <span class="profile-gender-badge">{{ genderLabel[user?.gender] || user?.gender }}</span>
           </div>
         </div>
+        <div class="profile-code-section" @click="copyCode">
+          <span class="profile-code-label">كود الاتصال</span>
+          <div class="profile-code-row">
+            <span class="profile-code">{{ user?.uniqueCode }}</span>
+            <button type="button" class="copy-code-btn" :title="copiedCode ? 'تم النسخ' : 'نسخ'">
+              <Copy v-if="!copiedCode" :size="18" stroke-width="2" />
+              <span v-else class="copied-text">تم</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Privacy badge -->
+      <div class="privacy-badge-wrap">
+        <PrivacyBadge />
       </div>
 
       <!-- Support Chat - بارز -->
@@ -284,7 +293,10 @@ async function confirmDelete() {
             placeholder="كلمة المرور"
             @keyup.enter="confirmDelete"
           />
-          <div v-if="deleteError" class="delete-error">{{ deleteError }}</div>
+          <div v-if="deleteError" class="error-toast">
+            <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+            <span>{{ deleteError }}</span>
+          </div>
           <div class="delete-dialog-actions">
             <button class="btn-ghost" @click="showDeletePassword = false" :disabled="deleting">إلغاء</button>
             <button class="delete-confirm-btn" @click="confirmDelete" :disabled="deleting">
@@ -402,26 +414,29 @@ async function confirmDelete() {
 /* Profile card */
 .profile-card {
   overflow: hidden;
-  padding: var(--spacing);
+  padding: 0;
 }
+
 .profile-card-inner {
   align-items: center;
   display: flex;
-  gap: var(--spacing);
+  gap: 16px;
+  padding: var(--spacing);
 }
+
 .avatar-wrap {
   cursor: pointer;
   flex-shrink: 0;
-  height: 72px;
+  height: 64px;
   position: relative;
-  width: 72px;
+  width: 64px;
 }
 .avatar-img,
 .avatar-circle {
   border: 2px solid var(--border);
   border-radius: 50%;
-  height: 72px;
-  width: 72px;
+  height: 64px;
+  width: 64px;
 }
 .avatar-img { object-fit: cover; display: block; }
 .avatar-circle {
@@ -429,8 +444,8 @@ async function confirmDelete() {
   display: flex;
   justify-content: center;
 }
-.av-letter { color: white; font-size: 28px; font-weight: 700; }
-.av-emoji { font-size: 36px; line-height: 1; }
+.av-letter { color: white; font-size: 24px; font-weight: 700; }
+.av-emoji { font-size: 32px; line-height: 1; }
 
 .edit-badge {
   align-items: center;
@@ -439,24 +454,68 @@ async function confirmDelete() {
   bottom: 0;
   color: white;
   display: flex;
-  height: 24px;
+  height: 22px;
   justify-content: center;
   position: absolute;
-  right: 0;
-  width: 24px;
+  inset-inline-end: 0;
+  width: 22px;
 }
 
-.profile-details { flex: 1; min-width: 0; }
-.profile-name { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
-.profile-meta { color: var(--text-muted); font-size: 13px; margin-bottom: 8px; }
+.profile-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.profile-gender-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(108, 99, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  width: fit-content;
+}
+
+.profile-code-section {
+  padding: 12px var(--spacing);
+  background: rgba(108, 99, 255, 0.06);
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.profile-code-section:active { background: rgba(108, 99, 255, 0.1); }
+
+.profile-code-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
 .profile-code-row {
   align-items: center;
-  cursor: pointer;
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
-.profile-code { font-size: 14px; font-weight: 700; letter-spacing: 2px; }
-.profile-code-row:active .profile-code { opacity: 0.9; }
+.profile-code {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--primary);
+}
 .copy-code-btn {
   align-items: center;
   background: var(--bg-card);
@@ -465,14 +524,18 @@ async function confirmDelete() {
   color: var(--text-muted);
   cursor: pointer;
   display: flex;
-  height: 32px;
+  height: 36px;
   justify-content: center;
-  min-width: 32px;
+  min-width: 36px;
   padding: 0;
   transition: color 0.2s, background 0.2s;
 }
 .copy-code-btn:active { background: var(--bg-card-hover); color: var(--primary); }
-.copied-text { color: var(--success); font-size: 11px; font-weight: 600; }
+.copied-text { color: var(--success); font-size: 12px; font-weight: 600; }
+
+.privacy-badge-wrap {
+  width: 100%;
+}
 
 /* Support card - بارز ومرتب */
 .support-card {
@@ -691,7 +754,6 @@ async function confirmDelete() {
   padding: 0;
 }
 .logout-confirm-btn:active { opacity: 0.9; }
-.delete-error { color: var(--danger); font-size: 13px; margin-bottom: 8px; }
 
 /* Modal */
 .modal-overlay {

@@ -106,7 +106,7 @@ public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
 
         if (!requestSent)
         {
-            await Clients.Caller.SendAsync("CodeError", error ?? "User not found or invalid code");
+            await Clients.Caller.SendAsync("CodeError", error ?? "المستخدم غير موجود أو الكود غير صحيح");
             return;
         }
 

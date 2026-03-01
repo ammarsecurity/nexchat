@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-vue-next'
+import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle } from 'lucide-vue-next'
 import { useChatStore } from '../stores/chat'
 import { joinLiveKitRoom, leaveLiveKitRoom } from '../services/livekit'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
@@ -129,7 +129,10 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
       <div class="waiting-text">
         <div class="gradient-text font-bold" style="font-size:20px">{{ partner?.name }}</div>
         <div class="text-secondary text-sm" v-if="!error">جارٍ الاتصال...</div>
-        <div class="error-text text-sm" v-else>{{ error }}</div>
+        <div v-else class="error-toast">
+          <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+          <span>{{ error }}</span>
+        </div>
       </div>
       <div class="connecting-dots" v-if="!error">
         <span></span><span></span><span></span>
@@ -218,8 +221,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 }
 
 .gradient-bg { background: var(--primary) !important; }
-.waiting-text { text-align: center; }
-.error-text { color: #FF6584; }
+.waiting-text { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 
 .connecting-dots {
   display: flex;

@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2 } from 'lucide-vue-next'
+import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2, Share2, Copy } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
+import { useMatchingStore } from '../stores/matching'
 import { chatHub, startHub, ensureConnected } from '../services/signalr'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -12,6 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const chat = useChatStore()
+const matching = useMatchingStore()
 
 const sessionId = route.params.sessionId
 const messageText = ref('')
@@ -21,6 +23,8 @@ const timerSeconds = ref(0)
 const showReport = ref(false)
 const reportReason = ref('')
 const showReportSuccess = ref(false)
+const showShareModal = ref(false)
+const shareCodeCopied = ref(false)
 const incomingCall = ref(false)
 const callDeclined = ref(false)
 const showVideoConfirm = ref(false)
@@ -127,7 +131,10 @@ async function onVisibilityChange() {
   }
 }
 
+let chatMounted = true
+
 onMounted(async () => {
+  chatMounted = true
   loading.value = true
   await startHub(chatHub)
 
@@ -191,11 +198,10 @@ onMounted(async () => {
   }
 
   chatHub.onreconnected(async () => {
-    if (!sessionEnded.value) {
-      try {
-        await chatHub.invoke('JoinSession', sessionId)
-      } catch {}
-    }
+    if (!chatMounted || sessionEnded.value) return
+    try {
+      await chatHub.invoke('JoinSession', sessionId)
+    } catch {}
   })
 
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -206,6 +212,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  chatMounted = false
   clearInterval(timerInterval)
   document.removeEventListener('visibilitychange', onVisibilityChange)
   chatHub.off('ReceiveMessage')
@@ -220,6 +227,13 @@ onUnmounted(() => {
 })
 
 watch(messages, () => nextTick(scrollToBottom))
+
+watch(() => route.params.sessionId, (newId) => {
+  if (newId) {
+    sessionEnded.value = false
+    timerSeconds.value = 0
+  }
+})
 
 function scrollToBottom() {
   if (messagesEl.value)
@@ -288,6 +302,7 @@ async function leaveSession() {
     await ensureConnected(chatHub)
     await chatHub.invoke('LeaveSession', sessionId)
     chat.clearSession()
+    matching.setIdle()
     router.replace(isSupportChat.value ? '/settings' : '/home')
   } finally {
     loading.value = false
@@ -301,6 +316,7 @@ async function nextPerson() {
     await ensureConnected(chatHub)
     await chatHub.invoke('LeaveSession', sessionId)
     chat.clearSession()
+    matching.setIdle()
     router.replace('/matching')
     const { matchingHub: mHub, startHub: sHub } = await import('../services/signalr')
     await sHub(mHub)
@@ -358,6 +374,48 @@ function openImage(url) {
 
 function closeImageModal() {
   imageModalUrl.value = null
+}
+
+function openShareModal() {
+  showShareModal.value = true
+  shareCodeCopied.value = false
+}
+
+function closeShareModal() {
+  showShareModal.value = false
+}
+
+async function copyShareCode() {
+  const code = auth.user?.uniqueCode
+  if (!code) return
+  try {
+    await navigator.clipboard.writeText(code)
+    shareCodeCopied.value = true
+    setTimeout(() => { shareCodeCopied.value = false }, 2000)
+  } catch {}
+}
+
+async function shareCodeInChat() {
+  const code = auth.user?.uniqueCode
+  if (!code || sessionEnded.value) return
+  const text = `كودي للاتصال: ${code}`
+  closeShareModal()
+  const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  chat.addMessage({
+    tempId,
+    senderId: auth.user?.id,
+    content: text,
+    type: 'text',
+    sentAt: new Date(),
+    status: 'pending'
+  })
+  scrollToBottom()
+  try {
+    await ensureConnected(chatHub)
+    await chatHub.invoke('SendMessage', sessionId, text, 'text')
+  } catch {
+    chat.updateMessage(tempId, { status: 'failed' })
+  }
 }
 </script>
 
@@ -460,6 +518,32 @@ function closeImageModal() {
       <div v-if="callDeclined" class="declined-toast">رفض {{ partner?.name }} المكالمة</div>
     </Transition>
 
+    <!-- Share Code Modal -->
+    <Transition name="modal">
+      <div v-if="showShareModal" class="share-overlay" @click.self="closeShareModal">
+        <div class="share-modal glass-card">
+          <div class="share-modal-icon">
+            <Share2 :size="32" stroke-width="2" />
+          </div>
+          <h3 class="share-modal-title">مشاركة كود الاتصال</h3>
+          <p class="share-modal-desc">شارك كودك مع {{ partner?.name }} أو أي شخص للاتصال بك</p>
+          <div class="share-code-display">{{ auth.user?.uniqueCode }}</div>
+          <div class="share-modal-actions">
+            <button class="share-btn copy-btn" @click="copyShareCode">
+              <Copy v-if="!shareCodeCopied" :size="20" stroke-width="2" />
+              <Check v-else :size="20" stroke-width="2" />
+              <span>{{ shareCodeCopied ? 'تم النسخ!' : 'نسخ' }}</span>
+            </button>
+            <button class="share-btn primary-btn" @click="shareCodeInChat">
+              <Send :size="20" stroke-width="2" />
+              <span>إرسال في الدردشة</span>
+            </button>
+          </div>
+          <button class="share-close-btn" @click="closeShareModal">إلغاء</button>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Report Success Modal -->
     <Transition name="modal">
       <div v-if="showReportSuccess" class="success-overlay" @click.self="showReportSuccess = false">
@@ -540,6 +624,11 @@ function closeImageModal() {
 
     <!-- Input -->
     <div v-else class="input-area">
+      <!-- Share Code Bar -->
+      <button v-if="!isSupportChat" class="share-code-bar" @click="openShareModal">
+        <Share2 :size="18" stroke-width="2" />
+        <span>مشاركة كودك</span>
+      </button>
       <!-- Emoji Picker -->
       <Transition name="slide-up">
         <div v-if="showEmojiPicker" class="emoji-picker glass-card">
@@ -978,6 +1067,127 @@ function closeImageModal() {
   z-index: 50;
   white-space: nowrap;
 }
+
+/* Share Code Modal */
+.share-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 150;
+  backdrop-filter: blur(6px);
+}
+.share-modal {
+  width: 90%;
+  max-width: 340px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.share-modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.2) 0%, rgba(255, 101, 132, 0.15) 100%);
+  color: var(--primary);
+}
+.share-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Cairo', sans-serif;
+}
+.share-modal-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+.share-code-display {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--primary);
+  padding: 16px 24px;
+  background: rgba(108, 99, 255, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  font-family: 'Cairo', sans-serif;
+}
+.share-modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+.share-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s;
+}
+.share-btn.copy-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.share-btn.copy-btn:active { background: var(--bg-card-hover); }
+.share-btn.primary-btn {
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
+  border: none;
+  color: white;
+  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+}
+.share-btn.primary-btn:active { opacity: 0.9; transform: scale(0.98); }
+.share-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  padding: 8px 16px;
+  -webkit-tap-highlight-color: transparent;
+}
+.share-close-btn:active { opacity: 0.8; }
+
+.share-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.12) 0%, rgba(108, 99, 255, 0.06) 100%);
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  border-radius: 12px;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s;
+}
+.share-code-bar:active { background: rgba(108, 99, 255, 0.2); }
 
 /* Report Success Modal */
 .success-overlay {

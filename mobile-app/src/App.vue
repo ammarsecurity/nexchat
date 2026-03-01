@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
 import NoConnectionView from './views/NoConnectionView.vue'
 import { useAuthStore } from './stores/auth'
+import { matchingHub, startHub, stopHub } from './services/signalr'
 
 const isOnline = ref(navigator.onLine)
 const auth = useAuthStore()
@@ -17,9 +18,19 @@ function handleOffline() {
 }
 
 function handleUnauthorized() {
+  stopHub(matchingHub)
   useAuthStore().logout()
   router.replace('/login')
 }
+
+// إبقاء MatchingHub متصلاً عند المستخدم المسجّل - لاستقبال طلبات الاتصال بالكود من أي صفحة
+watch([isOnline, () => auth.token], ([online, token]) => {
+  if (online && token) {
+    startHub(matchingHub).catch(() => {})
+  } else {
+    stopHub(matchingHub)
+  }
+}, { immediate: true })
 
 function handleBackButton(event) {
   const path = route.path
