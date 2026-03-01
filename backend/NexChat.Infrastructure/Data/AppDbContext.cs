@@ -11,6 +11,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<Banner> Banners => Set<Banner>();
     public DbSet<SiteContent> SiteContents => Set<SiteContent>();
+    public DbSet<DeviceSubscription> DeviceSubscriptions => Set<DeviceSubscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +81,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Key).IsUnique();
             e.Property(x => x.Key).HasMaxLength(50);
+        });
+
+        modelBuilder.Entity<DeviceSubscription>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.UserId, x.OneSignalPlayerId }).IsUnique();
+            e.Property(x => x.OneSignalPlayerId).HasMaxLength(64);
+            e.Property(x => x.Platform).HasMaxLength(20);
         });
     }
 }

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../services/api'
+import { initNotifications, clearUser } from '../services/notifications'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('nexchat_token') || '')
@@ -36,6 +37,8 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('nexchat_token', data.token)
     localStorage.setItem('nexchat_user', JSON.stringify(user.value))
 
+    initNotifications(data.userId)
+
     // Sync avatar from backend on login/register
     if (data.avatar !== undefined) {
       avatar.value = data.avatar || null
@@ -53,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    clearUser()
     token.value = ''
     user.value = null
     avatar.value = null

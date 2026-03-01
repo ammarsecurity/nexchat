@@ -18,6 +18,9 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 // Services (In-Memory Matching - no Redis needed)
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<MatchingService>();
+builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(
+    builder.Configuration.GetSection("OneSignal"));
+builder.Services.AddHttpClient<NexChat.Infrastructure.Services.OneSignalService>();
 
 // JWT Auth
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "NexChatSuperSecretKeyForJWT2025!";

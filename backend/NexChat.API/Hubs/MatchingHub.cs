@@ -8,7 +8,7 @@ using System.Security.Claims;
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
+public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infrastructure.Services.OneSignalService oneSignal) : Hub
 {
     private bool TryGetUserId(out Guid userId)
     {
@@ -123,6 +123,9 @@ public class MatchingHub(MatchingService matching, AppDbContext db) : Hub
                 RequesterGender = user.Gender,
                 RequesterAvatar = user.Avatar
             });
+
+        if (user != null)
+            _ = oneSignal.SendCodeConnectedAsync(targetId!.Value, user.Name);
     }
 
     public async Task AcceptConnectionRequest(string requesterIdStr)

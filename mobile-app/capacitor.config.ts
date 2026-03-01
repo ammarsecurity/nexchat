@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
   },
   plugins: {
     App: {
-      disableBackButtonHandler: false, // false حتى يعترض Capacitor زر الرجوع ويطلق حدث backButton
+      disableBackButtonHandler: false,
     }
   }
 };

@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { useChatStore } from '../stores/chat'
@@ -9,6 +9,9 @@ import LoaderOverlay from '../components/LoaderOverlay.vue'
 import PrivacyBadge from '../components/PrivacyBadge.vue'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { requestMediaPermissions } from '../utils/mediaPermissions'
+import { optInNotifications, optOutNotifications, getNotificationsEnabled } from '../services/notifications'
+import { Capacitor } from '@capacitor/core'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -29,8 +32,41 @@ const deletePassword = ref('')
 const deleteError = ref('')
 const deleting = ref(false)
 const copiedCode = ref(false)
+const mediaPermLoading = ref(false)
+const mediaPermMessage = ref('')
+const mediaPermSuccess = ref(true)
+const notificationsEnabled = ref(true)
+const isNative = Capacitor.isNativePlatform()
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+
+async function loadNotificationsState() {
+  if (isNative) {
+    notificationsEnabled.value = await getNotificationsEnabled()
+  }
+}
+
+function toggleNotifications() {
+  if (!isNative) return
+  notificationsEnabled.value = !notificationsEnabled.value
+  if (notificationsEnabled.value) optInNotifications()
+  else optOutNotifications()
+}
+
+async function requestMediaPerms() {
+  mediaPermLoading.value = true
+  mediaPermMessage.value = ''
+  try {
+    await requestMediaPermissions()
+    mediaPermMessage.value = 'تم التحقق من الصلاحيات'
+    mediaPermSuccess.value = true
+  } catch {
+    mediaPermMessage.value = 'فشل التحقق. الرجاء تفعيل الصلاحيات من إعدادات التطبيق'
+    mediaPermSuccess.value = false
+  }
+  setTimeout(() => { mediaPermMessage.value = '' }, 4000)
+  mediaPermLoading.value = false
+}
 
 const genderLabel = { male: 'ذكر', female: 'أنثى', other: 'آخر' }
 
@@ -134,6 +170,8 @@ async function confirmDelete() {
     deleting.value = false
   }
 }
+
+onMounted(() => loadNotificationsState())
 </script>
 
 <template>
@@ -199,7 +237,21 @@ async function confirmDelete() {
         </button>
       </div>
 
-      <!-- 2. Settings Links -->
+      <!-- 2. Permissions -->
+      <div class="section-label">الصلاحيات</div>
+      <div class="links-group glass-card">
+        <button class="link-row" :disabled="mediaPermLoading" @click="requestMediaPerms">
+          <div class="link-icon-wrap perm-icon"><Camera :size="20" /><Mic :size="14" class="mic-overlay" /></div>
+          <div class="link-text-col">
+            <span>صلاحيات الكاميرا والصوت</span>
+            <span class="link-desc">مطلوبة للمكالمات المرئية. اضغط لإعادة التحقق</span>
+          </div>
+          <span v-if="mediaPermMessage" class="perm-feedback" :class="mediaPermSuccess ? 'success' : 'error'">{{ mediaPermMessage }}</span>
+          <ChevronRight v-else :size="18" class="link-arrow" />
+        </button>
+      </div>
+
+      <!-- 3. Settings Links -->
       <div class="section-label">عام</div>
       <div class="links-group glass-card">
         <button class="link-row theme-toggle-row" @click="theme.toggleTheme">
@@ -208,6 +260,16 @@ async function confirmDelete() {
           <span>{{ theme.isLight ? 'الوضع الداكن' : 'الوضع الفاتح' }}</span>
           <span class="theme-badge">{{ theme.isLight ? 'داكن' : 'فاتح' }}</span>
         </button>
+        <button v-if="isNative" class="link-row toggle-row" @click="toggleNotifications">
+          <Bell :size="20" class="link-icon" />
+          <span>تفعيل الإشعارات</span>
+          <span class="theme-badge" :class="{ muted: !notificationsEnabled }">{{ notificationsEnabled ? 'مفعّل' : 'معطّل' }}</span>
+        </button>
+        <RouterLink to="/notifications" class="link-row">
+          <Bell :size="20" class="link-icon" />
+          <span>مركز الإشعارات</span>
+          <ChevronRight :size="18" class="link-arrow" />
+        </RouterLink>
         <RouterLink to="/privacy" class="link-row">
           <Shield :size="20" class="link-icon" />
           <span>سياسة الخصوصية</span>
@@ -215,7 +277,7 @@ async function confirmDelete() {
         </RouterLink>
       </div>
 
-      <!-- 3. About -->
+      <!-- 4. About -->
       <div class="section-label">التطبيق</div>
       <div class="about-card glass-card">
         <div class="about-inner">
@@ -228,7 +290,7 @@ async function confirmDelete() {
         </div>
       </div>
 
-      <!-- 4. Account Actions -->
+      <!-- 5. Account Actions -->
       <div class="section-label">الحساب</div>
       <div class="actions-group">
         <button class="logout-btn" @click="openLogoutConfirm">
@@ -629,6 +691,48 @@ async function confirmDelete() {
   padding: 4px 10px;
   border-radius: var(--radius-full);
 }
+.theme-badge.muted {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-muted);
+}
+.link-icon-wrap {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+}
+.perm-icon {
+  background: rgba(108,99,255,0.15);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  height: 40px;
+  position: relative;
+  width: 40px;
+}
+.perm-icon .mic-overlay {
+  bottom: 4px;
+  position: absolute;
+  right: 4px;
+}
+.link-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.link-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.perm-feedback {
+  font-size: 12px;
+  max-width: 160px;
+  text-align: left;
+}
+.perm-feedback.success { color: var(--success); }
+.perm-feedback.error { color: var(--danger); }
+.toggle-row { justify-content: flex-start; }
 
 /* About */
 .about-card { overflow: hidden; padding: var(--spacing); }
