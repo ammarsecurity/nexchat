@@ -112,6 +112,9 @@ async function onRocketClick() {
   position: relative;
   overflow: visible;
 }
+.rocket-btn:not(.launching):not(:disabled) {
+  animation: rocket-idle-pulse 3s ease-in-out infinite;
+}
 .rocket-btn::before {
   content: '';
   position: absolute;
@@ -120,8 +123,9 @@ async function onRocketClick() {
   background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 50%);
   pointer-events: none;
 }
-.rocket-btn:active:not(:disabled) {
+.rocket-btn:active:not(:disabled):not(.launching) {
   transform: scale(0.95);
+  animation: none;
   box-shadow:
     0 0 0 2px rgba(108, 99, 255, 0.15),
     0 2px 12px rgba(108, 99, 255, 0.35),
@@ -164,6 +168,26 @@ async function onRocketClick() {
 @keyframes flame-flicker {
   from { transform: scaleY(0.7) scaleX(1); }
   to { transform: scaleY(0.8) scaleX(1.08); }
+}
+
+@keyframes rocket-idle-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 2px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.45),
+      0 2px 8px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow:
+      0 0 0 3px rgba(108, 99, 255, 0.3),
+      0 8px 32px rgba(108, 99, 255, 0.55),
+      0 0 28px rgba(108, 99, 255, 0.25),
+      0 2px 8px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
 }
 
 /* حركة الانطلاق */

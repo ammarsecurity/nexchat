@@ -392,7 +392,7 @@ function closeImageModal() {
           <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
         </template>
         <button class="icon-btn" :class="{ danger: !isSupportChat }" @click="leaveSession" :title="isSupportChat ? 'رجوع' : 'إنهاء'">
-          <ChevronRight v-if="isSupportChat" :size="20" />
+          <ChevronLeft v-if="isSupportChat" :size="20" />
           <X v-else :size="20" />
         </button>
       </div>
@@ -798,7 +798,7 @@ function closeImageModal() {
 .msg-input:focus { border-color: var(--primary); }
 
 .send-btn {
-  background: var(--primary);
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
   border: none;
   border-radius: 50%;
   color: white;
@@ -812,11 +812,41 @@ function closeImageModal() {
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.15s, opacity 0.2s;
+  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
 }
-.send-btn:not(:disabled):active { transform: scale(0.95); opacity: 0.95; }
+.send-btn:not(:disabled) {
+  animation: send-btn-pulse 2.5s ease-in-out infinite;
+}
+.send-btn:not(:disabled) svg {
+  animation: send-icon-ready 2.5s ease-in-out infinite;
+}
+.send-btn:not(:disabled):active {
+  transform: scale(0.95);
+  opacity: 0.95;
+  animation: none;
+}
+.send-btn:not(:disabled):active svg {
+  animation: none;
+}
 .send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+@keyframes send-btn-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 6px 20px rgba(108, 99, 255, 0.5), 0 0 20px rgba(108, 99, 255, 0.25);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes send-icon-ready {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  50% { opacity: 0.9; transform: translateX(2px); }
 }
 
 .next-btn {

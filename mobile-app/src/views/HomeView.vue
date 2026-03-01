@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, User, Users, Phone, PhoneOff, Check, X } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, Check, X, PhoneCall } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -214,9 +214,9 @@ function confirmLogout() {
 }
 
 const genderFilters = [
-  { value: 'all', label: 'الكل', Icon: Globe },
-  { value: 'male', label: 'ذكور', Icon: User },
-  { value: 'female', label: 'إناث', Icon: Users }
+  { value: 'all', label: 'الكل', Icon: Globe, color: '#7C75FF', bg: 'rgba(124, 117, 255, 0.15)' },
+  { value: 'male', label: 'ذكور', Icon: UserCircle, color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
+  { value: 'female', label: 'إناث', Icon: UsersRound, color: '#EC4899', bg: 'rgba(236, 72, 153, 0.15)' }
 ]
 </script>
 
@@ -298,23 +298,29 @@ const genderFilters = [
       </div>
     </Transition>
 
-    <!-- Online indicator - native list style -->
+    <!-- Online indicator -->
     <div class="list-section">
       <div class="list-row">
-        <span class="status-dot"></span>
-        <span class="list-label">{{ onlineCount }} متصل الآن</span>
+        <div class="list-row-icon">
+          <Users :size="20" stroke-width="2" />
+          <span class="status-dot"></span>
+        </div>
+        <div class="list-row-content">
+          <span class="list-count">{{ onlineCount }}</span>
+          <span class="list-label">متصل الآن</span>
+        </div>
       </div>
     </div>
 
-    <!-- Main CTA - native full-width pill -->
+    <!-- Main CTA - circular button with animation -->
     <div class="main-cta-wrap">
-      <button class="main-cta" :disabled="loading" @click="startRandom">
-        <Zap :size="24" class="cta-icon" />
-        <span>ابدأ محادثة عشوائية</span>
+      <button class="main-cta-circle" :disabled="loading" @click="startRandom">
+        <Zap :size="32" class="cta-icon" />
+        <span class="cta-text">ابدأ محادثة عشوائية</span>
       </button>
     </div>
 
-    <!-- Segmented control - iOS/Android style -->
+    <!-- Segmented control -->
     <div class="segment-wrap">
       <span class="segment-label">فلتر المطابقة</span>
       <div class="segment-control">
@@ -323,10 +329,13 @@ const genderFilters = [
           :key="f.value"
           class="segment-btn"
           :class="{ active: matching.genderFilter === f.value }"
+          :style="matching.genderFilter === f.value ? { '--seg-color': f.color, '--seg-bg': f.bg } : {}"
           @click="matching.genderFilter = f.value"
         >
-          <component :is="f.Icon" :size="18" stroke-width="2" />
-          <span>{{ f.label }}</span>
+          <span class="segment-icon" :class="{ active: matching.genderFilter === f.value }">
+            <component :is="f.Icon" :size="20" stroke-width="2" />
+          </span>
+          <span class="segment-text">{{ f.label }}</span>
         </button>
       </div>
     </div>
@@ -336,24 +345,27 @@ const genderFilters = [
       <span class="divider-txt">أو اتصل بكود</span>
     </div>
 
-    <!-- Code input - native form style -->
+    <!-- Code input - input + circular button side by side -->
     <div class="code-section">
-      <input
-        v-model="codeInput"
-        class="code-input"
-        placeholder="NX-A3B9"
-        maxlength="7"
-        @input="codeInput = codeInput.toUpperCase()"
-        @keyup.enter="connectByCode"
-      />
-      <button
-        class="code-submit"
-        :class="{ disabled: !codeInput.trim() || loading }"
-        :disabled="loading"
-        @click="connectByCode"
-      >
-        اتصل
-      </button>
+      <div class="code-row">
+        <input
+          v-model="codeInput"
+          class="code-input"
+          placeholder="NX-A3B9"
+          maxlength="7"
+          @input="codeInput = codeInput.toUpperCase()"
+          @keyup.enter="connectByCode"
+        />
+        <button
+          class="code-submit"
+          :class="{ disabled: !codeInput.trim() || loading }"
+          :disabled="!codeInput.trim() || loading"
+          aria-label="اتصل"
+          @click="connectByCode"
+        >
+          <PhoneCall :size="22" stroke-width="2" />
+        </button>
+      </div>
       <p v-if="codeError" class="code-err">{{ codeError }}</p>
     </div>
 
@@ -451,7 +463,7 @@ const genderFilters = [
 .nav-btn:active { background: var(--bg-card); color: var(--text-primary); }
 .nav-btn:hover { color: var(--text-primary); }
 
-/* List section - native list style */
+/* List section - online indicator */
 .list-section {
   padding: 0 var(--spacing);
   margin-bottom: 20px;
@@ -460,50 +472,125 @@ const genderFilters = [
 .list-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 14px;
+  padding: 14px 18px;
   background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.list-row-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
+  background: rgba(108, 99, 255, 0.1);
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .status-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--success);
-  flex-shrink: 0;
-  animation: pulse 2s ease-in-out infinite;
-}
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-
-.list-label { font-size: 15px; color: var(--text-secondary); }
-
-/* Main CTA - native full-width pill */
-.main-cta-wrap {
-  padding: 0 var(--spacing) 20px;
+  border: 2px solid var(--bg-card);
+  animation: status-pulse 2s ease-in-out infinite;
 }
 
-.main-cta {
-  width: 100%;
-  min-height: 56px;
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.list-row-content {
   display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.list-count {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  font-family: 'Cairo', sans-serif;
+  letter-spacing: -0.5px;
+}
+
+.list-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Main CTA - circular button with animation */
+.main-cta-wrap {
+  padding: 0 var(--spacing) 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.main-cta-circle {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  background: var(--primary);
+  gap: 6px;
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #FF6584 100%);
   border: none;
-  border-radius: 16px;
   color: white;
-  font-size: 17px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 4px 14px rgba(108, 99, 255, 0.4);
+  box-shadow:
+    0 0 0 3px rgba(108, 99, 255, 0.2),
+    0 6px 24px rgba(108, 99, 255, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  animation: cta-pulse 2.5s ease-in-out infinite;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
-.main-cta:active { transform: scale(0.98); opacity: 0.95; }
+.main-cta-circle:active:not(:disabled) {
+  transform: scale(0.95);
+  animation: none;
+}
+.main-cta-circle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  animation: none;
+}
+
+@keyframes cta-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(108, 99, 255, 0.15),
+      0 8px 32px rgba(108, 99, 255, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    transform: scale(1.03);
+  }
+}
 
 .cta-icon { flex-shrink: 0; }
+.cta-text { line-height: 1.2; text-align: center; max-width: 120px; font-size: 12px; }
 
 /* Segmented control */
 .segment-wrap {
@@ -514,16 +601,19 @@ const genderFilters = [
   display: block;
   font-size: 13px;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   padding: 0 4px;
+  font-weight: 500;
 }
 
 .segment-control {
   display: flex;
   background: var(--bg-card);
-  border-radius: 12px;
-  padding: 4px;
-  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 6px;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .segment-btn {
@@ -531,9 +621,9 @@ const genderFilters = [
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 12px;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
   background: transparent;
   border: none;
   border-radius: 10px;
@@ -542,15 +632,41 @@ const genderFilters = [
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
 }
+
+.segment-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  transition: all 0.25s ease;
+}
+
+.segment-btn.active .segment-icon {
+  background: var(--seg-bg, rgba(124, 117, 255, 0.15));
+  color: var(--seg-color);
+}
+
+.segment-text {
+  font-weight: 500;
+}
+
 .segment-btn.active {
-  background: var(--bg-primary);
-  color: var(--primary);
+  background: var(--seg-bg, rgba(124, 117, 255, 0.12));
+  color: var(--seg-color);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
-.segment-btn:active:not(.active) { opacity: 0.8; }
+
+.segment-btn.active .segment-text {
+  color: var(--seg-color);
+}
+
+.segment-btn:active:not(.active) { opacity: 0.75; }
 
 /* Divider */
 .divider {
@@ -563,7 +679,7 @@ const genderFilters = [
   text-align: center;
 }
 
-/* Code section - native input style */
+/* Code section - input + circular button side by side */
 .code-section {
   padding: 0 var(--spacing) 24px;
   display: flex;
@@ -571,8 +687,14 @@ const genderFilters = [
   gap: 12px;
 }
 
+.code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .code-input {
-  width: 100%;
+  flex: 1;
   min-height: 48px;
   padding: 0 16px;
   background: var(--bg-card);
@@ -592,20 +714,57 @@ const genderFilters = [
 .code-input:focus { border-color: var(--primary); }
 
 .code-submit {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   min-height: 48px;
-  padding: 0 20px;
-  background: var(--primary);
+  padding: 0;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #FF6584 100%);
   border: none;
-  border-radius: 12px;
   color: white;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+  transition: transform 0.2s, box-shadow 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.code-submit:active:not(.disabled) { opacity: 0.9; }
+.code-submit:not(.disabled) {
+  animation: call-btn-pulse 2.5s ease-in-out infinite;
+}
+.code-submit:not(.disabled) svg {
+  animation: call-icon-glow 2.5s ease-in-out infinite;
+}
+.code-submit:active:not(.disabled) {
+  transform: scale(0.95);
+  animation: none;
+}
+.code-submit:active:not(.disabled) svg {
+  animation: none;
+}
 .code-submit.disabled { opacity: 0.4; cursor: not-allowed; }
+
+@keyframes call-btn-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 6px 20px rgba(108, 99, 255, 0.5), 0 0 24px rgba(255, 101, 132, 0.25);
+    transform: scale(1.03);
+  }
+}
+
+@keyframes call-icon-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
 
 .code-err {
   font-size: 13px;
