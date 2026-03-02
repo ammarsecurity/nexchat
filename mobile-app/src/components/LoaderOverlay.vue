@@ -1,9 +1,12 @@
 <script setup>
 import { Loader2 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 
-defineProps({
+const { t } = useI18n()
+
+const props = defineProps({
   show: { type: Boolean, default: false },
-  text: { type: String, default: 'جاري التحميل...' }
+  text: { type: String, default: undefined }
 })
 </script>
 
@@ -12,7 +15,7 @@ defineProps({
     <div v-if="show" class="loader-overlay">
       <div class="loader-box glass-card">
         <Loader2 :size="48" class="spin" />
-        <p v-if="text" class="loader-text">{{ text }}</p>
+        <p class="loader-text">{{ props.text ?? t('common.loading') }}</p>
       </div>
     </div>
   </Transition>

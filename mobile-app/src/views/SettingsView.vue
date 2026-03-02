@@ -1,8 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import { useLocaleStore } from '../stores/locale'
+import { useI18n } from 'vue-i18n'
+import { i18n } from '../i18n'
 import { useThemeStore } from '../stores/theme'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
@@ -16,6 +19,8 @@ import { Capacitor } from '@capacitor/core'
 const router = useRouter()
 const auth = useAuthStore()
 const chat = useChatStore()
+const localeStore = useLocaleStore()
+const { t } = useI18n()
 const theme = useThemeStore()
 const user = computed(() => auth.user)
 const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
@@ -63,17 +68,21 @@ async function requestMediaPerms() {
   mediaPermMessage.value = ''
   try {
     await requestMediaPermissions()
-    mediaPermMessage.value = 'تم التحقق من الصلاحيات'
+    mediaPermMessage.value = t('settings.permissionsVerified')
     mediaPermSuccess.value = true
   } catch {
-    mediaPermMessage.value = 'فشل التحقق. الرجاء تفعيل الصلاحيات من إعدادات التطبيق'
+    mediaPermMessage.value = t('settings.permissionsFailed')
     mediaPermSuccess.value = false
   }
   setTimeout(() => { mediaPermMessage.value = '' }, 4000)
   mediaPermLoading.value = false
 }
 
-const genderLabel = { male: 'ذكر', female: 'أنثى', other: 'آخر' }
+const genderLabel = computed(() => ({
+  male: t('gender.male'),
+  female: t('gender.female'),
+  other: t('gender.other')
+}))
 
 const presetAvatars = [
   '🦊','🐺','🦁','🐯','🐻','🐼','🐨','🦋',
@@ -160,7 +169,7 @@ async function openSupportChat() {
 
 async function confirmDelete() {
   if (!deletePassword.value) {
-    deleteError.value = 'أدخل كلمة المرور'
+    deleteError.value = t('settings.enterPassword')
     return
   }
   deleting.value = true
@@ -170,7 +179,7 @@ async function confirmDelete() {
     auth.logout()
     router.replace('/login')
   } catch (e) {
-    deleteError.value = e.response?.data?.message || 'فشل حذف الحساب'
+    deleteError.value = e.response?.data?.message || t('settings.deleteFailed')
   } finally {
     deleting.value = false
   }
@@ -181,13 +190,13 @@ onMounted(() => loadNotificationsState())
 
 <template>
   <div class="settings page">
-    <LoaderOverlay :show="uploadingAvatar" text="جاري رفع الصورة..." />
-    <LoaderOverlay :show="deleting" text="جاري حذف الحساب..." />
-    <LoaderOverlay :show="supportLoading" text="جاري فتح دردشة الدعم..." />
+    <LoaderOverlay :show="uploadingAvatar" :text="t('settings.uploadingImage')" />
+    <LoaderOverlay :show="deleting" :text="t('settings.deletingAccount')" />
+    <LoaderOverlay :show="supportLoading" :text="t('settings.openingSupport')" />
     <!-- Header -->
     <header class="top-bar">
       <button class="back-btn" @click="router.replace('/home')"><ChevronRight :size="22" /></button>
-      <span class="top-title">الإعدادات</span>
+      <span class="top-title">{{ t('settings.title') }}</span>
       <div style="width:40px"></div>
     </header>
 
@@ -208,19 +217,24 @@ onMounted(() => loadNotificationsState())
           </div>
           <div class="profile-details">
             <div class="profile-name">{{ user?.name }}</div>
-            <span class="profile-gender-badge">{{ genderLabel[user?.gender] || user?.gender }}</span>
+            <span class="profile-gender-badge">{{ genderLabel[user?.gender] ?? user?.gender }}</span>
           </div>
         </div>
-        <div class="profile-code-section" @click="copyCode">
-          <span class="profile-code-label">كود الاتصال</span>
-          <div class="profile-code-row">
-            <span class="profile-code">{{ user?.uniqueCode }}</span>
-            <button type="button" class="copy-code-btn" :title="copiedCode ? 'تم النسخ' : 'نسخ'">
-              <Copy v-if="!copiedCode" :size="18" stroke-width="2" />
-              <span v-else class="copied-text">تم</span>
-            </button>
-          </div>
+      </div>
+
+      <!-- كود الاتصال - بطاقة منفصلة -->
+      <div class="profile-code-card glass-card" @click="copyCode">
+        <div class="profile-code-icon-wrap">
+          <Hash :size="22" />
         </div>
+        <div class="profile-code-text">
+          <span class="profile-code-title">{{ t('settings.contactCode') }}</span>
+          <span class="profile-code-value">{{ user?.uniqueCode }}</span>
+        </div>
+        <button type="button" class="profile-code-copy-btn" :title="copiedCode ? t('common.copied') : t('common.copy')" @click.stop="copyCode">
+          <Copy v-if="!copiedCode" :size="18" stroke-width="2" />
+          <span v-else class="copied-text">{{ t('common.copiedShort') }}</span>
+        </button>
       </div>
 
       <!-- Privacy badge -->
@@ -235,21 +249,21 @@ onMounted(() => loadNotificationsState())
             <MessageCircle :size="22" />
           </div>
           <div class="support-text">
-            <span class="support-title">دردشة الدعم</span>
-            <span class="support-desc">تواصل معنا لأي استفسار أو مساعدة</span>
+            <span class="support-title">{{ t('settings.supportChat') }}</span>
+            <span class="support-desc">{{ t('settings.supportDesc') }}</span>
           </div>
           <ChevronRight :size="20" class="link-arrow" />
         </button>
       </div>
 
       <!-- 2. Permissions -->
-      <div class="section-label">الصلاحيات</div>
+      <div class="section-label">{{ t('settings.permissions') }}</div>
       <div class="links-group glass-card">
         <button class="link-row" :disabled="mediaPermLoading" @click="requestMediaPerms">
           <div class="link-icon-wrap perm-icon"><Camera :size="20" /><Mic :size="14" class="mic-overlay" /></div>
           <div class="link-text-col">
-            <span>صلاحيات الكاميرا والصوت</span>
-            <span class="link-desc">مطلوبة للمكالمات المرئية. اضغط لإعادة التحقق</span>
+            <span>{{ t('settings.cameraMicPermissions') }}</span>
+            <span class="link-desc">{{ t('settings.cameraMicDesc') }}</span>
           </div>
           <span v-if="mediaPermMessage" class="perm-feedback" :class="mediaPermSuccess ? 'success' : 'error'">{{ mediaPermMessage }}</span>
           <ChevronRight v-else :size="18" class="link-arrow" />
@@ -257,16 +271,21 @@ onMounted(() => loadNotificationsState())
       </div>
 
       <!-- 3. Settings Links -->
-      <div class="section-label">عام</div>
+      <div class="section-label">{{ t('settings.general') }}</div>
       <div class="links-group glass-card">
+        <button class="link-row" @click="localeStore.toggleLocale(i18n)">
+          <Globe :size="20" class="link-icon" />
+          <span>{{ t('settings.language') }}</span>
+          <span class="theme-badge">{{ localeStore.locale === 'ar' ? 'عربي' : 'English' }}</span>
+        </button>
         <button class="link-row theme-toggle-row" @click="theme.toggleTheme">
           <Sun v-if="!theme.isLight" :size="20" class="link-icon" />
           <Moon v-else :size="20" class="link-icon" />
-          <span>{{ theme.isLight ? 'الوضع الداكن' : 'الوضع الفاتح' }}</span>
-          <span class="theme-badge">{{ theme.isLight ? 'داكن' : 'فاتح' }}</span>
+          <span>{{ theme.isLight ? t('settings.darkMode') : t('settings.lightMode') }}</span>
+          <span class="theme-badge">{{ theme.isLight ? t('settings.dark') : t('settings.light') }}</span>
         </button>
         <div class="notif-buttons-row">
-          <span class="notif-label"><Bell :size="20" class="link-icon" /> الإشعارات</span>
+          <span class="notif-label"><Bell :size="20" class="link-icon" /> {{ t('settings.notifications') }}</span>
           <template v-if="isNative">
             <div class="notif-btns">
               <button
@@ -275,7 +294,7 @@ onMounted(() => loadNotificationsState())
                 :disabled="notificationsEnabled"
                 @click="enableNotifications"
               >
-                تفعيل
+                {{ t('settings.enable') }}
               </button>
               <button
                 class="notif-btn disable"
@@ -283,47 +302,47 @@ onMounted(() => loadNotificationsState())
                 :disabled="!notificationsEnabled"
                 @click="disableNotifications"
               >
-                إلغاء تفعيل
+                {{ t('settings.disable') }}
               </button>
             </div>
           </template>
-          <span v-else class="notif-web-msg">متاحة على تطبيق Android/iOS فقط</span>
+          <span v-else class="notif-web-msg">{{ t('settings.notifWebOnly') }}</span>
         </div>
         <RouterLink to="/notifications" class="link-row">
           <Bell :size="20" class="link-icon" />
-          <span>مركز الإشعارات</span>
+          <span>{{ t('settings.notificationCenter') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
         <RouterLink to="/privacy" class="link-row">
           <Shield :size="20" class="link-icon" />
-          <span>سياسة الخصوصية</span>
+          <span>{{ t('settings.privacyPolicy') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
       </div>
 
       <!-- 4. About -->
-      <div class="section-label">التطبيق</div>
+      <div class="section-label">{{ t('settings.app') }}</div>
       <div class="about-card glass-card">
         <div class="about-inner">
           <img :src="logoImg" alt="NexChat" class="about-logo-img" />
           <div class="about-text">
             <div class="about-name">NexChat</div>
-            <div class="about-tagline text-muted text-sm">تواصل مع العالم بخطوة واحدة</div>
+            <div class="about-tagline text-muted text-sm">{{ t('settings.tagline') }}</div>
             <span class="ver-badge">v1.0.0</span>
           </div>
         </div>
       </div>
 
       <!-- 5. Account Actions -->
-      <div class="section-label">الحساب</div>
+      <div class="section-label">{{ t('settings.account') }}</div>
       <div class="actions-group">
         <button class="logout-btn" @click="openLogoutConfirm">
           <LogOut :size="20" />
-          <span>تسجيل الخروج</span>
+          <span>{{ t('home.logout') }}</span>
         </button>
         <button class="delete-account-btn" @click="openDeleteConfirm">
           <Trash2 :size="20" />
-          <span>حذف الحساب</span>
+          <span>{{ t('settings.deleteAccount') }}</span>
         </button>
       </div>
     </div>
@@ -333,11 +352,11 @@ onMounted(() => loadNotificationsState())
       <div v-if="showLogoutConfirm" class="modal-overlay delete-overlay" @click.self="showLogoutConfirm = false">
         <div class="delete-dialog glass-card">
           <div class="delete-dialog-icon"><LogOut :size="48" stroke-width="2" /></div>
-          <h3 class="delete-dialog-title">تسجيل الخروج</h3>
-          <p class="delete-dialog-text">هل أنت متأكد من تسجيل الخروج؟</p>
+          <h3 class="delete-dialog-title">{{ t('home.logoutConfirm') }}</h3>
+          <p class="delete-dialog-text">{{ t('home.logoutConfirmText') }}</p>
           <div class="delete-dialog-actions">
-            <button class="btn-ghost" @click="showLogoutConfirm = false">إلغاء</button>
-            <button class="logout-confirm-btn" @click="confirmLogout">تسجيل الخروج</button>
+            <button class="btn-ghost" @click="showLogoutConfirm = false">{{ t('common.cancel') }}</button>
+            <button class="logout-confirm-btn" @click="confirmLogout">{{ t('home.logout') }}</button>
           </div>
         </div>
       </div>
@@ -348,19 +367,19 @@ onMounted(() => loadNotificationsState())
       <div v-if="showDeleteConfirm" class="modal-overlay delete-overlay" @click.self="showDeleteConfirm = false">
         <div class="delete-dialog glass-card">
           <div class="delete-dialog-icon">⚠️</div>
-          <h3 class="delete-dialog-title">تنبيه: حذف الحساب نهائياً</h3>
+          <h3 class="delete-dialog-title">{{ t('settings.deleteAccountWarning') }}</h3>
           <p class="delete-dialog-text">
-            سيتم حذف حسابك وجميع بياناتك بشكل نهائي ولا يمكن التراجع عنه:
+            {{ t('settings.deleteAccountText') }}
           </p>
           <ul class="delete-dialog-list">
-            <li>جميع المحادثات والرسائل</li>
-            <li>سجل الجلسات والاتصالات</li>
-            <li>معلومات الحساب الشخصية</li>
+            <li>{{ t('settings.deleteAccountList1') }}</li>
+            <li>{{ t('settings.deleteAccountList2') }}</li>
+            <li>{{ t('settings.deleteAccountList3') }}</li>
           </ul>
-          <p class="delete-dialog-warn">هل أنت متأكد من المتابعة؟</p>
+          <p class="delete-dialog-warn">{{ t('settings.deleteAccountConfirm') }}</p>
           <div class="delete-dialog-actions">
-            <button class="btn-ghost" @click="showDeleteConfirm = false">إلغاء</button>
-            <button class="delete-confirm-btn" @click="proceedToPassword">نعم، أريد الحذف</button>
+            <button class="btn-ghost" @click="showDeleteConfirm = false">{{ t('common.cancel') }}</button>
+            <button class="delete-confirm-btn" @click="proceedToPassword">{{ t('settings.yesDelete') }}</button>
           </div>
         </div>
       </div>
@@ -370,13 +389,13 @@ onMounted(() => loadNotificationsState())
     <Transition name="modal">
       <div v-if="showDeletePassword" class="modal-overlay delete-overlay" @click.self="showDeletePassword = false">
         <div class="delete-dialog glass-card">
-          <h3 class="delete-dialog-title">تأكيد الحذف</h3>
-          <p class="delete-dialog-text">أدخل كلمة المرور لتأكيد حذف الحساب:</p>
+          <h3 class="delete-dialog-title">{{ t('settings.confirmDelete') }}</h3>
+          <p class="delete-dialog-text">{{ t('settings.enterPasswordToDelete') }}</p>
           <input
             v-model="deletePassword"
             type="password"
             class="input-field"
-            placeholder="كلمة المرور"
+            :placeholder="t('settings.password')"
             @keyup.enter="confirmDelete"
           />
           <div v-if="deleteError" class="error-toast">
@@ -384,9 +403,9 @@ onMounted(() => loadNotificationsState())
             <span>{{ deleteError }}</span>
           </div>
           <div class="delete-dialog-actions">
-            <button class="btn-ghost" @click="showDeletePassword = false" :disabled="deleting">إلغاء</button>
+            <button class="btn-ghost" @click="showDeletePassword = false" :disabled="deleting">{{ t('common.cancel') }}</button>
             <button class="delete-confirm-btn" @click="confirmDelete" :disabled="deleting">
-              {{ deleting ? 'جاري الحذف...' : 'حذف نهائياً' }}
+              {{ deleting ? t('settings.deleting') : t('settings.deletePermanently') }}
             </button>
           </div>
         </div>
@@ -400,13 +419,13 @@ onMounted(() => loadNotificationsState())
           <div class="sheet-handle"></div>
 
           <div class="picker-hdr">
-            <span class="picker-title">اختر أفاتار</span>
+            <span class="picker-title">{{ t('settings.chooseAvatar') }}</span>
             <button class="close-x" @click="showAvatarPicker = false"><X :size="18" /></button>
           </div>
 
           <div class="picker-tabs">
-            <button class="ptab" :class="{ active: avatarTab === 'preset' }" @click="avatarTab = 'preset'"><Image :size="16" /> جاهزة</button>
-            <button class="ptab" :class="{ active: avatarTab === 'upload' }" @click="avatarTab = 'upload'"><Upload :size="16" /> رفع صورة</button>
+            <button class="ptab" :class="{ active: avatarTab === 'preset' }" @click="avatarTab = 'preset'"><Image :size="16" /> {{ t('settings.preset') }}</button>
+            <button class="ptab" :class="{ active: avatarTab === 'upload' }" @click="avatarTab = 'upload'"><Upload :size="16" /> {{ t('settings.uploadImage') }}</button>
           </div>
 
           <!-- Presets -->
@@ -427,14 +446,14 @@ onMounted(() => loadNotificationsState())
               <img v-if="isImageUrl(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="prev-img" referrerpolicy="no-referrer" />
               <div v-else class="prev-empty">
                 <Image :size="44" style="color: var(--text-muted)" />
-                <span class="text-muted text-sm">لا توجد صورة</span>
+                <span class="text-muted text-sm">{{ t('settings.noImage') }}</span>
               </div>
             </div>
             <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
             <button class="upload-btn" :disabled="uploadingAvatar" @click="avatarFileInput.click()">
-              {{ uploadingAvatar ? 'جارٍ الرفع...' : 'اختر صورة' }}
+              {{ uploadingAvatar ? t('settings.uploading') : t('settings.chooseImage') }}
             </button>
-            <div class="text-muted text-sm" style="text-align:center">الحد الأقصى 5 ميجابايت • JPG, PNG, GIF</div>
+            <div class="text-muted text-sm" style="text-align:center">{{ t('settings.maxSize') }}</div>
           </div>
         </div>
       </div>
@@ -572,51 +591,69 @@ onMounted(() => loadNotificationsState())
   width: fit-content;
 }
 
-.profile-code-section {
-  padding: 12px var(--spacing);
-  background: rgba(108, 99, 255, 0.06);
-  border-top: 1px solid var(--border);
+/* كود الاتصال - بطاقة منفصلة مثل دردشة الدعم */
+.profile-code-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: var(--spacing);
+  overflow: hidden;
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.08) 0%, rgba(108, 99, 255, 0.02) 100%);
   cursor: pointer;
   transition: background 0.2s;
 }
-.profile-code-section:active { background: rgba(108, 99, 255, 0.1); }
+.profile-code-card:active { background: rgba(108, 99, 255, 0.12); }
 
-.profile-code-label {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.profile-code-row {
-  align-items: center;
+.profile-code-icon-wrap {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: rgba(108, 99, 255, 0.2);
+  color: var(--primary);
+  flex-shrink: 0;
 }
-.profile-code {
-  font-size: 15px;
+
+.profile-code-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-code-title {
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 2px;
+  color: var(--text-primary);
+}
+
+.profile-code-value {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
   color: var(--primary);
 }
-.copy-code-btn {
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  cursor: pointer;
+
+.profile-code-copy-btn {
   display: flex;
-  height: 36px;
+  align-items: center;
   justify-content: center;
-  min-width: 36px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   padding: 0;
-  transition: color 0.2s, background 0.2s;
+  background: rgba(108, 99, 255, 0.15);
+  border: 1px solid rgba(108, 99, 255, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
 }
-.copy-code-btn:active { background: var(--bg-card-hover); color: var(--primary); }
+.profile-code-copy-btn:active { background: rgba(108, 99, 255, 0.25); }
 .copied-text { color: var(--success); font-size: 12px; font-weight: 600; }
 
 .privacy-badge-wrap {
@@ -640,7 +677,7 @@ onMounted(() => loadNotificationsState())
   font: inherit;
   gap: 14px;
   padding: var(--spacing);
-  text-align: right;
+  text-align: start;
   width: 100%;
   transition: background 0.2s;
 }
@@ -693,7 +730,7 @@ onMounted(() => loadNotificationsState())
   font: inherit;
   gap: 12px;
   padding: var(--spacing);
-  text-align: right;
+  text-align: start;
   text-decoration: none;
   transition: background 0.2s;
   width: 100%;
@@ -704,7 +741,7 @@ onMounted(() => loadNotificationsState())
 }
 .link-row:active { background: var(--bg-card-hover); }
 .link-icon { color: var(--text-muted); flex-shrink: 0; }
-.link-arrow { color: var(--text-muted); margin-right: auto; }
+.link-arrow { color: var(--text-muted); margin-inline-start: auto; }
 .theme-toggle-row { justify-content: flex-start; }
 .theme-badge {
   margin-inline-start: auto;

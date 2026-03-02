@@ -1,9 +1,11 @@
 <script setup>
 import { ShieldCheck } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 
 defineProps({
   compact: { type: Boolean, default: false }
 })
+const { t } = useI18n()
 </script>
 
 <template>
@@ -12,8 +14,8 @@ defineProps({
       <ShieldCheck :size="compact ? 18 : 22" stroke-width="2" />
     </div>
     <div class="privacy-badge-content">
-      <span class="privacy-badge-title">دردشة مشفرة</span>
-      <span class="privacy-badge-desc">لا تُحفظ على أي سيرفر</span>
+      <span class="privacy-badge-title">{{ t('privacy.encryptedChat') }}</span>
+      <span class="privacy-badge-desc">{{ t('privacy.notStoredDesc') }}</span>
     </div>
   </div>
 </template>

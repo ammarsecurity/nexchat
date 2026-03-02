@@ -142,7 +142,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 14px var(--spacing);
-  text-align: right;
+  text-align: start;
   cursor: pointer;
   border: 1px solid var(--border);
   width: 100%;

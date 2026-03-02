@@ -529,14 +529,14 @@ async function shareCodeInChat() {
           <p class="share-modal-desc">شارك كودك مع {{ partner?.name }} أو أي شخص للاتصال بك</p>
           <div class="share-code-display">{{ auth.user?.uniqueCode }}</div>
           <div class="share-modal-actions">
+            <button class="share-btn primary-btn" @click="shareCodeInChat">
+              <Send :size="20" stroke-width="2" />
+              <span>إرسال في الدردشة</span>
+            </button>
             <button class="share-btn copy-btn" @click="copyShareCode">
               <Copy v-if="!shareCodeCopied" :size="20" stroke-width="2" />
               <Check v-else :size="20" stroke-width="2" />
               <span>{{ shareCodeCopied ? 'تم النسخ!' : 'نسخ' }}</span>
-            </button>
-            <button class="share-btn primary-btn" @click="shareCodeInChat">
-              <Send :size="20" stroke-width="2" />
-              <span>إرسال في الدردشة</span>
             </button>
           </div>
           <button class="share-close-btn" @click="closeShareModal">إلغاء</button>
@@ -1125,7 +1125,8 @@ async function shareCodeInChat() {
 }
 .share-modal-actions {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   width: 100%;
 }
 .share-btn {

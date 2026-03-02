@@ -1,7 +1,14 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html id="html-root">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function(){
+        var loc = localStorage.getItem('nexchat_locale') || 'ar';
+        document.documentElement.setAttribute('lang', loc);
+        document.documentElement.setAttribute('dir', loc === 'ar' ? 'rtl' : 'ltr');
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/icons/icon-192.webp" />
     <link rel="manifest" href="/manifest.webmanifest" />

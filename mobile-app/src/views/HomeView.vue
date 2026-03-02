@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, Check, X, PhoneCall, AlertCircle, Bell } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useAuthStore } from '../stores/auth'
+import { useI18n } from 'vue-i18n'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
 import { matchingHub, startHub, ensureConnected } from '../services/signalr'
@@ -20,13 +21,13 @@ const router = useRouter()
 const auth = useAuthStore()
 const matching = useMatchingStore()
 const chat = useChatStore()
+const { t } = useI18n()
 
 const codeInput = ref('')
 const codeError = ref('')
 const copied = ref(false)
 const loading = ref(false)
 const waitingForAccept = ref(false)
-const incomingRequest = ref(null)
 const showLogoutConfirm = ref(false)
 const notifPromptLoading = ref(false)
 const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
@@ -35,29 +36,24 @@ let connectionTimeoutId = null
 const user = computed(() => auth.user)
 const avatarLetter = computed(() => user.value?.name?.[0]?.toUpperCase() || '?')
 
+function matchFoundHandler() {
+  clearConnectionTimeout()
+  waitingForAccept.value = false
+  loading.value = false
+}
+
 onMounted(async () => {
   requestMediaPermissions()
 
   await startHub(matchingHub)
 
-  matchingHub.off('MatchFound')
   matchingHub.off('SearchCancelled')
   matchingHub.off('CodeError')
   matchingHub.off('ConnectionRequestSent')
-  matchingHub.off('IncomingConnectionRequest')
   matchingHub.off('ConnectionDeclined')
   matchingHub.off('ConnectionCancelled')
 
-  matchingHub.on('MatchFound', (data) => {
-    clearConnectionTimeout()
-    waitingForAccept.value = false
-    loading.value = false
-    const sessionId = data.sessionId ?? data.SessionId
-    const partner = data.partner ?? data.Partner
-    chat.setSession(sessionId, partner)
-    matching.setMatched()
-    router.push(`/chat/${sessionId}`)
-  })
+  matchingHub.on('MatchFound', matchFoundHandler)
 
   matchingHub.on('SearchCancelled', () => {
     matching.setIdle()
@@ -75,20 +71,11 @@ onMounted(async () => {
     startConnectionTimeout()
   })
 
-  matchingHub.on('IncomingConnectionRequest', (data) => {
-    incomingRequest.value = {
-      requesterId: data.requesterId ?? data.RequesterId,
-      requesterName: data.requesterName ?? data.RequesterName,
-      requesterGender: data.requesterGender ?? data.RequesterGender,
-      requesterAvatar: data.requesterAvatar ?? data.RequesterAvatar
-    }
-  })
-
   matchingHub.on('ConnectionDeclined', () => {
     clearConnectionTimeout()
     waitingForAccept.value = false
     loading.value = false
-    codeError.value = 'تم رفض الطلب'
+    codeError.value = t('home.requestDeclined')
   })
 
   matchingHub.on('ConnectionCancelled', () => {
@@ -115,7 +102,7 @@ function startConnectionTimeout() {
     connectionTimeoutId = null
     waitingForAccept.value = false
     loading.value = false
-    codeError.value = 'انتهت مهلة الانتظار'
+    codeError.value = t('home.timeoutError')
     try {
       await ensureConnected(matchingHub)
       await matchingHub.invoke('CancelConnectionRequest')
@@ -142,7 +129,7 @@ async function connectByCode() {
   codeError.value = ''
   const code = codeInput.value.trim().toUpperCase()
   if (!code.startsWith('NX-') || code.length !== 7) {
-    codeError.value = 'الكود يجب أن يكون بالشكل NX-XXXX'
+    codeError.value = t('home.codeFormatError')
     return
   }
   loading.value = true
@@ -152,7 +139,7 @@ async function connectByCode() {
     await matchingHub.invoke('ConnectByCode', code)
   } catch {
     loading.value = false
-    codeError.value = 'حدث خطأ في الاتصال'
+    codeError.value = t('home.connectionError')
   }
 }
 
@@ -166,27 +153,6 @@ async function cancelConnectionRequest() {
   } catch {}
 }
 
-async function acceptConnectionRequest() {
-  if (!incomingRequest.value) return
-  const requesterId = incomingRequest.value.requesterId
-  incomingRequest.value = null
-  try {
-    await ensureConnected(matchingHub)
-    await matchingHub.invoke('AcceptConnectionRequest', requesterId)
-  } catch {
-    codeError.value = 'حدث خطأ في قبول الطلب'
-  }
-}
-
-function declineConnectionRequest() {
-  if (!incomingRequest.value) return
-  const requesterId = incomingRequest.value.requesterId
-  incomingRequest.value = null
-  ensureConnected(matchingHub).then(() => {
-    matchingHub.invoke('DeclineConnectionRequest', requesterId).catch(() => {})
-  })
-}
-
 function copyCode() {
   navigator.clipboard.writeText(user.value.uniqueCode)
   copied.value = true
@@ -195,11 +161,10 @@ function copyCode() {
 
 onUnmounted(() => {
   clearConnectionTimeout()
-  matchingHub.off('MatchFound')
+  matchingHub.off('MatchFound', matchFoundHandler)
   matchingHub.off('SearchCancelled')
   matchingHub.off('CodeError')
   matchingHub.off('ConnectionRequestSent')
-  matchingHub.off('IncomingConnectionRequest')
   matchingHub.off('ConnectionDeclined')
   matchingHub.off('ConnectionCancelled')
 })
@@ -229,72 +194,51 @@ function dismissNotificationPrompt() {
   auth.dismissNotificationPrompt()
 }
 
-const genderFilters = [
-  { value: 'all', label: 'الكل', Icon: Globe, color: '#7C75FF', bg: 'rgba(124, 117, 255, 0.15)' },
-  { value: 'male', label: 'ذكور', Icon: UserCircle, color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
-  { value: 'female', label: 'إناث', Icon: UsersRound, color: '#EC4899', bg: 'rgba(236, 72, 153, 0.15)' }
-]
+const genderFilters = computed(() => [
+  { value: 'all', label: t('home.filterAll'), Icon: Globe, color: '#7C75FF', bg: 'rgba(124, 117, 255, 0.15)' },
+  { value: 'male', label: t('home.filterMale'), Icon: UserCircle, color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
+  { value: 'female', label: t('home.filterFemale'), Icon: UsersRound, color: '#EC4899', bg: 'rgba(236, 72, 153, 0.15)' }
+])
 </script>
 
 <template>
   <div class="home page auth-pattern">
     <LoaderOverlay
       :show="loading"
-      :text="waitingForAccept ? 'بانتظار موافقة الطرف الآخر...' : 'جاري الاتصال...'"
+      :text="waitingForAccept ? t('home.waitingForAccept') : t('home.connecting')"
     />
-    <!-- Native-style header -->
+    <!-- Header مميز -->
     <header class="header">
-      <div class="user-row" @click="copyCode">
-        <div class="avatar avatar-sm" :style="{ background: auth.avatarColor }">
-          <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
-          <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
-          <span v-else>{{ avatarLetter }}</span>
-        </div>
-        <div class="user-meta">
-          <span class="user-name">{{ user?.name }}</span>
-          <span class="user-code">{{ user?.uniqueCode }}</span>
-          <span v-if="copied" class="copy-feedback">تم النسخ!</span>
-        </div>
-      </div>
-      <div class="header-actions">
-        <RouterLink to="/settings" class="nav-btn" aria-label="الإعدادات">
-          <Settings :size="22" stroke-width="2" />
-        </RouterLink>
-        <button class="nav-btn" @click="openLogoutConfirm" aria-label="تسجيل الخروج">
-          <LogOut :size="22" stroke-width="2" />
-        </button>
-      </div>
-    </header>
-
-    <!-- Incoming Connection Request Dialog -->
-    <Transition name="modal">
-      <div v-if="incomingRequest" class="logout-overlay" @click.self="declineConnectionRequest">
-        <div class="request-dialog glass-card">
-          <div class="request-dialog-icon"><Phone :size="48" stroke-width="2" /></div>
-          <h3 class="request-dialog-title">طلب اتصال</h3>
-          <p class="request-dialog-text">
-            <strong>{{ incomingRequest.requesterName }}</strong> يريد الاتصال بك
-          </p>
-          <div class="request-dialog-actions">
-            <button class="btn-decline" @click="declineConnectionRequest">
-              <X :size="20" />
-              <span>رفض</span>
-            </button>
-            <button class="btn-accept" @click="acceptConnectionRequest">
-              <Check :size="20" />
-              <span>قبول</span>
-            </button>
+      <div class="header-inner">
+        <div class="user-row">
+          <div class="avatar-wrap">
+            <div class="avatar" :style="{ background: auth.avatarColor }">
+              <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+              <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
+              <span v-else>{{ avatarLetter }}</span>
+            </div>
+          </div>
+          <div class="user-meta">
+            <span class="user-name">{{ user?.name }}</span>
           </div>
         </div>
+        <div class="header-actions">
+          <RouterLink to="/settings" class="nav-btn" :aria-label="t('home.settings')">
+            <Settings :size="20" stroke-width="2" />
+          </RouterLink>
+          <button class="nav-btn" @click="openLogoutConfirm" :aria-label="t('home.logout')">
+            <LogOut :size="20" stroke-width="2" />
+          </button>
+        </div>
       </div>
-    </Transition>
+    </header>
 
     <!-- Cancel waiting (when user is requester) - shown above loader -->
     <Transition name="fade">
       <div v-if="waitingForAccept" class="cancel-wait-wrap">
         <button class="cancel-wait-btn" @click="cancelConnectionRequest">
           <PhoneOff :size="18" />
-          <span>إلغاء الطلب</span>
+          <span>{{ t('home.cancelRequest') }}</span>
         </button>
       </div>
     </Transition>
@@ -304,11 +248,11 @@ const genderFilters = [
       <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="showLogoutConfirm = false">
         <div class="logout-dialog glass-card">
           <div class="logout-dialog-icon"><LogOut :size="48" stroke-width="2" /></div>
-          <h3 class="logout-dialog-title">تسجيل الخروج</h3>
-          <p class="logout-dialog-text">هل أنت متأكد من تسجيل الخروج؟</p>
+          <h3 class="logout-dialog-title">{{ t('home.logoutConfirm') }}</h3>
+          <p class="logout-dialog-text">{{ t('home.logoutConfirmText') }}</p>
           <div class="logout-dialog-actions">
-            <button class="btn-ghost" @click="showLogoutConfirm = false">إلغاء</button>
-            <button class="logout-confirm-btn" @click="confirmLogout">تسجيل الخروج</button>
+            <button class="btn-ghost" @click="showLogoutConfirm = false">{{ t('common.cancel') }}</button>
+            <button class="logout-confirm-btn" @click="confirmLogout">{{ t('home.logout') }}</button>
           </div>
         </div>
       </div>
@@ -319,14 +263,14 @@ const genderFilters = [
       <div v-if="auth.shouldPromptNotifications" class="logout-overlay" @click.self="dismissNotificationPrompt">
         <div class="logout-dialog glass-card notif-prompt-dialog">
           <div class="logout-dialog-icon"><Bell :size="48" stroke-width="2" /></div>
-          <h3 class="logout-dialog-title">تفعيل الإشعارات</h3>
+          <h3 class="logout-dialog-title">{{ t('home.enableNotifications') }}</h3>
           <p class="logout-dialog-text">
-            لاستقبال رسائل المحادثات والمكالمات الواردة، فعّل الإشعارات الآن
+            {{ t('home.enableNotificationsText') }}
           </p>
           <div class="logout-dialog-actions">
-            <button class="btn-ghost" :disabled="notifPromptLoading" @click="dismissNotificationPrompt">لاحقاً</button>
+            <button class="btn-ghost" :disabled="notifPromptLoading" @click="dismissNotificationPrompt">{{ t('home.later') }}</button>
             <button class="logout-confirm-btn notif-enable-btn" :disabled="notifPromptLoading" @click="enableNotifications">
-              {{ notifPromptLoading ? 'جاري...' : 'تفعيل الآن' }}
+              {{ notifPromptLoading ? t('home.enabling') : t('home.enableNow') }}
             </button>
           </div>
         </div>
@@ -342,7 +286,7 @@ const genderFilters = [
         </div>
         <div class="list-row-content">
           <span class="list-count">{{ onlineCount }}</span>
-          <span class="list-label">متصل الآن</span>
+          <span class="list-label">{{ t('home.onlineNow') }}</span>
         </div>
       </div>
     </div>
@@ -352,11 +296,11 @@ const genderFilters = [
       <div class="main-cta-wrap">
         <button class="main-cta-circle" :disabled="loading" @click="startRandom">
           <Zap :size="32" class="cta-icon" />
-          <span class="cta-text">ابدأ محادثة عشوائية</span>
+          <span class="cta-text">{{ t('home.startRandom') }}</span>
         </button>
       </div>
       <div class="segment-wrap">
-        <span class="segment-label">فلتر المطابقة</span>
+        <span class="segment-label">{{ t('home.filterLabel') }}</span>
         <div class="segment-control">
         <button
           v-for="f in genderFilters"
@@ -377,16 +321,16 @@ const genderFilters = [
 
     <!-- Divider -->
     <div class="divider">
-      <span class="divider-txt">أو اتصل بكود</span>
+      <span class="divider-txt">{{ t('home.orConnectByCode') }}</span>
     </div>
 
-    <!-- Code input - input + circular button side by side -->
+    <!-- Code input - زر الاتصال داخل الـ input -->
     <div class="code-section">
-      <div class="code-row">
+      <div class="code-input-wrap">
         <input
           v-model="codeInput"
           class="code-input"
-          placeholder="NX-A3B9"
+          :placeholder="t('home.enterUserCode')"
           maxlength="7"
           @input="codeInput = codeInput.toUpperCase()"
           @keyup.enter="connectByCode"
@@ -395,7 +339,7 @@ const genderFilters = [
           class="code-submit"
           :class="{ disabled: !codeInput.trim() || loading }"
           :disabled="!codeInput.trim() || loading"
-          aria-label="اتصل"
+          :aria-label="t('home.connect')"
           @click="connectByCode"
         >
           <PhoneCall :size="22" stroke-width="2" />
@@ -433,73 +377,101 @@ const genderFilters = [
   padding-top: 8px;
 }
 
-/* Native header - compact, full-width */
+/* Header مميز - تصميم بارز */
 .header {
+  flex-shrink: 0;
+  padding: calc(var(--safe-top) + 12px) var(--spacing) 16px;
+  background: linear-gradient(180deg, rgba(108, 99, 255, 0.12) 0%, rgba(108, 99, 255, 0.04) 50%, transparent 100%);
+  border-bottom: 1px solid rgba(108, 99, 255, 0.15);
+}
+
+.header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--safe-top) + 8px) var(--spacing) 12px;
-  background: var(--bg-primary);
-  flex-shrink: 0;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(108, 99, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
 }
 
 .user-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex: 1;
   min-width: 0;
-  padding: 4px 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.user-row:active { opacity: 0.8; }
+.user-row:active { opacity: 0.9; }
+
+.avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.avatar-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid rgba(108, 99, 255, 0.35);
+  opacity: 0.5;
+  pointer-events: none;
+}
 
 .avatar {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
-  flex-shrink: 0;
   overflow: hidden;
+  border: 2px solid rgba(108, 99, 255, 0.3);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 
 .user-meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
 }
-.user-name { font-size: 17px; font-weight: 600; color: var(--text-primary); }
-.user-code { font-size: 13px; color: var(--primary); font-weight: 600; letter-spacing: 1px; }
-.copy-feedback { font-size: 12px; color: var(--success); }
+.user-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
 
 .header-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .nav-btn {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
+  background: rgba(108, 99, 255, 0.08);
+  border: 1px solid rgba(108, 99, 255, 0.2);
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: 12px;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
-.nav-btn:active { background: var(--bg-card); color: var(--text-primary); }
-.nav-btn:hover { color: var(--text-primary); }
+.nav-btn:active { background: rgba(108, 99, 255, 0.2); color: var(--primary); border-color: rgba(108, 99, 255, 0.4); }
+.nav-btn:hover { color: var(--primary); }
 
 /* List section - online indicator */
 .list-section {
@@ -752,7 +724,7 @@ const genderFilters = [
   text-align: center;
 }
 
-/* Code section - input + circular button side by side */
+/* Code section - زر الاتصال داخل الـ input */
 .code-section {
   padding: 0 var(--spacing) 24px;
   display: flex;
@@ -760,19 +732,29 @@ const genderFilters = [
   gap: 12px;
 }
 
-.code-row {
+.code-input-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  min-height: 52px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.code-input-wrap:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
 }
 
 .code-input {
   flex: 1;
-  min-height: 48px;
-  padding: 0 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  min-height: 50px;
+  padding-inline-start: 20px;
+  padding-inline-end: 60px;
+  background: transparent;
+  border: none;
   color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
@@ -784,29 +766,34 @@ const genderFilters = [
   appearance: none;
 }
 .code-input::placeholder { color: var(--text-muted); }
-.code-input:focus { border-color: var(--primary); }
 
 .code-submit {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  min-height: 48px;
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 4px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   border-radius: 50%;
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #FF6584 100%);
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
   border: none;
   color: white;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
-  transition: transform 0.2s, box-shadow 0.3s;
+  box-shadow: 0 2px 10px rgba(108, 99, 255, 0.4);
+  transition: transform 0.2s, opacity 0.2s, box-shadow 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.code-submit.disabled {
+  opacity: 0.5;
+  background: var(--bg-card-hover);
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: not-allowed;
 }
 .code-submit:not(.disabled) {
   animation: call-btn-pulse 2.5s ease-in-out infinite;
@@ -821,7 +808,6 @@ const genderFilters = [
 .code-submit:active:not(.disabled) svg {
   animation: none;
 }
-.code-submit.disabled { opacity: 0.4; cursor: not-allowed; }
 
 @keyframes call-btn-pulse {
   0%, 100% {

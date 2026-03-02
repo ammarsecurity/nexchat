@@ -380,6 +380,8 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
     [HttpPost("notifications/broadcast")]
     public async Task<IActionResult> BroadcastNotification([FromBody] BroadcastNotificationDto dto)
     {
+        if (dto == null)
+            return BadRequest(new { message = "البيانات مطلوبة" });
         if (string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Body))
             return BadRequest(new { message = "العنوان والنص مطلوبان" });
 
@@ -389,8 +391,8 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
         if (dto.Body.Length > 500)
             return BadRequest(new { message = "نص الإشعار طويل جداً" });
 
-        var sent = await oneSignal.SendToAllAsync(dto.Title.Trim(), dto.Body.Trim(), dto.ImageUrl?.Trim());
-        return sent ? Ok(new { message = "تم إرسال الإشعار بنجاح" }) : StatusCode(500, new { message = "فشل إرسال الإشعار" });
+        var (success, error) = await oneSignal.SendToAllAsync(dto.Title.Trim(), dto.Body.Trim(), dto.ImageUrl?.Trim());
+        return success ? Ok(new { message = "تم إرسال الإشعار بنجاح" }) : StatusCode(500, new { message = error ?? "فشل إرسال الإشعار" });
     }
 
     [HttpPut("banners/reorder")]

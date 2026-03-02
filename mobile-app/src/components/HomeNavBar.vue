@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Rocket, Settings, Home } from 'lucide-vue-next'
 
@@ -10,6 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['launch'])
 
 const router = useRouter()
+const { t } = useI18n()
 const isLaunching = ref(false)
 
 async function onRocketClick() {
@@ -23,9 +25,9 @@ async function onRocketClick() {
 
 <template>
   <nav class="home-nav">
-    <RouterLink to="/home" class="nav-item" aria-label="الرئيسية">
+    <RouterLink to="/home" class="nav-item" :aria-label="t('home.title')">
       <Home :size="24" stroke-width="2" />
-      <span class="nav-label">الرئيسية</span>
+      <span class="nav-label">{{ t('home.title') }}</span>
     </RouterLink>
 
     <div class="nav-center">
@@ -33,7 +35,7 @@ async function onRocketClick() {
         class="rocket-btn"
         :class="{ launching: isLaunching || loading }"
         :disabled="loading"
-        aria-label="ابدأ محادثة عشوائية"
+        :aria-label="t('home.startRandom')"
         @click="onRocketClick"
       >
         <div class="rocket-wrap">
@@ -43,9 +45,9 @@ async function onRocketClick() {
       </button>
     </div>
 
-    <RouterLink to="/settings" class="nav-item" aria-label="الإعدادات">
+    <RouterLink to="/settings" class="nav-item" :aria-label="t('home.settings')">
       <Settings :size="24" stroke-width="2" />
-      <span class="nav-label">الإعدادات</span>
+      <span class="nav-label">{{ t('home.settings') }}</span>
     </RouterLink>
   </nav>
 </template>

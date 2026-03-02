@@ -93,14 +93,16 @@ public class OneSignalService
     /// <param name="title">عنوان الإشعار</param>
     /// <param name="body">نص الإشعار</param>
     /// <param name="imageUrl">رابط صورة اختياري (big_picture / large_icon)</param>
-    public async Task<bool> SendToAllAsync(string title, string body, string? imageUrl = null)
+    /// <returns>(نجاح، رسالة خطأ إن وجدت)</returns>
+    public async Task<(bool Success, string? Error)> SendToAllAsync(string title, string body, string? imageUrl = null)
     {
-        if (!IsConfigured) return false;
+        if (!IsConfigured)
+            return (false, "OneSignal غير مُعد (AppId أو RestApiKey ناقص)");
 
         var payload = new Dictionary<string, object>
         {
             ["app_id"] = _opts.AppId,
-            ["included_segments"] = new[] { "All" },
+            ["included_segments"] = new[] { "Subscribed Users" },
             ["target_channel"] = "push",
             ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
             ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
@@ -112,9 +114,21 @@ public class OneSignalService
             payload["large_icon"] = imageUrl;
         }
 
-        var json = JsonSerializer.Serialize(payload);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-        var res = await _http.PostAsync("notifications", content);
-        return res.IsSuccessStatusCode;
+        try
+        {
+            var json = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var res = await _http.PostAsync("notifications", content);
+            var bodyStr = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
+                return (true, null);
+
+            return (false, $"OneSignal: {(int)res.StatusCode} - {bodyStr}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"OneSignal: {ex.Message}");
+        }
     }
 }

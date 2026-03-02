@@ -266,6 +266,12 @@ html.light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
   transform: scaleX(-1);
 }
 
+/* LTR: زر الرجوع يشير لليسار */
+[dir="ltr"] .back-btn svg,
+[dir="ltr"] .top-bar-back svg {
+  transform: scaleX(-1);
+}
+
 /* Auth pages background pattern */
 .auth-pattern {
   position: relative;

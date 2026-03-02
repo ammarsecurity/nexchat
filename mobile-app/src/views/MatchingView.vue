@@ -1,21 +1,21 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Lightbulb, X, Globe, UserCircle, UsersRound } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import PrivacyBadge from '../components/PrivacyBadge.vue'
 import { useMatchingStore } from '../stores/matching'
-import { useChatStore } from '../stores/chat'
+import { useI18n } from 'vue-i18n'
 import { matchingHub, ensureConnected } from '../services/signalr'
 
 const router = useRouter()
 const matching = useMatchingStore()
-const chat = useChatStore()
+const { t } = useI18n()
 const dots = ref('.')
 const cancelling = ref(false)
 
-const filterLabels = { all: 'الكل', male: 'ذكور', female: 'إناث' }
+const filterLabels = computed(() => ({ all: t('matching.filterAll'), male: t('matching.filterMale'), female: t('matching.filterFemale') }))
 const filterIcons = { all: Globe, male: UserCircle, female: UsersRound }
 const filterStyles = {
   all: { color: '#7C75FF', bg: 'rgba(124, 117, 255, 0.15)' },
@@ -30,19 +30,10 @@ onMounted(() => {
     dots.value = dots.value.length >= 3 ? '.' : dots.value + '.'
   }, 500)
 
-  matchingHub.off('MatchFound')
-  matchingHub.on('MatchFound', (data) => {
-    const sessionId = data.sessionId ?? data.SessionId
-    const partner = data.partner ?? data.Partner
-    chat.setSession(sessionId, partner)
-    matching.setMatched()
-    router.replace(`/chat/${sessionId}`)
-  })
 })
 
 onUnmounted(() => {
   clearInterval(dotsInterval)
-  matchingHub.off('MatchFound')
 })
 
 async function cancel() {
@@ -60,13 +51,13 @@ async function cancel() {
 
 <template>
   <div class="matching page">
-    <LoaderOverlay :show="cancelling" text="جاري الإلغاء..." />
+    <LoaderOverlay :show="cancelling" :text="t('matching.cancelling')" />
     <div class="chat-pattern" aria-hidden="true"></div>
 
     <!-- Header -->
     <header class="matching-header">
-      <h1 class="matching-title">البحث عن مطابقة</h1>
-      <button class="cancel-header-btn" :disabled="cancelling" @click="cancel" aria-label="إلغاء">
+      <h1 class="matching-title">{{ t('matching.title') }}</h1>
+      <button class="cancel-header-btn" :disabled="cancelling" @click="cancel" :aria-label="t('common.cancel')">
         <X :size="22" stroke-width="2" />
       </button>
     </header>
@@ -84,8 +75,8 @@ async function cancel() {
           </div>
         </div>
         <div class="search-text">
-          <h2 class="search-heading">جارٍ البحث{{ dots }}</h2>
-          <p class="search-sub">نبحث عن شخص مناسب لك</p>
+          <h2 class="search-heading">{{ t('matching.searching') }}{{ dots }}</h2>
+          <p class="search-sub">{{ t('matching.searchingFor') }}</p>
         </div>
       </section>
 
@@ -100,7 +91,7 @@ async function cancel() {
           <span class="filter-icon">
             <component :is="filterIcons[matching.genderFilter]" :size="20" stroke-width="2" />
           </span>
-          <span class="filter-label">الفلتر الحالي:</span>
+          <span class="filter-label">{{ t('matching.currentFilter') }}</span>
           <span class="filter-val">{{ filterLabels[matching.genderFilter] }}</span>
         </div>
       </section>
@@ -110,12 +101,12 @@ async function cancel() {
         <div class="tips-card">
           <div class="tips-header">
             <Lightbulb :size="18" class="tips-icon" />
-            <span class="tips-title">نصائح أثناء الانتظار</span>
+            <span class="tips-title">{{ t('matching.tipsTitle') }}</span>
           </div>
           <ul class="tips-list">
-            <li>يمكنك مشاركة كودك مع أصدقائك</li>
-            <li>استخدم فلتر الجنس للمطابقة الأسرع</li>
-            <li>أوقات الذروة: الليل وعطل نهاية الأسبوع</li>
+            <li>{{ t('matching.tip1') }}</li>
+            <li>{{ t('matching.tip2') }}</li>
+            <li>{{ t('matching.tip3') }}</li>
           </ul>
         </div>
       </section>
@@ -123,7 +114,7 @@ async function cancel() {
       <!-- Cancel CTA -->
       <button class="cancel-btn" :disabled="cancelling" @click="cancel">
         <X :size="18" stroke-width="2" />
-        <span>إلغاء البحث</span>
+        <span>{{ t('matching.cancelSearch') }}</span>
       </button>
 
       <BannerStrip placement="matching" />

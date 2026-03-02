@@ -3,12 +3,14 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Users, UserCircle, Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '../../stores/theme'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const { t } = useI18n()
 const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
 
 const name = ref('')
@@ -18,11 +20,11 @@ const loading = ref(false)
 const error = ref('')
 const showPass = ref(false)
 
-const genders = [
-  { value: 'male', label: 'ذكر', Icon: User, color: '#6C63FF' },
-  { value: 'female', label: 'أنثى', Icon: Users, color: '#FF6584' },
-  { value: 'other', label: 'آخر', Icon: UserCircle, color: '#00D4FF' }
-]
+const genders = computed(() => [
+  { value: 'male', label: t('register.male'), Icon: User, color: '#6C63FF' },
+  { value: 'female', label: t('register.female'), Icon: Users, color: '#FF6584' },
+  { value: 'other', label: t('register.other'), Icon: UserCircle, color: '#00D4FF' }
+])
 
 async function handleRegister() {
   if (!name.value.trim() || !password.value || !gender.value) return
@@ -32,7 +34,7 @@ async function handleRegister() {
     await auth.register(name.value.trim(), password.value, gender.value)
     router.replace('/home')
   } catch (e) {
-    error.value = e.userMessage ?? e.response?.data?.message ?? 'حدث خطأ، حاول مجدداً'
+    error.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {
     loading.value = false
   }
@@ -41,22 +43,22 @@ async function handleRegister() {
 
 <template>
   <div class="register page auth-pattern">
-    <LoaderOverlay :show="loading" text="جاري إنشاء الحساب..." />
+    <LoaderOverlay :show="loading" :text="t('register.loading')" />
     <div class="content">
       <img :src="logoImg" alt="NexChat" class="logo-img" />
 
       <div class="card glass-card">
-        <h2 class="title">إنشاء حساب جديد</h2>
-        <p class="subtitle text-secondary">سريع وسهل، ثلاثة حقول فقط!</p>
+        <h2 class="title">{{ t('register.title') }}</h2>
+        <p class="subtitle text-secondary">{{ t('register.subtitle') }}</p>
 
         <form @submit.prevent="handleRegister" class="form">
           <!-- Name -->
           <div class="field">
-            <label>الاسم</label>
+            <label>{{ t('register.name') }}</label>
             <input
               v-model="name"
               class="input-field"
-              placeholder="اسمك في التطبيق"
+              :placeholder="t('register.namePlaceholder')"
               maxlength="50"
               autocomplete="username"
             />
@@ -64,13 +66,13 @@ async function handleRegister() {
 
           <!-- Password -->
           <div class="field">
-            <label>كلمة المرور</label>
+            <label>{{ t('register.password') }}</label>
             <div class="pass-wrap">
               <input
                 v-model="password"
                 :type="showPass ? 'text' : 'password'"
                 class="input-field"
-                placeholder="4 أحرف على الأقل"
+                :placeholder="t('register.passwordPlaceholder')"
                 autocomplete="new-password"
               />
               <button type="button" class="show-pass" @click="showPass = !showPass">
@@ -82,7 +84,7 @@ async function handleRegister() {
 
           <!-- Gender -->
           <div class="field">
-            <label>الجنس</label>
+            <label>{{ t('register.gender') }}</label>
             <div class="gender-grid">
               <button
                 v-for="g in genders"
@@ -109,18 +111,18 @@ async function handleRegister() {
             class="btn-gradient"
             :disabled="loading || !name || !password || !gender || password.length < 4"
           >
-            <span v-if="!loading">ابدأ الآن</span>
+            <span v-if="!loading">{{ t('register.submit') }}</span>
             <span v-else class="spinner"></span>
           </button>
         </form>
       </div>
 
       <div class="login-link">
-        <span class="text-secondary">لديك حساب؟</span>
-        <RouterLink to="/login" class="link">تسجيل الدخول</RouterLink>
+        <span class="text-secondary">{{ t('register.hasAccount') }}</span>
+        <RouterLink to="/login" class="link">{{ t('register.login') }}</RouterLink>
       </div>
       <div class="privacy-link">
-        <RouterLink to="/privacy" class="link text-sm">سياسة الخصوصية</RouterLink>
+        <RouterLink to="/privacy" class="link text-sm">{{ t('register.privacyPolicy') }}</RouterLink>
       </div>
     </div>
   </div>

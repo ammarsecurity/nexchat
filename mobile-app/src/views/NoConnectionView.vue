@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { WifiOff, RefreshCw } from 'lucide-vue-next'
 
 const isOnline = ref(navigator.onLine)
@@ -35,13 +36,13 @@ onUnmounted(() => {
       <div class="no-conn-icon">
         <WifiOff :size="80" stroke-width="1.5" />
       </div>
-      <h1 class="no-conn-title">لا يوجد اتصال بالإنترنت</h1>
+      <h1 class="no-conn-title">{{ t('noConnection.title') }}</h1>
       <p class="no-conn-desc">
-        تحقق من اتصالك بالشبكة وحاول مرة أخرى
+        {{ t('noConnection.desc') }}
       </p>
       <button class="retry-btn" @click="retry">
         <RefreshCw :size="20" />
-        <span>إعادة المحاولة</span>
+        <span>{{ t('noConnection.retry') }}</span>
       </button>
     </div>
   </div>

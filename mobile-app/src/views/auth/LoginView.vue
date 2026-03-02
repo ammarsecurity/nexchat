@@ -3,12 +3,14 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '../../stores/theme'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const { t } = useI18n()
 const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
 
 const name = ref('')
@@ -25,7 +27,7 @@ async function handleLogin() {
     await auth.login(name.value.trim(), password.value)
     router.replace('/home')
   } catch (e) {
-    error.value = e.userMessage ?? e.response?.data?.message ?? 'حدث خطأ، حاول مجدداً'
+    error.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {
     loading.value = false
   }
@@ -34,21 +36,21 @@ async function handleLogin() {
 
 <template>
   <div class="login page auth-pattern">
-    <LoaderOverlay :show="loading" text="جاري تسجيل الدخول..." />
+    <LoaderOverlay :show="loading" :text="t('login.loading')" />
     <div class="login-content">
       <div class="logo-wrap">
         <img :src="logoImg" alt="NexChat" class="logo-img" />
       </div>
 
-      <h1 class="login-title">مرحباً بعودتك</h1>
-      <p class="login-sub">سجّل دخولك للمتابعة</p>
+      <h1 class="login-title">{{ t('login.title') }}</h1>
+      <p class="login-sub">{{ t('login.subtitle') }}</p>
 
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="input-wrap">
           <input
             v-model="name"
             class="input-native"
-            placeholder="الاسم"
+            :placeholder="t('login.name')"
             autocomplete="username"
             maxlength="50"
           />
@@ -59,10 +61,10 @@ async function handleLogin() {
             v-model="password"
             :type="showPass ? 'text' : 'password'"
             class="input-native"
-            placeholder="كلمة المرور"
+            :placeholder="t('login.password')"
             autocomplete="current-password"
           />
-          <button type="button" class="input-toggle" @click="showPass = !showPass" aria-label="إظهار كلمة المرور">
+          <button type="button" class="input-toggle" @click="showPass = !showPass" :aria-label="t('login.showPassword')">
             <EyeOff v-if="showPass" :size="20" />
             <Eye v-else :size="20" />
           </button>
@@ -74,16 +76,16 @@ async function handleLogin() {
         </div>
 
         <button type="submit" class="login-btn" :disabled="loading || !name || !password">
-          <span v-if="!loading">دخول</span>
+          <span v-if="!loading">{{ t('login.submit') }}</span>
           <span v-else class="spinner"></span>
         </button>
       </form>
 
       <div class="login-links">
-        <span class="text-secondary">ليس لديك حساب؟</span>
-        <RouterLink to="/register" class="link">إنشاء حساب</RouterLink>
+        <span class="text-secondary">{{ t('login.noAccount') }}</span>
+        <RouterLink to="/register" class="link">{{ t('login.createAccount') }}</RouterLink>
       </div>
-      <RouterLink to="/privacy" class="privacy-link">سياسة الخصوصية</RouterLink>
+      <RouterLink to="/privacy" class="privacy-link">{{ t('login.privacyPolicy') }}</RouterLink>
     </div>
   </div>
 </template>
