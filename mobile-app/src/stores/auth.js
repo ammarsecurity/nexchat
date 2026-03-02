@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { Capacitor } from '@capacitor/core'
 import api from '../services/api'
 import { initNotifications, clearUser } from '../services/notifications'
 
@@ -7,6 +8,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('nexchat_token') || '')
   const user = ref(JSON.parse(localStorage.getItem('nexchat_user') || 'null'))
   const avatar = ref(localStorage.getItem('nexchat_avatar') || null)
+  const shouldPromptNotifications = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
   const avatarColor = computed(() => {
@@ -37,7 +39,13 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('nexchat_token', data.token)
     localStorage.setItem('nexchat_user', JSON.stringify(user.value))
 
-    initNotifications(data.userId)
+    const isNative = Capacitor.isNativePlatform() && typeof window.cordova !== 'undefined'
+    if (isNative) {
+      initNotifications(data.userId, { skipPermissionRequest: true })
+      shouldPromptNotifications.value = true
+    } else {
+      initNotifications(data.userId)
+    }
 
     // Sync avatar from backend on login/register
     if (data.avatar !== undefined) {
@@ -65,5 +73,9 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('nexchat_avatar')
   }
 
-  return { token, user, avatar, isLoggedIn, avatarColor, register, login, setAvatar, logout }
+  function dismissNotificationPrompt() {
+    shouldPromptNotifications.value = false
+  }
+
+  return { token, user, avatar, isLoggedIn, avatarColor, shouldPromptNotifications, register, login, setAvatar, logout, dismissNotificationPrompt }
 })

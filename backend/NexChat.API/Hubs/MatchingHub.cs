@@ -29,6 +29,24 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
             .Where(u => u.Id == userId)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsOnline, true));
 
+        // إرسال طلبات الاتصال المعلقة التي فاتت المستخدم وهو غير متصل
+        var pending = matching.GetPendingRequestsForTarget(userId);
+        foreach (var (requesterId, _) in pending)
+        {
+            var requester = await db.Users.FindAsync(requesterId);
+            if (requester != null)
+            {
+                await Clients.Caller.SendAsync("IncomingConnectionRequest", new
+                {
+                    RequesterId = requesterId.ToString(),
+                    RequesterName = requester.Name,
+                    RequesterGender = requester.Gender,
+                    RequesterAvatar = requester.Avatar
+                });
+                break; // نرسل الأحدث فقط لتجنب تداخل النوافذ
+            }
+        }
+
         await base.OnConnectedAsync();
     }
 

@@ -72,3 +72,5 @@ public record UpdateSiteContentDto(string Content);
 public record SupportSendDto(Guid SessionId, string Content);
 
 public record UpdateSupportAvatarDto(string? Avatar);
+
+public record BroadcastNotificationDto(string Title, string Body, string? ImageUrl);

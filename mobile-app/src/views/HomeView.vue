@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, Check, X, PhoneCall, AlertCircle } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, Check, X, PhoneCall, AlertCircle, Bell } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -12,6 +12,7 @@ import { useChatStore } from '../stores/chat'
 import { matchingHub, startHub, ensureConnected } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { requestPermissionAndRegister } from '../services/notifications'
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
@@ -27,6 +28,7 @@ const loading = ref(false)
 const waitingForAccept = ref(false)
 const incomingRequest = ref(null)
 const showLogoutConfirm = ref(false)
+const notifPromptLoading = ref(false)
 const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
 let connectionTimeoutId = null
 
@@ -213,6 +215,20 @@ function confirmLogout() {
   router.replace('/login')
 }
 
+async function enableNotifications() {
+  notifPromptLoading.value = true
+  try {
+    await requestPermissionAndRegister()
+    auth.dismissNotificationPrompt()
+  } finally {
+    notifPromptLoading.value = false
+  }
+}
+
+function dismissNotificationPrompt() {
+  auth.dismissNotificationPrompt()
+}
+
 const genderFilters = [
   { value: 'all', label: 'الكل', Icon: Globe, color: '#7C75FF', bg: 'rgba(124, 117, 255, 0.15)' },
   { value: 'male', label: 'ذكور', Icon: UserCircle, color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
@@ -293,6 +309,25 @@ const genderFilters = [
           <div class="logout-dialog-actions">
             <button class="btn-ghost" @click="showLogoutConfirm = false">إلغاء</button>
             <button class="logout-confirm-btn" @click="confirmLogout">تسجيل الخروج</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Notification Enable Prompt (after login) -->
+    <Transition name="modal">
+      <div v-if="auth.shouldPromptNotifications" class="logout-overlay" @click.self="dismissNotificationPrompt">
+        <div class="logout-dialog glass-card notif-prompt-dialog">
+          <div class="logout-dialog-icon"><Bell :size="48" stroke-width="2" /></div>
+          <h3 class="logout-dialog-title">تفعيل الإشعارات</h3>
+          <p class="logout-dialog-text">
+            لاستقبال رسائل المحادثات والمكالمات الواردة، فعّل الإشعارات الآن
+          </p>
+          <div class="logout-dialog-actions">
+            <button class="btn-ghost" :disabled="notifPromptLoading" @click="dismissNotificationPrompt">لاحقاً</button>
+            <button class="logout-confirm-btn notif-enable-btn" :disabled="notifPromptLoading" @click="enableNotifications">
+              {{ notifPromptLoading ? 'جاري...' : 'تفعيل الآن' }}
+            </button>
           </div>
         </div>
       </div>
@@ -844,6 +879,8 @@ const genderFilters = [
   padding: 0;
 }
 .logout-confirm-btn:active { opacity: 0.9; }
+.notif-enable-btn { background: var(--primary) !important; }
+.notif-enable-btn:active { opacity: 0.9; }
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.25s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }

@@ -18,8 +18,10 @@ function getOneSignal() {
 
 /**
  * تهيئة OneSignal وربط المستخدم
+ * @param {string} userId
+ * @param {{ skipPermissionRequest?: boolean }} opts - إن كان true لا يطلب الإذن فوراً (لعرض طلب مخصص أولاً)
  */
-export async function initNotifications(userId) {
+export async function initNotifications(userId, opts = {}) {
   if (!isNative() || !ONESIGNAL_APP_ID || !userId) return
 
   const OneSignal = getOneSignal()
@@ -29,13 +31,9 @@ export async function initNotifications(userId) {
     OneSignal.initialize(ONESIGNAL_APP_ID)
     OneSignal.login(String(userId))
 
-    // طلب إذن الإشعارات
-    await OneSignal.Notifications.requestPermission()
-
-    // الحصول على subscription id وإرساله للـ backend
-    const id = await OneSignal.User.pushSubscription.getIdAsync()
-    if (id) {
-      await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
+    if (!opts.skipPermissionRequest) {
+      await OneSignal.Notifications.requestPermission()
+      await registerWithBackend()
     }
 
     // عند الضغط على الإشعار
@@ -57,6 +55,38 @@ export async function initNotifications(userId) {
   }
 }
 
+async function registerWithBackend() {
+  if (!isNative()) return
+  const OneSignal = getOneSignal()
+  if (!OneSignal) return
+  try {
+    const id = await OneSignal.User.pushSubscription.getIdAsync()
+    if (id) {
+      await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
+    }
+  } catch (e) {
+    console.warn('Register push error:', e)
+  }
+}
+
+/**
+ * طلب إذن الإشعارات والتسجيل في الـ backend (يُستدعى بعد الطلب المخصص)
+ */
+export async function requestPermissionAndRegister() {
+  if (!isNative()) return false
+  const OneSignal = getOneSignal()
+  if (!OneSignal) return false
+  try {
+    await OneSignal.Notifications.requestPermission()
+    await registerWithBackend()
+    optInNotifications()
+    return true
+  } catch (e) {
+    console.warn('Request permission error:', e)
+    return false
+  }
+}
+
 /**
  * إلغاء ربط المستخدم عند تسجيل الخروج
  */
@@ -72,10 +102,15 @@ export function clearUser() {
 }
 
 function handleNotificationClick(data) {
-  if (!data?.sessionId) return
-
   const router = window.__nexchat_router__
   if (!router) return
+
+  if (data?.type === 'code_connected') {
+    router.push('/home')
+    return
+  }
+
+  if (!data?.sessionId) return
 
   if (data.type === 'video_call') {
     router.push(`/video/${data.sessionId}`)

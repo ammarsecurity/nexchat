@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -80,15 +81,28 @@ public class MatchingService(AppDbContext db)
         if (targetUser == null || targetUser.Id == requesterId)
             return (false, null, "المستخدم غير موجود أو الكود غير صحيح");
 
-        var targetOnline = UserConnectionMap.ContainsKey(targetUser.Id);
-        if (!targetOnline)
-            return (false, null, "المستخدم غير متصل حالياً");
-
         if (PendingRequests.ContainsKey(requesterId))
             return (false, null, "لديك طلب قيد الانتظار");
 
         PendingRequests[requesterId] = (targetUser.Id, DateTime.UtcNow);
         return (true, targetUser.Id, null);
+    }
+
+    /// <summary>
+    /// جلب طلبات الاتصال المعلقة للمستخدم (عندما يكون هو المستهدف)
+    /// يُستدعى عند اتصال المستخدم لإرسال الطلبات التي فاتته وهو غير متصل
+    /// </summary>
+    public IReadOnlyList<(Guid RequesterId, DateTime CreatedAt)> GetPendingRequestsForTarget(Guid targetId)
+    {
+        var now = DateTime.UtcNow;
+        var result = new List<(Guid RequesterId, DateTime CreatedAt)>();
+        foreach (var kv in PendingRequests.ToArray())
+        {
+            if (kv.Value.TargetId != targetId) continue;
+            if ((now - kv.Value.CreatedAt).TotalSeconds > RequestTimeoutSeconds) continue;
+            result.Add((kv.Key, kv.Value.CreatedAt));
+        }
+        return result.OrderByDescending(x => x.CreatedAt).ToList();
     }
 
     private const int RequestTimeoutSeconds = 60;

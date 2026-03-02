@@ -6,13 +6,14 @@ using NexChat.API.Hubs;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
+using NexChat.Infrastructure.Services;
 
 namespace NexChat.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Policy = "AdminOnly")]
-public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext) : ControllerBase
+public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, OneSignalService oneSignal) : ControllerBase
 {
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats()
@@ -374,6 +375,22 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext) :
         }
         await db.SaveChangesAsync();
         return Ok();
+    }
+
+    [HttpPost("notifications/broadcast")]
+    public async Task<IActionResult> BroadcastNotification([FromBody] BroadcastNotificationDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Body))
+            return BadRequest(new { message = "العنوان والنص مطلوبان" });
+
+        if (dto.Title.Length > 100)
+            return BadRequest(new { message = "العنوان طويل جداً" });
+
+        if (dto.Body.Length > 500)
+            return BadRequest(new { message = "نص الإشعار طويل جداً" });
+
+        var sent = await oneSignal.SendToAllAsync(dto.Title.Trim(), dto.Body.Trim(), dto.ImageUrl?.Trim());
+        return sent ? Ok(new { message = "تم إرسال الإشعار بنجاح" }) : StatusCode(500, new { message = "فشل إرسال الإشعار" });
     }
 
     [HttpPut("banners/reorder")]

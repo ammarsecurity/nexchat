@@ -86,4 +86,35 @@ public class OneSignalService
             "اتصال جديد",
             $"{connectorName} اتصل بك عبر الكود",
             new { type = "code_connected" });
+
+    /// <summary>
+    /// إرسال إشعار لجميع المستخدمين المشتركين (بث عام)
+    /// </summary>
+    /// <param name="title">عنوان الإشعار</param>
+    /// <param name="body">نص الإشعار</param>
+    /// <param name="imageUrl">رابط صورة اختياري (big_picture / large_icon)</param>
+    public async Task<bool> SendToAllAsync(string title, string body, string? imageUrl = null)
+    {
+        if (!IsConfigured) return false;
+
+        var payload = new Dictionary<string, object>
+        {
+            ["app_id"] = _opts.AppId,
+            ["included_segments"] = new[] { "All" },
+            ["target_channel"] = "push",
+            ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
+            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
+        };
+
+        if (!string.IsNullOrWhiteSpace(imageUrl))
+        {
+            payload["big_picture"] = imageUrl;
+            payload["large_icon"] = imageUrl;
+        }
+
+        var json = JsonSerializer.Serialize(payload);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var res = await _http.PostAsync("notifications", content);
+        return res.IsSuccessStatusCode;
+    }
 }

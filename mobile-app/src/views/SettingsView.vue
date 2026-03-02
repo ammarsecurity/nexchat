@@ -10,7 +10,7 @@ import PrivacyBadge from '../components/PrivacyBadge.vue'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
-import { optInNotifications, optOutNotifications, getNotificationsEnabled } from '../services/notifications'
+import { optInNotifications, optOutNotifications, getNotificationsEnabled, requestPermissionAndRegister } from '../services/notifications'
 import { Capacitor } from '@capacitor/core'
 
 const router = useRouter()
@@ -46,11 +46,16 @@ async function loadNotificationsState() {
   }
 }
 
-function toggleNotifications() {
+async function enableNotifications() {
   if (!isNative) return
-  notificationsEnabled.value = !notificationsEnabled.value
-  if (notificationsEnabled.value) optInNotifications()
-  else optOutNotifications()
+  await requestPermissionAndRegister()
+  notificationsEnabled.value = true
+}
+
+function disableNotifications() {
+  if (!isNative) return
+  optOutNotifications()
+  notificationsEnabled.value = false
 }
 
 async function requestMediaPerms() {
@@ -260,11 +265,30 @@ onMounted(() => loadNotificationsState())
           <span>{{ theme.isLight ? 'الوضع الداكن' : 'الوضع الفاتح' }}</span>
           <span class="theme-badge">{{ theme.isLight ? 'داكن' : 'فاتح' }}</span>
         </button>
-        <button v-if="isNative" class="link-row toggle-row" @click="toggleNotifications">
-          <Bell :size="20" class="link-icon" />
-          <span>تفعيل الإشعارات</span>
-          <span class="theme-badge" :class="{ muted: !notificationsEnabled }">{{ notificationsEnabled ? 'مفعّل' : 'معطّل' }}</span>
-        </button>
+        <div class="notif-buttons-row">
+          <span class="notif-label"><Bell :size="20" class="link-icon" /> الإشعارات</span>
+          <template v-if="isNative">
+            <div class="notif-btns">
+              <button
+                class="notif-btn enable"
+                :class="{ active: notificationsEnabled }"
+                :disabled="notificationsEnabled"
+                @click="enableNotifications"
+              >
+                تفعيل
+              </button>
+              <button
+                class="notif-btn disable"
+                :class="{ active: !notificationsEnabled }"
+                :disabled="!notificationsEnabled"
+                @click="disableNotifications"
+              >
+                إلغاء تفعيل
+              </button>
+            </div>
+          </template>
+          <span v-else class="notif-web-msg">متاحة على تطبيق Android/iOS فقط</span>
+        </div>
         <RouterLink to="/notifications" class="link-row">
           <Bell :size="20" class="link-icon" />
           <span>مركز الإشعارات</span>
@@ -733,6 +757,65 @@ onMounted(() => loadNotificationsState())
 .perm-feedback.success { color: var(--success); }
 .perm-feedback.error { color: var(--danger); }
 .toggle-row { justify-content: flex-start; }
+
+/* Notification enable/disable buttons */
+.notif-buttons-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--spacing);
+  border-bottom: 1px solid var(--border);
+}
+.notif-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+.notif-btns {
+  display: flex;
+  gap: 10px;
+}
+.notif-btn {
+  flex: 1;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+  border: 1px solid var(--border);
+}
+.notif-btn.enable {
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  border-color: rgba(108, 99, 255, 0.3);
+}
+.notif-btn.enable:not(:disabled):active { background: rgba(108, 99, 255, 0.25); }
+.notif-btn.enable.active,
+.notif-btn.enable:disabled {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  cursor: default;
+}
+.notif-btn.disable {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+.notif-btn.disable:not(:disabled):active { background: rgba(255, 255, 255, 0.1); }
+.notif-btn.disable.active,
+.notif-btn.disable:disabled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  cursor: default;
+}
+.notif-web-msg {
+  font-size: 13px;
+  color: var(--text-muted);
+}
 
 /* About */
 .about-card { overflow: hidden; padding: var(--spacing); }
