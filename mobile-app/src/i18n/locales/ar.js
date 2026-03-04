@@ -3,6 +3,7 @@ export default {
     cancel: 'إلغاء',
     copy: 'نسخ',
     copied: 'تم النسخ',
+    delete: 'حذف',
     copiedShort: 'تم',
     loading: 'جاري التحميل...',
     error: 'حدث خطأ، حاول مجدداً'
@@ -33,7 +34,11 @@ export default {
     enableNotificationsText: 'لاستقبال رسائل المحادثات والمكالمات الواردة، فعّل الإشعارات الآن',
     later: 'لاحقاً',
     enableNow: 'تفعيل الآن',
-    enabling: 'جاري...'
+    enabling: 'جاري...',
+    savedCodes: 'أكوادي المحفوظة',
+    addCode: 'إضافة كود',
+    noSavedCodes: 'لا توجد أكواد محفوظة',
+    codeLabelPlaceholder: 'تسمية (اختياري)'
   },
   settings: {
     title: 'الإعدادات',

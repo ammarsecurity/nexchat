@@ -56,7 +56,8 @@ public class SupportController(AppDbContext db) : ControllerBase
                 session.User1.Name,
                 session.User1.Gender,
                 session.User1.UniqueCode,
-                session.User1.Avatar
+                session.User1.Avatar,
+                IsFeatured = session.User1.IsFeatured
             }
         });
     }

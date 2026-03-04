@@ -10,6 +10,11 @@ const search = ref('')
 const banDialog = ref(false)
 const selectedUser = ref(null)
 const banAction = ref(true)
+const featuredLoading = ref(null)
+const selectedIds = ref([])
+const deleteDialog = ref(false)
+const deleteTarget = ref(null) // single user or 'bulk'
+const deleteLoading = ref(false)
 
 const headers = [
   { title: 'المستخدم', key: 'name', sortable: false },
@@ -50,6 +55,52 @@ async function executeBan() {
   fetchUsers()
 }
 
+function confirmDelete(user) {
+  deleteTarget.value = user
+  deleteDialog.value = true
+}
+
+function confirmBulkDelete() {
+  deleteTarget.value = 'bulk'
+  deleteDialog.value = true
+}
+
+async function executeDelete() {
+  deleteLoading.value = true
+  try {
+    if (deleteTarget.value === 'bulk') {
+      await api.delete('/admin/users', { data: { ids: selectedIds.value } })
+      selectedIds.value = []
+    } else {
+      await api.delete(`/admin/users/${deleteTarget.value.id}`)
+    }
+    deleteDialog.value = false
+    deleteTarget.value = null
+    fetchUsers()
+  } catch (e) {
+    alert(e.response?.data?.message || 'حدث خطأ')
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
+function cancelDelete() {
+  deleteDialog.value = false
+  deleteTarget.value = null
+}
+
+async function toggleFeatured(user) {
+  featuredLoading.value = user.id
+  try {
+    await api.put(`/admin/users/${user.id}/featured`, { featured: !user.isFeatured })
+    fetchUsers()
+  } catch (e) {
+    if (e.response?.data?.message) alert(e.response.data.message)
+  } finally {
+    featuredLoading.value = null
+  }
+}
+
 function formatDate(date) {
   return new Date(date).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric' })
 }
@@ -70,6 +121,15 @@ onMounted(fetchUsers)
         <div class="text-h5 font-weight-bold">المستخدمين</div>
         <div class="text-body-2 text-medium-emphasis">إجمالي {{ total.toLocaleString() }} مستخدم</div>
       </div>
+      <v-btn
+        v-if="selectedIds.length"
+        color="error"
+        variant="tonal"
+        :loading="deleteLoading"
+        @click="confirmBulkDelete"
+      >
+        حذف المحدد ({{ selectedIds.length }})
+      </v-btn>
     </div>
 
     <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
@@ -87,6 +147,7 @@ onMounted(fetchUsers)
       />
 
       <v-data-table
+        v-model="selectedIds"
         :headers="headers"
         :items="users"
         :loading="loading"
@@ -94,15 +155,20 @@ onMounted(fetchUsers)
         hide-default-footer
         item-value="id"
         color="transparent"
+        show-select
       >
         <template #item.name="{ item }">
           <div class="d-flex align-center gap-3 py-2">
-            <v-avatar size="36" :color="item.isBanned ? 'error' : 'primary'" variant="tonal">
+            <v-avatar size="36" :color="item.isBanned ? 'error' : item.isFeatured ? 'warning' : 'primary'" variant="tonal">
               <span class="font-weight-bold">{{ item.name[0].toUpperCase() }}</span>
             </v-avatar>
             <div>
-              <div class="font-weight-medium">{{ item.name }}</div>
+              <div class="d-flex align-center gap-1">
+                <span class="font-weight-medium">{{ item.name }}</span>
+                <v-icon v-if="item.isFeatured" size="18" color="warning">mdi-crown</v-icon>
+              </div>
               <div v-if="item.isBanned" class="text-caption text-error">محظور</div>
+              <div v-else-if="item.isFeatured" class="text-caption text-warning">مميز</div>
             </div>
           </div>
         </template>
@@ -136,7 +202,15 @@ onMounted(fetchUsers)
 
         <template #item.actions="{ item }">
           <v-btn
-            v-if="!item.isBanned"
+            icon="mdi-crown"
+            size="small"
+            :variant="item.isFeatured ? 'flat' : 'tonal'"
+            :color="item.isFeatured ? 'warning' : 'default'"
+            :loading="featuredLoading === item.id"
+            @click="toggleFeatured(item)"
+          ></v-btn>
+          <v-btn
+            v-if="!item.isFeatured && !item.isBanned"
             icon="mdi-account-cancel"
             size="small"
             variant="tonal"
@@ -144,12 +218,19 @@ onMounted(fetchUsers)
             @click="confirmBan(item, true)"
           ></v-btn>
           <v-btn
-            v-else
+            v-else-if="!item.isFeatured && item.isBanned"
             icon="mdi-account-check"
             size="small"
             variant="tonal"
             color="success"
             @click="confirmBan(item, false)"
+          ></v-btn>
+          <v-btn
+            icon="mdi-delete"
+            size="small"
+            variant="tonal"
+            color="error"
+            @click="confirmDelete(item)"
           ></v-btn>
         </template>
 
@@ -166,6 +247,30 @@ onMounted(fetchUsers)
         </template>
       </v-data-table>
     </v-card>
+
+    <!-- Delete Dialog -->
+    <v-dialog v-model="deleteDialog" max-width="420" persistent>
+      <v-card rounded="xl" elevation="0" class="pa-4">
+        <v-card-title class="font-weight-bold text-error">
+          حذف الحساب{{ deleteTarget === 'bulk' ? 'ات' : '' }}
+        </v-card-title>
+        <v-card-text>
+          <template v-if="deleteTarget === 'bulk'">
+            هل أنت متأكد من حذف {{ selectedIds.length }} حساب؟ لا يمكن التراجع.
+          </template>
+          <template v-else>
+            هل أنت متأكد من حذف <strong>{{ deleteTarget?.name }}</strong> نهائياً؟ لا يمكن التراجع.
+          </template>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="cancelDelete" variant="text">إلغاء</v-btn>
+          <v-btn color="error" variant="tonal" :loading="deleteLoading" @click="executeDelete">
+            حذف
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Ban Dialog -->
     <v-dialog v-model="banDialog" max-width="400">

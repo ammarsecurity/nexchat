@@ -20,31 +20,30 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(name, password, gender) {
     const res = await api.post('/auth/register', { name, password, gender })
-    setAuth(res.data)
+    await setAuth(res.data)
   }
 
   async function login(name, password) {
     const res = await api.post('/auth/login', { name, password })
-    setAuth(res.data)
+    await setAuth(res.data)
   }
 
-  function setAuth(data) {
+  async function setAuth(data) {
     token.value = data.token
     user.value = {
       id: data.userId,
       name: data.name,
       gender: data.gender,
-      uniqueCode: data.uniqueCode
+      uniqueCode: data.uniqueCode,
+      isFeatured: data.isFeatured ?? false
     }
     localStorage.setItem('nexchat_token', data.token)
     localStorage.setItem('nexchat_user', JSON.stringify(user.value))
 
     const isNative = Capacitor.isNativePlatform() && typeof window.cordova !== 'undefined'
     if (isNative) {
-      initNotifications(data.userId, { skipPermissionRequest: true })
-      shouldPromptNotifications.value = true
-    } else {
-      initNotifications(data.userId)
+      const granted = await initNotifications(data.userId)
+      if (!granted) shouldPromptNotifications.value = true
     }
 
     // Sync avatar from backend on login/register

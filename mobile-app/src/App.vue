@@ -50,7 +50,8 @@ function setupMatchingHubListeners() {
       requesterId: data.requesterId ?? data.RequesterId,
       requesterName: data.requesterName ?? data.RequesterName,
       requesterGender: data.requesterGender ?? data.RequesterGender,
-      requesterAvatar: data.requesterAvatar ?? data.RequesterAvatar
+      requesterAvatar: data.requesterAvatar ?? data.RequesterAvatar,
+      requesterIsFeatured: data.requesterIsFeatured ?? data.RequesterIsFeatured ?? false
     })
     startIncomingCallSound()
   })

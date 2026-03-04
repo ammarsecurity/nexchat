@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Trash2, Crown } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -14,6 +14,7 @@ import { matchingHub, startHub, ensureConnected } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestPermissionAndRegister } from '../services/notifications'
+import api from '../services/api'
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
@@ -27,6 +28,12 @@ const codeInput = ref('')
 const codeError = ref('')
 const copied = ref(false)
 const loading = ref(false)
+const savedCodes = ref([])
+const savedCodesLoading = ref(false)
+const showAddCodeModal = ref(false)
+const newCodeInput = ref('')
+const newCodeLabel = ref('')
+const addCodeError = ref('')
 const waitingForAccept = ref(false)
 const showLogoutConfirm = ref(false)
 const notifPromptLoading = ref(false)
@@ -35,6 +42,7 @@ let connectionTimeoutId = null
 
 const user = computed(() => auth.user)
 const avatarLetter = computed(() => user.value?.name?.[0]?.toUpperCase() || '?')
+const isFeatured = computed(() => user.value?.isFeatured ?? false)
 
 function matchFoundHandler() {
   clearConnectionTimeout()
@@ -87,7 +95,70 @@ onMounted(async () => {
   setInterval(() => {
     onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
   }, 5000)
+
+  if (auth.user?.isFeatured) fetchSavedCodes()
 })
+
+async function fetchSavedCodes() {
+  if (!auth.user?.isFeatured) return
+  savedCodesLoading.value = true
+  try {
+    const { data } = await api.get('/user/saved-codes')
+    savedCodes.value = data ?? []
+  } catch {
+    savedCodes.value = []
+  } finally {
+    savedCodesLoading.value = false
+  }
+}
+
+function openAddCodeModal() {
+  showAddCodeModal.value = true
+  newCodeInput.value = ''
+  newCodeLabel.value = ''
+  addCodeError.value = ''
+}
+
+function closeAddCodeModal() {
+  showAddCodeModal.value = false
+}
+
+async function addSavedCode() {
+  const code = newCodeInput.value.trim().toUpperCase()
+  if (!code || !code.startsWith('NX-') || code.length !== 7) {
+    addCodeError.value = t('home.codeFormatError')
+    return
+  }
+  addCodeError.value = ''
+  try {
+    await api.post('/user/saved-codes', { code, label: newCodeLabel.value.trim() || null })
+    closeAddCodeModal()
+    await fetchSavedCodes()
+  } catch (e) {
+    addCodeError.value = e.userMessage ?? t('common.error')
+  }
+}
+
+async function removeSavedCode(code) {
+  try {
+    await api.delete(`/user/saved-codes/${encodeURIComponent(code)}`)
+    await fetchSavedCodes()
+  } catch {}
+}
+
+async function connectBySavedCode(code) {
+  codeInput.value = code
+  codeError.value = ''
+  loading.value = true
+  waitingForAccept.value = false
+  try {
+    await ensureConnected(matchingHub)
+    await matchingHub.invoke('ConnectByCode', code)
+  } catch {
+    loading.value = false
+    codeError.value = t('home.connectionError')
+  }
+}
 
 function clearConnectionTimeout() {
   if (connectionTimeoutId) {
@@ -211,12 +282,13 @@ const genderFilters = computed(() => [
     <header class="header">
       <div class="header-inner">
         <div class="user-row">
-          <div class="avatar-wrap">
+          <div class="avatar-wrap" :class="{ 'avatar-wrap-featured': isFeatured }">
             <div class="avatar" :style="{ background: auth.avatarColor }">
               <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
               <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
               <span v-else>{{ avatarLetter }}</span>
             </div>
+            <Crown v-if="isFeatured" class="avatar-crown-home" :size="20" stroke-width="2" />
           </div>
           <div class="user-meta">
             <span class="user-name">{{ user?.name }}</span>
@@ -318,6 +390,62 @@ const genderFilters = computed(() => [
       </div>
     </div>
     </div>
+
+    <!-- Saved Codes (featured users only) -->
+    <Transition name="fade">
+      <div v-if="isFeatured" class="saved-codes-section">
+        <div class="saved-codes-header">
+          <span class="saved-codes-title">{{ t('home.savedCodes') }}</span>
+          <button class="add-code-btn" @click="openAddCodeModal" :aria-label="t('home.addCode')">
+            <BookmarkPlus :size="20" stroke-width="2" />
+            <span>{{ t('home.addCode') }}</span>
+          </button>
+        </div>
+        <div v-if="savedCodesLoading" class="saved-codes-loading">{{ t('common.loading') }}</div>
+        <div v-else-if="savedCodes.length" class="saved-codes-list">
+          <button
+            v-for="item in savedCodes"
+            :key="item.code"
+            class="saved-code-item"
+            @click="connectBySavedCode(item.code)"
+          >
+            <span class="saved-code-value">{{ item.code }}</span>
+            <span v-if="item.label" class="saved-code-label">{{ item.label }}</span>
+            <button class="saved-code-delete" @click.stop="removeSavedCode(item.code)" :aria-label="t('common.delete')">
+              <Trash2 :size="16" stroke-width="2" />
+            </button>
+          </button>
+        </div>
+        <div v-else class="saved-codes-empty">{{ t('home.noSavedCodes') }}</div>
+      </div>
+    </Transition>
+
+    <!-- Add Code Modal -->
+    <Transition name="modal">
+      <div v-if="showAddCodeModal" class="logout-overlay" @click.self="closeAddCodeModal">
+        <div class="add-code-modal glass-card">
+          <h3 class="add-code-title">{{ t('home.addCode') }}</h3>
+          <input
+            v-model="newCodeInput"
+            class="code-input add-code-input"
+            :placeholder="t('home.enterUserCode')"
+            maxlength="7"
+            @input="newCodeInput = newCodeInput.toUpperCase()"
+          />
+          <input
+            v-model="newCodeLabel"
+            class="code-input add-code-label-input"
+            :placeholder="t('home.codeLabelPlaceholder')"
+            maxlength="50"
+          />
+          <div v-if="addCodeError" class="error-toast">{{ addCodeError }}</div>
+          <div class="add-code-actions">
+            <button class="btn-ghost" @click="closeAddCodeModal">{{ t('common.cancel') }}</button>
+            <button class="logout-confirm-btn add-code-submit" @click="addSavedCode">{{ t('home.addCode') }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Divider -->
     <div class="divider">
@@ -421,6 +549,19 @@ const genderFilters = computed(() => [
   opacity: 0.5;
   pointer-events: none;
 }
+.avatar-wrap.avatar-wrap-featured::after {
+  border: 2px solid rgba(255, 215, 0, 0.6);
+  opacity: 1;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+.avatar-crown-home {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  color: #FFD700;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  z-index: 1;
+}
 
 .avatar {
   width: 48px;
@@ -442,12 +583,17 @@ const genderFilters = computed(() => [
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 .user-name {
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-actions {
@@ -712,6 +858,133 @@ const genderFilters = computed(() => [
 }
 
 .segment-btn:active:not(.active) { opacity: 0.75; }
+
+/* Saved codes (featured users) */
+.saved-codes-section {
+  padding: 0 var(--spacing) 20px;
+}
+.saved-codes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.saved-codes-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.add-code-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.15));
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  border-radius: 12px;
+  color: #E6B800;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.add-code-btn:active { opacity: 0.9; }
+.saved-codes-loading {
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 16px;
+  text-align: center;
+}
+.saved-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.saved-code-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.2s, background 0.2s;
+}
+.saved-code-item:active { background: var(--bg-card-hover); }
+.saved-code-value {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--primary);
+  flex: 1;
+  min-width: 0;
+}
+.saved-code-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100px;
+}
+.saved-code-delete {
+  padding: 6px;
+  background: rgba(255, 101, 132, 0.15);
+  border: none;
+  border-radius: 8px;
+  color: var(--danger);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.saved-code-delete:active { opacity: 0.8; }
+.saved-codes-empty {
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 20px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+/* Add code modal */
+.add-code-modal {
+  margin: var(--spacing);
+  max-width: 340px;
+  padding: 24px;
+  width: 100%;
+}
+.add-code-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  text-align: center;
+}
+.add-code-input, .add-code-label-input {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+}
+.add-code-input { letter-spacing: 2px; text-align: center; }
+.add-code-label-input { letter-spacing: 0; }
+.add-code-modal .error-toast { margin-bottom: 12px; }
+.add-code-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.add-code-submit { background: var(--primary) !important; }
 
 /* Divider */
 .divider {

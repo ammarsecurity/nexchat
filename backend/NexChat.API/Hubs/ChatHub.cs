@@ -45,12 +45,11 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt })
             .ToListAsync();
 
+        var partnerUser = session.User1Id == userId ? session.User2 : session.User1;
         await Clients.Caller.SendAsync("SessionJoined", new
         {
             session.Id,
-            Partner = session.User1Id == userId
-                ? new { session.User2.Name, session.User2.Gender, session.User2.UniqueCode, session.User2.Avatar }
-                : new { session.User1.Name, session.User1.Gender, session.User1.UniqueCode, session.User1.Avatar },
+            Partner = new { partnerUser.Name, partnerUser.Gender, partnerUser.UniqueCode, partnerUser.Avatar, IsFeatured = partnerUser.IsFeatured },
             Messages = messages
         });
     }
@@ -174,6 +173,9 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         if (session == null) return;
 
         var reportedId = session.User1Id == userId ? session.User2Id : session.User1Id;
+        var reportedUser = await db.Users.FindAsync(reportedId);
+        if (reportedUser?.IsFeatured == true)
+            return;
 
         var alreadyReported = await db.Reports.AnyAsync(r =>
             r.ReporterId == userId && r.ReportedId == reportedId);

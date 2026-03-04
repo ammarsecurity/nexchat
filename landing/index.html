@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description" content="نيكس شات - تطبيق دردشة مجاني للتعارف والتواصل مع أشخاص جدد من خلال الكود" />
   <meta name="theme-color" content="#0D0D1A" />
   <title>NexChat – نيكس شات | دردشة مجانية للتعارف</title>
@@ -12,16 +12,21 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="hero">
+  <main class="hero" role="main">
     <div class="hero-content">
       <img src="logo.png" alt="نيكس شات" class="logo-img" />
       <h1>نيكس شات</h1>
       <p class="tagline">تواصل مع أشخاص جدد عبر كود بسيط. دردشة مجانية وآمنة.</p>
       <div class="cta-group">
-        <a href="http://web.nexchat.site/" class="btn btn-primary" target="_blank" rel="noopener">
-          يمكنك استخدام التطبيق من الويب
+        <a href="nexChat.apk" class="btn btn-primary btn-download" download="nexChat.apk">
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          تحميل التطبيق للأندرويد
         </a>
-        <a href="privacy.html" class="btn btn-outline">سياسة الخصوصية</a>
+        <a href="#" class="btn btn-outline btn-disabled" aria-disabled="true" onclick="return false;">
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          تحميل iOS قريباً
+        </a>
+        <a href="privacy.html" class="btn btn-outline btn-ghost">سياسة الخصوصية</a>
       </div>
     </div>
   </main>
@@ -30,28 +35,28 @@
     <h2>لماذا نيكس شات؟</h2>
     <div class="feature-grid">
       <div class="feature-card">
-        <div class="feature-icon">🔐</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
         <div>
           <h3>خصوصية محمية</h3>
           <p>بياناتك محمية ولا نشاركها مع طرف ثالث.</p>
         </div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">⚡</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
         <div>
           <h3>اتصال سريع</h3>
           <p>شارك كودك وابدأ المحادثة فوراً.</p>
         </div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📹</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>
         <div>
           <h3>مكالمات فيديو</h3>
           <p>مكالمات فيديو مباشرة داخل التطبيق.</p>
         </div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🌐</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
         <div>
           <h3>مجاني بالكامل</h3>
           <p>بدون اشتراكات أو رسوم خفية.</p>

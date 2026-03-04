@@ -10,7 +10,8 @@ public record AuthResponse(
     string Name,
     string Gender,
     string UniqueCode,
-    string? Avatar
+    string? Avatar,
+    bool IsFeatured = false
 );
 
 public record UserProfileDto(
@@ -20,9 +21,12 @@ public record UserProfileDto(
     string UniqueCode,
     bool IsOnline,
     string? Avatar,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    bool IsFeatured = false
 );
 
 public record UpdateAvatarRequest(string? Avatar);
 
 public record DeleteAccountRequest(string Password);
+
+public record AddSavedCodeRequest(string Code, string? Label);

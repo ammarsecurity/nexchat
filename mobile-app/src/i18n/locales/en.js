@@ -3,6 +3,7 @@ export default {
     cancel: 'Cancel',
     copy: 'Copy',
     copied: 'Copied',
+    delete: 'Delete',
     copiedShort: 'Done',
     loading: 'Loading...',
     error: 'Something went wrong, please try again'
@@ -33,7 +34,11 @@ export default {
     enableNotificationsText: 'To receive chat messages and incoming calls, enable notifications now',
     later: 'Later',
     enableNow: 'Enable now',
-    enabling: 'Enabling...'
+    enabling: 'Enabling...',
+    savedCodes: 'Saved codes',
+    addCode: 'Add code',
+    noSavedCodes: 'No saved codes',
+    codeLabelPlaceholder: 'Label (optional)'
   },
   settings: {
     title: 'Settings',

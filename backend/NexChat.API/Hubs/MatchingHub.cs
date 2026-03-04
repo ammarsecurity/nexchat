@@ -41,7 +41,8 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
                     RequesterId = requesterId.ToString(),
                     RequesterName = requester.Name,
                     RequesterGender = requester.Gender,
-                    RequesterAvatar = requester.Avatar
+                    RequesterAvatar = requester.Avatar,
+                    RequesterIsFeatured = requester.IsFeatured
                 });
                 break; // نرسل الأحدث فقط لتجنب تداخل النوافذ
             }
@@ -93,14 +94,14 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
             await Clients.Caller.SendAsync("MatchFound", new
             {
                 SessionId = session.Id.ToString(),
-                Partner = new { partner!.Name, partner.Gender, partner.UniqueCode, partner.Avatar }
+                Partner = new { partner!.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsFeatured = partner.IsFeatured }
             });
 
             if (partnerConnectionId != null)
                 await Clients.Client(partnerConnectionId).SendAsync("MatchFound", new
                 {
                     SessionId = session.Id.ToString(),
-                    Partner = new { user.Name, user.Gender, user.UniqueCode, user.Avatar }
+                    Partner = new { user.Name, user.Gender, user.UniqueCode, user.Avatar, IsFeatured = user.IsFeatured }
                 });
         }
     }
@@ -139,11 +140,23 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
                 RequesterId = userId.ToString(),
                 RequesterName = user.Name,
                 RequesterGender = user.Gender,
-                RequesterAvatar = user.Avatar
+                RequesterAvatar = user.Avatar,
+                RequesterIsFeatured = user.IsFeatured
             });
 
         if (user != null)
-            _ = oneSignal.SendCodeConnectedAsync(targetId!.Value, user.Name);
+        {
+            var subscriptionIds = await db.DeviceSubscriptions
+                .Where(d => d.UserId == targetId.Value)
+                .Select(d => d.OneSignalPlayerId)
+                .ToListAsync();
+
+            _ = oneSignal.SendCodeConnectedAsync(
+                subscriptionIds.Count > 0 ? subscriptionIds : null,
+                targetId,
+                user.Name,
+                userId);
+        }
     }
 
     public async Task AcceptConnectionRequest(string requesterIdStr)

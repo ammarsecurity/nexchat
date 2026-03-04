@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2, Share2, Copy } from 'lucide-vue-next'
+import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2, Share2, Copy, Crown } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { useMatchingStore } from '../stores/matching'
@@ -105,6 +105,7 @@ const partnerAvatarIsEmoji = computed(() =>
   partner.value?.avatar && !partnerAvatarIsImage.value
 )
 const isSupportChat = computed(() => partner.value?.name === 'دعم')
+const partnerIsFeatured = computed(() => partner.value?.isFeatured ?? partner.value?.IsFeatured ?? false)
 
 function normalizeServerMsg(msg) {
   return {
@@ -425,12 +426,15 @@ async function shareCodeInChat() {
     <!-- Header -->
     <header class="chat-header glass-card">
       <div class="partner-info">
-        <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: partnerColor }">
-          <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner.avatar)" class="partner-avatar-img" referrerpolicy="no-referrer" />
-          <span v-else-if="partnerAvatarIsEmoji">{{ partner.avatar }}</span>
-          <span v-else>{{ partnerLetter }}</span>
+        <div class="avatar-wrap-chat" :class="{ 'avatar-featured': partnerIsFeatured }">
+          <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: partnerColor }">
+            <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner.avatar)" class="partner-avatar-img" referrerpolicy="no-referrer" />
+            <span v-else-if="partnerAvatarIsEmoji">{{ partner.avatar }}</span>
+            <span v-else>{{ partnerLetter }}</span>
+          </div>
+          <Crown v-if="partnerIsFeatured" class="avatar-crown-chat" :size="18" stroke-width="2" />
         </div>
-        <div>
+        <div class="partner-meta">
           <div class="partner-name">{{ partner?.name || 'جارٍ التحميل...' }}</div>
           <div class="typing-status text-sm text-muted">
             <span v-if="chat.partnerTyping" class="typing-text">
@@ -446,7 +450,7 @@ async function shareCodeInChat() {
       <div class="header-actions">
         <template v-if="!isSupportChat">
           <button class="icon-btn" @click="openVideoConfirm" title="فيديو كول"><Video :size="20" /></button>
-          <button class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
+          <button v-if="!partnerIsFeatured" class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
           <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
         </template>
         <button class="icon-btn" :class="{ danger: !isSupportChat }" @click="leaveSession" :title="isSupportChat ? 'رجوع' : 'إنهاء'">
@@ -706,9 +710,32 @@ async function shareCodeInChat() {
   border-top: none;
 }
 
-.partner-info { display: flex; align-items: center; gap: 10px; }
+.partner-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.partner-meta { min-width: 0; flex: 1; }
+.avatar-wrap-chat { position: relative; flex-shrink: 0; }
+.avatar-wrap-chat.avatar-featured {
+  padding: 3px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+.avatar-wrap-chat.avatar-featured .avatar { border: 2px solid rgba(255,255,255,0.9); }
+.avatar-crown-chat {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  color: #FFD700;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+}
 .partner-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-.partner-name { font-size: 15px; font-weight: 600; }
+.partner-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .typing-status { margin-top: 2px; min-height: 16px; }
 
 .header-actions { display: flex; gap: 8px; }
@@ -991,8 +1018,23 @@ async function shareCodeInChat() {
   100% { box-shadow: 0 0 0 0 rgba(108,99,255,0); }
 }
 
-.call-popup-name { font-size: 18px; font-weight: 700; color: white; }
-.call-popup-label { font-size: 13px; color: var(--text-muted); }
+.call-popup-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.call-popup-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 
 .call-popup-actions {
   display: flex;
@@ -1058,6 +1100,10 @@ async function shareCodeInChat() {
   top: 70px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background: rgba(255,101,132,0.15);
   border: 1px solid rgba(255,101,132,0.3);
   border-radius: var(--radius-full);
@@ -1065,7 +1111,6 @@ async function shareCodeInChat() {
   font-size: 13px;
   padding: 8px 18px;
   z-index: 50;
-  white-space: nowrap;
 }
 
 /* Share Code Modal */
@@ -1111,6 +1156,9 @@ async function shareCodeInChat() {
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
 }
 .share-code-display {
   font-size: 24px;

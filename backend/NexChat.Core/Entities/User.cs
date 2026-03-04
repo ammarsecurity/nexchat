@@ -10,6 +10,7 @@ public class User
     public bool IsOnline { get; set; } = false;
     public bool IsBanned { get; set; } = false;
     public bool IsAdmin { get; set; } = false;
+    public bool IsFeatured { get; set; } = false;
     public string? Avatar { get; set; } = null;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

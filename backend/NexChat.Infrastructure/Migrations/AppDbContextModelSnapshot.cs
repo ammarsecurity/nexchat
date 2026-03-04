@@ -181,6 +181,35 @@ namespace NexChat.Infrastructure.Migrations
                     b.ToTable("Reports");
                 });
 
+            modelBuilder.Entity("NexChat.Core.Entities.SavedCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("SavedCodes");
+                });
+
             modelBuilder.Entity("NexChat.Core.Entities.SiteContent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -228,6 +257,9 @@ namespace NexChat.Infrastructure.Migrations
                         .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsBanned")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsFeatured")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsOnline")
@@ -324,6 +356,17 @@ namespace NexChat.Infrastructure.Migrations
                     b.Navigation("Reported");
 
                     b.Navigation("Reporter");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.SavedCode", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.ChatSession", b =>

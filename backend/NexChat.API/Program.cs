@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using NexChat.API.Hubs;
 using NexChat.API.Middleware;
+using NexChat.API.Services;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +22,7 @@ builder.Services.AddScoped<MatchingService>();
 builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(
     builder.Configuration.GetSection("OneSignal"));
 builder.Services.AddHttpClient<NexChat.Infrastructure.Services.OneSignalService>();
+builder.Services.AddHostedService<InactiveSessionCleanupService>();
 
 // JWT Auth
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "NexChatSuperSecretKeyForJWT2025!";

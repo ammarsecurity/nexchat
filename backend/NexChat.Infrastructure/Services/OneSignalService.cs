@@ -7,6 +7,10 @@ public class OneSignalOptions
 {
     public string AppId { get; set; } = string.Empty;
     public string RestApiKey { get; set; } = string.Empty;
+    /// <summary>قناة Android للإشعارات العاجلة (طلبات الاتصال). أنشئها في OneSignal Dashboard بأهمية Urgent.</summary>
+    public string? IncomingCallChannelId { get; set; }
+    /// <summary>صوت iOS لطلب الاتصال (مثل default أو اسم ملف مخصص في الـ bundle).</summary>
+    public string? IncomingCallSound { get; set; }
 }
 
 public class OneSignalService
@@ -78,14 +82,110 @@ public class OneSignalService
             new { type = "video_call", sessionId = sessionId.ToString() });
 
     /// <summary>
-    /// إشعار اتصال بالكود
+    /// إرسال إشعار لأجهزة محددة عبر subscription_ids (أكثر موثوقية من external_id)
     /// </summary>
-    public Task<bool> SendCodeConnectedAsync(Guid recipientId, string connectorName)
-        => SendToUserAsync(
-            recipientId,
-            "اتصال جديد",
-            $"{connectorName} اتصل بك عبر الكود",
-            new { type = "code_connected" });
+    public async Task<bool> SendToSubscriptionIdsAsync(
+        IEnumerable<string> subscriptionIds,
+        string title,
+        string body,
+        object? data = null)
+    {
+        if (!IsConfigured) return false;
+        var ids = subscriptionIds.Where(s => !string.IsNullOrWhiteSpace(s)).Take(20000).ToArray();
+        if (ids.Length == 0) return false;
+
+        var payload = new Dictionary<string, object>
+        {
+            ["app_id"] = _opts.AppId,
+            ["include_subscription_ids"] = ids,
+            ["target_channel"] = "push",
+            ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
+            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
+        };
+
+        if (data != null)
+        {
+            var dataDict = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                JsonSerializer.Serialize(data));
+            if (dataDict != null)
+                payload["data"] = dataDict;
+        }
+
+        var json = JsonSerializer.Serialize(payload);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var res = await _http.PostAsync("notifications", content);
+        return res.IsSuccessStatusCode;
+    }
+
+    /// <summary>
+    /// إشعار اتصال بالكود مع خيارات العجلة (قناة Urgent، time_sensitive، صوت).
+    /// </summary>
+    public async Task<bool> SendCodeConnectedAsync(
+        IEnumerable<string>? subscriptionIds,
+        Guid? recipientId,
+        string connectorName,
+        Guid requesterId)
+    {
+        if (!IsConfigured) return false;
+
+        var title = "اتصال جديد";
+        var body = $"{connectorName} اتصل بك عبر الكود";
+        var data = new Dictionary<string, string>
+        {
+            ["type"] = "code_connected",
+            ["requesterId"] = requesterId.ToString()
+        };
+
+        Dictionary<string, object> payload;
+        var ids = subscriptionIds?.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray() ?? Array.Empty<string>();
+
+        if (ids.Length > 0)
+        {
+            payload = new Dictionary<string, object>
+            {
+                ["app_id"] = _opts.AppId,
+                ["include_subscription_ids"] = ids.Take(20000).ToArray(),
+                ["target_channel"] = "push",
+                ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
+                ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body },
+                ["data"] = data
+            };
+        }
+        else if (recipientId.HasValue)
+        {
+            payload = new Dictionary<string, object>
+            {
+                ["app_id"] = _opts.AppId,
+                ["include_aliases"] = new Dictionary<string, object> { ["external_id"] = new[] { recipientId.Value.ToString() } },
+                ["target_channel"] = "push",
+                ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
+                ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body },
+                ["data"] = data
+            };
+        }
+        else
+            return false;
+
+        AddUrgencyOptions(payload);
+
+        var json = JsonSerializer.Serialize(payload);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var res = await _http.PostAsync("notifications", content);
+        return res.IsSuccessStatusCode;
+    }
+
+    /// <summary>إضافة خيارات العجلة لإشعار طلب الاتصال.</summary>
+    private void AddUrgencyOptions(Dictionary<string, object> payload)
+    {
+        payload["priority"] = 10;
+        payload["ios_interruption_level"] = "time_sensitive";
+
+        if (!string.IsNullOrWhiteSpace(_opts.IncomingCallChannelId))
+            payload["android_channel_id"] = _opts.IncomingCallChannelId;
+
+        if (!string.IsNullOrWhiteSpace(_opts.IncomingCallSound))
+            payload["ios_sound"] = _opts.IncomingCallSound;
+    }
 
     /// <summary>
     /// إرسال إشعار لجميع المستخدمين المشتركين (بث عام)

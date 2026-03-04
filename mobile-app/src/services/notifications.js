@@ -18,21 +18,23 @@ function getOneSignal() {
 
 /**
  * تهيئة OneSignal وربط المستخدم
+ * يطلب الإذن فوراً ويشترك تلقائياً لضمان وصول الإشعارات.
  * @param {string} userId
- * @param {{ skipPermissionRequest?: boolean }} opts - إن كان true لا يطلب الإذن فوراً (لعرض طلب مخصص أولاً)
+ * @returns {Promise<boolean>} true إذا تم منح الإذن
  */
-export async function initNotifications(userId, opts = {}) {
-  if (!isNative() || !ONESIGNAL_APP_ID || !userId) return
+export async function initNotifications(userId) {
+  if (!isNative() || !ONESIGNAL_APP_ID || !userId) return false
 
   const OneSignal = getOneSignal()
-  if (!OneSignal) return
+  if (!OneSignal) return false
 
   try {
     OneSignal.initialize(ONESIGNAL_APP_ID)
     OneSignal.login(String(userId))
 
-    if (!opts.skipPermissionRequest) {
-      await OneSignal.Notifications.requestPermission()
+    const granted = await OneSignal.Notifications.requestPermission()
+    if (granted) {
+      optInNotifications()
       await registerWithBackend()
     }
 
@@ -50,8 +52,11 @@ export async function initNotifications(userId, opts = {}) {
       })
       handleNotificationClick(data)
     })
+
+    return granted
   } catch (e) {
     console.warn('OneSignal init error:', e)
+    return false
   }
 }
 
@@ -59,13 +64,17 @@ async function registerWithBackend() {
   if (!isNative()) return
   const OneSignal = getOneSignal()
   if (!OneSignal) return
-  try {
-    const id = await OneSignal.User.pushSubscription.getIdAsync()
-    if (id) {
-      await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const id = await OneSignal.User.pushSubscription.getIdAsync()
+      if (id) {
+        await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
+        return
+      }
+    } catch (e) {
+      console.warn('Register push error:', e)
     }
-  } catch (e) {
-    console.warn('Register push error:', e)
+    await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
   }
 }
 

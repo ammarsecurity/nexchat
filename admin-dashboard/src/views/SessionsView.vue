@@ -6,6 +6,9 @@ const sessions = ref([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+const closingInactive = ref(false)
+const snackbar = ref(false)
+const snackbarText = ref('')
 
 const headers = [
   { title: 'المستخدم 1', key: 'user1Name' },
@@ -45,6 +48,21 @@ function getDuration(start, end) {
   return `${m}:${s2.toString().padStart(2, '0')}`
 }
 
+async function closeInactiveSessions() {
+  closingInactive.value = true
+  try {
+    const res = await api.post('/admin/close-inactive-sessions')
+    snackbarText.value = res.data?.message ?? `تم إغلاق ${res.data?.closedCount ?? 0} جلسة`
+    snackbar.value = true
+    await fetchSessions()
+  } catch (e) {
+    snackbarText.value = e.response?.data?.message ?? 'حدث خطأ'
+    snackbar.value = true
+  } finally {
+    closingInactive.value = false
+  }
+}
+
 onMounted(fetchSessions)
 </script>
 
@@ -55,14 +73,23 @@ onMounted(fetchSessions)
         <div class="text-h5 font-weight-bold">الجلسات</div>
         <div class="text-body-2 text-medium-emphasis">{{ total.toLocaleString() }} جلسة إجمالاً</div>
       </div>
-      <v-btn
-        prepend-icon="mdi-refresh"
-        variant="tonal"
-        color="primary"
-        size="small"
-        class="flex-shrink-0"
-        @click="fetchSessions"
-      >تحديث</v-btn>
+      <div class="d-flex gap-2 flex-shrink-0">
+        <v-btn
+          prepend-icon="mdi-clock-off-outline"
+          variant="tonal"
+          color="warning"
+          size="small"
+          :loading="closingInactive"
+          @click="closeInactiveSessions"
+        >إغلاق الجلسات غير النشطة</v-btn>
+        <v-btn
+          prepend-icon="mdi-refresh"
+          variant="tonal"
+          color="primary"
+          size="small"
+          @click="fetchSessions"
+        >تحديث</v-btn>
+      </div>
     </div>
 
     <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
@@ -135,5 +162,14 @@ onMounted(fetchSessions)
         </template>
       </v-data-table>
     </v-card>
+
+    <v-snackbar
+      v-model="snackbar"
+      :timeout="4000"
+      color="primary"
+      location="bottom"
+    >
+      {{ snackbarText }}
+    </v-snackbar>
   </div>
 </template>

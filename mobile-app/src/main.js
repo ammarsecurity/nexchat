@@ -25,11 +25,18 @@ window.__nexchat_router__ = router
 useThemeStore().applyTheme()
 app.mount('#app')
 
-// OneSignal: تهيئة عند وجود مستخدم مسجّل
-const userStr = localStorage.getItem('nexchat_user')
-if (userStr) {
+// OneSignal: تهيئة عند وجود مستخدم مسجّل (عند فتح التطبيق)
+;(async () => {
+  const userStr = localStorage.getItem('nexchat_user')
+  if (!userStr) return
   try {
     const user = JSON.parse(userStr)
-    if (user?.id) initNotifications(user.id)
+    if (user?.id) {
+      const granted = await initNotifications(user.id)
+      if (!granted) {
+        const { useAuthStore } = await import('./stores/auth')
+        useAuthStore().shouldPromptNotifications = true
+      }
+    }
   } catch {}
-}
+})()

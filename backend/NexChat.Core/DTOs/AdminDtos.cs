@@ -16,6 +16,7 @@ public record AdminUserDto(
     string UniqueCode,
     bool IsOnline,
     bool IsBanned,
+    bool IsFeatured,
     DateTime CreatedAt
 );
 
@@ -74,3 +75,7 @@ public record SupportSendDto(Guid SessionId, string Content);
 public record UpdateSupportAvatarDto(string? Avatar);
 
 public record BroadcastNotificationDto(string Title, string Body, string? ImageUrl);
+
+public record SetFeaturedRequest(bool Featured);
+
+public record DeleteUsersRequest(IEnumerable<Guid> Ids);

@@ -47,20 +47,144 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.CreatedAt))
+            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt))
             .ToListAsync();
 
         return Ok(new PagedResult<AdminUserDto>(users, total, page, pageSize));
     }
 
+    /// <summary>
+    /// إغلاق جميع الجلسات غير النشطة (آخر رسالة قبل ساعة أو أكثر).
+    /// لا يغلق جلسات الدعم.
+    /// </summary>
+    [HttpPost("close-inactive-sessions")]
+    public async Task<ActionResult<object>> CloseInactiveSessions()
+    {
+        var cutoff = DateTime.UtcNow.AddHours(-1);
+
+        var toClose = await db.ChatSessions
+            .Where(s => s.EndedAt == null && s.Type != "support")
+            .Select(s => new
+            {
+                s.Id,
+                LastActivity = s.Messages.Any()
+                    ? s.Messages.Max(m => m.SentAt)
+                    : s.StartedAt
+            })
+            .Where(x => x.LastActivity < cutoff)
+            .Select(x => x.Id)
+            .ToListAsync();
+
+        if (toClose.Count > 0)
+        {
+            await db.ChatSessions
+                .Where(s => toClose.Contains(s.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
+        }
+
+        return Ok(new { closedCount = toClose.Count, message = $"تم إغلاق {toClose.Count} جلسة" });
+    }
+
     [HttpPut("users/{id}/ban")]
     public async Task<IActionResult> BanUser(Guid id, [FromBody] bool ban)
     {
-        var rows = await db.Users
+        var user = await db.Users.FindAsync(id);
+        if (user == null) return NotFound();
+        if (user.IsFeatured && ban)
+            return BadRequest(new { message = "لا يمكن حظر الحسابات المميزة" });
+
+        await db.Users
             .Where(u => u.Id == id)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsBanned, ban));
 
+        return Ok();
+    }
+
+    [HttpPut("users/{id}/featured")]
+    public async Task<IActionResult> SetUserFeatured(Guid id, [FromBody] SetFeaturedRequest req)
+    {
+        var rows = await db.Users
+            .Where(u => u.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsFeatured, req.Featured));
+
         return rows > 0 ? Ok() : NotFound();
+    }
+
+    /// <summary>
+    /// حذف مستخدم واحد. لا يمكن حذف الأدمن.
+    /// </summary>
+    [HttpDelete("users/{id}")]
+    public async Task<IActionResult> DeleteUser(Guid id)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user == null) return NotFound();
+        if (user.IsAdmin)
+            return BadRequest(new { message = "لا يمكن حذف حساب الأدمن" });
+
+        await DeleteUserCascade(user.Id);
+        return Ok();
+    }
+
+    /// <summary>
+    /// حذف مجموعة مستخدمين. يتم تخطي حسابات الأدمن.
+    /// </summary>
+    [HttpDelete("users")]
+    public async Task<ActionResult<object>> DeleteUsers([FromBody] DeleteUsersRequest req)
+    {
+        var ids = (req.Ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest(new { message = "لم يتم تحديد أي حسابات" });
+
+        var toDelete = await db.Users
+            .Where(u => ids.Contains(u.Id) && !u.IsAdmin)
+            .Select(u => u.Id)
+            .ToListAsync();
+
+        var skipped = ids.Count - toDelete.Count;
+        foreach (var userId in toDelete)
+            await DeleteUserCascade(userId);
+
+        return Ok(new
+        {
+            deleted = toDelete.Count,
+            skipped,
+            message = $"تم حذف {toDelete.Count} حساب" + (skipped > 0 ? $"، تم تخطي {skipped} (أدمن)" : "")
+        });
+    }
+
+    private async Task DeleteUserCascade(Guid userId)
+    {
+        // 1. إيقاف جميع الجلسات أولاً (تعيين EndedAt)
+        var sessions = await db.ChatSessions
+            .Where(s => s.User1Id == userId || s.User2Id == userId)
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        await db.ChatSessions
+            .Where(s => s.User1Id == userId || s.User2Id == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
+
+        // إشعار العملاء بأن الجلسة انتهت
+        foreach (var sid in sessions)
+            await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", userId);
+
+        // 2. حذف الرسائل ثم كل ما يتعلق بالمستخدم
+        using var transaction = await db.Database.BeginTransactionAsync();
+        try
+        {
+            await db.Messages.Where(m => sessions.Contains(m.SessionId)).ExecuteDeleteAsync();
+            await db.ChatSessions.Where(s => s.User1Id == userId || s.User2Id == userId).ExecuteDeleteAsync();
+            await db.Reports.Where(r => r.ReporterId == userId || r.ReportedId == userId).ExecuteDeleteAsync();
+            await db.SavedCodes.Where(s => s.UserId == userId).ExecuteDeleteAsync();
+            await db.DeviceSubscriptions.Where(d => d.UserId == userId).ExecuteDeleteAsync();
+            await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     [HttpGet("sessions")]

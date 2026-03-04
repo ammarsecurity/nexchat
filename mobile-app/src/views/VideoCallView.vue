@@ -1,11 +1,13 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { joinLiveKitRoom, leaveLiveKitRoom } from '../services/livekit'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
+import { createFilteredVideoStream } from '../utils/videoFilterStream'
+import { Track } from 'livekit-client'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 
 const route = useRoute()
@@ -24,6 +26,8 @@ const connected = ref(false)
 const error = ref('')
 const initializing = ref(true)
 const activeFilter = ref('none')
+const filterPipelineRef = ref(null)
+const hasReplacedTrack = ref(false)
 
 const cameraFilters = [
   { id: 'none', labelKey: 'videoCall.filters.none', css: 'none' },
@@ -35,10 +39,45 @@ const cameraFilters = [
   { id: 'cinematic', labelKey: 'videoCall.filters.cinematic', css: 'contrast(1.2) saturate(0.7)' }
 ]
 
-const currentFilterCss = computed(() => {
+function getFilterCss() {
   const f = cameraFilters.find((x) => x.id === activeFilter.value)
   return f?.css || 'none'
-})
+}
+
+function replaceWithFilteredTrack(originalTrack) {
+  if (!roomRef.value || !originalTrack?.mediaStreamTrack || hasReplacedTrack.value) return
+  const lp = roomRef.value.localParticipant
+  const videoPub = lp.getTrackPublication(Track.Source.Camera)
+  if (!videoPub) return
+
+  hasReplacedTrack.value = true
+  const clonedTrack = originalTrack.mediaStreamTrack.clone()
+  filterPipelineRef.value = createFilteredVideoStream(clonedTrack, getFilterCss)
+  const filteredStream = filterPipelineRef.value.stream
+  const filteredVideoTrack = filteredStream.getVideoTracks()[0]
+  if (!filteredVideoTrack) {
+    hasReplacedTrack.value = false
+    return
+  }
+
+  lp.unpublishTrack(videoPub.track, false).then(() => {
+    lp.publishTrack(filteredVideoTrack, {
+      name: 'camera',
+      source: Track.Source.Camera
+    })
+
+    nextTick().then(() => {
+      if (localVideo.value && filteredVideoTrack) {
+        const stream = new MediaStream([filteredVideoTrack])
+        localVideo.value.srcObject = stream
+        localVideo.value.style.filter = 'none'
+        localVideo.value.play?.().catch(() => {})
+      }
+    })
+  }).catch(() => {
+    hasReplacedTrack.value = false
+  })
+}
 
 let timerInterval
 
@@ -63,7 +102,9 @@ onMounted(async () => {
       },
       (localTrack) => {
         nextTick().then(() => {
-          if (localVideo.value && localTrack) {
+          if (localTrack?.kind === 'video') {
+            replaceWithFilteredTrack(localTrack)
+          } else if (localVideo.value && localTrack) {
             localTrack.attach(localVideo.value)
             localVideo.value.play?.().catch(() => {})
           }
@@ -75,14 +116,9 @@ onMounted(async () => {
     )
 
     await nextTick()
-    const pubsMap = roomRef.value?.localParticipant?.trackPublications
-    const pubs = pubsMap ? Array.from(pubsMap.values()) : []
-    for (const pub of pubs) {
-      if (pub?.track?.kind === 'video' && localVideo.value) {
-        pub.track.attach(localVideo.value)
-        localVideo.value.play?.().catch(() => {})
-        break
-      }
+    const videoPub = roomRef.value?.localParticipant?.getTrackPublication(Track.Source.Camera)
+    if (videoPub?.track?.kind === 'video' && localVideo.value && !localVideo.value.srcObject) {
+      replaceWithFilteredTrack(videoPub.track)
     }
 
     timerInterval = setInterval(() => {
@@ -103,6 +139,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(timerInterval)
+  filterPipelineRef.value?.stop()
+  filterPipelineRef.value = null
   leaveLiveKitRoom()
 })
 
@@ -113,6 +151,11 @@ function toggleMute() {
 
 function toggleCamera() {
   cameraOff.value = !cameraOff.value
+  if (cameraOff.value && filterPipelineRef.value) {
+    filterPipelineRef.value.stop()
+    filterPipelineRef.value = null
+    hasReplacedTrack.value = false
+  }
   roomRef.value?.localParticipant?.setCameraEnabled(!cameraOff.value)
 }
 
@@ -145,7 +188,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
     <div v-if="!connected" class="waiting-overlay">
       <div class="avatar avatar-xl gradient-bg">{{ partnerLetter }}</div>
       <div class="waiting-text">
-        <div class="gradient-text font-bold" style="font-size:20px">{{ partner?.name }}</div>
+        <div class="waiting-name gradient-text font-bold">{{ partner?.name }}</div>
         <div class="text-secondary text-sm" v-if="!error">{{ t('videoCall.connecting') }}</div>
         <div v-else class="error-toast">
           <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
@@ -174,12 +217,11 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
       </div>
     </div>
 
-    <!-- Local Video (PiP) -->
+    <!-- Local Video (PiP) - الفلتر مُطبّق على الستريم المرسل فيراه الطرف الآخر -->
     <div class="pip-container">
       <video
         ref="localVideo"
         class="local-video"
-        :style="{ filter: currentFilterCss }"
         autoplay
         playsinline
         muted
@@ -265,7 +307,14 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 }
 
 .gradient-bg { background: var(--primary) !important; }
-.waiting-text { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.waiting-text { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 100%; }
+.waiting-name {
+  font-size: 20px;
+  max-width: min(280px, calc(100vw - 48px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .connecting-dots {
   display: flex;
@@ -337,6 +386,10 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   font-weight: 700;
   letter-spacing: -0.2px;
   text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .top-bar-status {
