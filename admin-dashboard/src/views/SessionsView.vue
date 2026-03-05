@@ -48,10 +48,11 @@ function getDuration(start, end) {
   return `${m}:${s2.toString().padStart(2, '0')}`
 }
 
-async function closeInactiveSessions() {
+async function closeInactiveSessions(closeAll = false) {
   closingInactive.value = true
   try {
-    const res = await api.post('/admin/close-inactive-sessions')
+    const params = closeAll ? { closeAll: true } : { minutes: 15 }
+    const res = await api.post('/admin/close-inactive-sessions', null, { params })
     snackbarText.value = res.data?.message ?? `تم إغلاق ${res.data?.closedCount ?? 0} جلسة`
     snackbar.value = true
     await fetchSessions()
@@ -73,15 +74,23 @@ onMounted(fetchSessions)
         <div class="text-h5 font-weight-bold">الجلسات</div>
         <div class="text-body-2 text-medium-emphasis">{{ total.toLocaleString() }} جلسة إجمالاً</div>
       </div>
-      <div class="d-flex gap-2 flex-shrink-0">
+      <div class="d-flex gap-2 flex-shrink-0 flex-wrap">
         <v-btn
           prepend-icon="mdi-clock-off-outline"
           variant="tonal"
           color="warning"
           size="small"
           :loading="closingInactive"
-          @click="closeInactiveSessions"
-        >إغلاق الجلسات غير النشطة</v-btn>
+          @click="closeInactiveSessions(false)"
+        >إغلاق غير النشطة (15 د)</v-btn>
+        <v-btn
+          prepend-icon="mdi-stop-circle"
+          variant="tonal"
+          color="error"
+          size="small"
+          :loading="closingInactive"
+          @click="closeInactiveSessions(true)"
+        >إغلاق الكل</v-btn>
         <v-btn
           prepend-icon="mdi-refresh"
           variant="tonal"

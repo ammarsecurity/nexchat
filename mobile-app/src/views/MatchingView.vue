@@ -14,6 +14,7 @@ const matching = useMatchingStore()
 const { t } = useI18n()
 const dots = ref('.')
 const cancelling = ref(false)
+let cancelledProgrammatically = false
 
 const filterLabels = computed(() => ({ all: t('matching.filterAll'), male: t('matching.filterMale'), female: t('matching.filterFemale') }))
 const filterIcons = { all: Globe, male: UserCircle, female: UsersRound }
@@ -34,9 +35,13 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(dotsInterval)
+  if (!cancelledProgrammatically) {
+    ensureConnected(matchingHub).then(() => matchingHub.invoke('CancelSearching')).catch(() => {})
+  }
 })
 
 async function cancel() {
+  cancelledProgrammatically = true
   cancelling.value = true
   try {
     await ensureConnected(matchingHub)

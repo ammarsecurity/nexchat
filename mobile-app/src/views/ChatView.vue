@@ -133,6 +133,7 @@ async function onVisibilityChange() {
 }
 
 let chatMounted = true
+let leavingProgrammatically = false
 
 onMounted(async () => {
   chatMounted = true
@@ -201,6 +202,7 @@ onMounted(async () => {
   chatHub.onreconnected(async () => {
     if (!chatMounted || sessionEnded.value) return
     try {
+      await ensureConnected(chatHub)
       await chatHub.invoke('JoinSession', sessionId)
     } catch {}
   })
@@ -216,6 +218,9 @@ onUnmounted(() => {
   chatMounted = false
   clearInterval(timerInterval)
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  if (!sessionEnded.value && sessionId && !leavingProgrammatically) {
+    ensureConnected(chatHub).then(() => chatHub.invoke('LeaveSession', sessionId)).catch(() => {})
+  }
   chatHub.off('ReceiveMessage')
   chatHub.off('UserTyping')
   chatHub.off('UserStoppedTyping')
@@ -297,6 +302,7 @@ async function retryMessage(msg) {
 }
 
 async function leaveSession() {
+  leavingProgrammatically = true
   loading.value = true
   clearInterval(timerInterval)
   try {
@@ -311,6 +317,7 @@ async function leaveSession() {
 }
 
 async function nextPerson() {
+  leavingProgrammatically = true
   loading.value = true
   clearInterval(timerInterval)
   try {

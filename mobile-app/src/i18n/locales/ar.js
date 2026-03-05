@@ -175,5 +175,24 @@ export default {
     male: 'ذكر',
     female: 'أنثى',
     other: 'آخر'
+  },
+  savedCodes: {
+    addCodeDesc: 'أضف كود مستخدم بصيغة NX-XXXX للاتصال السريع لاحقاً',
+    yourCodes: 'أكوادك المحفوظة',
+    addFirstHint: 'أضف أول كود من الأعلى'
+  },
+  connectionHistory: {
+    title: 'اتصالات الكود',
+    sent: 'المرسلة',
+    received: 'المستلمة',
+    missed: 'الفائتة',
+    empty: 'لا توجد اتصالات',
+    now: 'الآن',
+    minutesAgo: 'منذ {n} د',
+    hoursAgo: 'منذ {n} س',
+    statusPending: 'قيد الانتظار',
+    statusAccepted: 'مقبول',
+    statusDeclined: 'مرفوض',
+    statusCancelled: 'فائت'
   }
 }

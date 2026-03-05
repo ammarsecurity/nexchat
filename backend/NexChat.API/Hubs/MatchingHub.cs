@@ -31,7 +31,7 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
 
         // إرسال طلبات الاتصال المعلقة التي فاتت المستخدم وهو غير متصل
         var pending = matching.GetPendingRequestsForTarget(userId);
-        foreach (var (requesterId, _) in pending)
+        foreach (var (requesterId, _, _) in pending)
         {
             var requester = await db.Users.FindAsync(requesterId);
             if (requester != null)
@@ -204,7 +204,7 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
         if (!Guid.TryParse(requesterIdStr, out var requesterId))
             return;
 
-        if (matching.DeclineConnectionRequest(targetId, requesterId))
+        if (await matching.DeclineConnectionRequestAsync(targetId, requesterId))
         {
             var requesterConnectionId = await matching.GetConnectionIdAsync(requesterId);
             if (requesterConnectionId != null)
@@ -216,9 +216,16 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
     {
         if (!TryGetUserId(out var requesterId))
             return;
-        if (matching.CancelConnectionRequest(requesterId))
+        var (success, targetId) = await matching.CancelConnectionRequestAsync(requesterId);
+        if (success)
         {
             await Clients.Caller.SendAsync("ConnectionCancelled");
+            if (targetId.HasValue)
+            {
+                var targetConnectionId = await matching.GetConnectionIdAsync(targetId.Value);
+                if (targetConnectionId != null)
+                    await Clients.Client(targetConnectionId).SendAsync("ConnectionRequestExpired");
+            }
         }
     }
 }

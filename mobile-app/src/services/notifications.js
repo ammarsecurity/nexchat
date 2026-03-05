@@ -35,7 +35,8 @@ export async function initNotifications(userId) {
     const granted = await OneSignal.Notifications.requestPermission()
     if (granted) {
       optInNotifications()
-      await registerWithBackend()
+      // تشغيل التسجيل في الخلفية - الـ subscription id قد لا يكون جاهزاً فوراً
+      registerWithBackend()
     }
 
     // عند الضغط على الإشعار
@@ -60,22 +61,45 @@ export async function initNotifications(userId) {
   }
 }
 
+/**
+ * انتظار جاهزية subscription id - قد لا يكون متاحاً فوراً بعد requestPermission.
+ * يعيد المحاولة كل ثانية حتى يصبح الـ id جاهزاً (حد أقصى 15 ثانية).
+ */
+async function waitForSubscriptionId(OneSignal, maxWaitMs = 15000) {
+  const start = Date.now()
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const id = await OneSignal.User.pushSubscription.getIdAsync()
+      if (id) return id
+    } catch {}
+    await new Promise(r => setTimeout(r, 1000))
+  }
+  return null
+}
+
 async function registerWithBackend() {
   if (!isNative()) return
   const OneSignal = getOneSignal()
   if (!OneSignal) return
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const id = await OneSignal.User.pushSubscription.getIdAsync()
-      if (id) {
-        await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
-        return
-      }
-    } catch (e) {
-      console.warn('Register push error:', e)
+  try {
+    const id = await waitForSubscriptionId(OneSignal)
+    if (id) {
+      await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
     }
-    await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+  } catch (e) {
+    console.warn('Register push error:', e)
   }
+}
+
+/**
+ * إعادة محاولة التسجيل في الـ backend (للمستخدمين الجدد - يعطى فرصة ثانية عند فتح الصفحة الرئيسية)
+ */
+export function scheduleRegistrationRetry() {
+  if (!isNative()) return
+  setTimeout(() => {
+    const OneSignal = getOneSignal()
+    if (OneSignal) registerWithBackend()
+  }, 4000)
 }
 
 /**

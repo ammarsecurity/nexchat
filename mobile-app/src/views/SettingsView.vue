@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -205,7 +205,7 @@ onMounted(() => loadNotificationsState())
       <!-- 1. Profile Card -->
       <div class="profile-card glass-card">
         <div class="profile-card-inner">
-          <div class="avatar-wrap" @click="showAvatarPicker = true">
+          <div class="avatar-wrap" :class="{ 'avatar-wrap-featured': user?.isFeatured }" @click="showAvatarPicker = true">
             <img v-if="isImageUrl(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
             <div v-else-if="isEmoji(auth.avatar)" class="avatar-circle" :style="{ background: auth.avatarColor }">
               <span class="av-emoji">{{ auth.avatar }}</span>
@@ -213,6 +213,7 @@ onMounted(() => loadNotificationsState())
             <div v-else class="avatar-circle" :style="{ background: auth.avatarColor }">
               <span class="av-letter">{{ user?.name?.[0]?.toUpperCase() }}</span>
             </div>
+            <Crown v-if="user?.isFeatured" class="avatar-crown-settings" :size="20" fill="currentColor" stroke-width="1" />
             <div class="edit-badge"><Pencil :size="12" /></div>
           </div>
           <div class="profile-details">
@@ -311,6 +312,16 @@ onMounted(() => loadNotificationsState())
         <RouterLink to="/notifications" class="link-row">
           <Bell :size="20" class="link-icon" />
           <span>{{ t('settings.notificationCenter') }}</span>
+          <ChevronRight :size="18" class="link-arrow" />
+        </RouterLink>
+        <RouterLink to="/connection-history" class="link-row">
+          <Send :size="20" class="link-icon" />
+          <span>{{ t('connectionHistory.title') }}</span>
+          <ChevronRight :size="18" class="link-arrow" />
+        </RouterLink>
+        <RouterLink v-if="user?.isFeatured" to="/saved-codes" class="link-row">
+          <BookmarkPlus :size="20" class="link-icon" />
+          <span>{{ t('home.savedCodes') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
         <RouterLink to="/privacy" class="link-row">
@@ -536,6 +547,34 @@ onMounted(() => loadNotificationsState())
   position: relative;
   width: 64px;
 }
+.avatar-wrap.avatar-wrap-featured::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  pointer-events: none;
+  border: 2px solid rgba(255, 215, 0, 0.6);
+  opacity: 1;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+.avatar-crown-settings {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  color: #FFD700;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  z-index: 1;
+}
+[data-theme="light"] .avatar-wrap.avatar-wrap-featured::after,
+html.light .avatar-wrap.avatar-wrap-featured::after {
+  border-color: rgba(255, 115, 0, 0.6);
+  box-shadow: 0 0 12px rgba(255, 115, 0, 0.3);
+}
+[data-theme="light"] .avatar-crown-settings,
+html.light .avatar-crown-settings {
+  color: #FF7300;
+  filter: drop-shadow(0 1px 2px rgba(255, 115, 0, 0.2));
+}
 .avatar-img,
 .avatar-circle {
   border: 2px solid var(--border);
@@ -564,6 +603,7 @@ onMounted(() => loadNotificationsState())
   position: absolute;
   inset-inline-end: 0;
   width: 22px;
+  z-index: 2;
 }
 
 .profile-details {

@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using NexChat.API.Hubs;
 using NexChat.Infrastructure.Data;
 
 namespace NexChat.API.Services;
@@ -6,6 +8,7 @@ namespace NexChat.API.Services;
 /// <summary>
 /// يغلق الجلسات غير النشطة تلقائياً إذا مرت أكثر من ساعة بدون رسالة.
 /// لا يغلق جلسات الدعم (support).
+/// يرسل SessionEnded للعملاء المتصلين قبل إغلاق الجلسة.
 /// </summary>
 public class InactiveSessionCleanupService(IServiceScopeFactory scopeFactory) : BackgroundService
 {
@@ -34,6 +37,7 @@ public class InactiveSessionCleanupService(IServiceScopeFactory scopeFactory) : 
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
 
         var cutoff = DateTime.UtcNow - InactivityThreshold;
 
@@ -56,6 +60,9 @@ public class InactiveSessionCleanupService(IServiceScopeFactory scopeFactory) : 
             await db.ChatSessions
                 .Where(s => toClose.Contains(s.Id))
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
+
+            foreach (var sid in toClose)
+                await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", Guid.Empty);
         }
     }
 }

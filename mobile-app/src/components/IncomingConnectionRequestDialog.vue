@@ -1,18 +1,43 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Phone, Check, X, Crown } from 'lucide-vue-next'
 import { useMatchingStore } from '../stores/matching'
 import { matchingHub, ensureConnected } from '../services/signalr'
 import { stopIncomingCallSound } from '../utils/sounds'
 
+const REQUEST_TIMEOUT_MS = 60000
+
 const matching = useMatchingStore()
 const { t } = useI18n()
 const incomingRequest = computed(() => matching.incomingConnectionRequest)
 
+let expireTimerId = null
+
+function clearExpireTimer() {
+  if (expireTimerId) {
+    clearTimeout(expireTimerId)
+    expireTimerId = null
+  }
+}
+
+watch(incomingRequest, (request) => {
+  clearExpireTimer()
+  if (request) {
+    expireTimerId = setTimeout(() => {
+      expireTimerId = null
+      stopIncomingCallSound()
+      matching.clearIncomingConnectionRequest()
+    }, REQUEST_TIMEOUT_MS)
+  }
+}, { immediate: true })
+
+onUnmounted(clearExpireTimer)
+
 async function acceptConnectionRequest() {
   if (!incomingRequest.value) return
   const requesterId = incomingRequest.value.requesterId
+  clearExpireTimer()
   stopIncomingCallSound()
   matching.clearIncomingConnectionRequest()
   try {
@@ -24,6 +49,7 @@ async function acceptConnectionRequest() {
 function declineConnectionRequest() {
   if (!incomingRequest.value) return
   const requesterId = incomingRequest.value.requesterId
+  clearExpireTimer()
   stopIncomingCallSound()
   matching.clearIncomingConnectionRequest()
   ensureConnected(matchingHub).then(() => {

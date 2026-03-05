@@ -17,8 +17,13 @@
       <img src="logo.png" alt="نيكس شات" class="logo-img" />
       <h1>نيكس شات</h1>
       <p class="tagline">تواصل مع أشخاص جدد عبر كود بسيط. دردشة مجانية وآمنة.</p>
+      <div class="stats-row" id="statsRow" aria-hidden="true">
+        <span class="stat-item"><span id="statVisitors">-</span> زائر</span>
+        <span class="stat-divider">•</span>
+        <span class="stat-item"><span id="statDownloads">-</span> تحميل</span>
+      </div>
       <div class="cta-group">
-        <a href="nexChat.apk" class="btn btn-primary btn-download" download="nexChat.apk">
+        <a href="nexChat.apk" class="btn btn-primary btn-download" id="downloadBtn" download="nexChat.apk">
           <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           تحميل التطبيق للأندرويد
         </a>
@@ -74,6 +79,7 @@
     <p class="email" style="margin-top: 0.5rem;">nexchat.site</p>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

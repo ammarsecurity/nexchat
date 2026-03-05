@@ -1,15 +1,15 @@
 using System.Collections.Concurrent;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace NexChat.Infrastructure.Services;
 
 public class MatchingService(AppDbContext db)
 {
     private static readonly ConcurrentDictionary<Guid, string> UserConnectionMap = new();
-    private static readonly ConcurrentDictionary<Guid, (Guid TargetId, DateTime CreatedAt)> PendingRequests = new();
+    private static readonly ConcurrentDictionary<Guid, (Guid TargetId, DateTime CreatedAt, Guid AttemptId)> PendingRequests = new();
     private static readonly ConcurrentQueue<Guid> QueueAll = new();
     private static readonly ConcurrentQueue<Guid> QueueMale = new();
     private static readonly ConcurrentQueue<Guid> QueueFemale = new();
@@ -84,7 +84,16 @@ public class MatchingService(AppDbContext db)
         if (PendingRequests.ContainsKey(requesterId))
             return (false, null, "لديك طلب قيد الانتظار");
 
-        PendingRequests[requesterId] = (targetUser.Id, DateTime.UtcNow);
+        var attempt = new CodeConnectionAttempt
+        {
+            RequesterId = requesterId,
+            TargetId = targetUser.Id,
+            Status = "Pending"
+        };
+        db.CodeConnectionAttempts.Add(attempt);
+        await db.SaveChangesAsync();
+
+        PendingRequests[requesterId] = (targetUser.Id, attempt.CreatedAt, attempt.Id);
         return (true, targetUser.Id, null);
     }
 
@@ -92,15 +101,15 @@ public class MatchingService(AppDbContext db)
     /// جلب طلبات الاتصال المعلقة للمستخدم (عندما يكون هو المستهدف)
     /// يُستدعى عند اتصال المستخدم لإرسال الطلبات التي فاتته وهو غير متصل
     /// </summary>
-    public IReadOnlyList<(Guid RequesterId, DateTime CreatedAt)> GetPendingRequestsForTarget(Guid targetId)
+    public IReadOnlyList<(Guid RequesterId, DateTime CreatedAt, Guid AttemptId)> GetPendingRequestsForTarget(Guid targetId)
     {
         var now = DateTime.UtcNow;
-        var result = new List<(Guid RequesterId, DateTime CreatedAt)>();
+        var result = new List<(Guid RequesterId, DateTime CreatedAt, Guid AttemptId)>();
         foreach (var kv in PendingRequests.ToArray())
         {
             if (kv.Value.TargetId != targetId) continue;
             if ((now - kv.Value.CreatedAt).TotalSeconds > RequestTimeoutSeconds) continue;
-            result.Add((kv.Key, kv.Value.CreatedAt));
+            result.Add((kv.Key, kv.Value.CreatedAt, kv.Value.AttemptId));
         }
         return result.OrderByDescending(x => x.CreatedAt).ToList();
     }
@@ -122,19 +131,37 @@ public class MatchingService(AppDbContext db)
         };
         db.ChatSessions.Add(session);
         await db.SaveChangesAsync();
+
+        await db.CodeConnectionAttempts
+            .Where(a => a.Id == pending.AttemptId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.Status, "Accepted")
+                .SetProperty(a => a.SessionId, session.Id));
+
         return session;
     }
 
-    public bool DeclineConnectionRequest(Guid targetId, Guid requesterId)
+    public async Task<bool> DeclineConnectionRequestAsync(Guid targetId, Guid requesterId)
     {
         if (!PendingRequests.TryGetValue(requesterId, out var pending) || pending.TargetId != targetId)
             return false;
-        return PendingRequests.TryRemove(requesterId, out _);
+        if (!PendingRequests.TryRemove(requesterId, out _))
+            return false;
+        await db.CodeConnectionAttempts
+            .Where(a => a.Id == pending.AttemptId)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, "Declined"));
+        return true;
     }
 
-    public bool CancelConnectionRequest(Guid requesterId)
+    public async Task<(bool Success, Guid? TargetId)> CancelConnectionRequestAsync(Guid requesterId)
     {
-        return PendingRequests.TryRemove(requesterId, out _);
+        if (!PendingRequests.TryRemove(requesterId, out var pending))
+            return (false, null);
+        var targetId = pending.TargetId;
+        await db.CodeConnectionAttempts
+            .Where(a => a.Id == pending.AttemptId)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, "Cancelled"));
+        return (true, targetId);
     }
 
     private static void RemovePendingRequestsForUser(Guid userId)

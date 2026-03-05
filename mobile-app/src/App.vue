@@ -10,7 +10,7 @@ import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
 import { matchingHub, startHub, stopHub } from './services/signalr'
-import { startIncomingCallSound } from './utils/sounds'
+import { startIncomingCallSound, stopIncomingCallSound } from './utils/sounds'
 
 const isOnline = ref(navigator.onLine)
 const auth = useAuthStore()
@@ -54,6 +54,12 @@ function setupMatchingHubListeners() {
       requesterIsFeatured: data.requesterIsFeatured ?? data.RequesterIsFeatured ?? false
     })
     startIncomingCallSound()
+  })
+
+  matchingHub.off('ConnectionRequestExpired')
+  matchingHub.on('ConnectionRequestExpired', () => {
+    stopIncomingCallSound()
+    matching.clearIncomingConnectionRequest()
   })
 
   matchingHub.off('MatchFound')

@@ -175,5 +175,24 @@ export default {
     male: 'Male',
     female: 'Female',
     other: 'Other'
+  },
+  savedCodes: {
+    addCodeDesc: 'Add a user code in NX-XXXX format for quick connection later',
+    yourCodes: 'Your saved codes',
+    addFirstHint: 'Add your first code above'
+  },
+  connectionHistory: {
+    title: 'Code connections',
+    sent: 'Sent',
+    received: 'Received',
+    missed: 'Missed',
+    empty: 'No connections',
+    now: 'Now',
+    minutesAgo: '{n} min ago',
+    hoursAgo: '{n} hr ago',
+    statusPending: 'Pending',
+    statusAccepted: 'Accepted',
+    statusDeclined: 'Declined',
+    statusCancelled: 'Missed'
   }
 }

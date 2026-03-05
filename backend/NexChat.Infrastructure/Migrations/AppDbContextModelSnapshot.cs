@@ -87,6 +87,38 @@ namespace NexChat.Infrastructure.Migrations
                     b.ToTable("ChatSessions");
                 });
 
+            modelBuilder.Entity("NexChat.Core.Entities.CodeConnectionAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("RequesterId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetId");
+
+                    b.HasIndex("RequesterId", "TargetId", "CreatedAt");
+
+                    b.ToTable("CodeConnectionAttempts");
+                });
+
             modelBuilder.Entity("NexChat.Core.Entities.DeviceSubscription", b =>
                 {
                     b.Property<Guid>("Id")
@@ -307,6 +339,25 @@ namespace NexChat.Infrastructure.Migrations
                     b.Navigation("User1");
 
                     b.Navigation("User2");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.CodeConnectionAttempt", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.User", "Requester")
+                        .WithMany()
+                        .HasForeignKey("RequesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexChat.Core.Entities.User", "Target")
+                        .WithMany()
+                        .HasForeignKey("TargetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Requester");
+
+                    b.Navigation("Target");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.DeviceSubscription", b =>

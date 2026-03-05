@@ -23,7 +23,9 @@ export async function startHub(hub) {
 
 /**
  * التأكد من اتصال الـ hub قبل تنفيذ أي عملية.
- * إذا كان الاتصال منقطعاً أو قيد إعادة الاتصال، ينتظر حتى يتصل تلقائياً.
+ * - Connected: يعود فوراً.
+ * - Disconnected: يبدأ الاتصال.
+ * - Reconnecting/Connecting: ينتظر حتى يكتمل الاتصال تلقائياً (بدون استدعاء start لتجنب التداخل).
  */
 export async function ensureConnected(hub, timeoutMs = 15000) {
   if (hub.state === signalR.HubConnectionState.Connected) return

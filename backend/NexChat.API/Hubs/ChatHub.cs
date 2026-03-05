@@ -16,6 +16,30 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         return Guid.TryParse(id, out userId);
     }
 
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (TryGetUserId(out var userId))
+        {
+            var activeSessions = await db.ChatSessions
+                .Where(s => (s.User1Id == userId || s.User2Id == userId) &&
+                    s.EndedAt == null &&
+                    s.Type != "support")
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            if (activeSessions.Count > 0)
+            {
+                await db.ChatSessions
+                    .Where(s => activeSessions.Contains(s.Id))
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
+
+                foreach (var sid in activeSessions)
+                    await Clients.Group(sid.ToString()).SendAsync("SessionEnded", userId);
+            }
+        }
+        await base.OnDisconnectedAsync(exception);
+    }
+
     public async Task JoinSession(string sessionId)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))

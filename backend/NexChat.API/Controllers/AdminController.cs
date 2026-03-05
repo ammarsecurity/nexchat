@@ -54,26 +54,38 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
     }
 
     /// <summary>
-    /// إغلاق جميع الجلسات غير النشطة (آخر رسالة قبل ساعة أو أكثر).
+    /// إغلاق الجلسات غير النشطة. minutes: مدة عدم النشاط (افتراضي 15). closeAll: true = إغلاق الكل.
     /// لا يغلق جلسات الدعم.
     /// </summary>
     [HttpPost("close-inactive-sessions")]
-    public async Task<ActionResult<object>> CloseInactiveSessions()
+    public async Task<ActionResult<object>> CloseInactiveSessions(
+        [FromQuery] int minutes = 15,
+        [FromQuery] bool closeAll = false)
     {
-        var cutoff = DateTime.UtcNow.AddHours(-1);
+        var query = db.ChatSessions
+            .Where(s => s.EndedAt == null && s.Type != "support");
 
-        var toClose = await db.ChatSessions
-            .Where(s => s.EndedAt == null && s.Type != "support")
-            .Select(s => new
-            {
-                s.Id,
-                LastActivity = s.Messages.Any()
-                    ? s.Messages.Max(m => m.SentAt)
-                    : s.StartedAt
-            })
-            .Where(x => x.LastActivity < cutoff)
-            .Select(x => x.Id)
-            .ToListAsync();
+        List<Guid> toClose;
+        if (closeAll)
+        {
+            toClose = await query.Select(s => s.Id).ToListAsync();
+        }
+        else
+        {
+            var threshold = Math.Clamp(minutes, 1, 1440); // 1 دقيقة إلى 24 ساعة
+            var cutoff = DateTime.UtcNow.AddMinutes(-threshold);
+            toClose = await query
+                .Select(s => new
+                {
+                    s.Id,
+                    LastActivity = s.Messages.Any()
+                        ? s.Messages.Max(m => m.SentAt)
+                        : s.StartedAt
+                })
+                .Where(x => x.LastActivity < cutoff)
+                .Select(x => x.Id)
+                .ToListAsync();
+        }
 
         if (toClose.Count > 0)
         {
@@ -82,7 +94,10 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
         }
 
-        return Ok(new { closedCount = toClose.Count, message = $"تم إغلاق {toClose.Count} جلسة" });
+        var msg = closeAll
+            ? $"تم إغلاق {toClose.Count} جلسة"
+            : $"تم إغلاق {toClose.Count} جلسة (غير نشطة منذ {minutes} دقيقة)";
+        return Ok(new { closedCount = toClose.Count, message = msg });
     }
 
     [HttpPut("users/{id}/ban")]
@@ -175,6 +190,7 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             await db.Messages.Where(m => sessions.Contains(m.SessionId)).ExecuteDeleteAsync();
             await db.ChatSessions.Where(s => s.User1Id == userId || s.User2Id == userId).ExecuteDeleteAsync();
             await db.Reports.Where(r => r.ReporterId == userId || r.ReportedId == userId).ExecuteDeleteAsync();
+            await db.CodeConnectionAttempts.Where(a => a.RequesterId == userId || a.TargetId == userId).ExecuteDeleteAsync();
             await db.SavedCodes.Where(s => s.UserId == userId).ExecuteDeleteAsync();
             await db.DeviceSubscriptions.Where(d => d.UserId == userId).ExecuteDeleteAsync();
             await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();

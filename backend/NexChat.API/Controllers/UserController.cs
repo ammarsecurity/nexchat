@@ -104,6 +104,48 @@ public class UserController(AppDbContext db) : ControllerBase
         return rows > 0 ? Ok() : NotFound();
     }
 
+    /// <summary>
+    /// سجل اتصالات الكود: sent=المرسلة، received=المستلمة (المقبولة)، missed=الفائتة
+    /// </summary>
+    [HttpGet("connection-history")]
+    public async Task<ActionResult<IEnumerable<object>>> GetConnectionHistory([FromQuery] string filter = "sent")
+    {
+        var userId = CurrentUserId;
+        var f = filter.ToLowerInvariant();
+
+        if (f == "sent")
+        {
+            var list = await db.CodeConnectionAttempts
+                .Where(a => a.RequesterId == userId)
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(a => new { a.Id, a.Status, a.CreatedAt, a.SessionId, OtherUserId = a.TargetId, OtherName = a.Target!.Name, OtherCode = a.Target.UniqueCode, OtherAvatar = a.Target.Avatar })
+                .Take(100)
+                .ToListAsync();
+            return Ok(list);
+        }
+        if (f == "received")
+        {
+            var list = await db.CodeConnectionAttempts
+                .Where(a => a.TargetId == userId && a.Status == "Accepted")
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(a => new { a.Id, a.Status, a.CreatedAt, a.SessionId, OtherUserId = a.RequesterId, OtherName = a.Requester!.Name, OtherCode = a.Requester.UniqueCode, OtherAvatar = a.Requester.Avatar })
+                .Take(100)
+                .ToListAsync();
+            return Ok(list);
+        }
+        if (f == "missed")
+        {
+            var list = await db.CodeConnectionAttempts
+                .Where(a => a.TargetId == userId && a.Status == "Cancelled")
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(a => new { a.Id, a.Status, a.CreatedAt, OtherUserId = a.RequesterId, OtherName = a.Requester!.Name, OtherCode = a.Requester.UniqueCode, OtherAvatar = a.Requester.Avatar })
+                .Take(100)
+                .ToListAsync();
+            return Ok(list);
+        }
+        return Ok(Array.Empty<object>());
+    }
+
     [HttpDelete("account")]
     public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountRequest req)
     {
@@ -126,6 +168,9 @@ public class UserController(AppDbContext db) : ControllerBase
             await db.Messages.Where(m => sessions.Contains(m.SessionId)).ExecuteDeleteAsync();
             await db.ChatSessions.Where(s => s.User1Id == user.Id || s.User2Id == user.Id).ExecuteDeleteAsync();
             await db.Reports.Where(r => r.ReporterId == user.Id || r.ReportedId == user.Id).ExecuteDeleteAsync();
+            await db.CodeConnectionAttempts.Where(a => a.RequesterId == user.Id || a.TargetId == user.Id).ExecuteDeleteAsync();
+            await db.SavedCodes.Where(s => s.UserId == user.Id).ExecuteDeleteAsync();
+            await db.DeviceSubscriptions.Where(d => d.UserId == user.Id).ExecuteDeleteAsync();
             await db.Users.Where(u => u.Id == user.Id).ExecuteDeleteAsync();
             await transaction.CommitAsync();
         }

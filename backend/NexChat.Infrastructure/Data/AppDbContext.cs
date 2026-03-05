@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SiteContent> SiteContents => Set<SiteContent>();
     public DbSet<DeviceSubscription> DeviceSubscriptions => Set<DeviceSubscription>();
     public DbSet<SavedCode> SavedCodes => Set<SavedCode>();
+    public DbSet<CodeConnectionAttempt> CodeConnectionAttempts => Set<CodeConnectionAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,6 +107,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.UserId, x.Code }).IsUnique();
             e.Property(x => x.Code).HasMaxLength(10);
             e.Property(x => x.Label).HasMaxLength(50);
+        });
+
+        modelBuilder.Entity<CodeConnectionAttempt>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Requester)
+                .WithMany()
+                .HasForeignKey(x => x.RequesterId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Target)
+                .WithMany()
+                .HasForeignKey(x => x.TargetId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Status).HasMaxLength(20);
+            e.HasIndex(x => new { x.RequesterId, x.TargetId, x.CreatedAt });
         });
     }
 }
