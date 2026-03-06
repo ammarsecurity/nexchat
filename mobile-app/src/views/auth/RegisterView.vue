@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Users, UserCircle, Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
+import { User, Users, UserCircle, Eye, EyeOff, AlertCircle, Calendar } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '../../stores/theme'
@@ -15,10 +15,44 @@ const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
 
 const name = ref('')
 const password = ref('')
+const birthDay = ref('')
+const birthMonth = ref('')
+const birthYear = ref('')
 const gender = ref('')
 const loading = ref(false)
 const error = ref('')
 const showPass = ref(false)
+
+const birthDate = computed(() => {
+  if (!birthDay.value || !birthMonth.value || !birthYear.value) return ''
+  const d = String(birthDay.value).padStart(2, '0')
+  const m = String(birthMonth.value).padStart(2, '0')
+  return `${birthYear.value}-${m}-${d}`
+})
+
+const months = computed(() => Array.from({ length: 12 }, (_, i) => i + 1))
+const years = computed(() => {
+  const currentYear = new Date().getFullYear()
+  const maxYear = currentYear - 18
+  const minYear = currentYear - 120
+  return Array.from({ length: maxYear - minYear + 1 }, (_, i) => maxYear - i)
+})
+
+const daysInMonth = computed(() => {
+  const m = parseInt(birthMonth.value, 10)
+  const y = parseInt(birthYear.value, 10)
+  if (!m) return 31
+  const isLeap = y && (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0))
+  const days = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return days[m - 1] ?? 31
+})
+
+const validDays = computed(() => Array.from({ length: daysInMonth.value }, (_, i) => i + 1))
+
+watch([birthMonth, birthYear], () => {
+  const d = parseInt(birthDay.value, 10)
+  if (d > daysInMonth.value) birthDay.value = String(daysInMonth.value)
+})
 
 const genders = computed(() => [
   { value: 'male', label: t('register.male'), Icon: User, color: '#6C63FF' },
@@ -27,11 +61,11 @@ const genders = computed(() => [
 ])
 
 async function handleRegister() {
-  if (!name.value.trim() || !password.value || !gender.value) return
+  if (!name.value.trim() || !password.value || !birthDate.value || !gender.value) return
   loading.value = true
   error.value = ''
   try {
-    await auth.register(name.value.trim(), password.value, gender.value)
+    await auth.register(name.value.trim(), password.value, gender.value, birthDate.value)
     router.replace('/home')
   } catch (e) {
     error.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
@@ -62,6 +96,29 @@ async function handleRegister() {
               maxlength="50"
               autocomplete="username"
             />
+          </div>
+
+          <!-- Date of Birth -->
+          <div class="field">
+            <label class="field-label">
+              <Calendar :size="16" class="label-icon" />
+              {{ t('register.birthDate') }}
+            </label>
+            <div class="date-boxes">
+              <select v-model="birthDay" class="date-box" :aria-label="t('register.day')">
+                <option value="" disabled>{{ t('register.day') }}</option>
+                <option v-for="d in validDays" :key="d" :value="d">{{ d }}</option>
+              </select>
+              <select v-model="birthMonth" class="date-box" :aria-label="t('register.month')">
+                <option value="" disabled>{{ t('register.month') }}</option>
+                <option v-for="m in months" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <select v-model="birthYear" class="date-box" :aria-label="t('register.year')">
+                <option value="" disabled>{{ t('register.year') }}</option>
+                <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+              </select>
+            </div>
+            <span class="field-hint">{{ t('register.birthDateHint') }}</span>
           </div>
 
           <!-- Password -->
@@ -109,7 +166,7 @@ async function handleRegister() {
           <button
             type="submit"
             class="btn-gradient"
-            :disabled="loading || !name || !password || !gender || password.length < 4"
+            :disabled="loading || !name || !password || !birthDate || !gender || password.length < 4"
           >
             <span v-if="!loading">{{ t('register.submit') }}</span>
             <span v-else class="spinner"></span>
@@ -166,6 +223,40 @@ async function handleRegister() {
 .form { display: flex; flex-direction: column; gap: 16px; }
 .field { display: flex; flex-direction: column; gap: 8px; }
 label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+.field-label { display: flex; align-items: center; gap: 6px; }
+.label-icon { color: var(--primary); flex-shrink: 0; }
+.field-hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.date-boxes {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 10px;
+}
+
+.date-box {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: 'Cairo', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  min-height: 48px;
+  padding: 0 12px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+.date-box:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.date-box option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
 
 .pass-wrap { position: relative; }
 .pass-wrap .input-field { padding-right: 44px; }

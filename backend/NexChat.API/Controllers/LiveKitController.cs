@@ -34,10 +34,11 @@ public class LiveKitController : ControllerBase
             return Unauthorized();
 
         var session = await _db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sessionId && (s.User1Id == userId || s.User2Id == userId) && s.EndedAt == null);
+            s.Id == sessionId && (s.User1Id == userId || s.User2Id == userId) &&
+            (s.EndedAt == null || s.Type == "support"));
 
         if (session == null)
-            return Forbid();
+            return StatusCode(403, new { message = "لا يمكن الانضمام لمكالمة الفيديو. تأكد أن الجلسة نشطة ولم تنتهِ." });
 
         var apiKey = _config["LiveKit:ApiKey"];
         var apiSecret = _config["LiveKit:ApiSecret"];

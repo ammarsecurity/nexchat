@@ -188,21 +188,33 @@ public class OneSignalService
     }
 
     /// <summary>
-    /// إرسال إشعار لجميع المستخدمين المشتركين (بث عام)
+    /// إرسال إشعار لجميع الأجهزة المشتركة عبر subscription_ids من قاعدة البيانات.
+    /// يرسل على دفعات (20000 كحد أقصى لكل طلب).
     /// </summary>
+    /// <param name="subscriptionIds">قائمة OneSignalPlayerId من DeviceSubscriptions</param>
     /// <param name="title">عنوان الإشعار</param>
     /// <param name="body">نص الإشعار</param>
     /// <param name="imageUrl">رابط صورة اختياري (big_picture / large_icon)</param>
-    /// <returns>(نجاح، رسالة خطأ إن وجدت)</returns>
-    public async Task<(bool Success, string? Error)> SendToAllAsync(string title, string body, string? imageUrl = null)
+    /// <returns>(نجاح، عدد المستلمين، رسالة خطأ إن وجدت)</returns>
+    public async Task<(bool Success, int RecipientsCount, string? Error)> SendBroadcastAsync(
+        IEnumerable<string> subscriptionIds,
+        string title,
+        string body,
+        string? imageUrl = null)
     {
         if (!IsConfigured)
-            return (false, "OneSignal غير مُعد (AppId أو RestApiKey ناقص)");
+            return (false, 0, "OneSignal غير مُعد (AppId أو RestApiKey ناقص)");
 
-        var payload = new Dictionary<string, object>
+        var ids = subscriptionIds
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct()
+            .ToArray();
+
+        if (ids.Length == 0)
+            return (false, 0, "لا توجد أجهزة مشتركة للإرسال");
+
+        var payloadBase = new Dictionary<string, object>
         {
-            ["app_id"] = _opts.AppId,
-            ["included_segments"] = new[] { "Subscribed Users" },
             ["target_channel"] = "push",
             ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
             ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
@@ -210,25 +222,40 @@ public class OneSignalService
 
         if (!string.IsNullOrWhiteSpace(imageUrl))
         {
-            payload["big_picture"] = imageUrl;
-            payload["large_icon"] = imageUrl;
+            payloadBase["big_picture"] = imageUrl;
+            payloadBase["large_icon"] = imageUrl;
         }
+
+        const int batchSize = 20000;
+        var totalSent = 0;
 
         try
         {
-            var json = JsonSerializer.Serialize(payload);
-            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-            var res = await _http.PostAsync("notifications", content);
-            var bodyStr = await res.Content.ReadAsStringAsync();
+            for (var i = 0; i < ids.Length; i += batchSize)
+            {
+                var batch = ids.Skip(i).Take(batchSize).ToArray();
+                var payload = new Dictionary<string, object>(payloadBase)
+                {
+                    ["app_id"] = _opts.AppId,
+                    ["include_subscription_ids"] = batch
+                };
 
-            if (res.IsSuccessStatusCode)
-                return (true, null);
+                var json = JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                var res = await _http.PostAsync("notifications", content);
+                var bodyStr = await res.Content.ReadAsStringAsync();
 
-            return (false, $"OneSignal: {(int)res.StatusCode} - {bodyStr}");
+                if (!res.IsSuccessStatusCode)
+                    return (false, totalSent, $"OneSignal: {(int)res.StatusCode} - {bodyStr}");
+
+                totalSent += batch.Length;
+            }
+
+            return (true, totalSent, null);
         }
         catch (Exception ex)
         {
-            return (false, $"OneSignal: {ex.Message}");
+            return (false, totalSent, $"OneSignal: {ex.Message}");
         }
     }
 }

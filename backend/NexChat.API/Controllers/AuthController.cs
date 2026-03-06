@@ -25,6 +25,18 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
         if (!new[] { "male", "female", "other" }.Contains(req.Gender.ToLower()))
             return BadRequest(new { message = "الجنس غير صالح" });
 
+        if (string.IsNullOrWhiteSpace(req.BirthDate))
+            return BadRequest(new { message = "تاريخ الميلاد مطلوب" });
+
+        if (!DateOnly.TryParse(req.BirthDate, out var birthDate))
+            return BadRequest(new { message = "تاريخ الميلاد غير صالح" });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var age = today.Year - birthDate.Year;
+        if (birthDate > today.AddYears(-age)) age--;
+        if (age < 18)
+            return BadRequest(new { message = "يجب أن يكون عمرك 18 عاماً أو أكثر للتسجيل" });
+
         var nameExists = await db.Users.AnyAsync(u => u.Name.ToLower() == req.Name.ToLower());
         if (nameExists)
             return Conflict(new { message = "هذا الاسم مستخدم بالفعل" });
@@ -34,6 +46,7 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
             Name = req.Name.Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Gender = req.Gender.ToLower(),
+            BirthDate = birthDate,
             UniqueCode = await GenerateUniqueCode()
         };
 

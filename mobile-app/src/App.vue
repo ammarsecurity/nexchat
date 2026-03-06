@@ -6,6 +6,8 @@ import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import NoConnectionView from './views/NoConnectionView.vue'
 import IncomingConnectionRequestDialog from './components/IncomingConnectionRequestDialog.vue'
+import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
+import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
@@ -13,7 +15,18 @@ import { matchingHub, startHub, stopHub } from './services/signalr'
 import { startIncomingCallSound, stopIncomingCallSound } from './utils/sounds'
 
 const isOnline = ref(navigator.onLine)
+const showUpdateModal = ref(false)
+const updateDownloadUrl = ref('')
 const auth = useAuthStore()
+
+async function runUpdateCheck() {
+  if (!isOnline.value) return
+  const { required, downloadUrl } = await checkUpdateRequired()
+  if (required && downloadUrl) {
+    showUpdateModal.value = true
+    updateDownloadUrl.value = downloadUrl
+  }
+}
 const localeStore = useLocaleStore()
 
 function applyHtmlLocale() {
@@ -32,6 +45,7 @@ const route = useRoute()
 
 function handleOnline() {
   isOnline.value = true
+  runUpdateCheck()
 }
 function handleOffline() {
   isOnline.value = false
@@ -89,6 +103,7 @@ let backButtonListener = null
 
 onMounted(() => {
   applyHtmlLocale()
+  runUpdateCheck()
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('nexchat:unauthorized', handleUnauthorized)
@@ -122,6 +137,7 @@ onUnmounted(() => {
       </Transition>
     </RouterView>
     <IncomingConnectionRequestDialog v-if="auth.token" />
+    <UpdateRequiredModal v-if="showUpdateModal" :download-url="updateDownloadUrl" />
   </div>
 </template>
 

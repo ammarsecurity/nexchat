@@ -25,8 +25,30 @@ public class UserController(AppDbContext db) : ControllerBase
 
         return Ok(new UserProfileDto(
             user.Id, user.Name, user.Gender,
-            user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured
+            user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured, user.BirthDate
         ));
+    }
+
+    [HttpPut("birth-date")]
+    public async Task<IActionResult> UpdateBirthDate([FromBody] UpdateBirthDateRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.BirthDate))
+            return BadRequest(new { message = "تاريخ الميلاد مطلوب" });
+
+        if (!DateOnly.TryParse(req.BirthDate, out var birthDate))
+            return BadRequest(new { message = "تاريخ الميلاد غير صالح" });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var age = today.Year - birthDate.Year;
+        if (birthDate > today.AddYears(-age)) age--;
+        if (age < 18)
+            return BadRequest(new { message = "يجب أن يكون عمرك 18 عاماً أو أكثر" });
+
+        await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.BirthDate, birthDate));
+
+        return Ok();
     }
 
     [HttpPut("avatar")]

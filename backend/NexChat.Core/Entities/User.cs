@@ -6,6 +6,7 @@ public class User
     public string Name { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string Gender { get; set; } = string.Empty; // "male" | "female" | "other"
+    public DateOnly? BirthDate { get; set; }
     public string UniqueCode { get; set; } = string.Empty;
     public bool IsOnline { get; set; } = false;
     public bool IsBanned { get; set; } = false;

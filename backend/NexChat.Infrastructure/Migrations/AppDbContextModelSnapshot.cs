@@ -277,6 +277,9 @@ namespace NexChat.Infrastructure.Migrations
                     b.Property<string>("Avatar")
                         .HasColumnType("longtext");
 
+                    b.Property<DateOnly?>("BirthDate")
+                        .HasColumnType("date");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 

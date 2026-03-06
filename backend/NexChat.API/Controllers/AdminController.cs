@@ -531,8 +531,19 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
         if (dto.Body.Length > 500)
             return BadRequest(new { message = "نص الإشعار طويل جداً" });
 
-        var (success, error) = await oneSignal.SendToAllAsync(dto.Title.Trim(), dto.Body.Trim(), dto.ImageUrl?.Trim());
-        return success ? Ok(new { message = "تم إرسال الإشعار بنجاح" }) : StatusCode(500, new { message = error ?? "فشل إرسال الإشعار" });
+        var subscriptionIds = await db.DeviceSubscriptions
+            .Select(d => d.OneSignalPlayerId)
+            .ToListAsync();
+
+        var (success, recipientsCount, error) = await oneSignal.SendBroadcastAsync(
+            subscriptionIds,
+            dto.Title.Trim(),
+            dto.Body.Trim(),
+            dto.ImageUrl?.Trim());
+
+        if (success)
+            return Ok(new { message = "تم إرسال الإشعار بنجاح", recipientsCount });
+        return StatusCode(500, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
     }
 
     [HttpPut("banners/reorder")]

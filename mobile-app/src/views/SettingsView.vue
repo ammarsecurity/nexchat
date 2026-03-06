@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +15,7 @@ import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { optInNotifications, optOutNotifications, getNotificationsEnabled, requestPermissionAndRegister } from '../services/notifications'
 import { Capacitor } from '@capacitor/core'
+import { fetchUpdateInfo } from '../services/updateCheck'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -38,10 +39,19 @@ const deleteError = ref('')
 const deleting = ref(false)
 const copiedCode = ref(false)
 const mediaPermLoading = ref(false)
+const profileData = ref(null)
+const showBirthDateModal = ref(false)
+const birthDay = ref('')
+const birthMonth = ref('')
+const birthYear = ref('')
+const birthDateSaving = ref(false)
+const birthDateError = ref('')
 const mediaPermMessage = ref('')
 const mediaPermSuccess = ref(true)
 const notificationsEnabled = ref(true)
 const isNative = Capacitor.isNativePlatform()
+const updateInfo = ref(null)
+const updateChecking = ref(false)
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -185,7 +195,102 @@ async function confirmDelete() {
   }
 }
 
-onMounted(() => loadNotificationsState())
+const months = computed(() => Array.from({ length: 12 }, (_, i) => i + 1))
+const years = computed(() => {
+  const currentYear = new Date().getFullYear()
+  const maxYear = currentYear - 18
+  const minYear = currentYear - 120
+  return Array.from({ length: maxYear - minYear + 1 }, (_, i) => maxYear - i)
+})
+const daysInMonth = computed(() => {
+  const m = parseInt(birthMonth.value, 10)
+  const y = parseInt(birthYear.value, 10)
+  if (!m) return 31
+  const isLeap = y && (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0))
+  const days = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return days[m - 1] ?? 31
+})
+const validDays = computed(() => Array.from({ length: daysInMonth.value }, (_, i) => i + 1))
+
+watch([birthMonth, birthYear], () => {
+  const d = parseInt(birthDay.value, 10)
+  if (d > daysInMonth.value) birthDay.value = String(daysInMonth.value)
+})
+const birthDateStr = computed(() => {
+  if (!birthDay.value || !birthMonth.value || !birthYear.value) return ''
+  const d = String(birthDay.value).padStart(2, '0')
+  const m = String(birthMonth.value).padStart(2, '0')
+  return `${birthYear.value}-${m}-${d}`
+})
+const formattedBirthDate = computed(() => {
+  const b = profileData.value?.birthDate
+  if (!b) return null
+  const [y, m, d] = b.split('-').map(Number)
+  return `${d}/${m}/${y}`
+})
+
+async function loadProfile() {
+  try {
+    const res = await api.get('/user/me')
+    profileData.value = res.data
+  } catch {}
+}
+
+function openBirthDateModal() {
+  const b = profileData.value?.birthDate
+  if (b) {
+    const [y, m, d] = b.split('-').map(Number)
+    birthYear.value = y
+    birthMonth.value = m
+    birthDay.value = d
+  } else {
+    birthYear.value = ''
+    birthMonth.value = ''
+    birthDay.value = ''
+  }
+  birthDateError.value = ''
+  showBirthDateModal.value = true
+}
+
+async function saveBirthDate() {
+  if (!birthDateStr.value) return
+  birthDateSaving.value = true
+  birthDateError.value = ''
+  try {
+    await api.put('/user/birth-date', { birthDate: birthDateStr.value })
+    profileData.value = { ...profileData.value, birthDate: birthDateStr.value }
+    showBirthDateModal.value = false
+  } catch (e) {
+    birthDateError.value = e.response?.data?.message || t('common.error')
+  } finally {
+    birthDateSaving.value = false
+  }
+}
+
+async function checkForUpdate() {
+  updateChecking.value = true
+  updateInfo.value = null
+  try {
+    updateInfo.value = await fetchUpdateInfo()
+  } catch {}
+  updateChecking.value = false
+}
+
+function openUpdateUrl() {
+  const url = updateInfo.value?.downloadUrl
+  if (!url) return
+  if (Capacitor.isNativePlatform()) {
+    window.open(url, '_system')
+  } else {
+    window.open(url, '_blank')
+  }
+}
+
+onMounted(() => {
+  loadNotificationsState()
+  loadProfile()
+  checkForUpdate()
+})
 </script>
 
 <template>
@@ -236,6 +341,18 @@ onMounted(() => loadNotificationsState())
           <Copy v-if="!copiedCode" :size="18" stroke-width="2" />
           <span v-else class="copied-text">{{ t('common.copiedShort') }}</span>
         </button>
+      </div>
+
+      <!-- تاريخ الميلاد -->
+      <div class="profile-code-card glass-card birth-date-card" @click="openBirthDateModal">
+        <div class="profile-code-icon-wrap">
+          <Calendar :size="22" />
+        </div>
+        <div class="profile-code-text">
+          <span class="profile-code-title">{{ t('settings.birthDate') }}</span>
+          <span class="profile-code-value">{{ formattedBirthDate ?? t('settings.birthDateNotSet') }}</span>
+        </div>
+        <ChevronRight :size="20" class="link-arrow" />
       </div>
 
       <!-- Privacy badge -->
@@ -331,15 +448,34 @@ onMounted(() => loadNotificationsState())
         </RouterLink>
       </div>
 
-      <!-- 4. About -->
+      <!-- 4. App / Update -->
       <div class="section-label">{{ t('settings.app') }}</div>
+      <div v-if="updateInfo?.hasUpdate && updateInfo?.downloadUrl" class="support-card glass-card update-available-card">
+        <button class="support-row" @click="openUpdateUrl">
+          <div class="support-icon-wrap update-icon-wrap">
+            <Download :size="22" />
+          </div>
+          <div class="support-text">
+            <span class="support-title">{{ t('settings.updateAvailable') }}</span>
+            <span class="support-desc">{{ t('settings.updateAvailableDesc') }}</span>
+          </div>
+          <ChevronRight :size="20" class="link-arrow" />
+        </button>
+      </div>
+      <div v-if="isNative" class="links-group glass-card">
+        <button class="link-row" :disabled="updateChecking" @click="checkForUpdate">
+          <RefreshCw :size="20" class="link-icon" :class="{ 'spin': updateChecking }" />
+          <span>{{ updateChecking ? t('settings.checkingUpdate') : t('settings.checkForUpdate') }}</span>
+          <ChevronRight v-if="!updateChecking" :size="18" class="link-arrow" />
+        </button>
+      </div>
       <div class="about-card glass-card">
         <div class="about-inner">
           <img :src="logoImg" alt="NexChat" class="about-logo-img" />
           <div class="about-text">
             <div class="about-name">NexChat</div>
             <div class="about-tagline text-muted text-sm">{{ t('settings.tagline') }}</div>
-            <span class="ver-badge">v1.0.0</span>
+            <span class="ver-badge">v1.0.1</span>
           </div>
         </div>
       </div>
@@ -417,6 +553,47 @@ onMounted(() => loadNotificationsState())
             <button class="btn-ghost" @click="showDeletePassword = false" :disabled="deleting">{{ t('common.cancel') }}</button>
             <button class="delete-confirm-btn" @click="confirmDelete" :disabled="deleting">
               {{ deleting ? t('settings.deleting') : t('settings.deletePermanently') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Birth Date Edit Modal -->
+    <Transition name="modal">
+      <div v-if="showBirthDateModal" class="modal-overlay" @click.self="showBirthDateModal = false">
+        <div class="picker-sheet glass-card">
+          <div class="sheet-handle"></div>
+          <div class="picker-hdr">
+            <span class="picker-title">{{ t('settings.editBirthDate') }}</span>
+            <button class="close-x" @click="showBirthDateModal = false"><X :size="18" /></button>
+          </div>
+          <div class="date-boxes-wrap">
+            <div class="date-boxes">
+              <select v-model="birthDay" class="date-box" :aria-label="t('register.day')">
+                <option value="" disabled>{{ t('register.day') }}</option>
+                <option v-for="d in validDays" :key="d" :value="d">{{ d }}</option>
+              </select>
+              <select v-model="birthMonth" class="date-box" :aria-label="t('register.month')">
+                <option value="" disabled>{{ t('register.month') }}</option>
+                <option v-for="m in months" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <select v-model="birthYear" class="date-box" :aria-label="t('register.year')">
+                <option value="" disabled>{{ t('register.year') }}</option>
+                <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+              </select>
+            </div>
+            <span class="field-hint">{{ t('register.birthDateHint') }}</span>
+            <div v-if="birthDateError" class="error-toast">
+              <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+              <span>{{ birthDateError }}</span>
+            </div>
+            <button
+              class="upload-btn"
+              :disabled="birthDateSaving || !birthDateStr"
+              @click="saveBirthDate"
+            >
+              {{ birthDateSaving ? t('common.loading') : t('settings.saveBirthDate') }}
             </button>
           </div>
         </div>
@@ -754,6 +931,18 @@ html.light .avatar-crown-settings {
   color: var(--text-muted);
 }
 .support-row .link-arrow { margin-inline-start: auto; }
+
+.update-available-card {
+  border-color: rgba(0, 212, 255, 0.35);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 212, 255, 0.03) 100%);
+}
+.update-available-card .support-row:active { background: rgba(0, 212, 255, 0.12); }
+.update-icon-wrap {
+  background: rgba(0, 212, 255, 0.25) !important;
+  color: #00D4FF !important;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.link-icon.spin { animation: spin 0.8s linear infinite; }
 
 /* Links group */
 .links-group {
@@ -1171,4 +1360,55 @@ html.light .avatar-crown-settings {
 .modal-enter-active .picker-sheet { transition: transform 0.3s ease; }
 .modal-leave-active .picker-sheet { transition: transform 0.25s ease; }
 .modal-enter-from .picker-sheet, .modal-leave-to .picker-sheet { transform: translateY(100%); }
+
+/* Birth date card & modal */
+.birth-date-card .link-arrow { margin-inline-start: auto; }
+.date-boxes-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 var(--spacing) calc(32px + var(--safe-bottom));
+}
+.date-boxes {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 10px;
+}
+.date-box {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: 'Cairo', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  min-height: 48px;
+  padding: 0 12px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+.date-box:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.date-box option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+.field-hint { font-size: 12px; color: var(--text-muted); }
+.error-toast {
+  align-items: center;
+  background: rgba(255, 101, 132, 0.15);
+  border: 1px solid rgba(255, 101, 132, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.error-toast-icon { flex-shrink: 0; }
 </style>

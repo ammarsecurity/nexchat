@@ -130,7 +130,7 @@ onMounted(async () => {
     } else if (e.name === 'NotFoundError') {
       error.value = 'لم يتم العثور على كاميرا أو ميكروفون'
     } else {
-      error.value = e.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
+      error.value = e.userMessage || e.response?.data?.message || e.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
     }
   } finally {
     initializing.value = false

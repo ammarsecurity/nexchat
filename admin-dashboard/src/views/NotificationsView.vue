@@ -9,6 +9,7 @@ const form = ref({
 })
 const sending = ref(false)
 const success = ref(false)
+const recipientsCount = ref(0)
 
 async function sendBroadcast() {
   if (!form.value.title?.trim() || !form.value.body?.trim()) {
@@ -17,15 +18,18 @@ async function sendBroadcast() {
   }
   sending.value = true
   success.value = false
+  recipientsCount.value = 0
   try {
-    await api.post('/admin/notifications/broadcast', {
+    const res = await api.post('/admin/notifications/broadcast', {
       title: form.value.title.trim(),
       body: form.value.body.trim(),
       imageUrl: form.value.imageUrl?.trim() || null
     })
     success.value = true
+    recipientsCount.value = res.data?.recipientsCount ?? 0
     form.value = { title: '', body: '', imageUrl: '' }
   } catch (err) {
+    recipientsCount.value = err.response?.data?.recipientsCount ?? 0
     alert(err.response?.data?.message || 'فشل إرسال الإشعار')
   } finally {
     sending.value = false
@@ -57,7 +61,7 @@ async function sendBroadcast() {
           class="mb-4"
           closable
         >
-          تم إرسال الإشعار بنجاح لجميع المستخدمين
+          تم إرسال الإشعار بنجاح إلى {{ recipientsCount }} جهاز
         </v-alert>
 
         <v-form @submit.prevent="sendBroadcast">

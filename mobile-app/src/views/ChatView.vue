@@ -184,6 +184,7 @@ onMounted(async () => {
 
   chatHub.on('VideoCallAccepted', () => {
     callingOut.value = false
+    leavingProgrammatically = true
     router.push({ path: `/video/${sessionId}`, state: { initiator: true } })
   })
 
@@ -367,6 +368,7 @@ async function acceptCall() {
   incomingCall.value = false
   await ensureConnected(chatHub)
   await chatHub.invoke('AcceptVideoCall', sessionId)
+  leavingProgrammatically = true
   router.push({ path: `/video/${sessionId}`, state: { initiator: false } })
 }
 

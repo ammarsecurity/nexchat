@@ -18,8 +18,8 @@ export const useAuthStore = defineStore('auth', () => {
     return colors[idx]
   })
 
-  async function register(name, password, gender) {
-    const res = await api.post('/auth/register', { name, password, gender })
+  async function register(name, password, gender, birthDate) {
+    const res = await api.post('/auth/register', { name, password, gender, birthDate })
     await setAuth(res.data)
   }
 

@@ -38,6 +38,7 @@ const navItems = [
   { title: 'البلاغات', icon: 'mdi-flag', to: '/reports' },
   { title: 'الإعلانات', icon: 'mdi-image-multiple', to: '/ads' },
   { title: 'الإشعارات العامة', icon: 'mdi-bell-ring', to: '/notifications' },
+  { title: 'تحديث التطبيق', icon: 'mdi-cellphone-arrow-down', to: '/app-update' },
   { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
   { title: 'التواصل الاجتماعي', icon: 'mdi-share-variant', to: '/social' },
   { title: 'الصفحات الاسترشادية', icon: 'mdi-book-open-page-variant', to: '/onboarding' },
