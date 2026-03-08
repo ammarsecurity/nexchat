@@ -368,6 +368,92 @@ body {
   color: var(--primary);
 }
 
+/* Delete Account page */
+.delete-account-page {
+  min-height: 100vh;
+  padding: 2rem 1.5rem 3rem;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.delete-account-page h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+.delete-intro {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.delete-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.delete-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.delete-form label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.delete-form input {
+  font-family: var(--font);
+  font-size: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  transition: border-color 0.2s;
+}
+
+.delete-form input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.delete-form input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.btn-submit {
+  width: 100%;
+  max-width: 100%;
+}
+
+.success-message {
+  padding: 2rem;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.success-message svg.success-icon {
+  width: 48px;
+  height: 48px;
+  color: #22c55e;
+  margin: 0 auto 1rem;
+  display: block;
+}
+
+.success-message p {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 /* Tablet & Desktop */
 @media (min-width: 480px) {
   .hero-content {

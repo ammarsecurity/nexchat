@@ -30,7 +30,7 @@
       "Bash(npm install pinia vue-router@4 @microsoft/signalr axios gsap)",
       "Bash(npm install simple-peer)",
       "Bash(npm install @capacitor/core @capacitor/cli)",
-      "Bash(npx cap init NexChat com.nexchat.app --web-dir dist)",
+      "Bash(npx cap init NexChat site.nexchat.app --web-dir dist)",
       "Bash(npm run build)",
       "Bash(npm create vite@latest admin-dashboard -- --template vue)",
       "Bash(npm install vuetify@3 @mdi/font pinia vue-router@4 axios chart.js vue-chartjs @microsoft/signalr)",

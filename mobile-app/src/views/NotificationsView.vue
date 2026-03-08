@@ -91,6 +91,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  font-family: 'Cairo', sans-serif;
 }
 
 .top-bar {
@@ -174,7 +175,7 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.notif-title { font-weight: 600; font-size: 15px; }
+.notif-title { font-weight: 600; font-size: 15px; font-family: 'Cairo', sans-serif; }
 
 .notif-body {
   font-size: 13px;
@@ -182,6 +183,7 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: 'Cairo', sans-serif;
 }
 
 .notif-time { font-size: 12px; color: var(--text-muted); }
