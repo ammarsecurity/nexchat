@@ -55,7 +55,7 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
 
     /// <summary>
     /// إغلاق الجلسات غير النشطة. minutes: مدة عدم النشاط (افتراضي 15). closeAll: true = إغلاق الكل.
-    /// لا يغلق جلسات الدعم.
+    /// يشمل جميع الجلسات بما فيها جلسات الدعم.
     /// </summary>
     [HttpPost("close-inactive-sessions")]
     public async Task<ActionResult<object>> CloseInactiveSessions(
@@ -63,7 +63,7 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
         [FromQuery] bool closeAll = false)
     {
         var query = db.ChatSessions
-            .Where(s => s.EndedAt == null && s.Type != "support");
+            .Where(s => s.EndedAt == null);
 
         List<Guid> toClose;
         if (closeAll)
@@ -92,6 +92,9 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             await db.ChatSessions
                 .Where(s => toClose.Contains(s.Id))
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
+
+            foreach (var sid in toClose)
+                await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", Guid.Empty);
         }
 
         var msg = closeAll

@@ -25,7 +25,8 @@ public class UserController(AppDbContext db) : ControllerBase
 
         return Ok(new UserProfileDto(
             user.Id, user.Name, user.Gender,
-            user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured, user.BirthDate
+            user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured, user.BirthDate,
+            user.Country, user.PhoneNumber
         ));
     }
 
@@ -51,6 +52,38 @@ public class UserController(AppDbContext db) : ControllerBase
         return Ok();
     }
 
+    [HttpPut("profile-contact")]
+    public async Task<IActionResult> UpdateProfileContact([FromBody] UpdateProfileContactRequest req)
+    {
+        var country = (req.Country ?? "").Trim().ToUpperInvariant();
+        var countryCode = (req.CountryCode ?? "").Trim().TrimStart('+');
+        var phone = (req.PhoneNumber ?? "").Trim().Replace(" ", "").Replace("-", "");
+
+        if (country.Length != 2)
+            return BadRequest(new { message = "كود الدولة يجب أن يكون حرفين (مثل IQ, SA)" });
+
+        if (string.IsNullOrEmpty(countryCode) || countryCode.Length > 4)
+            return BadRequest(new { message = "مفتاح الدولة غير صالح" });
+
+        if (string.IsNullOrEmpty(phone) || phone.Length < 7 || phone.Length > 15)
+            return BadRequest(new { message = "رقم الهاتف يجب أن يكون بين 7 و 15 رقماً" });
+
+        if (!phone.All(char.IsDigit))
+            return BadRequest(new { message = "رقم الهاتف يجب أن يحتوي على أرقام فقط" });
+
+        var fullPhone = countryCode + phone;
+        if (fullPhone.Length > 20)
+            return BadRequest(new { message = "رقم الهاتف طويل جداً" });
+
+        await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.Country, country)
+                .SetProperty(u => u.PhoneNumber, fullPhone));
+
+        return Ok();
+    }
+
     [HttpPut("avatar")]
     public async Task<IActionResult> UpdateAvatar([FromBody] UpdateAvatarRequest req)
     {
@@ -67,7 +100,7 @@ public class UserController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<IEnumerable<object>>> GetSavedCodes()
     {
         var user = await db.Users.FindAsync(CurrentUserId);
-        if (user == null || !user.IsFeatured)
+        if (user == null)
             return Forbid();
 
         var codes = await db.SavedCodes
@@ -83,7 +116,7 @@ public class UserController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> AddSavedCode([FromBody] AddSavedCodeRequest req)
     {
         var user = await db.Users.FindAsync(CurrentUserId);
-        if (user == null || !user.IsFeatured)
+        if (user == null)
             return Forbid();
 
         var code = (req.Code ?? "").Trim().ToUpper();
@@ -115,7 +148,7 @@ public class UserController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> RemoveSavedCode(string code)
     {
         var user = await db.Users.FindAsync(CurrentUserId);
-        if (user == null || !user.IsFeatured)
+        if (user == null)
             return Forbid();
 
         var normalized = code.Trim().ToUpper();

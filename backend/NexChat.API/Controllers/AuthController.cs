@@ -54,7 +54,8 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
         await db.SaveChangesAsync();
 
         var token = jwt.GenerateToken(user);
-        return Ok(new AuthResponse(token, user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured));
+        var needsProfileContact = string.IsNullOrWhiteSpace(user.Country) || string.IsNullOrWhiteSpace(user.PhoneNumber);
+        return Ok(new AuthResponse(token, user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, needsProfileContact));
     }
 
     [HttpPost("login")]
@@ -70,7 +71,8 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
             return Forbid();
 
         var token = jwt.GenerateToken(user);
-        return Ok(new AuthResponse(token, user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured));
+        var needsProfileContact = string.IsNullOrWhiteSpace(user.Country) || string.IsNullOrWhiteSpace(user.PhoneNumber);
+        return Ok(new AuthResponse(token, user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, needsProfileContact));
     }
 
     private async Task<string> GenerateUniqueCode()

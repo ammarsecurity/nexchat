@@ -20,7 +20,9 @@ let rafId = null
 
 const bannersDoubled = computed(() => {
   const b = banners.value
-  return b.length ? [...b, ...b] : []
+  if (!b.length) return []
+  if (b.length === 1) return b
+  return [...b, ...b]
 })
 
 async function fetchBanners() {
@@ -43,7 +45,7 @@ function openLink(link) {
 }
 
 function tick() {
-  if (!scrollEl.value || isUserInteracting.value || bannersDoubled.value.length <= 1) {
+  if (!scrollEl.value || isUserInteracting.value || banners.value.length <= 1) {
     rafId = requestAnimationFrame(tick)
     return
   }
@@ -57,7 +59,7 @@ function tick() {
 
 function startTicker() {
   stopTicker()
-  if (bannersDoubled.value.length > 1) {
+  if (banners.value.length > 1) {
     rafId = requestAnimationFrame(tick)
   }
 }
@@ -92,14 +94,16 @@ onUnmounted(() => {
 watch(() => props.placement, fetchBanners)
 watch(bannersDoubled, (val) => {
   if (val.length > 1) startTicker()
+  else stopTicker()
 }, { immediate: true })
 </script>
 
 <template>
-  <div v-if="bannersDoubled.length" class="banner-strip">
+  <div v-if="bannersDoubled.length" class="banner-strip" :class="{ 'single-banner': bannersDoubled.length === 1 }">
     <div
       ref="scrollEl"
       class="banner-scroll"
+      :class="{ 'single-banner-scroll': bannersDoubled.length === 1 }"
       @touchstart="onUserInteractionStart"
       @touchend="onUserInteractionEnd"
       @touchcancel="onUserInteractionEnd"
@@ -125,6 +129,13 @@ watch(bannersDoubled, (val) => {
   flex-shrink: 0;
   margin: var(--spacing);
   overflow: hidden;
+  width: 100%;
+  max-width: 340px;
+}
+
+.banner-strip.single-banner {
+  display: flex;
+  justify-content: center;
 }
 
 .banner-scroll {
@@ -132,11 +143,23 @@ watch(bannersDoubled, (val) => {
   gap: 12px;
   overflow-x: auto;
   padding: 4px 0;
+  direction: ltr;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   cursor: grab;
   user-select: none;
+  width: 100%;
 }
+
+.banner-scroll.single-banner-scroll {
+  overflow: hidden;
+  cursor: default;
+  justify-content: center;
+}
+.banner-scroll.single-banner-scroll:active {
+  cursor: default;
+}
+
 .banner-scroll:active {
   cursor: grabbing;
 }
@@ -151,6 +174,10 @@ watch(bannersDoubled, (val) => {
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg-card);
+}
+
+.banner-strip.single-banner .banner-item {
+  width: min(100%, 312px);
 }
 
 .banner-item img {

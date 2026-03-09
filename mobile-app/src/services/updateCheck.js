@@ -45,13 +45,13 @@ export async function checkUpdateRequired() {
  */
 export async function fetchUpdateInfo() {
   try {
-    let currentVersion = '1.0'
+    let currentVersion = '1.0.2'
     const { Capacitor } = await import('@capacitor/core')
     const { App } = await import('@capacitor/app')
 
     if (Capacitor.isNativePlatform() && App?.getInfo) {
       const info = await App.getInfo()
-      currentVersion = info.version || info.appVersion || '1.0'
+      currentVersion = info.version || info.appVersion || '1.0.2'
     }
 
     const res = await fetch(`${API_BASE}/api/SiteContent/app_update`)

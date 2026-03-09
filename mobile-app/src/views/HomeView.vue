@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, Users, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -30,8 +30,8 @@ const copied = ref(false)
 const loading = ref(false)
 const waitingForAccept = ref(false)
 const showLogoutConfirm = ref(false)
+const profileBannerDismissed = ref(false)
 const notifPromptLoading = ref(false)
-const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
 let connectionTimeoutId = null
 
 const user = computed(() => auth.user)
@@ -87,11 +87,8 @@ onMounted(async () => {
     loading.value = false
   })
 
-  setInterval(() => {
-    onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
-  }, 5000)
-
 })
+
 
 function clearConnectionTimeout() {
   if (connectionTimeoutId) {
@@ -211,6 +208,20 @@ const genderFilters = computed(() => [
       :show="loading"
       :text="waitingForAccept ? t('home.waitingForAccept') : t('home.connecting')"
     />
+    <!-- مودال إكمال الملف للمستخدمين القدامى -->
+    <Transition name="modal">
+      <div v-if="auth.needsProfileContact && !profileBannerDismissed" class="logout-overlay" @click.self="profileBannerDismissed = true">
+        <div class="logout-dialog glass-card profile-complete-modal">
+          <div class="logout-dialog-icon"><Globe :size="48" stroke-width="2" /></div>
+          <h3 class="logout-dialog-title">{{ t('completeProfile.bannerTitle') }}</h3>
+          <p class="logout-dialog-text">{{ t('completeProfile.bannerText') }}</p>
+          <div class="logout-dialog-actions">
+            <button class="btn-ghost" @click="profileBannerDismissed = true">{{ t('completeProfile.dismiss') }}</button>
+            <RouterLink to="/complete-profile" class="logout-confirm-btn profile-complete-btn" @click="profileBannerDismissed = true">{{ t('completeProfile.completeNow') }}</RouterLink>
+          </div>
+        </div>
+      </div>
+    </Transition>
     <!-- Header مميز -->
     <header class="header">
       <div class="header-inner">
@@ -282,20 +293,6 @@ const genderFilters = computed(() => [
       </div>
     </Transition>
 
-    <!-- Online indicator -->
-    <div class="list-section">
-      <div class="list-row">
-        <div class="list-row-icon">
-          <Users :size="20" stroke-width="2" />
-          <span class="status-dot"></span>
-        </div>
-        <div class="list-row-content">
-          <span class="list-count">{{ onlineCount }}</span>
-          <span class="list-label">{{ t('home.onlineNow') }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- CTA + Filter - unified section -->
     <div class="cta-filter-card">
       <div class="main-cta-wrap">
@@ -324,17 +321,12 @@ const genderFilters = computed(() => [
     </div>
     </div>
 
-    <!-- رابط الأكواد المحفوظة (للمستخدمين المميزين) -->
-    <Transition name="fade">
-      <RouterLink v-if="isFeatured" to="/saved-codes" class="saved-codes-link glass-card">
-        <BookmarkPlus :size="22" stroke-width="2" class="saved-codes-link-icon" />
-        <div class="saved-codes-link-text">
-          <span class="saved-codes-link-title">{{ t('home.savedCodes') }}</span>
-          <span class="saved-codes-link-desc">{{ t('savedCodes.addFirstHint') }}</span>
-        </div>
-        <ChevronRight :size="20" class="saved-codes-link-arrow" />
-      </RouterLink>
-    </Transition>
+    <!-- رابط الأكواد المحفوظة -->
+    <RouterLink to="/saved-codes" class="saved-codes-link">
+      <BookmarkPlus :size="18" stroke-width="2" class="saved-codes-link-icon" />
+      <span class="saved-codes-link-title">{{ t('home.savedCodes') }}</span>
+      <ChevronRight :size="18" class="saved-codes-link-arrow" />
+    </RouterLink>
 
     <!-- Divider -->
     <div class="divider">
@@ -394,6 +386,16 @@ const genderFilters = computed(() => [
   padding-top: 8px;
 }
 
+.profile-complete-modal .logout-dialog-icon { color: var(--primary); }
+.profile-complete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary) !important;
+  text-decoration: none;
+  color: white;
+}
+
 /* Header مميز - تصميم بارز */
 .header {
   flex-shrink: 0;
@@ -408,6 +410,7 @@ const genderFilters = computed(() => [
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
+  margin-top: 5px;
   background: var(--bg-card);
   border: 1px solid rgba(108, 99, 255, 0.2);
   border-radius: 16px;
@@ -519,75 +522,6 @@ html.light .avatar-crown-home {
 }
 .nav-btn:active { background: rgba(108, 99, 255, 0.2); color: var(--primary); border-color: rgba(108, 99, 255, 0.4); }
 .nav-btn:hover { color: var(--primary); }
-
-/* List section - online indicator */
-.list-section {
-  padding: 0 var(--spacing);
-  margin-bottom: 20px;
-}
-
-.list-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.list-row-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: rgba(108, 99, 255, 0.1);
-  color: var(--primary);
-  flex-shrink: 0;
-}
-
-.status-dot {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  border: 2px solid var(--bg-card);
-  animation: status-pulse 2s ease-in-out infinite;
-}
-
-@keyframes status-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.1); }
-}
-
-.list-row-content {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-.list-count {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--primary);
-  font-family: 'Cairo', sans-serif;
-  letter-spacing: -0.5px;
-}
-
-.list-label {
-  font-size: 14px;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
 
 /* CTA + Filter - unified card */
 .cta-filter-card {
@@ -760,34 +694,21 @@ html.light .avatar-crown-home {
 
 .segment-btn:active:not(.active) { opacity: 0.75; }
 
-/* رابط الأكواد المحفوظة */
+/* رابط الأكواد المحفوظة - مدمج */
 .saved-codes-link {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  margin: 0 var(--spacing) 20px;
-  border: 1px solid rgba(255, 215, 0, 0.25);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(255, 165, 0, 0.05));
+  gap: 10px;
+  padding: 8px var(--spacing);
+  margin: 0 0 12px;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
 }
-.saved-codes-link:active { opacity: 0.9; }
-.saved-codes-link-icon { color: #E6B800; flex-shrink: 0; }
-.saved-codes-link-text { flex: 1; min-width: 0; }
-.saved-codes-link-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  display: block;
-}
-.saved-codes-link-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  display: block;
-  margin-top: 2px;
-}
+.saved-codes-link:active { opacity: 0.8; }
+.saved-codes-link-icon { color: var(--primary); flex-shrink: 0; }
+.saved-codes-link-title { flex: 1; font-weight: 500; color: var(--text-primary); }
 .saved-codes-link-arrow { color: var(--text-muted); flex-shrink: 0; }
 
 /* Divider */

@@ -262,7 +262,8 @@ html.light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
 .gradient-bg { background: var(--primary) !important; }
 
 /* RTL: عكس اتجاه الأسهم (ChevronRight → ChevronLeft) */
-[dir="rtl"] .link-arrow {
+[dir="rtl"] .link-arrow,
+[dir="rtl"] .saved-codes-link-arrow {
   transform: scaleX(-1);
 }
 

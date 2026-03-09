@@ -25,18 +25,20 @@ window.__nexchat_router__ = router
 useThemeStore().applyTheme()
 app.mount('#app')
 
-// OneSignal: تهيئة عند وجود مستخدم مسجّل (عند فتح التطبيق)
+// OneSignal + fetch profile contact status for existing sessions
 ;(async () => {
   const userStr = localStorage.getItem('nexchat_user')
   if (!userStr) return
   try {
+    const { useAuthStore } = await import('./stores/auth')
+    const auth = useAuthStore()
+    if (auth.token && !auth.needsProfileContactRedirect) {
+      await auth.fetchProfileContactStatus()
+    }
     const user = JSON.parse(userStr)
     if (user?.id) {
       const granted = await initNotifications(user.id)
-      if (!granted) {
-        const { useAuthStore } = await import('./stores/auth')
-        useAuthStore().shouldPromptNotifications = true
-      }
+      if (!granted) auth.shouldPromptNotifications = true
     }
   } catch {}
 })()

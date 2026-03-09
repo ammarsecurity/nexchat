@@ -11,7 +11,8 @@ public record AuthResponse(
     string Gender,
     string UniqueCode,
     string? Avatar,
-    bool IsFeatured = false
+    bool IsFeatured = false,
+    bool NeedsProfileContact = false
 );
 
 public record UserProfileDto(
@@ -23,12 +24,16 @@ public record UserProfileDto(
     string? Avatar,
     DateTime CreatedAt,
     bool IsFeatured = false,
-    DateOnly? BirthDate = null
+    DateOnly? BirthDate = null,
+    string? Country = null,
+    string? PhoneNumber = null
 );
 
 public record UpdateAvatarRequest(string? Avatar);
 
 public record UpdateBirthDateRequest(string BirthDate);
+
+public record UpdateProfileContactRequest(string Country, string CountryCode, string PhoneNumber);
 
 public record DeleteAccountRequest(string Password);
 

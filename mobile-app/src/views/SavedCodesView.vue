@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight, BookmarkPlus, Trash2, PhoneCall, PhoneOff, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
@@ -22,8 +22,6 @@ let connectionTimeoutId = null
 const addCodeSubmitting = ref(false)
 const newCode = ref('')
 const newLabel = ref('')
-
-const isFeatured = computed(() => auth.user?.isFeatured ?? false)
 
 function clearConnectionTimeout() {
   if (connectionTimeoutId) {
@@ -69,8 +67,7 @@ onMounted(async () => {
     waitingForAccept.value = false
     loading.value = false
   })
-  if (isFeatured.value) await fetchSavedCodes()
-  else router.replace('/home')
+  await fetchSavedCodes()
 })
 
 onUnmounted(() => {
@@ -82,7 +79,6 @@ onUnmounted(() => {
 })
 
 async function fetchSavedCodes() {
-  if (!auth.user?.isFeatured) return
   savedCodesLoading.value = true
   try {
     const { data } = await api.get('/user/saved-codes')
@@ -170,13 +166,8 @@ function goBack() {
     </header>
 
     <div class="scroll-area">
-      <!-- نموذج إضافة كود - مرتب ومنظم -->
-      <section class="add-section glass-card">
-        <h3 class="section-title">
-          <BookmarkPlus :size="20" />
-          {{ t('home.addCode') }}
-        </h3>
-        <p class="section-desc">{{ t('savedCodes.addCodeDesc') }}</p>
+      <!-- إضافة كود - مدمج -->
+      <section class="add-section">
         <div class="add-form">
           <input
             v-model="newCode"
@@ -191,10 +182,6 @@ function goBack() {
             :placeholder="t('home.codeLabelPlaceholder')"
             maxlength="50"
           />
-          <div v-if="addCodeError" class="error-msg">
-            <AlertCircle :size="16" />
-            {{ addCodeError }}
-          </div>
           <button
             class="add-btn"
             :disabled="addCodeSubmitting || !newCode.trim()"
@@ -203,11 +190,14 @@ function goBack() {
             {{ addCodeSubmitting ? t('common.loading') : t('home.addCode') }}
           </button>
         </div>
+        <div v-if="addCodeError" class="error-msg">
+          <AlertCircle :size="14" />
+          {{ addCodeError }}
+        </div>
       </section>
 
       <!-- قائمة الأكواد المحفوظة -->
       <section class="list-section">
-        <h3 class="section-title">{{ t('savedCodes.yourCodes') }}</h3>
         <div v-if="savedCodesLoading" class="loading-msg">{{ t('common.loading') }}</div>
         <div v-else-if="!savedCodes.length" class="empty-state">
           <BookmarkPlus :size="40" class="empty-icon" />
@@ -222,7 +212,7 @@ function goBack() {
           <div
             v-for="item in savedCodes"
             :key="item.code"
-            class="code-item glass-card"
+            class="code-item"
           >
             <div class="code-item-main" @click="connectBySavedCode(item.code)">
               <span class="code-value">{{ item.code }}</span>
@@ -234,14 +224,14 @@ function goBack() {
                 :aria-label="t('home.connect')"
                 @click="connectBySavedCode(item.code)"
               >
-                <PhoneCall :size="18" stroke-width="2" />
+                <PhoneCall :size="16" stroke-width="2" />
               </button>
               <button
                 class="delete-btn"
                 :aria-label="t('common.delete')"
                 @click="removeSavedCode(item.code)"
               >
-                <Trash2 :size="16" stroke-width="2" />
+                <Trash2 :size="14" stroke-width="2" />
               </button>
             </div>
           </div>
@@ -298,68 +288,60 @@ function goBack() {
 }
 
 .add-section {
-  padding: 20px;
-  margin-bottom: 24px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-}
-
-.section-title {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 8px;
-}
-
-.section-desc {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 0 0 16px;
-  line-height: 1.4;
+  margin-bottom: 16px;
 }
 
 .add-form {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-.code-input,
-.label-input {
-  width: 100%;
-  padding: 14px 16px;
+.code-input {
+  flex: 1;
+  min-width: 100px;
+  padding: 10px 12px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+  letter-spacing: 1px;
+  text-align: center;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.label-input {
+  flex: 1;
+  min-width: 80px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 14px;
   font-family: 'Cairo', sans-serif;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
 }
-.code-input { letter-spacing: 2px; text-align: center; }
 .code-input::placeholder,
 .label-input::placeholder { color: var(--text-muted); }
 
-.error-msg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--danger);
-}
-
 .add-btn {
-  padding: 14px 20px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25), rgba(255, 165, 0, 0.2));
-  border: 1px solid rgba(255, 215, 0, 0.5);
-  border-radius: 12px;
-  color: #E6B800;
-  font-size: 15px;
+  padding: 10px 16px;
+  background: var(--primary);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
@@ -367,13 +349,20 @@ function goBack() {
   transition: opacity 0.2s;
 }
 .add-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 .add-btn:active:not(:disabled) { opacity: 0.9; }
 
-.list-section { margin-bottom: 24px; }
-.list-section .section-title { margin-bottom: 12px; }
+.error-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.list-section { margin-bottom: 16px; }
 
 .loading-msg {
   font-size: 14px;
@@ -386,27 +375,28 @@ function goBack() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 24px;
+  padding: 20px 16px;
   background: var(--bg-card);
   border: 1px dashed var(--border);
-  border-radius: 16px;
+  border-radius: 12px;
   color: var(--text-muted);
   text-align: center;
 }
-.empty-icon { opacity: 0.4; margin-bottom: 12px; }
-.empty-state p { margin: 0 0 4px; font-weight: 500; }
-.empty-hint { font-size: 13px; opacity: 0.8; }
+.empty-icon { opacity: 0.4; margin-bottom: 8px; }
+.empty-state p { margin: 0 0 2px; font-weight: 500; font-size: 14px; }
+.empty-hint { font-size: 12px; opacity: 0.8; }
 
-.codes-list { display: flex; flex-direction: column; gap: 10px; }
+.codes-list { display: flex; flex-direction: column; gap: 8px; }
 
 .code-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 10px;
+  background: var(--bg-card);
 }
 
 .code-item-main {
@@ -418,7 +408,7 @@ function goBack() {
 .code-item-main:active { opacity: 0.9; }
 
 .code-value {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 1px;
   color: var(--primary);
@@ -426,10 +416,10 @@ function goBack() {
 }
 
 .code-label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
   display: block;
-  margin-top: 2px;
+  margin-top: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -443,12 +433,12 @@ function goBack() {
 
 .connect-btn,
 .delete-btn {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }

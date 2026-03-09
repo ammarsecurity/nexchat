@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
 import { useLocaleStore } from './stores/locale'
 import { Capacitor } from '@capacitor/core'
@@ -23,10 +23,16 @@ async function runUpdateCheck() {
   if (!isOnline.value) return
   const { required, downloadUrl } = await checkUpdateRequired()
   if (required && downloadUrl) {
-    showUpdateModal.value = true
     updateDownloadUrl.value = downloadUrl
+    showUpdateModal.value = true
   }
 }
+
+const showUpdateOnCurrentPage = computed(() => {
+  const path = route.path
+  if (path.startsWith('/chat/') || path.startsWith('/video/')) return false
+  return showUpdateModal.value
+})
 const localeStore = useLocaleStore()
 
 function applyHtmlLocale() {
@@ -137,7 +143,7 @@ onUnmounted(() => {
       </Transition>
     </RouterView>
     <IncomingConnectionRequestDialog v-if="auth.token" />
-    <UpdateRequiredModal v-if="showUpdateModal" :download-url="updateDownloadUrl" />
+    <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
   </div>
 </template>
 

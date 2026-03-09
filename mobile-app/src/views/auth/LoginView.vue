@@ -25,7 +25,8 @@ async function handleLogin() {
   error.value = ''
   try {
     await auth.login(name.value.trim(), password.value)
-    router.replace('/home')
+    if (auth.needsProfileContact) router.replace('/complete-profile')
+    else router.replace('/home')
   } catch (e) {
     error.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {

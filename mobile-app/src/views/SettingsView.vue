@@ -222,6 +222,12 @@ const birthDateStr = computed(() => {
   const m = String(birthMonth.value).padStart(2, '0')
   return `${birthYear.value}-${m}-${d}`
 })
+const profileCountryPhone = computed(() => {
+  const p = profileData.value?.phoneNumber
+  if (!p) return ''
+  return `+${p}`
+})
+
 const formattedBirthDate = computed(() => {
   const b = profileData.value?.birthDate
   if (!b) return null
@@ -343,6 +349,17 @@ onMounted(() => {
         </button>
       </div>
 
+      <!-- البلد ورقم الهاتف -->
+      <RouterLink to="/complete-profile" class="profile-code-card glass-card birth-date-card link-card">
+        <div class="profile-code-icon-wrap">
+          <Globe :size="22" />
+        </div>
+        <div class="profile-code-text">
+          <span class="profile-code-title">{{ t('completeProfile.country') }} & {{ t('completeProfile.phone') }}</span>
+          <span class="profile-code-value">{{ profileCountryPhone || t('completeProfile.selectCountry') }}</span>
+        </div>
+        <ChevronRight :size="20" class="link-arrow" />
+      </RouterLink>
       <!-- تاريخ الميلاد -->
       <div class="profile-code-card glass-card birth-date-card" @click="openBirthDateModal">
         <div class="profile-code-icon-wrap">
@@ -436,7 +453,7 @@ onMounted(() => {
           <span>{{ t('connectionHistory.title') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
-        <RouterLink v-if="user?.isFeatured" to="/saved-codes" class="link-row">
+        <RouterLink to="/saved-codes" class="link-row">
           <BookmarkPlus :size="20" class="link-icon" />
           <span>{{ t('home.savedCodes') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
@@ -821,6 +838,7 @@ html.light .avatar-crown-settings {
   transition: background 0.2s;
 }
 .profile-code-card:active { background: rgba(108, 99, 255, 0.12); }
+.link-card { text-decoration: none; color: inherit; cursor: pointer; }
 
 .profile-code-icon-wrap {
   display: flex;

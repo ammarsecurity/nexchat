@@ -6,6 +6,7 @@ const routes = [
   { path: '/onboarding', component: () => import('../views/OnboardingView.vue'), meta: { public: true } },
   { path: '/login', component: () => import('../views/auth/LoginView.vue'), meta: { public: true } },
   { path: '/register', component: () => import('../views/auth/RegisterView.vue'), meta: { public: true } },
+  { path: '/complete-profile', component: () => import('../views/auth/CompleteProfileView.vue') },
   { path: '/home', component: () => import('../views/HomeView.vue') },
   { path: '/saved-codes', component: () => import('../views/SavedCodesView.vue') },
   { path: '/connection-history', component: () => import('../views/ConnectionHistoryView.vue') },
@@ -25,6 +26,8 @@ const router = createRouter({
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.token) return '/login'
+  if (auth.token && auth.needsProfileContactRedirect && to.path !== '/complete-profile')
+    return '/complete-profile'
 })
 
 export default router

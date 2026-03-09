@@ -22,8 +22,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         {
             var activeSessions = await db.ChatSessions
                 .Where(s => (s.User1Id == userId || s.User2Id == userId) &&
-                    s.EndedAt == null &&
-                    s.Type != "support")
+                    s.EndedAt == null)
                 .Select(s => s.Id)
                 .ToListAsync();
 
@@ -52,7 +51,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             .Include(s => s.User2)
             .FirstOrDefaultAsync(s => s.Id == sid &&
                 (s.User1Id == userId || s.User2Id == userId) &&
-                (s.EndedAt == null || s.Type == "support"));
+                s.EndedAt == null);
 
         if (session == null)
         {
@@ -88,7 +87,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
 
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            (s.EndedAt == null || s.Type == "support"));
+            s.EndedAt == null);
 
         if (session == null) return;
 
@@ -138,14 +137,12 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId));
 
-        if (session != null && session.Type != "support")
+        if (session != null)
         {
             session.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-        }
-
-        if (session?.Type != "support")
             await Clients.Group(sessionId).SendAsync("SessionEnded", userId);
+        }
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId);
     }
 
@@ -156,7 +153,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         var session = await db.ChatSessions.Include(s => s.User1).Include(s => s.User2)
             .FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            (s.EndedAt == null || s.Type == "support"));
+            s.EndedAt == null);
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall");
         var recipientId = session.User1Id == userId ? session.User2Id : session.User1Id;
@@ -170,7 +167,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            (s.EndedAt == null || s.Type == "support"));
+            s.EndedAt == null);
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallAccepted");
     }
@@ -181,7 +178,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            (s.EndedAt == null || s.Type == "support"));
+            s.EndedAt == null);
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallDeclined");
     }

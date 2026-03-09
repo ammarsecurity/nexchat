@@ -112,6 +112,21 @@ export default {
     createAccount: 'إنشاء حساب',
     privacyPolicy: 'سياسة الخصوصية'
   },
+  completeProfile: {
+    title: 'أكمل بياناتك',
+    subtitle: 'أضف بلدك ورقم هاتفك للتواصل',
+    country: 'البلد',
+    selectCountry: 'اختر الدولة',
+    phone: 'رقم الهاتف',
+    phonePlaceholder: '7712345678',
+    phoneHint: 'أدخل الرقم بدون مفتاح الدولة',
+    submit: 'متابعة',
+    saving: 'جاري الحفظ...',
+    bannerTitle: 'أكمل بياناتك',
+    bannerText: 'أضف بلدك ورقم هاتفك للتواصل بشكل أفضل',
+    completeNow: 'إكمال الآن',
+    dismiss: 'لاحقاً'
+  },
   register: {
     title: 'إنشاء حساب جديد',
     subtitle: 'سريع وسهل، أنشئ حسابك في خطوات بسيطة',

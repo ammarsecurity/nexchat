@@ -112,6 +112,21 @@ export default {
     createAccount: 'Create account',
     privacyPolicy: 'Privacy policy'
   },
+  completeProfile: {
+    title: 'Complete your profile',
+    subtitle: 'Add your country and phone number',
+    country: 'Country',
+    selectCountry: 'Select country',
+    phone: 'Phone number',
+    phonePlaceholder: '7712345678',
+    phoneHint: 'Enter number without country code',
+    submit: 'Continue',
+    saving: 'Saving...',
+    bannerTitle: 'Complete your profile',
+    bannerText: 'Add your country and phone for better communication',
+    completeNow: 'Complete now',
+    dismiss: 'Later'
+  },
   register: {
     title: 'Create new account',
     subtitle: 'Quick and easy, create your account in simple steps',

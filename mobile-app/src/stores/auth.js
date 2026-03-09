@@ -9,6 +9,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(JSON.parse(localStorage.getItem('nexchat_user') || 'null'))
   const avatar = ref(localStorage.getItem('nexchat_avatar') || null)
   const shouldPromptNotifications = ref(false)
+  const needsProfileContact = ref(localStorage.getItem('nexchat_needs_profile_contact') === '1')
+  const needsProfileContactRedirect = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
   const avatarColor = computed(() => {
@@ -37,8 +39,12 @@ export const useAuthStore = defineStore('auth', () => {
       uniqueCode: data.uniqueCode,
       isFeatured: data.isFeatured ?? false
     }
+    const needs = data.needsProfileContact ?? false
+    needsProfileContact.value = needs
+    needsProfileContactRedirect.value = needs
     localStorage.setItem('nexchat_token', data.token)
     localStorage.setItem('nexchat_user', JSON.stringify(user.value))
+    localStorage.setItem('nexchat_needs_profile_contact', needs ? '1' : '0')
 
     const isNative = Capacitor.isNativePlatform() && typeof window.cordova !== 'undefined'
     if (isNative) {
@@ -67,14 +73,36 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     avatar.value = null
+    needsProfileContact.value = false
     localStorage.removeItem('nexchat_token')
     localStorage.removeItem('nexchat_user')
     localStorage.removeItem('nexchat_avatar')
+    localStorage.removeItem('nexchat_needs_profile_contact')
+  }
+
+  function setNeedsProfileContact(val) {
+    needsProfileContact.value = val
+    needsProfileContactRedirect.value = false
+    localStorage.setItem('nexchat_needs_profile_contact', val ? '1' : '0')
+  }
+
+  function clearProfileContactRedirect() {
+    needsProfileContactRedirect.value = false
+  }
+
+  async function fetchProfileContactStatus() {
+    if (!token.value) return
+    try {
+      const res = await api.get('/user/me')
+      const needs = !res.data?.country || !res.data?.phoneNumber
+      needsProfileContact.value = needs
+      localStorage.setItem('nexchat_needs_profile_contact', needs ? '1' : '0')
+    } catch {}
   }
 
   function dismissNotificationPrompt() {
     shouldPromptNotifications.value = false
   }
 
-  return { token, user, avatar, isLoggedIn, avatarColor, shouldPromptNotifications, register, login, setAvatar, logout, dismissNotificationPrompt }
+  return { token, user, avatar, isLoggedIn, avatarColor, shouldPromptNotifications, needsProfileContact, needsProfileContactRedirect, register, login, setAvatar, logout, dismissNotificationPrompt, setNeedsProfileContact, clearProfileContactRedirect, fetchProfileContactStatus }
 })

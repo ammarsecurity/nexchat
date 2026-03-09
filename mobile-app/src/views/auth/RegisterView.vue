@@ -66,7 +66,8 @@ async function handleRegister() {
   error.value = ''
   try {
     await auth.register(name.value.trim(), password.value, gender.value, birthDate.value)
-    router.replace('/home')
+    if (auth.needsProfileContact) router.replace('/complete-profile')
+    else router.replace('/home')
   } catch (e) {
     error.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {

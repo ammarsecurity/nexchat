@@ -7,7 +7,7 @@ namespace NexChat.API.Services;
 
 /// <summary>
 /// يغلق الجلسات غير النشطة تلقائياً إذا مرت أكثر من ساعة بدون رسالة.
-/// لا يغلق جلسات الدعم (support).
+/// يشمل جميع الجلسات بما فيها جلسات الدعم (support).
 /// يرسل SessionEnded للعملاء المتصلين قبل إغلاق الجلسة.
 /// </summary>
 public class InactiveSessionCleanupService(IServiceScopeFactory scopeFactory) : BackgroundService
@@ -41,9 +41,9 @@ public class InactiveSessionCleanupService(IServiceScopeFactory scopeFactory) : 
 
         var cutoff = DateTime.UtcNow - InactivityThreshold;
 
-        // جلسات مفتوحة (ليست support) حيث آخر نشاط قبل ساعة
+        // جلسات مفتوحة (بما فيها support) حيث آخر نشاط قبل ساعة
         var toClose = await db.ChatSessions
-            .Where(s => s.EndedAt == null && s.Type != "support")
+            .Where(s => s.EndedAt == null)
             .Select(s => new
             {
                 s.Id,

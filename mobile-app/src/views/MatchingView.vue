@@ -1,10 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Lightbulb, X, Globe, UserCircle, UsersRound } from 'lucide-vue-next'
+import { Search, X, Globe, UserCircle, UsersRound, Users } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
-import PrivacyBadge from '../components/PrivacyBadge.vue'
 import { useMatchingStore } from '../stores/matching'
 import { useI18n } from 'vue-i18n'
 import { matchingHub, ensureConnected } from '../services/signalr'
@@ -14,6 +13,7 @@ const matching = useMatchingStore()
 const { t } = useI18n()
 const dots = ref('.')
 const cancelling = ref(false)
+const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
 let cancelledProgrammatically = false
 
 const filterLabels = computed(() => ({ all: t('matching.filterAll'), male: t('matching.filterMale'), female: t('matching.filterFemale') }))
@@ -25,16 +25,20 @@ const filterStyles = {
 }
 
 let dotsInterval
+let onlineInterval
 
 onMounted(() => {
   dotsInterval = setInterval(() => {
     dots.value = dots.value.length >= 3 ? '.' : dots.value + '.'
   }, 500)
-
+  onlineInterval = setInterval(() => {
+    onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
+  }, 5000)
 })
 
 onUnmounted(() => {
   clearInterval(dotsInterval)
+  clearInterval(onlineInterval)
   if (!cancelledProgrammatically) {
     ensureConnected(matchingHub).then(() => matchingHub.invoke('CancelSearching')).catch(() => {})
   }
@@ -76,53 +80,34 @@ async function cancel() {
           <div class="search-ring s-ring-3"></div>
           <div class="search-ring s-ring-4"></div>
           <div class="search-center">
-            <Search :size="32" class="search-icon" />
+            <Search :size="40" class="search-icon" />
           </div>
         </div>
         <div class="search-text">
           <h2 class="search-heading">{{ t('matching.searching') }}{{ dots }}</h2>
           <p class="search-sub">{{ t('matching.searchingFor') }}</p>
-        </div>
-      </section>
-
-      <!-- Privacy badge -->
-      <section class="privacy-section">
-        <PrivacyBadge />
-      </section>
-
-      <!-- Filter info -->
-      <section class="filter-section">
-        <div class="filter-chip" :style="{ '--filter-color': filterStyles[matching.genderFilter].color, '--filter-bg': filterStyles[matching.genderFilter].bg }">
-          <span class="filter-icon">
-            <component :is="filterIcons[matching.genderFilter]" :size="20" stroke-width="2" />
-          </span>
-          <span class="filter-label">{{ t('matching.currentFilter') }}</span>
-          <span class="filter-val">{{ filterLabels[matching.genderFilter] }}</span>
-        </div>
-      </section>
-
-      <!-- Tips -->
-      <section class="tips-section">
-        <div class="tips-card">
-          <div class="tips-header">
-            <Lightbulb :size="18" class="tips-icon" />
-            <span class="tips-title">{{ t('matching.tipsTitle') }}</span>
+          <div class="badges-row">
+            <div class="online-badge">
+              <Users :size="14" stroke-width="2" />
+              <span class="online-count">{{ onlineCount }}</span>
+              <span class="online-label">{{ t('home.onlineNow') }}</span>
+            </div>
+            <div class="filter-badge" :style="{ '--filter-color': filterStyles[matching.genderFilter].color }">
+              <component :is="filterIcons[matching.genderFilter]" :size="14" stroke-width="2" />
+              <span class="filter-val">{{ filterLabels[matching.genderFilter] }}</span>
+            </div>
           </div>
-          <ul class="tips-list">
-            <li>{{ t('matching.tip1') }}</li>
-            <li>{{ t('matching.tip2') }}</li>
-            <li>{{ t('matching.tip3') }}</li>
-          </ul>
         </div>
       </section>
+
+      <!-- Banner Slider -->
+      <BannerStrip placement="matching" />
 
       <!-- Cancel CTA -->
       <button class="cancel-btn" :disabled="cancelling" @click="cancel">
         <X :size="18" stroke-width="2" />
         <span>{{ t('matching.cancelSearch') }}</span>
       </button>
-
-      <BannerStrip placement="matching" />
     </div>
   </div>
 </template>
@@ -142,19 +127,19 @@ async function cancel() {
 .chat-pattern {
   position: absolute;
   inset: 0;
-  opacity: 0.04;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cpath fill='none' stroke='%236C63FF' stroke-width='0.5' d='M10 22c0-2 1.6-4 4-4h20c2.4 0 4 2 4 4v14c0 2-1.6 4-4 4H16l-4 4v-4c-2.4 0-4-2-4-4V22z'/%3E%3Cpath fill='none' stroke='%236C63FF' stroke-width='0.5' d='M38 12c0-1.2 1-2.5 2.5-2.5h10c1.5 0 2.5 1.3 2.5 2.5v8c0 1.2-1 2.5-2.5 2.5H42l-2 2v-2c-1.5 0-2.5-1.3-2.5-2.5V12z'/%3E%3C/svg%3E");
-  background-size: 60px 60px;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%236C63FF' stroke-width='0.35'%3E%3Cpath d='M8 8h16v16H8z'/%3E%3Cpath d='M40 8h16v16H40z'/%3E%3Cpath d='M8 40h16v16H8z'/%3E%3Cpath d='M40 40h16v16H40z'/%3E%3Cpath d='M24 24h16v16H24z'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='2' fill='%236C63FF' opacity='0.4'/%3E%3Ccircle cx='48' cy='16' r='2' fill='%23FF6584' opacity='0.35'/%3E%3Ccircle cx='16' cy='48' r='2' fill='%23FF6584' opacity='0.35'/%3E%3Ccircle cx='48' cy='48' r='2' fill='%236C63FF' opacity='0.4'/%3E%3Ccircle cx='32' cy='32' r='2' fill='%236C63FF' opacity='0.5'/%3E%3Cline x1='16' y1='16' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3Cline x1='48' y1='16' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3Cline x1='16' y1='48' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3Cline x1='48' y1='48' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3C/svg%3E");
+  background-size: 64px 64px;
   background-repeat: repeat;
   background-position: 0 0;
-  animation: pattern-drift 25s linear infinite;
+  animation: pattern-drift 28s linear infinite;
   pointer-events: none;
   z-index: 0;
 }
 
 @keyframes pattern-drift {
   0% { background-position: 0 0; }
-  100% { background-position: 60px 60px; }
+  100% { background-position: 64px 64px; }
 }
 
 /* Header */
@@ -217,8 +202,8 @@ async function cancel() {
 
 .search-visual {
   position: relative;
-  width: 200px;
-  height: 200px;
+  width: 270px;
+  height: 270px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -230,10 +215,10 @@ async function cancel() {
   position: absolute;
   animation: radar 3s ease-out infinite;
 }
-.s-ring-1 { width: 72px; height: 72px; border-color: rgba(108,99,255,0.5); animation-delay: 0s; }
-.s-ring-2 { width: 110px; height: 110px; border-color: rgba(108,99,255,0.35); animation-delay: 0.6s; }
-.s-ring-3 { width: 148px; height: 148px; border-color: rgba(108,99,255,0.2); animation-delay: 1.2s; }
-.s-ring-4 { width: 186px; height: 186px; border-color: rgba(108,99,255,0.08); animation-delay: 1.8s; }
+.s-ring-1 { width: 96px; height: 96px; border-color: rgba(108,99,255,0.5); animation-delay: 0s; }
+.s-ring-2 { width: 148px; height: 148px; border-color: rgba(108,99,255,0.35); animation-delay: 0.6s; }
+.s-ring-3 { width: 200px; height: 200px; border-color: rgba(108,99,255,0.2); animation-delay: 1.2s; }
+.s-ring-4 { width: 252px; height: 252px; border-color: rgba(108,99,255,0.08); animation-delay: 1.8s; }
 
 @keyframes radar {
   0% { opacity: 1; transform: scale(0.85); }
@@ -244,8 +229,8 @@ async function cancel() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
   background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
   color: white;
@@ -267,112 +252,49 @@ async function cancel() {
   color: var(--text-secondary);
 }
 
-/* Privacy section */
-.privacy-section {
-  width: 100%;
-  max-width: 340px;
+.badges-row {
   display: flex;
-  justify-content: center;
-}
-
-/* Filter section */
-.filter-section {
-  width: 100%;
-  max-width: 340px;
-}
-
-.filter-chip {
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  width: 100%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  gap: 8px;
+  margin-top: 12px;
 }
 
-.filter-icon {
-  display: flex;
+.online-badge {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--filter-bg, rgba(108, 99, 255, 0.15));
-  color: var(--filter-color, var(--primary));
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(108, 99, 255, 0.1);
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  border-radius: 20px;
+  font-size: 13px;
 }
 
-.filter-label {
-  font-size: 14px;
+.online-badge .online-count {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.online-badge .online-label {
   color: var(--text-secondary);
   font-weight: 500;
 }
 
-.filter-val {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--filter-color, var(--primary));
-  margin-inline-start: auto;
-}
-
-/* Tips section */
-.tips-section {
-  width: 100%;
-  max-width: 340px;
-}
-
-.tips-card {
-  padding: 18px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.tips-header {
-  display: flex;
+.filter-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(108, 99, 255, 0.1);
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--filter-color, var(--primary));
 }
 
-.tips-icon {
-  color: var(--primary);
-  flex-shrink: 0;
-}
-
-.tips-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.tips-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.tips-list li {
-  font-size: 14px;
-  color: var(--text-secondary);
-  padding-inline-start: 16px;
-  position: relative;
-}
-.tips-list li::before {
-  content: '';
-  position: absolute;
-  inset-inline-start: 0;
-  top: 0.5em;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--primary);
+.filter-badge .filter-val {
+  font-weight: 700;
 }
 
 /* Cancel button */
