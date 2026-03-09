@@ -20,9 +20,11 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
     {
         if (TryGetUserId(out var userId))
         {
+            // جلسات الدعم لا تُغلق عند انقطاع الاتصال - يبقى المستخدم قادراً على متابعة المحادثة
             var activeSessions = await db.ChatSessions
                 .Where(s => (s.User1Id == userId || s.User2Id == userId) &&
-                    s.EndedAt == null)
+                    s.EndedAt == null &&
+                    s.Type != "support")
                 .Select(s => s.Id)
                 .ToListAsync();
 
@@ -46,12 +48,13 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             await Clients.Caller.SendAsync("Error", "Invalid request");
             return;
         }
+        // جلسات الدعم: يُسمح بالانضمام حتى لو كانت منتهية (للمتابعة)
         var session = await db.ChatSessions
             .Include(s => s.User1)
             .Include(s => s.User2)
             .FirstOrDefaultAsync(s => s.Id == sid &&
                 (s.User1Id == userId || s.User2Id == userId) &&
-                s.EndedAt == null);
+                (s.EndedAt == null || s.Type == "support"));
 
         if (session == null)
         {
@@ -85,11 +88,16 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
             return;
 
+        // جلسات الدعم: يُسمح بالإرسال حتى لو كانت منتهية (للمتابعة)
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            s.EndedAt == null);
+            (s.EndedAt == null || s.Type == "support"));
 
         if (session == null) return;
+
+        // إعادة فتح الجلسة إذا كانت منتهية (دعم)
+        if (session.EndedAt != null && session.Type == "support")
+            session.EndedAt = null;
 
         var message = new Message
         {
@@ -137,7 +145,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId));
 
-        if (session != null)
+        if (session != null && session.Type != "support")
         {
             session.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
@@ -153,7 +161,8 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         var session = await db.ChatSessions.Include(s => s.User1).Include(s => s.User2)
             .FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            s.EndedAt == null);
+            s.EndedAt == null &&
+            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall");
         var recipientId = session.User1Id == userId ? session.User2Id : session.User1Id;
@@ -167,7 +176,8 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            s.EndedAt == null);
+            s.EndedAt == null &&
+            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallAccepted");
     }
@@ -178,7 +188,8 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
-            s.EndedAt == null);
+            s.EndedAt == null &&
+            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
         if (session == null) return;
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallDeclined");
     }

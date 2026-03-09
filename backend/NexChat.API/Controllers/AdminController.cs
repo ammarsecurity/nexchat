@@ -369,6 +369,11 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
         if (session == null)
             return NotFound(new { message = "الجلسة غير موجودة" });
 
+        if (session.EndedAt != null)
+        {
+            session.EndedAt = null;
+        }
+
         var message = new Message
         {
             SessionId = dto.SessionId,

@@ -35,7 +35,8 @@ public class LiveKitController : ControllerBase
 
         var session = await _db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sessionId && (s.User1Id == userId || s.User2Id == userId) &&
-            s.EndedAt == null);
+            s.EndedAt == null &&
+            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
 
         if (session == null)
             return StatusCode(403, new { message = "لا يمكن الانضمام لمكالمة الفيديو. تأكد أن الجلسة نشطة ولم تنتهِ." });

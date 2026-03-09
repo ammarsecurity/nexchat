@@ -179,7 +179,7 @@ onMounted(async () => {
   })
 
   chatHub.on('IncomingVideoCall', () => {
-    incomingCall.value = true
+    if (!isSupportChat.value) incomingCall.value = true
   })
 
   chatHub.on('VideoCallAccepted', () => {

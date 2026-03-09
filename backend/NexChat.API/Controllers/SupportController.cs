@@ -31,6 +31,13 @@ public class SupportController(AppDbContext db) : ControllerBase
                 s.User1Id == supportUser.Id &&
                 s.User2Id == userId);
 
+        // إعادة فتح الجلسة إذا كانت منتهية (للمتابعة)
+        if (session != null && session.EndedAt != null)
+        {
+            session.EndedAt = null;
+            await db.SaveChangesAsync();
+        }
+
         if (session == null)
         {
             session = new NexChat.Core.Entities.ChatSession
