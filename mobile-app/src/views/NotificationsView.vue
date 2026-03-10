@@ -3,19 +3,22 @@ import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight, Bell, Trash2 } from 'lucide-vue-next'
 import { useNotificationsStore } from '../stores/notifications'
+import { useLocaleStore } from '../stores/locale'
 
 const router = useRouter()
 const notifications = useNotificationsStore()
+const localeStore = useLocaleStore()
 
 function formatTime(timestamp) {
   if (!timestamp) return ''
   const d = new Date(timestamp)
   const now = new Date()
   const diff = now - d
+  const locale = localeStore.locale
   if (diff < 60000) return 'الآن'
   if (diff < 3600000) return `منذ ${Math.floor(diff / 60000)} د`
   if (diff < 86400000) return `منذ ${Math.floor(diff / 3600000)} س`
-  return d.toLocaleDateString('ar-SA')
+  return d.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US') + ' ' + d.toLocaleTimeString(locale === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
 function getTypeLabel(type) {

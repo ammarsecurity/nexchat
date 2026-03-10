@@ -8,12 +8,15 @@ import { useMatchingStore } from '../stores/matching'
 import { chatHub, startHub, ensureConnected } from '../services/signalr'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { formatTime12 } from '../utils/formatTime'
+import { useLocaleStore } from '../stores/locale'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const chat = useChatStore()
 const matching = useMatchingStore()
+const localeStore = useLocaleStore()
 
 const sessionId = route.params.sessionId
 const messageText = ref('')
@@ -609,7 +612,7 @@ async function shareCodeInChat() {
         <div v-else class="bubble">{{ msg.content }}</div>
         <div v-if="msg.type !== 'system'" class="msg-meta">
           <span class="msg-time text-muted">
-            {{ new Date(msg.sentAt).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }) }}
+            {{ formatTime12(msg.sentAt, localeStore.locale) }}
           </span>
           <span v-if="msg.senderId === currentUserId" class="msg-status">
             <Clock v-if="msg.status === 'pending'" :size="14" class="status-pending" />

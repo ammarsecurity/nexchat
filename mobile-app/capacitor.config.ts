@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true
   },
+  ios: {
+    contentInset: 'automatic'
+  },
   plugins: {
     App: {
       disableBackButtonHandler: false,

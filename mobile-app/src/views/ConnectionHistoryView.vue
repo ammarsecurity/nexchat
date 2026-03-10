@@ -5,9 +5,11 @@ import { ChevronRight, Send, Inbox, Clock, Hash } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { useLocaleStore } from '../stores/locale'
 
 const router = useRouter()
 const { t } = useI18n()
+const localeStore = useLocaleStore()
 
 const activeTab = ref('sent')
 const loading = ref(false)
@@ -40,10 +42,11 @@ function formatTime(ts) {
   const d = new Date(ts)
   const now = new Date()
   const diff = now - d
+  const locale = localeStore.locale
   if (diff < 60000) return t('connectionHistory.now')
   if (diff < 3600000) return t('connectionHistory.minutesAgo', { n: Math.floor(diff / 60000) })
   if (diff < 86400000) return t('connectionHistory.hoursAgo', { n: Math.floor(diff / 3600000) })
-  return d.toLocaleDateString('ar-SA')
+  return d.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US') + ' ' + d.toLocaleTimeString(locale === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
 function getStatusLabel(status) {
