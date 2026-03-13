@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "assets": "node scripts/sync-icon.js && capacitor-assets generate --iconBackgroundColor #6C63FF --iconBackgroundColorDark #0D0D1A --splashBackgroundColor #6C63FF --splashBackgroundColorDark #0D0D1A && node scripts/copy-icons.js",
+    "assets": "node scripts/sync-icon.js && capacitor-assets generate --iconBackgroundColor '#6C63FF' --iconBackgroundColorDark '#0D0D1A' --splashBackgroundColor '#6C63FF' --splashBackgroundColorDark '#0D0D1A' && node scripts/copy-icons.js",
     "android": "npm run build && npx cap sync android && npx cap open android",
     "ios": "npm run build && npx cap sync ios && node scripts/setup-ios-onesignal.js && npx cap open ios",
     "sync:android": "npx cap sync android",

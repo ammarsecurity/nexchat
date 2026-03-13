@@ -8,7 +8,8 @@ const config: CapacitorConfig = {
     allowMixedContent: true
   },
   ios: {
-    contentInset: 'automatic',
+    /* scrollable = لا يضيف الـ WebView مسافة آمنة تلقائياً، نتحكم بها عبر CSS فقط (نتجنب فراغ مزدوج من الأعلى) */
+    contentInset: 'scrollable',
     backgroundColor: '#0D0D1A'
   },
   plugins: {
