@@ -249,7 +249,7 @@ export default {
   },
   conversationChat: {
     empty: 'ابدأ المحادثة بأول رسالة! 👋',
-    messagePlaceholder: 'اكتب رسالة...',
+    messagePlaceholder: 'رسالة',
     deleteForMe: 'حذف عندي',
     deleteForEveryone: 'حذف للجميع',
     deleteConversation: 'حذف المحادثة',
@@ -262,6 +262,8 @@ export default {
     sendInChat: 'إرسال',
     copy: 'نسخ',
     copied: 'تم النسخ!',
+    attachOrVoice: 'مرفقات أو رسالة صوتية',
+    attachImage: 'إرفاق صورة',
     voiceMessage: 'رسالة صوتية',
     voiceNotSupported: 'التسجيل الصوتي غير مدعوم في هذا المتصفح',
     voicePermissionDenied: 'يجب السماح بالوصول للميكروفون',

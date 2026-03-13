@@ -40,6 +40,7 @@ const showMessageMenu = ref(null)
 const showDeleteConvConfirm = ref(false)
 const showShareModal = ref(false)
 const shareCodeCopied = ref(false)
+const showInputActionsMenu = ref(false)
 const playingAudioId = ref(null)
 const audioProgress = ref({})
 const audioDurations = ref({})
@@ -682,6 +683,7 @@ async function leaveChat() {
     </header>
 
     <div class="messages-area" ref="messagesEl">
+      <div v-if="showMessageMenu" class="msg-actions-backdrop" @click="showMessageMenu = null" />
       <div v-if="!messages.length" class="empty-chat text-muted text-sm">{{ t('conversationChat.empty') }}</div>
 
       <div
@@ -752,16 +754,18 @@ async function leaveChat() {
           </button>
         </div>
 
-        <div v-if="showMessageMenu === (msg.id || msg.Id)" class="msg-actions">
-          <button class="msg-action-btn msg-action-me" @click="deleteForMe(msg)">
-            <Trash2 :size="14" />
-            <span>{{ t('conversationChat.deleteForMe') }}</span>
-          </button>
-          <button v-if="msg.senderId === currentUserId" class="msg-action-btn msg-action-everyone" @click="deleteForEveryone(msg)">
-            <UserX :size="14" />
-            <span>{{ t('conversationChat.deleteForEveryone') }}</span>
-          </button>
-        </div>
+        <Transition name="fade">
+          <div v-if="showMessageMenu === (msg.id || msg.Id)" class="msg-actions-popup glass-card">
+            <button class="msg-action-btn msg-action-me" @click="deleteForMe(msg)">
+              <Trash2 :size="14" stroke-width="2" class="msg-action-icon" />
+              <span class="msg-action-label">{{ t('conversationChat.deleteForMe') }}</span>
+            </button>
+            <button v-if="msg.senderId === currentUserId" class="msg-action-btn msg-action-everyone" @click="deleteForEveryone(msg)">
+              <UserX :size="14" stroke-width="2" class="msg-action-icon" />
+              <span class="msg-action-label">{{ t('conversationChat.deleteForEveryone') }}</span>
+            </button>
+          </div>
+        </Transition>
       </div>
 
       <div v-if="convStore.partnerTyping" class="message-wrap theirs">
@@ -772,7 +776,7 @@ async function leaveChat() {
     </div>
 
     <div class="input-area">
-      <button class="share-code-bar" @click="openShareModal">
+      <button v-if="!isRecording && !uploadingVoice" class="share-code-bar" @click="openShareModal">
         <Share2 :size="18" stroke-width="2" />
         <span>{{ t('conversationChat.shareYourCode') }}</span>
       </button>
@@ -805,19 +809,30 @@ async function leaveChat() {
         <span>{{ t('conversationChat.uploadingVoice') }}</span>
       </div>
 
-      <div class="message-input-row" :class="{ hidden: isRecording }">
-        <button
-          class="input-action-btn"
-          :class="{ recording: isRecording }"
-          @click="toggleVoiceRecording"
-          :disabled="uploadingVoice || uploadingImage"
-          :title="t('conversationChat.voiceMessage')"
-        >
-          <Mic :size="20" />
-        </button>
-        <button class="input-action-btn" @click="imageInput?.click()" :disabled="uploadingImage || uploadingVoice">
-          <Image :size="20" />
-        </button>
+      <div v-if="!isRecording" class="message-input-row">
+        <div class="input-actions-wrap">
+          <button
+            class="input-action-btn"
+            @click="showInputActionsMenu = !showInputActionsMenu"
+            :disabled="uploadingVoice || uploadingImage"
+            :title="t('conversationChat.attachOrVoice')"
+          >
+            <MoreVertical :size="20" />
+          </button>
+          <div v-if="showInputActionsMenu" class="input-actions-backdrop" @click="showInputActionsMenu = false" />
+          <Transition name="fade">
+            <div v-if="showInputActionsMenu" class="input-actions-menu glass-card" @click.stop>
+              <button class="input-action-menu-item" @click="showInputActionsMenu = false; imageInput?.click()">
+                <Image :size="18" />
+                <span>{{ t('conversationChat.attachImage') }}</span>
+              </button>
+              <button class="input-action-menu-item" @click="showInputActionsMenu = false; toggleVoiceRecording()">
+                <Mic :size="18" />
+                <span>{{ t('conversationChat.voiceMessage') }}</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
         <input ref="imageInput" type="file" accept="image/*" style="display:none" @change="handleImageUpload" />
         <textarea
           ref="msgInputRef"
@@ -1069,33 +1084,61 @@ async function leaveChat() {
   cursor: pointer;
 }
 
-.msg-actions {
+.msg-actions-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.msg-actions-popup {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 0 0;
-  border-top: 1px solid var(--border);
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  z-index: 50;
+  direction: rtl;
 }
 
 .msg-action-btn {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  width: 100%;
   font-size: 13px;
   font-weight: 500;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
   cursor: pointer;
   font-family: 'Cairo', sans-serif;
-  border: 1px solid transparent;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.15s;
   -webkit-tap-highlight-color: transparent;
+  text-align: right;
+}
+.msg-action-btn + .msg-action-btn {
+  border-top: 1px solid var(--border);
+}
+.msg-action-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg-action-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  opacity: 0.9;
 }
 
 .msg-action-me {
-  background: var(--bg-elevated);
-  border-color: var(--border);
+  background: transparent;
   color: var(--text-secondary);
 }
 .msg-action-me:hover,
@@ -1105,14 +1148,13 @@ async function leaveChat() {
 }
 
 .msg-action-everyone {
-  background: rgba(255, 101, 132, 0.12);
-  border-color: rgba(255, 101, 132, 0.3);
+  background: transparent;
   color: var(--danger);
 }
 .msg-action-everyone:hover,
 .msg-action-everyone:active {
-  background: rgba(255, 101, 132, 0.2);
-  border-color: rgba(255, 101, 132, 0.5);
+  background: rgba(255, 101, 132, 0.15);
+  color: var(--danger);
 }
 
 .input-area {
@@ -1121,6 +1163,7 @@ async function leaveChat() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .share-code-bar {
@@ -1147,23 +1190,32 @@ async function leaveChat() {
   display: flex;
   gap: 10px;
   align-items: center;
-  min-height: 48px;
+  min-height: 56px;
 }
-.message-input-row.hidden {
-  display: none;
-}
-
 /* شريط التسجيل الصوتي */
 .recording-bar {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 14px 18px;
+  gap: 16px;
+  padding: 12px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  min-height: 64px;
+  border-radius: 14px;
+  min-height: 56px;
+  flex-shrink: 0;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+@media (max-width: 400px) {
+  .recording-bar {
+    gap: 10px;
+    padding: 10px 12px;
+    min-height: 52px;
+  }
+  .recording-cancel-btn span,
+  .recording-send-btn span { display: none; }
+  .recording-cancel-btn,
+  .recording-send-btn { padding: 8px 12px; }
+  .recording-timer { font-size: 15px; min-width: 40px; }
 }
 .recording-indicator {
   display: flex;
@@ -1301,12 +1353,15 @@ async function leaveChat() {
   transform: translateY(12px);
 }
 
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
 .msg-input {
   flex: 1;
   min-width: 0;
-  min-height: 48px;
+  min-height: 52px;
   max-height: 120px;
-  padding: 14px 18px;
+  padding: 14px 16px;
   border-radius: 24px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1316,7 +1371,8 @@ async function leaveChat() {
   outline: none;
   resize: none;
   overflow-y: auto;
-  line-height: 1.4;
+  line-height: 1.5;
+  box-sizing: border-box;
 }
 .msg-input::placeholder { color: var(--text-muted); }
 .msg-input:focus { border-color: var(--primary); }
@@ -1339,6 +1395,10 @@ async function leaveChat() {
 .send-btn:not(:disabled):active { transform: scale(0.95); opacity: 0.95; }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.input-actions-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
 .input-action-btn {
   width: 48px;
   height: 48px;
@@ -1354,6 +1414,43 @@ async function leaveChat() {
   -webkit-tap-highlight-color: transparent;
 }
 .input-action-btn:active { background: var(--bg-card-hover); }
+
+.input-actions-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.input-actions-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  padding: 6px;
+  z-index: 101;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.input-action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  border-radius: 8px;
+  text-align: right;
+  -webkit-tap-highlight-color: transparent;
+}
+.input-action-menu-item:hover,
+.input-action-menu-item:active {
+  background: var(--bg-card-hover);
+}
 
 .image-bubble { padding: 4px !important; overflow: hidden; }
 
