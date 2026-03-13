@@ -1424,16 +1424,23 @@ async function leaveChat() {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
+  right: auto;
   min-width: 180px;
   padding: 6px;
   z-index: 101;
   border-radius: 12px;
   border: 1px solid var(--border);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  direction: rtl;
+}
+[dir="rtl"] .input-actions-menu {
+  left: auto;
+  right: 0;
 }
 .input-action-menu-item {
   display: flex;
   align-items: center;
+  flex-direction: row;
   gap: 12px;
   width: 100%;
   padding: 12px 14px;
@@ -1446,6 +1453,11 @@ async function leaveChat() {
   border-radius: 8px;
   text-align: right;
   -webkit-tap-highlight-color: transparent;
+}
+.input-action-menu-item svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 .input-action-menu-item:hover,
 .input-action-menu-item:active {
