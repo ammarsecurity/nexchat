@@ -45,13 +45,13 @@ export async function checkUpdateRequired() {
  */
 export async function fetchUpdateInfo() {
   try {
-    let currentVersion = '1.0.2'
+    let currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.3'
     const { Capacitor } = await import('@capacitor/core')
     const { App } = await import('@capacitor/app')
 
     if (Capacitor.isNativePlatform() && App?.getInfo) {
       const info = await App.getInfo()
-      currentVersion = info.version || info.appVersion || '1.0.2'
+      currentVersion = info.version || info.appVersion || currentVersion
     }
 
     const res = await fetch(`${API_BASE}/api/SiteContent/app_update`)
@@ -64,7 +64,15 @@ export async function fetchUpdateInfo() {
     const config = JSON.parse(content)
     const minVersion = config.minVersion || config.min_version || '1.0'
     const latestVersion = config.latestVersion || config.latest_version || minVersion
-    const downloadUrl = config.downloadUrl || config.download_url || ''
+
+    // تحديد المنصة: أندرويد → رابط أندرويد فقط، آيفون → رابط آيفون فقط
+    let platform = 'web'
+    if (Capacitor.isNativePlatform()) {
+      platform = Capacitor.getPlatform() || 'web'
+    }
+    const androidUrl = (config.downloadUrl || config.download_url || '').trim()
+    const iosUrl = (config.iosDownloadUrl || config.ios_download_url || '').trim()
+    const downloadUrl = platform === 'ios' ? iosUrl : (platform === 'android' ? androidUrl : (androidUrl || iosUrl))
 
     const cmpMin = compareVersions(currentVersion, minVersion)
     const cmpLatest = compareVersions(currentVersion, latestVersion)

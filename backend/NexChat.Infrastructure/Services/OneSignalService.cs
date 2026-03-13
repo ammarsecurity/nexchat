@@ -72,6 +72,16 @@ public class OneSignalService
             new { type = "message", sessionId = sessionId.ToString() });
 
     /// <summary>
+    /// إشعار رسالة جديدة في محادثة دائمة
+    /// </summary>
+    public Task<bool> SendNewConversationMessageAsync(Guid recipientId, string senderName, string preview, Guid conversationId)
+        => SendToUserAsync(
+            recipientId,
+            senderName,
+            preview.Length > 80 ? preview[..80] + "…" : preview,
+            new { type = "conversation_message", conversationId = conversationId.ToString() });
+
+    /// <summary>
     /// إشعار مكالمة فيديو واردة
     /// </summary>
     public Task<bool> SendVideoCallAsync(Guid recipientId, string callerName, Guid sessionId)

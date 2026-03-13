@@ -7,6 +7,8 @@ import { App } from '@capacitor/app'
 import NoConnectionView from './views/NoConnectionView.vue'
 import IncomingConnectionRequestDialog from './components/IncomingConnectionRequestDialog.vue'
 import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
+import LoaderOverlay from './components/LoaderOverlay.vue'
+import { useApiLoadingStore } from './stores/apiLoading'
 import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
@@ -28,6 +30,7 @@ async function runUpdateCheck() {
   }
 }
 
+const apiLoading = useApiLoadingStore()
 const showUpdateOnCurrentPage = computed(() => {
   const path = route.path
   if (path.startsWith('/chat/') || path.startsWith('/video/')) return false
@@ -115,6 +118,10 @@ onMounted(() => {
   window.addEventListener('nexchat:unauthorized', handleUnauthorized)
 
   if (Capacitor.isNativePlatform() && typeof App?.addListener === 'function') {
+    App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) runUpdateCheck()
+    }).then(() => {})
+
     App.addListener('backButton', () => {
       const path = route.path
       const isAtTabRoot = path === '/' || tabRoots.includes(path)
@@ -144,6 +151,7 @@ onUnmounted(() => {
     </RouterView>
     <IncomingConnectionRequestDialog v-if="auth.token" />
     <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
+    <LoaderOverlay :show="apiLoading.showOverlay" />
   </div>
 </template>
 

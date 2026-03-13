@@ -30,6 +30,9 @@
   --spacing-sm: 12px;
   --spacing-lg: 20px;
   --msg-theirs-bg: rgba(255,255,255,0.08);
+  --msg-theirs-color: #FFFFFF;
+  --msg-mine-bg: linear-gradient(135deg, #7C75FF 0%, #6C63FF 50%, #5B54E8 100%);
+  --msg-mine-color: #FFFFFF;
   --system-msg-bg: rgba(255,255,255,0.05);
 }
 
@@ -44,7 +47,10 @@
   --text-secondary: #4A4A6A;
   --text-muted: #7A7A9A;
   --border: rgba(0, 0, 0, 0.08);
-  --msg-theirs-bg: rgba(0, 0, 0, 0.06);
+  --msg-theirs-bg: #E8E8F2;
+  --msg-theirs-color: #1A1A2E;
+  --msg-mine-bg: linear-gradient(135deg, #7C75FF 0%, #6C63FF 50%, #5B54E8 100%);
+  --msg-mine-color: #FFFFFF;
   --system-msg-bg: rgba(0, 0, 0, 0.04);
 }
 
@@ -75,12 +81,14 @@ html, body {
   #app { max-width: 432px; }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
-[data-theme="light"] ::-webkit-scrollbar-thumb,
-html.light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+/* Scrollbar - مخفي مع إبقاء التمرير يعمل */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
 
 /* Flat Card - use sparingly for native feel */
 .glass-card {
@@ -263,7 +271,9 @@ html.light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
 
 /* RTL: عكس اتجاه الأسهم (ChevronRight → ChevronLeft) */
 [dir="rtl"] .link-arrow,
-[dir="rtl"] .saved-codes-link-arrow {
+[dir="rtl"] .saved-codes-link-arrow,
+[dir="rtl"] .item-arrow,
+[dir="rtl"] .notif-arrow {
   transform: scaleX(-1);
 }
 

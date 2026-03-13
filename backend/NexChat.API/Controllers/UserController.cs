@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using NexChat.API.Services;
 using NexChat.Core.DTOs;
 using NexChat.Infrastructure.Data;
 using System.Security.Claims;
@@ -62,18 +63,13 @@ public class UserController(AppDbContext db) : ControllerBase
         if (country.Length != 2)
             return BadRequest(new { message = "كود الدولة يجب أن يكون حرفين (مثل IQ, SA)" });
 
-        if (string.IsNullOrEmpty(countryCode) || countryCode.Length > 4)
-            return BadRequest(new { message = "مفتاح الدولة غير صالح" });
+        if (!PhoneValidationService.TryValidate(countryCode, phone, out var fullPhone, out var phoneError))
+            return BadRequest(new { message = phoneError });
 
-        if (string.IsNullOrEmpty(phone) || phone.Length < 7 || phone.Length > 15)
-            return BadRequest(new { message = "رقم الهاتف يجب أن يكون بين 7 و 15 رقماً" });
-
-        if (!phone.All(char.IsDigit))
-            return BadRequest(new { message = "رقم الهاتف يجب أن يحتوي على أرقام فقط" });
-
-        var fullPhone = countryCode + phone;
-        if (fullPhone.Length > 20)
-            return BadRequest(new { message = "رقم الهاتف طويل جداً" });
+        var duplicatePhone = await db.Users
+            .AnyAsync(u => u.PhoneNumber == fullPhone && u.Id != CurrentUserId);
+        if (duplicatePhone)
+            return Conflict(new { message = "رقم الهاتف مستخدم من قبل حساب آخر" });
 
         await db.Users
             .Where(u => u.Id == CurrentUserId)
@@ -222,6 +218,18 @@ public class UserController(AppDbContext db) : ControllerBase
                 .ToListAsync();
             await db.Messages.Where(m => sessions.Contains(m.SessionId)).ExecuteDeleteAsync();
             await db.ChatSessions.Where(s => s.User1Id == user.Id || s.User2Id == user.Id).ExecuteDeleteAsync();
+
+            var convIds = await db.Conversations
+                .Where(c => c.User1Id == user.Id || c.User2Id == user.Id)
+                .Select(c => c.Id)
+                .ToListAsync();
+            await db.UserMessageDeletions.Where(d => d.UserId == user.Id).ExecuteDeleteAsync();
+            await db.UserConversationDeletions.Where(d => d.UserId == user.Id).ExecuteDeleteAsync();
+            await db.UserConversationStates.Where(s => s.UserId == user.Id).ExecuteDeleteAsync();
+            await db.ConversationMessages.Where(m => convIds.Contains(m.ConversationId)).ExecuteDeleteAsync();
+            await db.Conversations.Where(c => c.User1Id == user.Id || c.User2Id == user.Id).ExecuteDeleteAsync();
+            await db.Contacts.Where(c => c.UserId == user.Id || c.ContactUserId == user.Id).ExecuteDeleteAsync();
+
             await db.Reports.Where(r => r.ReporterId == user.Id || r.ReportedId == user.Id).ExecuteDeleteAsync();
             await db.CodeConnectionAttempts.Where(a => a.RequesterId == user.Id || a.TargetId == user.Id).ExecuteDeleteAsync();
             await db.SavedCodes.Where(s => s.UserId == user.Id).ExecuteDeleteAsync();

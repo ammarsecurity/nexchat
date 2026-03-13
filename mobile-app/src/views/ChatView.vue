@@ -10,6 +10,7 @@ import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { formatTime12 } from '../utils/formatTime'
 import { useLocaleStore } from '../stores/locale'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +18,7 @@ const auth = useAuthStore()
 const chat = useChatStore()
 const matching = useMatchingStore()
 const localeStore = useLocaleStore()
+const { t } = useI18n()
 
 const sessionId = route.params.sessionId
 const messageText = ref('')
@@ -35,6 +37,7 @@ const callingOut = ref(false)
 const showEmojiPicker = ref(false)
 const activeEmojiTab = ref(0)
 const imageInput = ref(null)
+const msgInputRef = ref(null)
 const uploadingImage = ref(false)
 const loading = ref(false)
 const imageModalUrl = ref(null)
@@ -124,6 +127,29 @@ function formatTime(sec) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0')
   const s = (sec % 60).toString().padStart(2, '0')
   return `${m}:${s}`
+}
+
+function linkifyText(text) {
+  if (!text || typeof text !== 'string') return ''
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+  const urlRegex = /(https?:\/\/[^\s<>]+)|(www\.[^\s<>]+)/gi
+  return escaped.replace(urlRegex, (match) => {
+    const href = match.startsWith('http') ? match : `https://${match}`
+    return `<a href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer" class="msg-link">${match}</a>`
+  })
+}
+
+function handleMessageLinkClick(e) {
+  const a = e.target.closest('a.msg-link')
+  if (a) {
+    e.preventDefault()
+    e.stopPropagation()
+    window.open(a.href, '_blank')
+  }
 }
 
 async function onVisibilityChange() {
@@ -251,7 +277,17 @@ function scrollToBottom() {
 }
 
 let typingTimeout
+const MSG_INPUT_MIN_HEIGHT = 48
+const MSG_INPUT_MAX_HEIGHT = 120
+function resizeMsgInput() {
+  const el = msgInputRef.value
+  if (!el) return
+  el.style.height = '0'
+  const h = Math.max(MSG_INPUT_MIN_HEIGHT, Math.min(el.scrollHeight, MSG_INPUT_MAX_HEIGHT))
+  el.style.height = h + 'px'
+}
 async function handleInput() {
+  resizeMsgInput()
   try {
     await ensureConnected(chatHub)
     if (!typingTimeout) await chatHub.invoke('StartTyping', sessionId)
@@ -270,6 +306,7 @@ async function sendMessage() {
   const text = messageText.value.trim()
   if (!text || sessionEnded.value) return
   messageText.value = ''
+  nextTick(resizeMsgInput)
   if (typingTimeout) {
     clearTimeout(typingTimeout)
     typingTimeout = null
@@ -538,20 +575,19 @@ async function shareCodeInChat() {
     <Transition name="modal">
       <div v-if="showShareModal" class="share-overlay" @click.self="closeShareModal">
         <div class="share-modal glass-card">
-          <div class="share-modal-icon">
-            <Share2 :size="32" stroke-width="2" />
+          <div class="share-modal-header">
+            <Share2 :size="20" stroke-width="2" class="share-modal-icon" />
+            <h3 class="share-modal-title">مشاركة كود الاتصال</h3>
           </div>
-          <h3 class="share-modal-title">مشاركة كود الاتصال</h3>
-          <p class="share-modal-desc">شارك كودك مع {{ partner?.name }} أو أي شخص للاتصال بك</p>
           <div class="share-code-display">{{ auth.user?.uniqueCode }}</div>
           <div class="share-modal-actions">
             <button class="share-btn primary-btn" @click="shareCodeInChat">
-              <Send :size="20" stroke-width="2" />
-              <span>إرسال في الدردشة</span>
+              <Send :size="18" stroke-width="2" />
+              <span>{{ t('conversationChat.sendInChat') }}</span>
             </button>
             <button class="share-btn copy-btn" @click="copyShareCode">
-              <Copy v-if="!shareCodeCopied" :size="20" stroke-width="2" />
-              <Check v-else :size="20" stroke-width="2" />
+              <Copy v-if="!shareCodeCopied" :size="18" stroke-width="2" />
+              <Check v-else :size="18" stroke-width="2" />
               <span>{{ shareCodeCopied ? 'تم النسخ!' : 'نسخ' }}</span>
             </button>
           </div>
@@ -609,7 +645,9 @@ async function shareCodeInChat() {
         <div v-else-if="msg.type === 'image'" class="bubble image-bubble">
           <img :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
         </div>
-        <div v-else class="bubble">{{ msg.content }}</div>
+        <div v-else class="bubble">
+          <span class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
+        </div>
         <div v-if="msg.type !== 'system'" class="msg-meta">
           <span class="msg-time text-muted">
             {{ formatTime12(msg.sentAt, localeStore.locale) }}
@@ -681,12 +719,14 @@ async function shareCodeInChat() {
           style="display:none"
           @change="handleImageUpload"
         />
-        <input
+        <textarea
+          ref="msgInputRef"
           v-model="messageText"
           class="msg-input"
-          placeholder="اكتب رسالة..."
+          :placeholder="t('conversationChat.messagePlaceholder')"
+          rows="1"
           @input="handleInput"
-          @keyup.enter="sendMessage"
+          @keydown.enter.exact.prevent="sendMessage"
           @focus="showEmojiPicker = false"
           :disabled="sessionEnded"
           maxlength="2000"
@@ -805,6 +845,7 @@ async function shareCodeInChat() {
 
 .bubble {
   background: var(--msg-theirs-bg);
+  color: var(--msg-theirs-color);
   border-radius: 16px;
   padding: 10px 14px;
   font-size: 15px;
@@ -812,12 +853,24 @@ async function shareCodeInChat() {
   line-height: 1.5;
 }
 .mine .bubble {
-  background: var(--primary);
+  background: var(--msg-mine-bg);
+  color: var(--msg-mine-color);
   border-bottom-right-radius: 4px;
 }
 .theirs .bubble {
   border-bottom-left-radius: 4px;
 }
+
+.msg-text :deep(.msg-link) {
+  color: #64B5F6;
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+.mine .msg-text :deep(.msg-link) {
+  color: #90CAF9;
+}
+.msg-text :deep(.msg-link:active) { opacity: 0.8; }
 
 .msg-meta {
   display: flex;
@@ -911,7 +964,8 @@ async function shareCodeInChat() {
   flex: 1;
   min-width: 0;
   min-height: 48px;
-  padding: 0 18px;
+  max-height: 120px;
+  padding: 14px 18px;
   border-radius: 24px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -919,6 +973,9 @@ async function shareCodeInChat() {
   font-size: 16px;
   font-family: 'Cairo', sans-serif;
   outline: none;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.4;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -1125,7 +1182,7 @@ async function shareCodeInChat() {
   z-index: 50;
 }
 
-/* Share Code Modal */
+/* Share Code Modal - compact for mobile */
 .share-overlay {
   position: absolute;
   inset: 0;
@@ -1134,59 +1191,48 @@ async function shareCodeInChat() {
   align-items: center;
   justify-content: center;
   z-index: 150;
+  padding: 16px;
   backdrop-filter: blur(6px);
 }
 .share-modal {
-  width: 90%;
-  max-width: 340px;
-  padding: 24px;
+  width: 100%;
+  max-width: 300px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   text-align: center;
 }
-.share-modal-icon {
+.share-modal-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.2) 0%, rgba(255, 101, 132, 0.15) 100%);
+  gap: 8px;
   color: var(--primary);
 }
+.share-modal-icon { flex-shrink: 0; }
 .share-modal-title {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
   font-family: 'Cairo', sans-serif;
 }
-.share-modal-desc {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  max-width: 100%;
-}
 .share-code-display {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: var(--primary);
-  padding: 16px 24px;
+  padding: 10px 18px;
   background: rgba(108, 99, 255, 0.1);
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid rgba(108, 99, 255, 0.25);
   font-family: 'Cairo', sans-serif;
 }
 .share-modal-actions {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction: row;
+  gap: 8px;
   width: 100%;
 }
 .share-btn {
@@ -1194,16 +1240,17 @@ async function shareCodeInChat() {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 48px;
-  padding: 0 16px;
-  border-radius: 12px;
-  font-size: 15px;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 .share-btn.copy-btn {
   background: var(--bg-elevated);
@@ -1222,10 +1269,10 @@ async function shareCodeInChat() {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13px;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
-  padding: 8px 16px;
+  padding: 4px 12px;
   -webkit-tap-highlight-color: transparent;
 }
 .share-close-btn:active { opacity: 0.8; }

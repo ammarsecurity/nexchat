@@ -10,7 +10,9 @@ import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
-import { matchingHub, startHub, ensureConnected, stopHub } from '../services/signalr'
+import { useConversationsListStore } from '../stores/conversationsList'
+import { useConversationStore } from '../stores/conversation'
+import { matchingHub, conversationHub, startHub, ensureConnected, stopHub } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestPermissionAndRegister, scheduleRegistrationRetry } from '../services/notifications'
@@ -22,6 +24,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const matching = useMatchingStore()
 const chat = useChatStore()
+const listStore = useConversationsListStore()
+const convStore = useConversationStore()
 const { t } = useI18n()
 
 const codeInput = ref('')
@@ -87,7 +91,37 @@ onMounted(async () => {
     loading.value = false
   })
 
+  try {
+    await startHub(conversationHub)
+    const { data } = await api.get('/conversations', { params: { filter: 'all' } })
+    listStore.setList(data ?? [])
+    conversationHub.on('ConversationListUpdated', handleConversationListUpdated)
+  } catch {}
 })
+
+async function handleConversationListUpdated(payload) {
+  const convId = payload?.conversationId ?? payload?.ConversationId
+  if (!convId) return
+  const preview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
+  const at = payload?.lastMessageAt ?? payload?.LastMessageAt
+  const senderId = String(payload?.senderId ?? payload?.SenderId ?? '')
+  const currentId = String(auth.user?.id ?? '')
+  const isViewing = String(convStore.conversationId ?? '') === String(convId)
+  const isFromMe = senderId && currentId && senderId === currentId
+  const shouldIncrementUnread = !isFromMe && !isViewing
+  const updated = listStore.updateConversation(convId, {
+    lastMessagePreview: preview,
+    lastMessageAt: at,
+    LastMessagePreview: preview,
+    LastMessageAt: at
+  }, shouldIncrementUnread)
+  if (!updated) {
+    try {
+      const { data: res } = await api.get('/conversations', { params: { filter: 'all' } })
+      listStore.setList(res ?? [])
+    } catch {}
+  }
+}
 
 
 function clearConnectionTimeout() {
@@ -168,6 +202,7 @@ onUnmounted(() => {
   matchingHub.off('ConnectionRequestSent')
   matchingHub.off('ConnectionDeclined')
   matchingHub.off('ConnectionCancelled')
+  conversationHub.off('ConversationListUpdated', handleConversationListUpdated)
 })
 
 function openLogoutConfirm() {

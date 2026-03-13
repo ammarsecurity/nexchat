@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -9,7 +9,6 @@ import { i18n } from '../i18n'
 import { useThemeStore } from '../stores/theme'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
-import PrivacyBadge from '../components/PrivacyBadge.vue'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
@@ -52,6 +51,7 @@ const notificationsEnabled = ref(true)
 const isNative = Capacitor.isNativePlatform()
 const updateInfo = ref(null)
 const updateChecking = ref(false)
+const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.3'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -372,11 +372,6 @@ onMounted(() => {
         <ChevronRight :size="20" class="link-arrow" />
       </div>
 
-      <!-- Privacy badge -->
-      <div class="privacy-badge-wrap">
-        <PrivacyBadge />
-      </div>
-
       <!-- Support Chat - بارز -->
       <div class="support-card glass-card">
         <button class="support-row" :disabled="supportLoading" @click="openSupportChat">
@@ -453,6 +448,11 @@ onMounted(() => {
           <span>{{ t('connectionHistory.title') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
+        <RouterLink to="/blocked" class="link-row">
+          <Ban :size="20" class="link-icon" />
+          <span>{{ t('blocked.title') }}</span>
+          <ChevronRight :size="18" class="link-arrow" />
+        </RouterLink>
         <RouterLink to="/saved-codes" class="link-row">
           <BookmarkPlus :size="20" class="link-icon" />
           <span>{{ t('home.savedCodes') }}</span>
@@ -492,7 +492,7 @@ onMounted(() => {
           <div class="about-text">
             <div class="about-name">NexChat</div>
             <div class="about-tagline text-muted text-sm">{{ t('settings.tagline') }}</div>
-            <span class="ver-badge">v1.0.1</span>
+            <span class="ver-badge">v{{ appVersion }}</span>
           </div>
         </div>
       </div>
@@ -890,10 +890,6 @@ html.light .avatar-crown-settings {
 }
 .profile-code-copy-btn:active { background: rgba(108, 99, 255, 0.25); }
 .copied-text { color: var(--success); font-size: 12px; font-weight: 600; }
-
-.privacy-badge-wrap {
-  width: 100%;
-}
 
 /* Support card - بارز ومرتب */
 .support-card {

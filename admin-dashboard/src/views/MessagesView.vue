@@ -17,6 +17,12 @@ const loadingMessages = ref(false)
 const msgPage = ref(1)
 const msgPageSize = ref(50)
 
+const selectedSessionIds = ref(new Set())
+const selectedMsgIds = ref(new Set())
+const showDeleteSessionConfirm = ref(false)
+const showDeleteMsgConfirm = ref(false)
+const deleting = ref(false)
+
 async function fetchConversations() {
   loadingConvos.value = true
   try {
@@ -68,6 +74,7 @@ async function fetchMessages(sessionId) {
 function selectConversation(session) {
   selectedSession.value = session
   msgSearchQuery.value = ''
+  selectedMsgIds.value = new Set()
   fetchMessages(session.id)
 }
 
@@ -127,17 +134,118 @@ const filteredMessages = computed(() => {
   )
 })
 
+const allSessionsSelected = computed(() =>
+  conversations.value.length > 0 && conversations.value.every(c => selectedSessionIds.value.has(c.id))
+)
+const someSessionsSelected = computed(() => selectedSessionIds.value.size > 0)
+const allMsgsSelected = computed(() =>
+  filteredMessages.value.length > 0 && filteredMessages.value.every(m => selectedMsgIds.value.has(m.id))
+)
+const someMsgsSelected = computed(() => selectedMsgIds.value.size > 0)
+
+function toggleSession(s) {
+  const set = new Set(selectedSessionIds.value)
+  if (set.has(s.id)) set.delete(s.id)
+  else set.add(s.id)
+  selectedSessionIds.value = set
+}
+
+function toggleAllSessions() {
+  if (allSessionsSelected.value) selectedSessionIds.value = new Set()
+  else selectedSessionIds.value = new Set(conversations.value.map(c => c.id))
+}
+
+function toggleMsg(m) {
+  const set = new Set(selectedMsgIds.value)
+  if (set.has(m.id)) set.delete(m.id)
+  else set.add(m.id)
+  selectedMsgIds.value = set
+}
+
+function toggleAllMsgs() {
+  const list = filteredMessages.value
+  if (allMsgsSelected.value) selectedMsgIds.value = new Set()
+  else selectedMsgIds.value = new Set(list.map(m => m.id))
+}
+
+function openDeleteSessionConfirm() {
+  if (selectedSessionIds.value.size === 0) return
+  showDeleteSessionConfirm.value = true
+}
+
+async function confirmDeleteSessions() {
+  const ids = [...selectedSessionIds.value]
+  if (ids.length === 0) return
+  deleting.value = true
+  try {
+    if (ids.length === 1) {
+      await api.delete(`/admin/sessions/${ids[0]}`)
+    } else {
+      await api.delete('/admin/sessions', { data: { ids } })
+    }
+    selectedSessionIds.value = new Set()
+    showDeleteSessionConfirm.value = false
+    if (selectedSession.value && ids.includes(selectedSession.value.id)) {
+      selectedSession.value = null
+      messages.value = []
+    }
+    await fetchConversations()
+  } catch (e) {
+    alert(e.response?.data?.message || 'فشل الحذف')
+  } finally {
+    deleting.value = false
+  }
+}
+
+function openDeleteMsgConfirm() {
+  if (selectedMsgIds.value.size === 0) return
+  showDeleteMsgConfirm.value = true
+}
+
+async function confirmDeleteMsgs() {
+  const ids = [...selectedMsgIds.value]
+  const sessionId = selectedSession.value?.id
+  if (ids.length === 0 || !sessionId) return
+  deleting.value = true
+  try {
+    if (ids.length === 1) {
+      await api.delete(`/admin/sessions/${sessionId}/messages/${ids[0]}`)
+    } else {
+      await api.delete(`/admin/sessions/${sessionId}/messages`, { data: { ids } })
+    }
+    selectedMsgIds.value = new Set()
+    showDeleteMsgConfirm.value = false
+    await fetchMessages(sessionId)
+    totalMessages.value = Math.max(0, totalMessages.value - ids.length)
+  } catch (e) {
+    alert(e.response?.data?.message || 'فشل الحذف')
+  } finally {
+    deleting.value = false
+  }
+}
+
 </script>
 
 <template>
   <div class="messages-page">
     <!-- Header -->
-    <div class="d-flex align-center justify-space-between mb-4">
+    <div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-2">
       <div>
         <div class="text-h5 font-weight-bold">الرسائل</div>
         <div class="text-body-2 text-medium-emphasis">
           {{ totalConvos.toLocaleString() }} محادثة
         </div>
+      </div>
+      <div v-if="someSessionsSelected" class="d-flex align-center gap-2">
+        <v-btn
+          color="error"
+          variant="tonal"
+          size="small"
+          :loading="deleting"
+          @click="openDeleteSessionConfirm"
+        >
+          حذف {{ selectedSessionIds.size }} {{ selectedSessionIds.size === 1 ? 'جلسة' : 'جلسات' }}
+        </v-btn>
       </div>
     </div>
 
@@ -168,6 +276,20 @@ const filteredMessages = computed(() => {
         </div>
 
         <div v-else class="convo-items">
+          <div v-if="conversations.length" class="convo-select-all pa-2">
+            <v-checkbox
+              :model-value="allSessionsSelected"
+              :indeterminate="someSessionsSelected && !allSessionsSelected"
+              hide-details
+              density="compact"
+              color="primary"
+              @click.stop="toggleAllSessions"
+            >
+              <template #label>
+                <span class="text-caption">تحديد الكل</span>
+              </template>
+            </v-checkbox>
+          </div>
           <div
             v-for="c in conversations"
             :key="c.id"
@@ -175,6 +297,14 @@ const filteredMessages = computed(() => {
             :class="{ active: selectedSession?.id === c.id }"
             @click="selectConversation(c)"
           >
+            <v-checkbox
+              :model-value="selectedSessionIds.has(c.id)"
+              hide-details
+              density="compact"
+              color="primary"
+              class="convo-checkbox"
+              @click.stop="toggleSession(c)"
+            />
             <div class="convo-avatar">
               {{ c.user1Name?.[0]?.toUpperCase() }}{{ c.user2Name?.[0]?.toUpperCase() }}
             </div>
@@ -223,8 +353,33 @@ const filteredMessages = computed(() => {
                 {{ selectedSession.messageCount }} رسالة
               </span>
             </div>
+            <v-btn
+              v-if="someMsgsSelected"
+              color="error"
+              variant="tonal"
+              size="small"
+              :loading="deleting"
+              @click="openDeleteMsgConfirm"
+            >
+              حذف {{ selectedMsgIds.size }} {{ selectedMsgIds.size === 1 ? 'رسالة' : 'رسائل' }}
+            </v-btn>
           </div>
 
+          <!-- Select all messages -->
+          <div v-if="filteredMessages.length" class="msg-select-all pa-2 d-flex align-center">
+            <v-checkbox
+              :model-value="allMsgsSelected"
+              :indeterminate="someMsgsSelected && !allMsgsSelected"
+              hide-details
+              density="compact"
+              color="primary"
+              @click.stop="toggleAllMsgs"
+            >
+              <template #label>
+                <span class="text-caption">تحديد كل الرسائل</span>
+              </template>
+            </v-checkbox>
+          </div>
           <!-- Search in messages -->
           <div class="chat-search pa-3">
             <v-text-field
@@ -261,9 +416,18 @@ const filteredMessages = computed(() => {
             <div
               v-for="msg in filteredMessages"
               :key="msg.id"
-              class="msg-bubble"
+              class="msg-bubble d-flex align-start gap-2"
               :class="{ right: isFromUser1(msg), left: !isFromUser1(msg) }"
             >
+              <v-checkbox
+                :model-value="selectedMsgIds.has(msg.id)"
+                hide-details
+                density="compact"
+                color="primary"
+                class="msg-checkbox flex-shrink-0 mt-0"
+                @click.stop="toggleMsg(msg)"
+              />
+              <div class="msg-content flex-grow-1 min-width-0">
               <div class="msg-sender">{{ msg.senderName }}</div>
               <template v-if="msg.type === 'image'">
                 <a :href="msg.content" target="_blank" class="msg-image-link">
@@ -273,11 +437,40 @@ const filteredMessages = computed(() => {
               </template>
               <div v-else class="msg-text">{{ msg.content }}</div>
               <div class="msg-time">{{ formatTime(msg.sentAt) }}</div>
+              </div>
             </div>
           </div>
         </template>
       </div>
     </div>
+
+    <v-dialog v-model="showDeleteSessionConfirm" persistent max-width="400">
+      <v-card>
+        <v-card-title>حذف الجلسات</v-card-title>
+        <v-card-text>
+          هل أنت متأكد من حذف {{ selectedSessionIds.size }} {{ selectedSessionIds.size === 1 ? 'جلسة' : 'جلسات' }}؟ الحذف نهائي ولا يمكن التراجع عنه.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showDeleteSessionConfirm = false">إلغاء</v-btn>
+          <v-btn color="error" :loading="deleting" @click="confirmDeleteSessions">حذف</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="showDeleteMsgConfirm" persistent max-width="400">
+      <v-card>
+        <v-card-title>حذف الرسائل</v-card-title>
+        <v-card-text>
+          هل أنت متأكد من حذف {{ selectedMsgIds.size }} {{ selectedMsgIds.size === 1 ? 'رسالة' : 'رسائل' }}؟ الحذف نهائي ولا يمكن التراجع عنه.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showDeleteMsgConfirm = false">إلغاء</v-btn>
+          <v-btn color="error" :loading="deleting" @click="confirmDeleteMsgs">حذف</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -315,10 +508,13 @@ const filteredMessages = computed(() => {
   overflow-y: auto;
 }
 
+.convo-select-all {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
 .convo-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 14px 16px;
   cursor: pointer;
   transition: background 0.15s;
@@ -330,6 +526,8 @@ const filteredMessages = computed(() => {
 .convo-item.active {
   background: rgba(108,99,255,0.15);
 }
+
+.convo-checkbox { flex-shrink: 0; }
 
 .convo-avatar {
   width: 44px;
@@ -395,6 +593,10 @@ const filteredMessages = computed(() => {
 
 .chat-header-info {
   flex: 1;
+}
+
+.msg-select-all {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
 .chat-search {

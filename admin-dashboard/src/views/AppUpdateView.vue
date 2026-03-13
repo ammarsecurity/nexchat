@@ -5,6 +5,7 @@ import api from '../services/api'
 const minVersion = ref('1.0')
 const latestVersion = ref('1.0')
 const downloadUrl = ref('')
+const iosDownloadUrl = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const saved = ref(false)
@@ -20,10 +21,12 @@ async function fetchConfig() {
         minVersion.value = obj.minVersion || '1.0'
         latestVersion.value = obj.latestVersion || obj.minVersion || '1.0'
         downloadUrl.value = obj.downloadUrl || ''
+        iosDownloadUrl.value = obj.iosDownloadUrl || ''
       } catch {
-        minVersion.value = '1.0'
-        latestVersion.value = '1.0'
-        downloadUrl.value = ''
+    minVersion.value = '1.0'
+    latestVersion.value = '1.0'
+    downloadUrl.value = ''
+    iosDownloadUrl.value = ''
       }
     }
   } catch {
@@ -35,8 +38,8 @@ async function fetchConfig() {
 }
 
 async function save() {
-  if (!downloadUrl.value?.trim()) {
-    alert('رابط التحميل مطلوب')
+  if (!downloadUrl.value?.trim() && !iosDownloadUrl.value?.trim()) {
+    alert('يجب إدخال رابط تحميل واحد على الأقل (Android أو iOS)')
     return
   }
   saving.value = true
@@ -46,7 +49,8 @@ async function save() {
       content: JSON.stringify({
         minVersion: minVersion.value.trim() || '1.0',
         latestVersion: latestVersion.value.trim() || minVersion.value.trim() || '1.0',
-        downloadUrl: downloadUrl.value.trim()
+        downloadUrl: downloadUrl.value.trim() || '',
+        iosDownloadUrl: iosDownloadUrl.value.trim() || ''
       })
     })
     saved.value = true
@@ -107,9 +111,20 @@ onMounted(fetchConfig)
       />
       <v-text-field
         v-model="downloadUrl"
-        label="رابط التحميل"
-        placeholder="https://example.com/nexChat.apk"
-        hint="رابط APK أو صفحة التحميل"
+        label="رابط التحميل (Android)"
+        placeholder="https://play.google.com/... أو رابط APK"
+        hint="رابط Google Play أو APK"
+        persistent-hint
+        variant="outlined"
+        rounded="lg"
+        class="mb-4"
+        :disabled="loading"
+      />
+      <v-text-field
+        v-model="iosDownloadUrl"
+        label="رابط التحميل (iOS)"
+        placeholder="https://apps.apple.com/..."
+        hint="رابط App Store"
         persistent-hint
         variant="outlined"
         rounded="lg"

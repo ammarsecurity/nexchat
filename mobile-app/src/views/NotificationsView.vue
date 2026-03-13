@@ -24,10 +24,15 @@ function formatTime(timestamp) {
 function getTypeLabel(type) {
   if (type === 'video_call') return 'مكالمة فيديو'
   if (type === 'code_connected') return 'اتصال بالكود'
+  if (type === 'conversation_message') return 'رسالة محادثة'
   return 'رسالة'
 }
 
 function handleClick(n) {
+  if (n.conversationId) {
+    router.push(`/conversation/${n.conversationId}`)
+    return
+  }
   if (n.sessionId) {
     if (n.type === 'video_call') router.push(`/video/${n.sessionId}`)
     else router.push(`/chat/${n.sessionId}`)
@@ -81,7 +86,7 @@ onUnmounted(() => {
             <span class="notif-body">{{ n.body }}</span>
             <span class="notif-time">{{ formatTime(n.timestamp) }}</span>
           </div>
-          <ChevronRight v-if="n.sessionId" :size="18" class="notif-arrow" />
+          <ChevronRight v-if="n.sessionId || n.conversationId" :size="18" class="notif-arrow" />
         </button>
       </div>
     </div>
@@ -169,6 +174,8 @@ onUnmounted(() => {
 .notif-icon.video_call { background: rgba(255, 101, 132, 0.15); color: var(--danger); }
 
 .notif-icon.code_connected { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+
+.notif-icon.conversation_message { background: rgba(124, 117, 255, 0.15); color: var(--primary); }
 
 .notif-content {
   flex: 1;

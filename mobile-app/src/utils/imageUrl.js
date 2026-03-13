@@ -13,6 +13,7 @@ const BAD_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|172\.(1[6-9]|2[0-9]|
  */
 export function ensureAbsoluteUrl(url) {
   if (!url || typeof url !== 'string') return url
+  if (url.startsWith('blob:')) return url
   let path = url
   if (url.startsWith('http://') || url.startsWith('https://')) {
     try {

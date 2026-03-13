@@ -62,6 +62,10 @@ const statCards = [
   { key: 'totalSessionsToday', label: 'جلسات اليوم', icon: 'mdi-calendar-today', color: '#FF6584', suffix: '' },
   { key: 'totalMessagesToday', label: 'رسائل اليوم', icon: 'mdi-message', color: '#FFB74D', suffix: '' },
   { key: 'pendingReports', label: 'بلاغات معلقة', icon: 'mdi-flag', color: '#FF5252', suffix: '' },
+  { key: 'totalConversations', label: 'المحادثات', icon: 'mdi-forum', color: '#9C27B0', suffix: '' },
+  { key: 'totalConversationMessagesToday', label: 'رسائل المحادثات اليوم', icon: 'mdi-message-reply-text', color: '#E040FB', suffix: '' },
+  { key: 'totalContacts', label: 'جهات الاتصال', icon: 'mdi-account-multiple', color: '#00BCD4', suffix: '' },
+  { key: 'totalBlocks', label: 'المحظورون', icon: 'mdi-block-helper', color: '#FF5722', suffix: '' },
 ]
 
 onMounted(async () => {
@@ -73,7 +77,11 @@ onMounted(async () => {
   if (statsRes.status === 'fulfilled') {
     stats.value = statsRes.value.data
   } else {
-    stats.value = { totalUsers: 0, onlineUsers: 0, activeSessions: 0, totalSessionsToday: 0, totalMessagesToday: 0, pendingReports: 0 }
+    stats.value = {
+      totalUsers: 0, onlineUsers: 0, activeSessions: 0, totalSessionsToday: 0,
+      totalMessagesToday: 0, pendingReports: 0, totalConversations: 0,
+      totalConversationMessagesToday: 0, totalContacts: 0, totalBlocks: 0
+    }
   }
   loading.value = false
 
@@ -95,6 +103,22 @@ onMounted(async () => {
           data: points.map(p => p.newUsers),
           borderColor: '#FF6584',
           backgroundColor: 'rgba(255,101,132,0.1)',
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: 'محادثات',
+          data: points.map(p => p.conversations ?? 0),
+          borderColor: '#9C27B0',
+          backgroundColor: 'rgba(156,39,176,0.1)',
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: 'جهات اتصال جديدة',
+          data: points.map(p => p.newContacts ?? 0),
+          borderColor: '#00BCD4',
+          backgroundColor: 'rgba(0,188,212,0.1)',
           fill: true,
           tension: 0.4,
         }
@@ -148,7 +172,7 @@ onMounted(async () => {
       <div class="d-flex flex-column flex-sm-row align-start align-sm-center justify-space-between mb-4 gap-2">
         <div>
           <div class="text-h6 font-weight-bold">نشاط الأسبوع</div>
-          <div class="text-body-2 text-medium-emphasis">الجلسات والمستخدمين الجدد</div>
+          <div class="text-body-2 text-medium-emphasis">الجلسات والمستخدمين الجدد والمحادثات وجهات الاتصال</div>
         </div>
         <v-chip color="primary" variant="tonal" size="small" class="align-self-start align-self-sm-center">آخر 7 أيام</v-chip>
       </div>

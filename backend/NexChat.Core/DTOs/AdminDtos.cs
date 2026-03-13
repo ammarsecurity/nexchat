@@ -6,7 +6,11 @@ public record AdminStatsDto(
     int ActiveSessions,
     int TotalSessionsToday,
     int TotalMessagesToday,
-    int PendingReports
+    int PendingReports,
+    int TotalConversations,
+    int TotalConversationMessagesToday,
+    int TotalContacts,
+    int TotalBlocks
 );
 
 public record AdminUserDto(
@@ -17,7 +21,9 @@ public record AdminUserDto(
     bool IsOnline,
     bool IsBanned,
     bool IsFeatured,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    DateOnly? BirthDate,
+    string? PhoneNumber
 );
 
 public record AdminSessionDto(
@@ -41,7 +47,7 @@ public record AdminReportDto(
 
 public record PagedResult<T>(IEnumerable<T> Items, int Total, int Page, int PageSize);
 
-public record ChartPointDto(string Date, int Sessions, int NewUsers);
+public record ChartPointDto(string Date, int Sessions, int NewUsers, int Conversations, int NewContacts);
 
 public record AdminMessageDto(
     Guid Id,
@@ -75,7 +81,17 @@ public record SupportSendDto(Guid SessionId, string Content);
 public record UpdateSupportAvatarDto(string? Avatar);
 
 public record BroadcastNotificationDto(string Title, string Body, string? ImageUrl);
+public record AdminBroadcastNotificationDto(Guid Id, string Title, string Body, string? ImageUrl, int RecipientsCount, DateTime SentAt);
 
 public record SetFeaturedRequest(bool Featured);
 
 public record DeleteUsersRequest(IEnumerable<Guid> Ids);
+
+public record AdminConversationDto(Guid Id, string User1Name, string User2Name, DateTime CreatedAt, int MessageCount, DateTime? LastMessageAt);
+public record AdminConversationMessageDto(Guid Id, string SenderName, string Content, string Type, DateTime SentAt);
+public record AdminBlockDto(Guid Id, string BlockerName, string BlockedUserName, DateTime CreatedAt);
+public record AdminContactDto(Guid Id, string UserName, string ContactUserName, DateTime CreatedAt);
+
+public record DeleteConversationsRequest(IEnumerable<Guid> Ids);
+public record DeleteMessagesRequest(IEnumerable<Guid> Ids);
+public record DeleteSessionsRequest(IEnumerable<Guid> Ids);

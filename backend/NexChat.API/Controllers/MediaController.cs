@@ -68,4 +68,41 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
             : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
         return Ok(new { url });
     }
+
+    private static readonly string[] AllowedAudioTypes = ["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-m4a"];
+
+    [HttpPost("upload-audio")]
+    public async Task<IActionResult> UploadAudio(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided" });
+
+        var contentType = file.ContentType?.ToLower() ?? "";
+        if (!AllowedAudioTypes.Contains(contentType) && !contentType.StartsWith("audio/"))
+            return BadRequest(new { message = "Only audio files are allowed" });
+
+        if (file.Length > 10 * 1024 * 1024)
+            return BadRequest(new { message = "Max file size is 10MB" });
+
+        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
+        Directory.CreateDirectory(uploadsPath);
+
+        var ext = Path.GetExtension(file.FileName).ToLower();
+        if (string.IsNullOrEmpty(ext) || !new[] { ".webm", ".mp4", ".m4a", ".ogg", ".opus", ".mp3", ".wav" }.Contains(ext))
+            ext = ".webm";
+        var fileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploadsPath, fileName);
+
+        await using (var src = file.OpenReadStream())
+        await using (var dest = new FileStream(filePath, FileMode.Create))
+        {
+            await src.CopyToAsync(dest);
+        }
+
+        var baseUrl = config["Media:BaseUrl"];
+        var url = !string.IsNullOrEmpty(baseUrl)
+            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
+            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+        return Ok(new { url });
+    }
 }

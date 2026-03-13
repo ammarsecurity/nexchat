@@ -13,7 +13,12 @@ namespace NexChat.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Policy = "AdminOnly")]
-public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, OneSignalService oneSignal) : ControllerBase
+public class AdminController(
+    AppDbContext db,
+    IHubContext<ChatHub> hubContext,
+    OneSignalService oneSignal,
+    IWebHostEnvironment env,
+    IConfiguration config) : ControllerBase
 {
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats()
@@ -26,7 +31,11 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             ActiveSessions: await db.ChatSessions.CountAsync(s => s.EndedAt == null),
             TotalSessionsToday: await db.ChatSessions.CountAsync(s => s.StartedAt >= today),
             TotalMessagesToday: await db.Messages.CountAsync(m => m.SentAt >= today),
-            PendingReports: await db.Reports.CountAsync(r => !r.IsReviewed)
+            PendingReports: await db.Reports.CountAsync(r => !r.IsReviewed),
+            TotalConversations: await db.Conversations.CountAsync(),
+            TotalConversationMessagesToday: await db.ConversationMessages.CountAsync(m => m.SentAt >= today),
+            TotalContacts: await db.Contacts.CountAsync(),
+            TotalBlocks: await db.UserBlocks.CountAsync()
         );
 
         return Ok(stats);
@@ -47,7 +56,7 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt))
+            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt, u.BirthDate, u.PhoneNumber))
             .ToListAsync();
 
         return Ok(new PagedResult<AdminUserDto>(users, total, page, pageSize));
@@ -193,6 +202,24 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             await db.Messages.Where(m => sessions.Contains(m.SessionId)).ExecuteDeleteAsync();
             await db.ChatSessions.Where(s => s.User1Id == userId || s.User2Id == userId).ExecuteDeleteAsync();
             await db.Reports.Where(r => r.ReporterId == userId || r.ReportedId == userId).ExecuteDeleteAsync();
+
+            var userConversations = await db.Conversations
+                .Where(c => c.User1Id == userId || c.User2Id == userId)
+                .Select(c => c.Id)
+                .ToListAsync();
+            var convMessageIds = await db.ConversationMessages
+                .Where(m => userConversations.Contains(m.ConversationId))
+                .Select(m => m.Id)
+                .ToListAsync();
+            await db.UserMessageDeletions
+                .Where(d => d.UserId == userId || convMessageIds.Contains(d.MessageId))
+                .ExecuteDeleteAsync();
+            await db.UserConversationDeletions.Where(d => userConversations.Contains(d.ConversationId)).ExecuteDeleteAsync();
+            await db.UserConversationStates.Where(s => userConversations.Contains(s.ConversationId)).ExecuteDeleteAsync();
+            await db.ConversationMessages.Where(m => userConversations.Contains(m.ConversationId)).ExecuteDeleteAsync();
+            await db.Conversations.Where(c => c.User1Id == userId || c.User2Id == userId).ExecuteDeleteAsync();
+            await db.UserBlocks.Where(b => b.BlockerId == userId || b.BlockedUserId == userId).ExecuteDeleteAsync();
+            await db.Contacts.Where(c => c.UserId == userId || c.ContactUserId == userId).ExecuteDeleteAsync();
             await db.CodeConnectionAttempts.Where(a => a.RequesterId == userId || a.TargetId == userId).ExecuteDeleteAsync();
             await db.SavedCodes.Where(s => s.UserId == userId).ExecuteDeleteAsync();
             await db.DeviceSubscriptions.Where(d => d.UserId == userId).ExecuteDeleteAsync();
@@ -235,6 +262,68 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             .ToListAsync();
 
         return Ok(new PagedResult<AdminSessionDto>(sessions, total, page, pageSize));
+    }
+
+    /// <summary>
+    /// حذف جلسة واحدة كاملاً (hard delete) - يشمل جميع الرسائل
+    /// </summary>
+    [HttpDelete("sessions/{id}")]
+    public async Task<IActionResult> DeleteSession(Guid id)
+    {
+        var exists = await db.ChatSessions.AnyAsync(s => s.Id == id);
+        if (!exists) return NotFound();
+
+        await db.Messages.Where(m => m.SessionId == id).ExecuteDeleteAsync();
+        await db.ChatSessions.Where(s => s.Id == id).ExecuteDeleteAsync();
+        return Ok(new { message = "تم حذف الجلسة" });
+    }
+
+    /// <summary>
+    /// حذف مجموعة جلسات (hard delete)
+    /// </summary>
+    [HttpDelete("sessions")]
+    public async Task<ActionResult<object>> DeleteSessions([FromBody] DeleteSessionsRequest req)
+    {
+        var ids = (req.Ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest(new { message = "لم يتم تحديد أي جلسات" });
+
+        var existing = await db.ChatSessions
+            .Where(s => ids.Contains(s.Id))
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        await db.Messages.Where(m => ids.Contains(m.SessionId)).ExecuteDeleteAsync();
+        await db.ChatSessions.Where(s => ids.Contains(s.Id)).ExecuteDeleteAsync();
+        return Ok(new { deleted = existing.Count, message = $"تم حذف {existing.Count} جلسة" });
+    }
+
+    /// <summary>
+    /// حذف رسالة واحدة داخل جلسة (hard delete)
+    /// </summary>
+    [HttpDelete("sessions/{sessionId}/messages/{messageId}")]
+    public async Task<IActionResult> DeleteSessionMessage(Guid sessionId, Guid messageId)
+    {
+        var rows = await db.Messages
+            .Where(m => m.SessionId == sessionId && m.Id == messageId)
+            .ExecuteDeleteAsync();
+        return rows > 0 ? Ok(new { message = "تم حذف الرسالة" }) : NotFound();
+    }
+
+    /// <summary>
+    /// حذف مجموعة رسائل داخل جلسة (hard delete)
+    /// </summary>
+    [HttpDelete("sessions/{sessionId}/messages")]
+    public async Task<ActionResult<object>> DeleteSessionMessages(Guid sessionId, [FromBody] DeleteMessagesRequest req)
+    {
+        var ids = (req.Ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest(new { message = "لم يتم تحديد أي رسائل" });
+
+        var rows = await db.Messages
+            .Where(m => m.SessionId == sessionId && ids.Contains(m.Id))
+            .ExecuteDeleteAsync();
+        return Ok(new { deleted = rows, message = $"تم حذف {rows} رسالة" });
     }
 
     [HttpGet("reports")]
@@ -291,10 +380,24 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
 
+        var conversationCounts = await db.Conversations
+            .Where(c => c.CreatedAt >= days[0])
+            .GroupBy(c => c.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var contactCounts = await db.Contacts
+            .Where(c => c.CreatedAt >= days[0])
+            .GroupBy(c => c.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .ToListAsync();
+
         var result = days.Select(day => new ChartPointDto(
             day.ToString("MM/dd"),
             sessionCounts.FirstOrDefault(x => x.Date == day)?.Count ?? 0,
-            userCounts.FirstOrDefault(x => x.Date == day)?.Count ?? 0
+            userCounts.FirstOrDefault(x => x.Date == day)?.Count ?? 0,
+            conversationCounts.FirstOrDefault(x => x.Date == day)?.Count ?? 0,
+            contactCounts.FirstOrDefault(x => x.Date == day)?.Count ?? 0
         ));
 
         return Ok(result);
@@ -445,6 +548,231 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
         return Ok(new PagedResult<AdminMessageDto>(messages, total, page, pageSize));
     }
 
+    [HttpGet("conversations")]
+    public async Task<ActionResult<PagedResult<AdminConversationDto>>> GetConversations(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        var query = db.Conversations
+            .Include(c => c.User1)
+            .Include(c => c.User2)
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(c =>
+                c.User1.Name.ToLower().Contains(s) ||
+                c.User2.Name.ToLower().Contains(s));
+        }
+
+        var total = await query.CountAsync();
+        var conversations = await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new AdminConversationDto(
+                c.Id,
+                c.User1.Name,
+                c.User2.Name,
+                c.CreatedAt,
+                c.Messages.Count,
+                c.Messages.Any() ? c.Messages.Max(m => m.SentAt) : (DateTime?)null
+            ))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminConversationDto>(conversations, total, page, pageSize));
+    }
+
+    [HttpGet("conversations/{id}/messages")]
+    public async Task<ActionResult<PagedResult<AdminConversationMessageDto>>> GetConversationMessages(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var query = db.ConversationMessages
+            .Include(m => m.Sender)
+            .Where(m => m.ConversationId == id);
+
+        var total = await query.CountAsync();
+        var messages = await query
+            .OrderBy(m => m.SentAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => new AdminConversationMessageDto(
+                m.Id,
+                m.Sender.Name,
+                m.Content,
+                m.Type,
+                m.SentAt
+            ))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminConversationMessageDto>(messages, total, page, pageSize));
+    }
+
+    /// <summary>
+    /// حذف محادثة واحدة كاملاً (hard delete)
+    /// </summary>
+    [HttpDelete("conversations/{id}")]
+    public async Task<IActionResult> DeleteConversation(Guid id)
+    {
+        var exists = await db.Conversations.AnyAsync(c => c.Id == id);
+        if (!exists) return NotFound();
+
+        await DeleteConversationsCascade(new[] { id });
+        return Ok(new { message = "تم حذف المحادثة" });
+    }
+
+    /// <summary>
+    /// حذف مجموعة محادثات (hard delete)
+    /// </summary>
+    [HttpDelete("conversations")]
+    public async Task<ActionResult<object>> DeleteConversations([FromBody] DeleteConversationsRequest req)
+    {
+        var ids = (req.Ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest(new { message = "لم يتم تحديد أي محادثات" });
+
+        var existing = await db.Conversations
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        await DeleteConversationsCascade(existing);
+        return Ok(new { deleted = existing.Count, message = $"تم حذف {existing.Count} محادثة" });
+    }
+
+    /// <summary>
+    /// حذف رسالة واحدة داخل محادثة (hard delete)
+    /// </summary>
+    [HttpDelete("conversations/{conversationId}/messages/{messageId}")]
+    public async Task<IActionResult> DeleteConversationMessage(Guid conversationId, Guid messageId)
+    {
+        var msg = await db.ConversationMessages
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId);
+        if (msg == null) return NotFound();
+
+        await db.UserMessageDeletions.Where(d => d.MessageId == messageId).ExecuteDeleteAsync();
+        await db.ConversationMessages.Where(m => m.Id == messageId).ExecuteDeleteAsync();
+        return Ok(new { message = "تم حذف الرسالة" });
+    }
+
+    /// <summary>
+    /// حذف مجموعة رسائل داخل محادثة (hard delete)
+    /// </summary>
+    [HttpDelete("conversations/{conversationId}/messages")]
+    public async Task<ActionResult<object>> DeleteConversationMessages(Guid conversationId, [FromBody] DeleteMessagesRequest req)
+    {
+        var ids = (req.Ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest(new { message = "لم يتم تحديد أي رسائل" });
+
+        var toDelete = await db.ConversationMessages
+            .Where(m => m.ConversationId == conversationId && ids.Contains(m.Id))
+            .Select(m => m.Id)
+            .ToListAsync();
+
+        await db.UserMessageDeletions.Where(d => toDelete.Contains(d.MessageId)).ExecuteDeleteAsync();
+        await db.ConversationMessages.Where(m => toDelete.Contains(m.Id)).ExecuteDeleteAsync();
+        return Ok(new { deleted = toDelete.Count, message = $"تم حذف {toDelete.Count} رسالة" });
+    }
+
+    private async Task DeleteConversationsCascade(IEnumerable<Guid> conversationIds)
+    {
+        var ids = conversationIds.ToList();
+        if (ids.Count == 0) return;
+
+        var messageIds = await db.ConversationMessages
+            .Where(m => ids.Contains(m.ConversationId))
+            .Select(m => m.Id)
+            .ToListAsync();
+
+        await db.UserMessageDeletions.Where(d => messageIds.Contains(d.MessageId)).ExecuteDeleteAsync();
+        await db.UserConversationDeletions.Where(d => ids.Contains(d.ConversationId)).ExecuteDeleteAsync();
+        await db.UserConversationStates.Where(s => ids.Contains(s.ConversationId)).ExecuteDeleteAsync();
+        await db.ConversationMessages.Where(m => ids.Contains(m.ConversationId)).ExecuteDeleteAsync();
+        await db.Conversations.Where(c => ids.Contains(c.Id)).ExecuteDeleteAsync();
+    }
+
+    [HttpGet("blocks")]
+    public async Task<ActionResult<PagedResult<AdminBlockDto>>> GetBlocks(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        var query = db.UserBlocks
+            .Include(b => b.Blocker)
+            .Include(b => b.BlockedUser)
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(b =>
+                b.Blocker.Name.ToLower().Contains(s) ||
+                b.BlockedUser.Name.ToLower().Contains(s));
+        }
+
+        var total = await query.CountAsync();
+        var blocks = await query
+            .OrderByDescending(b => b.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(b => new AdminBlockDto(
+                b.Id,
+                b.Blocker.Name,
+                b.BlockedUser.Name,
+                b.CreatedAt
+            ))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminBlockDto>(blocks, total, page, pageSize));
+    }
+
+    [HttpDelete("blocks/{id}")]
+    public async Task<IActionResult> DeleteBlock(Guid id)
+    {
+        var rows = await db.UserBlocks.Where(b => b.Id == id).ExecuteDeleteAsync();
+        return rows > 0 ? Ok() : NotFound();
+    }
+
+    [HttpGet("contacts")]
+    public async Task<ActionResult<PagedResult<AdminContactDto>>> GetContacts(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        var query = db.Contacts
+            .Include(c => c.User)
+            .Include(c => c.ContactUser)
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(c =>
+                c.User.Name.ToLower().Contains(s) ||
+                c.ContactUser.Name.ToLower().Contains(s));
+        }
+
+        var total = await query.CountAsync();
+        var contacts = await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new AdminContactDto(
+                c.Id,
+                c.User.Name,
+                c.ContactUser.Name,
+                c.CreatedAt
+            ))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminContactDto>(contacts, total, page, pageSize));
+    }
+
     [HttpGet("banners")]
     public async Task<ActionResult<IEnumerable<BannerDto>>> GetBanners([FromQuery] string? placement = null)
     {
@@ -525,6 +853,40 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
         return Ok();
     }
 
+    [HttpPost("notifications/upload-image")]
+    public async Task<IActionResult> UploadNotificationImage(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم تحديد ملف" });
+
+        var allowed = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
+        if (!allowed.Contains(file.ContentType.ToLower()))
+            return BadRequest(new { message = "الصور المسموحة: JPEG, PNG, GIF, WebP" });
+
+        if (file.Length > 5 * 1024 * 1024)
+            return BadRequest(new { message = "الحد الأقصى 5 ميجابايت" });
+
+        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
+        Directory.CreateDirectory(uploadsPath);
+
+        var ext = Path.GetExtension(file.FileName).ToLower();
+        if (!new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" }.Contains(ext))
+            ext = ".jpg";
+        var fileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploadsPath, fileName);
+
+        await using (var dest = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(dest);
+        }
+
+        var baseUrl = config["Media:BaseUrl"];
+        var url = !string.IsNullOrEmpty(baseUrl)
+            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
+            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+        return Ok(new { url });
+    }
+
     [HttpPost("notifications/broadcast")]
     public async Task<IActionResult> BroadcastNotification([FromBody] BroadcastNotificationDto dto)
     {
@@ -550,7 +912,82 @@ public class AdminController(AppDbContext db, IHubContext<ChatHub> hubContext, O
             dto.ImageUrl?.Trim());
 
         if (success)
+        {
+            db.BroadcastNotificationHistory.Add(new BroadcastNotificationHistory
+            {
+                Title = dto.Title.Trim(),
+                Body = dto.Body.Trim(),
+                ImageUrl = dto.ImageUrl?.Trim(),
+                RecipientsCount = recipientsCount
+            });
+            await db.SaveChangesAsync();
             return Ok(new { message = "تم إرسال الإشعار بنجاح", recipientsCount });
+        }
+        return StatusCode(500, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
+    }
+
+    [HttpGet("notifications/broadcast-history")]
+    public async Task<ActionResult<PagedResult<AdminBroadcastNotificationDto>>> GetBroadcastHistory(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        var query = db.BroadcastNotificationHistory.AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(n =>
+                n.Title.ToLower().Contains(s) ||
+                (n.Body != null && n.Body.ToLower().Contains(s)));
+        }
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(n => n.SentAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(n => new AdminBroadcastNotificationDto(
+                n.Id,
+                n.Title,
+                n.Body,
+                n.ImageUrl,
+                n.RecipientsCount,
+                n.SentAt
+            ))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminBroadcastNotificationDto>(items, total, page, pageSize));
+    }
+
+    [HttpPost("notifications/broadcast/{id}/resend")]
+    public async Task<IActionResult> ResendBroadcastNotification(Guid id)
+    {
+        var notification = await db.BroadcastNotificationHistory.FindAsync(id);
+        if (notification == null) return NotFound();
+
+        var subscriptionIds = await db.DeviceSubscriptions
+            .Select(d => d.OneSignalPlayerId)
+            .ToListAsync();
+
+        var (success, recipientsCount, error) = await oneSignal.SendBroadcastAsync(
+            subscriptionIds,
+            notification.Title,
+            notification.Body,
+            notification.ImageUrl);
+
+        if (success)
+        {
+            db.BroadcastNotificationHistory.Add(new BroadcastNotificationHistory
+            {
+                Title = notification.Title,
+                Body = notification.Body,
+                ImageUrl = notification.ImageUrl,
+                RecipientsCount = recipientsCount
+            });
+            await db.SaveChangesAsync();
+            return Ok(new { message = "تم إعادة الإرسال بنجاح", recipientsCount });
+        }
         return StatusCode(500, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
     }
 

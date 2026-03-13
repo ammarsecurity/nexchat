@@ -14,6 +14,7 @@ function createHub(path) {
 
 export const matchingHub = createHub('/hubs/matching')
 export const chatHub = createHub('/hubs/chat')
+export const conversationHub = createHub('/hubs/conversation')
 
 export async function startHub(hub) {
   if (hub.state === signalR.HubConnectionState.Disconnected) {

@@ -20,6 +20,8 @@ const headers = [
   { title: 'المستخدم', key: 'name', sortable: false },
   { title: 'الكود', key: 'uniqueCode', sortable: false },
   { title: 'الجنس', key: 'gender', sortable: false },
+  { title: 'العمر', key: 'age', sortable: false },
+  { title: 'رقم الهاتف', key: 'phoneNumber', sortable: false },
   { title: 'الحالة', key: 'isOnline', sortable: false },
   { title: 'تاريخ الانضمام', key: 'createdAt', sortable: false },
   { title: 'إجراءات', key: 'actions', sortable: false, align: 'center' },
@@ -105,6 +107,21 @@ function formatDate(date) {
   return new Date(date).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function getAge(birthDate) {
+  if (!birthDate) return null
+  const bd = new Date(birthDate)
+  const today = new Date()
+  let age = today.getFullYear() - bd.getFullYear()
+  const m = today.getMonth() - bd.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--
+  return age >= 0 ? age : null
+}
+
+function formatPhone(phone) {
+  if (!phone || !phone.trim()) return '—'
+  return '+' + phone
+}
+
 let searchTimeout
 function onSearch() {
   clearTimeout(searchTimeout)
@@ -183,6 +200,14 @@ onMounted(fetchUsers)
           <v-chip size="small" :color="genderColor[item.gender]" variant="tonal">
             {{ genderLabel[item.gender] }}
           </v-chip>
+        </template>
+
+        <template #item.age="{ item }">
+          <span class="text-body-2">{{ getAge(item.birthDate) != null ? getAge(item.birthDate) + ' سنة' : '—' }}</span>
+        </template>
+
+        <template #item.phoneNumber="{ item }">
+          <span class="text-body-2 font-mono">{{ formatPhone(item.phoneNumber) }}</span>
         </template>
 
         <template #item.isOnline="{ item }">

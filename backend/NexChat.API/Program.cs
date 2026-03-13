@@ -161,5 +161,6 @@ app.MapControllers();
 
 app.MapHub<MatchingHub>("/hubs/matching");
 app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<ConversationHub>("/hubs/conversation");
 
 app.Run();

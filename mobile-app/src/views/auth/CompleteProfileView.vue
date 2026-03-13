@@ -8,6 +8,7 @@ import { useThemeStore } from '../../stores/theme'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
 import { countries } from '../../data/countries'
 import api from '../../services/api'
+import { validatePhone, getPhoneErrorMessage } from '../../utils/phoneValidation'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -39,22 +40,36 @@ const countryCode = computed(() => {
   return c?.dialCode ?? ''
 })
 
+const phoneValidationResult = computed(() => {
+  if (!countryCode.value || !phoneNumber.value.trim()) return null
+  return validatePhone(countryCode.value, phoneNumber.value, t)
+})
+
+const phoneError = computed(() => {
+  const r = phoneValidationResult.value
+  if (!r || r.valid) return ''
+  return getPhoneErrorMessage(r, t)
+})
+
 const canSubmit = computed(() => {
   if (!selectedCountry.value || !phoneNumber.value.trim()) return false
-  const digits = phoneNumber.value.replace(/\D/g, '')
-  return digits.length >= 7 && digits.length <= 15
+  const result = phoneValidationResult.value
+  return result?.valid ?? false
 })
 
 async function handleSubmit() {
-  if (!canSubmit.value) return
+  const result = phoneValidationResult.value
+  if (!result?.valid) {
+    error.value = phoneError.value || t('phoneValidation.required')
+    return
+  }
   loading.value = true
   error.value = ''
   try {
-    const digits = phoneNumber.value.replace(/\D/g, '')
     await api.put('/user/profile-contact', {
       country: selectedCountry.value,
       countryCode: countryCode.value,
-      phoneNumber: digits
+      phoneNumber: result.normalized
     })
     auth.setNeedsProfileContact(false)
     router.replace('/home')
@@ -109,7 +124,7 @@ async function handleSubmit() {
               <Phone :size="16" class="label-icon" />
               {{ t('completeProfile.phone') }}
             </label>
-            <div class="phone-input-wrap">
+            <div class="phone-input-wrap" :class="{ 'input-error': phoneError }">
               <span class="dial-prefix">+{{ countryCode || '...' }}</span>
               <input
                 v-model="phoneNumber"
@@ -121,7 +136,8 @@ async function handleSubmit() {
                 autocomplete="tel"
               />
             </div>
-            <span class="field-hint">{{ t('completeProfile.phoneHint') }}</span>
+            <span v-if="phoneError" class="field-error">{{ phoneError }}</span>
+            <span v-else class="field-hint">{{ t('completeProfile.phoneHint') }}</span>
           </div>
 
           <div v-if="error" class="error-toast">
@@ -228,6 +244,8 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 .field-label { display: flex; align-items: center; gap: 6px; }
 .label-icon { color: var(--primary); flex-shrink: 0; }
 .field-hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.field-error { font-size: 12px; color: #f44336; margin-top: 4px; display: block; }
+.phone-input-wrap.input-error { border-color: #f44336 !important; box-shadow: 0 0 0 1px rgba(244,67,54,0.3); }
 
 .select-field {
   appearance: none;
@@ -265,6 +283,12 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
   border-radius: 0 !important;
   flex: 1;
   min-width: 0;
+}
+
+.btn-gradient:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .spinner {

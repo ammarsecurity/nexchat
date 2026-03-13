@@ -1,8 +1,17 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { Rocket, Settings, Home } from 'lucide-vue-next'
+import { Rocket, Settings, MessageCircle } from 'lucide-vue-next'
+import { useConversationsListStore } from '../stores/conversationsList'
+
+const listStore = useConversationsListStore()
+const totalUnread = computed(() => {
+  return listStore.list.reduce((sum, c) => {
+    const n = c?.unreadCount ?? c?.UnreadCount ?? 0
+    return sum + (typeof n === 'number' ? n : parseInt(n, 10) || 0)
+  }, 0)
+})
 
 const props = defineProps({
   loading: { type: Boolean, default: false }
@@ -25,9 +34,12 @@ async function onRocketClick() {
 
 <template>
   <nav class="home-nav">
-    <RouterLink to="/home" class="nav-item" :aria-label="t('home.title')">
-      <Home :size="24" stroke-width="2" />
-      <span class="nav-label">{{ t('home.title') }}</span>
+    <RouterLink to="/conversations" class="nav-item" :aria-label="t('conversations.title')">
+      <span class="nav-icon-wrap">
+        <MessageCircle :size="24" stroke-width="2" />
+        <span v-if="totalUnread > 0" class="nav-badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+      </span>
+      <span class="nav-label">{{ t('conversations.title') }}</span>
     </RouterLink>
 
     <div class="nav-center">
@@ -82,6 +94,28 @@ async function onRocketClick() {
 .nav-item.router-link-active,
 .nav-item:active {
   color: var(--primary);
+}
+.nav-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: white;
+  background: var(--danger);
+  border-radius: 9px;
+  font-family: 'Cairo', sans-serif;
 }
 .nav-label {
   font-size: 11px;
