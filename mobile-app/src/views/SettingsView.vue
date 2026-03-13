@@ -705,7 +705,7 @@ onMounted(() => {
   gap: var(--spacing-sm);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0 var(--spacing) calc(40px + var(--safe-bottom));
+  padding: 0 var(--spacing) calc(24px + var(--safe-bottom));
 }
 .scroll-area > * {
   flex-shrink: 0;

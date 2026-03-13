@@ -54,8 +54,22 @@
   --system-msg-bg: rgba(0, 0, 0, 0.04);
 }
 
-html, body {
+html {
   height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  background: var(--bg-primary);
+}
+
+body {
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  /* على iOS: امتداد الخلفية لمنطقة الـ safe area (الشريط الأسفل) */
+  min-height: calc(100vh + env(safe-area-inset-bottom, 0px));
+  min-height: calc(100dvh + env(safe-area-inset-bottom, 0px));
   width: 100%;
   overflow: hidden;
   background: var(--bg-primary);
@@ -69,6 +83,7 @@ html, body {
 
 #app {
   height: 100%;
+  min-height: 100%;
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
@@ -183,14 +198,19 @@ html, body {
 .avatar-lg  { width: 64px; height: 64px; font-size: 22px; }
 .avatar-xl  { width: 88px; height: 88px; font-size: 28px; }
 
-/* Page */
+/* Page - يملأ الشاشة ويتجنب الفراغ الأبيض أسفل على iOS */
 .page {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
   position: absolute;
+  inset: 0;
   width: 100%;
   overflow-y: auto;
+  background: var(--bg-primary);
 }
 
 /* Icon Button - Flat, native touch target */

@@ -8,7 +8,8 @@ const config: CapacitorConfig = {
     allowMixedContent: true
   },
   ios: {
-    contentInset: 'automatic'
+    contentInset: 'automatic',
+    backgroundColor: '#0D0D1A'
   },
   plugins: {
     App: {

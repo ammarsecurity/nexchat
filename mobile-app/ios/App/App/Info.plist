@@ -51,5 +51,11 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>يُستخدم للاتصال المرئي والمكالمات</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>لاختيار الصور أو إرسالها في المحادثات</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>للمكالمات الصوتية والمرئية</string>
 </dict>
 </plist>
