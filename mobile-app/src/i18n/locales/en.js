@@ -250,6 +250,14 @@ export default {
   conversationChat: {
     empty: 'Start the conversation with your first message! 👋',
     messagePlaceholder: 'Message',
+    reply: 'Reply',
+    share: 'Share',
+    replyTo: 'Reply to',
+    shareToConversation: 'Share to another conversation',
+    shareSearchPlaceholder: 'Search by name or number',
+    selectConversation: 'Select conversation',
+    noOtherConversations: 'No other conversations',
+    noSearchResults: 'No search results',
     deleteForMe: 'Delete for me',
     deleteForEveryone: 'Delete for everyone',
     deleteConversation: 'Delete conversation',
@@ -268,6 +276,7 @@ export default {
     voiceNotSupported: 'Voice recording is not supported in this browser',
     voicePermissionDenied: 'Microphone access is required',
     voiceUploadFailed: 'Failed to upload voice message',
+    imageUploadFailed: 'Failed to upload image',
     voiceRecordingTooShort: 'Recording too short, try recording for more than a second',
     sendVoice: 'Send',
     uploadingVoice: 'Uploading voice message...'

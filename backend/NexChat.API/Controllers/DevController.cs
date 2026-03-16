@@ -12,6 +12,17 @@ namespace NexChat.API.Controllers;
 public class DevController(AppDbContext db, IConfiguration config) : ControllerBase
 {
     /// <summary>
+    /// تشخيص: تأكيد أن الطلبات تصل لهذا الـ backend.
+    /// </summary>
+    [HttpGet("ping")]
+    public IActionResult Ping() => Ok(new
+    {
+        ok = true,
+        server = Environment.MachineName,
+        time = DateTime.UtcNow.ToString("o"),
+        message = "Backend reached"
+    });
+    /// <summary>
     /// استرجاع حساب الدعم. ينشئ الحساب إذا كان محذوفاً.
     /// </summary>
     [HttpPost("restore-support")]

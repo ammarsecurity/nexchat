@@ -250,6 +250,14 @@ export default {
   conversationChat: {
     empty: 'ابدأ المحادثة بأول رسالة! 👋',
     messagePlaceholder: 'رسالة',
+    reply: 'رد',
+    share: 'مشاركة',
+    replyTo: 'رد على',
+    shareToConversation: 'مشاركة لمحادثة أخرى',
+    shareSearchPlaceholder: 'بحث بالاسم أو الرقم',
+    selectConversation: 'اختر المحادثة',
+    noOtherConversations: 'لا توجد محادثات أخرى',
+    noSearchResults: 'لا توجد نتائج للبحث',
     deleteForMe: 'حذف عندي',
     deleteForEveryone: 'حذف للجميع',
     deleteConversation: 'حذف المحادثة',
@@ -268,6 +276,7 @@ export default {
     voiceNotSupported: 'التسجيل الصوتي غير مدعوم في هذا المتصفح',
     voicePermissionDenied: 'يجب السماح بالوصول للميكروفون',
     voiceUploadFailed: 'فشل رفع الرسالة الصوتية',
+    imageUploadFailed: 'فشل رفع الصورة',
     voiceRecordingTooShort: 'التسجيل قصير جداً، جرّب التسجيل لأكثر من ثانية',
     sendVoice: 'إرسال',
     uploadingVoice: 'جاري رفع الرسالة الصوتية...'

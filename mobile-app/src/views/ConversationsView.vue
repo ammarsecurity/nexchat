@@ -6,6 +6,7 @@ import { ChevronRight, MessageCircle, Search, Pin, Archive, Trash2, Check, MoreV
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import CachedAvatar from '../components/CachedAvatar.vue'
 import { useLocaleStore } from '../stores/locale'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useConversationStore } from '../stores/conversation'
@@ -42,8 +43,8 @@ const filteredList = computed(() => {
 })
 
 async function fetchConversations() {
-  loading.value = true
   needPhone.value = false
+  loading.value = true
   try {
     const { data } = await api.get('/conversations', {
       params: { filter: filter.value, search: searchQuery.value || undefined }
@@ -53,7 +54,7 @@ async function fetchConversations() {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
     }
-    listStore.setList([])
+    // عدم مسح القائمة عند فشل الـ API للحفاظ على العداد والكاش
   } finally {
     loading.value = false
   }
@@ -147,24 +148,16 @@ async function handleListUpdated(payload) {
   if (!updated) await fetchConversations()
 }
 
-function onVisibilityChange() {
-  if (document.visibilityState === 'visible' && route.path === '/conversations') {
-    fetchConversations()
-  }
-}
-
 onMounted(async () => {
   convStore.clearConversation()
   try {
     await startHub(conversationHub)
     conversationHub.on('ConversationListUpdated', handleListUpdated)
   } catch (_) {}
-  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
   conversationHub.off('ConversationListUpdated', handleListUpdated)
-  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
 function goToConversation(c) {
@@ -239,7 +232,7 @@ function goBack() {
           @contextmenu.prevent="openContextMenu(c, $event)"
         >
           <div class="item-avatar" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-            <img v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :src="ensureAbsoluteUrl(c.partnerAvatar ?? c.PartnerAvatar)" class="avatar-img" referrerpolicy="no-referrer" />
+            <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">

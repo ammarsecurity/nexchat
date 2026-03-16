@@ -46,3 +46,25 @@ export async function stopHub(hub) {
     await hub.stop()
   }
 }
+
+/** تشخيص الاتصال: يطبع في الكونسول معلومات عن الـ URL والـ REST/Hub ping */
+export async function diagnoseConnection() {
+  const base = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'
+  const restUrl = `${base}/api/dev/ping`
+  console.log('[NexChat] API base:', base)
+  console.log('[NexChat] SignalR URL:', `${base}/hubs/conversation`)
+  try {
+    const r = await fetch(restUrl)
+    const j = await r.json()
+    console.log('[NexChat] REST ping:', r.ok ? 'OK' : 'FAIL', j)
+  } catch (e) {
+    console.error('[NexChat] REST ping failed:', e.message)
+  }
+  try {
+    await ensureConnected(conversationHub)
+    const pong = await conversationHub.invoke('Ping')
+    console.log('[NexChat] Hub ping:', pong)
+  } catch (e) {
+    console.error('[NexChat] Hub ping failed:', e.message)
+  }
+}

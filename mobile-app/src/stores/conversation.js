@@ -16,6 +16,10 @@ export const useConversationStore = defineStore('conversation', () => {
     partnerLastReadAt.value = null
   }
 
+  function setMessages(msgs) {
+    messages.value = Array.isArray(msgs) ? [...msgs] : []
+  }
+
   function setPartnerLastReadAt(at) {
     partnerLastReadAt.value = at
   }
@@ -58,7 +62,9 @@ export const useConversationStore = defineStore('conversation', () => {
     })
     if (idx >= 0) {
       messages.value[idx] = { ...serverMsg, status: 'sent' }
+      return true
     }
+    return false
   }
 
   function clearConversation() {
@@ -83,6 +89,7 @@ export const useConversationStore = defineStore('conversation', () => {
     removeMessage,
     setMessageDeletedForEveryone,
     updatePendingMessage,
-    clearConversation
+    clearConversation,
+    setMessages
   }
 })

@@ -1,13 +1,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause } from 'lucide-vue-next'
+import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause, Reply, Forward, Search } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { conversationHub, startHub, ensureConnected } from '../services/signalr'
+import api from '../services/api'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import CachedAvatar from '../components/CachedAvatar.vue'
 import { formatTime12 } from '../utils/formatTime'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
@@ -37,6 +39,12 @@ const recordingSeconds = ref(0)
 let recordingTimer = null
 const imageModalUrl = ref(null)
 const showMessageMenu = ref(null)
+const showMessageMenuMsg = ref(null)
+const msgMenuPosition = ref({})
+const replyingTo = ref(null)
+const showShareToConvModal = ref(false)
+const shareMessageTarget = ref(null)
+const shareSearchQuery = ref('')
 const showDeleteConvConfirm = ref(false)
 const showShareModal = ref(false)
 const shareCodeCopied = ref(false)
@@ -44,12 +52,13 @@ const showInputActionsMenu = ref(false)
 const playingAudioId = ref(null)
 const audioProgress = ref({})
 const audioDurations = ref({})
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const highlightedMessageId = ref(null)
 
 function getMsgKey(msg) {
   return msg.tempId || msg.id || msg.Id
 }
+
+const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
 function linkifyText(text) {
   if (!text || typeof text !== 'string') return ''
@@ -130,6 +139,18 @@ const partnerAvatarIsImage = computed(() =>
   partner.value?.avatar && (partner.value.avatar.startsWith('http') || partner.value.avatar.startsWith('/'))
 )
 
+const shareFilteredList = computed(() => {
+  const list = listStore.list.filter(c => String(c.id ?? c.Id) !== String(conversationId))
+  const q = shareSearchQuery.value.trim()
+  if (!q) return list
+  const lower = q.toLowerCase()
+  return list.filter(c =>
+    (c.partnerName ?? c.PartnerName ?? '').toLowerCase().includes(lower) ||
+    (c.partnerPhone ?? c.PartnerPhone ?? '').includes(q) ||
+    (c.partnerUniqueCode ?? c.PartnerUniqueCode ?? '').toLowerCase().includes(lower)
+  )
+})
+
 function normalizeMsg(msg) {
   return {
     id: msg.id ?? msg.Id,
@@ -138,7 +159,10 @@ function normalizeMsg(msg) {
     type: msg.type ?? msg.Type ?? 'text',
     sentAt: msg.sentAt ?? msg.SentAt,
     deletedForEveryone: msg.deletedForEveryone ?? msg.DeletedForEveryone,
-    isRead: msg.isRead ?? msg.IsRead
+    isRead: msg.isRead ?? msg.IsRead,
+    replyToMessageId: msg.replyToMessageId ?? msg.ReplyToMessageId,
+    replyToContent: msg.replyToContent ?? msg.ReplyToContent,
+    replyToSenderName: msg.replyToSenderName ?? msg.ReplyToSenderName
   }
 }
 
@@ -159,6 +183,17 @@ function markAsReadDebounced() {
 
 onMounted(async () => {
   loading.value = true
+  const partnerFromList = listStore.list.find(
+    (c) => String(c.id ?? c.Id) === String(conversationId)
+  )
+  const partnerInfo = partnerFromList
+    ? {
+        id: partnerFromList.partnerId ?? partnerFromList.PartnerId,
+        name: partnerFromList.partnerName ?? partnerFromList.PartnerName,
+        avatar: partnerFromList.partnerAvatar ?? partnerFromList.PartnerAvatar
+      }
+    : null
+  convStore.setConversation(conversationId, partnerInfo)
   await startHub(conversationHub)
 
   conversationHub.on('ReceiveMessage', (msg) => {
@@ -176,7 +211,8 @@ onMounted(async () => {
           pendingAudioBlobs.delete(pending.tempId)
         }
       }
-      convStore.updatePendingMessage(m)
+      const updated = convStore.updatePendingMessage(m)
+      if (!updated) convStore.addMessage({ ...m, status: 'sent' })
     } else {
       convStore.addMessage({ ...m, status: 'sent' })
       markAsReadDebounced()
@@ -204,12 +240,22 @@ onMounted(async () => {
   conversationHub.on('ConversationJoined', (data) => {
     const p = data.partner ?? data.Partner
     const msgs = data.messages ?? data.Messages ?? []
+    const localPending = convStore.messages.filter((m) => m.tempId)
     convStore.setConversation(conversationId, p)
-    listStore.updateConversation(conversationId, { unreadCount: 0 })
-    if (msgs?.length) {
-      msgs.forEach(m => convStore.addMessage({ ...normalizeMsg(m), status: 'sent' }))
-      nextTick(scrollToBottom)
-    }
+    listStore.updateConversation(conversationId, {
+      unreadCount: 0,
+      partnerAvatar: p?.avatar ?? p?.Avatar,
+      PartnerAvatar: p?.avatar ?? p?.Avatar
+    })
+    const serverNormalized = (msgs || []).map((m) => ({ ...normalizeMsg(m), status: 'sent' }))
+    const serverIds = new Set(serverNormalized.map((m) => String(m.id ?? m.Id)))
+    const toKeep = localPending.filter((m) => !serverIds.has(String(m.id ?? m.Id)))
+    const merged = [...serverNormalized, ...toKeep].sort(
+      (a, b) => new Date(a.sentAt || 0).getTime() - new Date(b.sentAt || 0).getTime()
+    )
+    convStore.setMessages(merged)
+    nextTick(scrollToBottom)
+    loading.value = false
   })
 
   conversationHub.on('PartnerReadUpTo', (payload) => {
@@ -335,7 +381,10 @@ async function handleInput() {
 async function sendMessage() {
   const text = messageText.value.trim()
   if (!text) return
+  const reply = replyingTo.value
+  const replyId = reply?.id
   messageText.value = ''
+  replyingTo.value = null
   nextTick(resizeMsgInput)
   if (typingTimeout) {
     clearTimeout(typingTimeout)
@@ -349,12 +398,15 @@ async function sendMessage() {
     content: text,
     type: 'text',
     sentAt: new Date(),
-    status: 'pending'
+    status: 'pending',
+    replyToMessageId: replyId,
+    replyToContent: reply?.content,
+    replyToSenderName: reply?.senderName
   })
   scrollToBottom()
   try {
     await ensureConnected(conversationHub)
-    await conversationHub.invoke('SendMessage', conversationId, text, 'text')
+    await conversationHub.invoke('SendMessage', conversationId, text, 'text', replyId || undefined)
   } catch {
     convStore.updateMessage(tempId, { status: 'failed' })
   }
@@ -366,17 +418,13 @@ async function handleImageUpload(e) {
   imageInput.value.value = ''
   const formData = new FormData()
   formData.append('file', file)
-  const token = localStorage.getItem('nexchat_token')
   uploadingImage.value = true
+  const tempId = `temp-${Date.now()}`
   try {
-    const res = await fetch(`${API_BASE}/media/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData
-    })
-    if (!res.ok) throw new Error()
-    const { url } = await res.json()
-    const tempId = `temp-${Date.now()}`
+    await ensureConnected(conversationHub, 25000)
+    const { data } = await api.post('/media/upload', formData, { timeout: 60000 })
+    const url = data?.url
+    if (!url || typeof url !== 'string') throw new Error('Invalid upload response')
     convStore.addMessage({
       tempId,
       senderId: currentUserId.value,
@@ -387,11 +435,14 @@ async function handleImageUpload(e) {
     })
     scrollToBottom()
     try {
-      await ensureConnected(conversationHub)
-      await conversationHub.invoke('SendMessage', conversationId, url, 'image')
-    } catch {
+      await ensureConnected(conversationHub, 25000)
+      await conversationHub.invoke('SendMessage', conversationId, url, 'image', null)
+    } catch (err) {
       convStore.updateMessage(tempId, { status: 'failed' })
+      console.warn('SendMessage failed after image upload:', err?.message ?? err)
     }
+  } catch (err) {
+    alert(err?.response?.data?.message || err?.userMessage || t('conversationChat.imageUploadFailed'))
   } finally {
     uploadingImage.value = false
   }
@@ -491,26 +542,33 @@ function stopAndSendVoice() {
     uploadingVoice.value = true
 
     try {
+      await ensureConnected(conversationHub, 25000)
       const formData = new FormData()
       const ext = blob.type.includes('webm') ? '.webm' : blob.type.includes('mp4') ? '.m4a' : '.ogg'
       formData.append('file', blob, `voice${ext}`)
-      const token = localStorage.getItem('nexchat_token')
-      const res = await fetch(`${API_BASE}/media/upload-audio`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      })
-      if (!res.ok) throw new Error()
-      const { url } = await res.json()
-      try {
-        await ensureConnected(conversationHub)
-        await conversationHub.invoke('SendMessage', conversationId, url, 'audio')
-      } catch {
-        convStore.updateMessage(tempId, { status: 'failed' })
+      const { data } = await api.post('/media/upload-audio', formData, { timeout: 60000 })
+      const url = data?.url ?? data?.data?.url
+      if (!url || typeof url !== 'string') throw new Error('Invalid upload response')
+      convStore.updateMessage(tempId, { content: url })
+      pendingAudioBlobs.delete(tempId)
+      try { URL.revokeObjectURL(blobUrl) } catch {}
+      let sent = false
+      for (let attempt = 0; attempt < 2 && !sent; attempt++) {
+        try {
+          await ensureConnected(conversationHub, 25000)
+          await conversationHub.invoke('SendMessage', conversationId, url, 'audio', null)
+          sent = true
+        } catch (err) {
+          if (attempt === 1) {
+            convStore.updateMessage(tempId, { status: 'failed' })
+            const msg = err?.message ?? err?.errorMessage ?? (typeof err === 'string' ? err : JSON.stringify(err))
+            console.warn('SendMessage failed after upload:', msg, err)
+          }
+        }
       }
-    } catch {
+    } catch (err) {
       convStore.updateMessage(tempId, { status: 'failed' })
-      alert(t('conversationChat.voiceUploadFailed'))
+      alert(err?.response?.data?.message || err?.userMessage || t('conversationChat.voiceUploadFailed'))
     } finally {
       uploadingVoice.value = false
     }
@@ -526,8 +584,93 @@ function toggleVoiceRecording() {
   }
 }
 
+function replyToMessage(msg) {
+  showMessageMenu.value = null
+  showMessageMenuMsg.value = null
+  const isMine = String(msg.senderId) === String(currentUserId.value)
+  const preview = msg.type === 'text' ? (msg.content || '').slice(0, 50) : (msg.type === 'audio' ? '🎤' : '🖼')
+  replyingTo.value = {
+    id: msg.id || msg.Id,
+    content: preview,
+    senderName: isMine ? (localeStore.locale === 'ar' ? 'أنت' : 'You') : (partner.value?.name || '—')
+  }
+  msgInputRef.value?.focus()
+}
+
+function cancelReply() {
+  replyingTo.value = null
+}
+
+function scrollToRepliedMessage(replyToMessageId) {
+  if (!replyToMessageId) return
+  const id = String(replyToMessageId)
+  const el = messagesEl.value?.querySelector(`[data-msg-id="${id}"]`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    highlightedMessageId.value = id
+    setTimeout(() => { highlightedMessageId.value = null }, 1500)
+  }
+}
+
+async function openShareToConvModal(msg) {
+  showMessageMenu.value = null
+  showMessageMenuMsg.value = null
+  shareMessageTarget.value = msg
+  if (!listStore.list.length) {
+    try {
+      const { data } = await api.get('/conversations', { params: { filter: 'all' } })
+      listStore.setList(data ?? [])
+    } catch {}
+  }
+  showShareToConvModal.value = true
+}
+
+function closeShareToConvModal() {
+  showShareToConvModal.value = false
+  shareMessageTarget.value = null
+  shareSearchQuery.value = ''
+}
+
+async function shareToConversation(targetConvId) {
+  const msg = shareMessageTarget.value
+  if (!msg || !targetConvId) return
+  closeShareToConvModal()
+  const content = msg.content
+  const type = msg.type || 'text'
+  try {
+    await ensureConnected(conversationHub)
+    await conversationHub.invoke('SendMessage', targetConvId, content, type, null)
+    router.push(`/conversation/${targetConvId}`)
+  } catch {}
+}
+
+function toggleMessageMenu(msg, e) {
+  const id = msg.id || msg.Id
+  if (showMessageMenu.value === id) {
+    showMessageMenu.value = null
+    showMessageMenuMsg.value = null
+    return
+  }
+  const btn = e?.currentTarget
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const spaceAbove = rect.top
+    const spaceBelow = window.innerHeight - rect.bottom
+    const popupH = 90
+    const showAbove = spaceAbove >= popupH || spaceAbove >= spaceBelow
+    msgMenuPosition.value = {
+      top: showAbove ? undefined : rect.bottom + 4 + 'px',
+      bottom: showAbove ? window.innerHeight - rect.top + 4 + 'px' : undefined,
+      left: Math.max(8, rect.right - 150) + 'px'
+    }
+  }
+  showMessageMenu.value = id
+  showMessageMenuMsg.value = msg
+}
+
 async function deleteForMe(msg) {
   showMessageMenu.value = null
+  showMessageMenuMsg.value = null
   try {
     await conversationHub.invoke('DeleteMessageForMe', conversationId, msg.id || msg.Id)
   } catch {}
@@ -535,6 +678,7 @@ async function deleteForMe(msg) {
 
 async function deleteForEveryone(msg) {
   showMessageMenu.value = null
+  showMessageMenuMsg.value = null
   try {
     await conversationHub.invoke('DeleteMessageForEveryone', conversationId, msg.id || msg.Id)
   } catch {}
@@ -554,23 +698,19 @@ async function retryMessage(msg) {
   try {
     if (isAudio && entry?.blob) {
       const blob = entry.blob
+      await ensureConnected(conversationHub, 25000)
       const formData = new FormData()
       const ext = blob.type.includes('webm') ? '.webm' : blob.type.includes('mp4') ? '.m4a' : '.ogg'
       formData.append('file', blob, `voice${ext}`)
-      const token = localStorage.getItem('nexchat_token')
-      const res = await fetch(`${API_BASE}/media/upload-audio`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      })
-      if (!res.ok) throw new Error()
-      const { url } = await res.json()
-      await ensureConnected(conversationHub)
-      await conversationHub.invoke('SendMessage', conversationId, url, 'audio')
+      const { data } = await api.post('/media/upload-audio', formData, { timeout: 60000 })
+      const url = data?.url ?? data?.data?.url
+      if (!url) throw new Error()
+      await ensureConnected(conversationHub, 25000)
+      await conversationHub.invoke('SendMessage', conversationId, url, 'audio', null)
       pendingAudioBlobs.delete(newTempId)
     } else {
       await ensureConnected(conversationHub)
-      await conversationHub.invoke('SendMessage', conversationId, msg.content, msg.type || 'text')
+      await conversationHub.invoke('SendMessage', conversationId, msg.content, msg.type || 'text', null)
     }
   } catch {
     convStore.updateMessage(newTempId, { status: 'failed' })
@@ -641,7 +781,7 @@ async function shareCodeInChat() {
   scrollToBottom()
   try {
     await ensureConnected(conversationHub)
-    await conversationHub.invoke('SendMessage', conversationId, text, 'text')
+    await conversationHub.invoke('SendMessage', conversationId, text, 'text', null)
   } catch {
     convStore.updateMessage(tempId, { status: 'failed' })
   }
@@ -664,7 +804,7 @@ async function leaveChat() {
       <div class="partner-info">
         <div class="avatar-wrap">
           <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: 'var(--primary)' }">
-            <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner?.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+            <CachedAvatar v-if="partnerAvatarIsImage" :url="partner?.avatar" img-class="avatar-img" />
             <span v-else>{{ partnerLetter }}</span>
           </div>
         </div>
@@ -683,19 +823,34 @@ async function leaveChat() {
     </header>
 
     <div class="messages-area" ref="messagesEl">
-      <div v-if="showMessageMenu" class="msg-actions-backdrop" @click="showMessageMenu = null" />
+      <div v-if="showMessageMenu" class="msg-actions-backdrop" @click="showMessageMenu = null; showMessageMenuMsg = null" />
       <div v-if="!messages.length" class="empty-chat text-muted text-sm">{{ t('conversationChat.empty') }}</div>
 
       <div
         v-for="msg in messages"
         :key="msg.tempId || msg.id"
-        :class="['message-wrap', msg.senderId === currentUserId ? 'mine' : 'theirs']"
+        :data-msg-id="getMsgKey(msg)"
+        :class="['message-wrap', msg.senderId === currentUserId ? 'mine' : 'theirs', { 'msg-highlighted': highlightedMessageId === String(getMsgKey(msg)) }]"
       >
         <div v-if="msg.type === 'image'" class="bubble image-bubble">
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ msg.replyToContent || '' }}</span>
+            </div>
+          </div>
           <img v-if="!msg.deletedForEveryone" :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
         <div v-else-if="msg.type === 'audio'" class="bubble audio-bubble">
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ msg.replyToContent || '' }}</span>
+            </div>
+          </div>
           <template v-if="!msg.deletedForEveryone">
             <div class="audio-bubble-inner">
               <button
@@ -731,6 +886,13 @@ async function leaveChat() {
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
         <div v-else class="bubble">
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ msg.replyToContent || '' }}</span>
+            </div>
+          </div>
           <span v-if="msg.deletedForEveryone" class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
           <span v-else class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
         </div>
@@ -748,24 +910,12 @@ async function leaveChat() {
           <button
             v-if="!msg.deletedForEveryone"
             class="msg-menu-btn"
-            @click="showMessageMenu = showMessageMenu === (msg.id || msg.Id) ? null : (msg.id || msg.Id)"
+            @click="toggleMessageMenu(msg, $event)"
           >
             <MoreVertical :size="14" />
           </button>
         </div>
 
-        <Transition name="fade">
-          <div v-if="showMessageMenu === (msg.id || msg.Id)" class="msg-actions-popup glass-card">
-            <button class="msg-action-btn msg-action-me" @click="deleteForMe(msg)">
-              <Trash2 :size="14" stroke-width="2" class="msg-action-icon" />
-              <span class="msg-action-label">{{ t('conversationChat.deleteForMe') }}</span>
-            </button>
-            <button v-if="msg.senderId === currentUserId" class="msg-action-btn msg-action-everyone" @click="deleteForEveryone(msg)">
-              <UserX :size="14" stroke-width="2" class="msg-action-icon" />
-              <span class="msg-action-label">{{ t('conversationChat.deleteForEveryone') }}</span>
-            </button>
-          </div>
-        </Transition>
       </div>
 
       <div v-if="convStore.partnerTyping" class="message-wrap theirs">
@@ -775,8 +925,45 @@ async function leaveChat() {
       </div>
     </div>
 
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showMessageMenu && showMessageMenuMsg" class="msg-actions-popup glass-card msg-actions-popup-fixed" :style="msgMenuPosition">
+          <button class="msg-action-btn msg-action-reply" @click="replyToMessage(showMessageMenuMsg)">
+            <Reply :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.reply') }}</span>
+          </button>
+          <button class="msg-action-btn msg-action-share" @click="openShareToConvModal(showMessageMenuMsg)">
+            <Forward :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.share') }}</span>
+          </button>
+          <button class="msg-action-btn msg-action-me" @click="deleteForMe(showMessageMenuMsg)">
+            <Trash2 :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.deleteForMe') }}</span>
+          </button>
+          <button v-if="showMessageMenuMsg.senderId === currentUserId" class="msg-action-btn msg-action-everyone" @click="deleteForEveryone(showMessageMenuMsg)">
+            <UserX :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.deleteForEveryone') }}</span>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
     <div class="input-area">
-      <button v-if="!isRecording && !uploadingVoice" class="share-code-bar" @click="openShareModal">
+      <Transition name="slide-down">
+        <div v-if="replyingTo" class="reply-preview-bar">
+          <div class="reply-preview-content">
+            <Reply :size="16" class="reply-preview-icon" />
+            <div class="reply-preview-text">
+              <span class="reply-preview-name">{{ replyingTo.senderName }}</span>
+              <span class="reply-preview-msg">{{ replyingTo.content }}</span>
+            </div>
+          </div>
+          <button class="reply-preview-close" @click="cancelReply" :aria-label="t('common.cancel')">
+            <X :size="18" />
+          </button>
+        </div>
+      </Transition>
+      <button v-if="!isRecording && !uploadingVoice && !replyingTo" class="share-code-bar" @click="openShareModal">
         <Share2 :size="18" stroke-width="2" />
         <span>{{ t('conversationChat.shareYourCode') }}</span>
       </button>
@@ -860,6 +1047,42 @@ async function leaveChat() {
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showShareToConvModal" class="share-overlay" @click.self="closeShareToConvModal">
+          <div class="share-modal glass-card share-to-conv-modal">
+            <h3 class="share-modal-title">{{ t('conversationChat.shareToConversation') }}</h3>
+            <div class="share-conv-search-wrap">
+              <Search :size="18" class="share-conv-search-icon" />
+              <input
+                v-model="shareSearchQuery"
+                type="text"
+                class="share-conv-search-input"
+                :placeholder="t('conversationChat.shareSearchPlaceholder')"
+              />
+            </div>
+            <div class="share-conv-list">
+              <button
+                v-for="c in shareFilteredList"
+                :key="c.id ?? c.Id"
+                class="share-conv-item"
+                @click="shareToConversation(c.id ?? c.Id)"
+              >
+                <div class="share-conv-avatar" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+                  <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
+                  <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
+                </div>
+                <span class="share-conv-name">{{ c.partnerName ?? c.PartnerName ?? '—' }}</span>
+                <Forward :size="18" class="share-conv-arrow" />
+              </button>
+              <p v-if="!shareFilteredList.length" class="share-conv-empty">{{ shareSearchQuery.trim() ? t('conversationChat.noSearchResults') : t('conversationChat.noOtherConversations') }}</p>
+            </div>
+            <button class="share-close-btn" @click="closeShareToConvModal">{{ t('common.cancel') }}</button>
+          </div>
+        </div>
+      </Transition>
     </Teleport>
 
     <Teleport to="body">
@@ -1014,6 +1237,23 @@ async function leaveChat() {
 .message-wrap.mine { align-self: flex-end; align-items: flex-end; }
 .message-wrap.theirs { align-self: flex-start; align-items: flex-start; }
 
+.message-wrap.msg-highlighted .bubble {
+  animation: msg-highlight-pulse 1.5s ease-out;
+}
+@keyframes msg-highlight-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(108, 99, 255, 0.5); }
+  30% { box-shadow: 0 0 0 8px rgba(108, 99, 255, 0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(108, 99, 255, 0); }
+}
+.message-wrap.mine.msg-highlighted .bubble {
+  animation: msg-highlight-pulse-mine 1.5s ease-out;
+}
+@keyframes msg-highlight-pulse-mine {
+  0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
+  30% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+
 .bubble {
   background: var(--msg-theirs-bg);
   color: var(--msg-theirs-color);
@@ -1091,9 +1331,6 @@ async function leaveChat() {
 }
 
 .msg-actions-popup {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
   display: flex;
   flex-direction: column;
   min-width: 150px;
@@ -1103,6 +1340,9 @@ async function leaveChat() {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
   z-index: 50;
   direction: rtl;
+}
+.msg-actions-popup.msg-actions-popup-fixed {
+  position: fixed;
 }
 
 .msg-action-btn {
@@ -1155,6 +1395,173 @@ async function leaveChat() {
 .msg-action-everyone:active {
   background: rgba(255, 101, 132, 0.15);
   color: var(--danger);
+}
+
+.msg-action-reply { color: var(--primary); }
+.msg-action-reply:hover, .msg-action-reply:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
+.msg-action-share { color: var(--primary); }
+.msg-action-share:hover, .msg-action-share:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
+
+.msg-reply-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0 0 8px 0;
+  border-inline-start: 3px solid var(--primary);
+  background: rgba(108, 99, 255, 0.1);
+  border-radius: 8px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s;
+  appearance: none;
+}
+.msg-reply-block:active { background: rgba(108, 99, 255, 0.18); }
+.msg-reply-block:hover { background: rgba(108, 99, 255, 0.16); }
+.mine .msg-reply-block {
+  border-inline-start: 3px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.15);
+}
+.mine .msg-reply-block:hover { background: rgba(255, 255, 255, 0.2); }
+.mine .msg-reply-block:active { background: rgba(255, 255, 255, 0.22); }
+.msg-reply-icon { flex-shrink: 0; color: var(--primary); }
+.mine .msg-reply-icon { color: rgba(255, 255, 255, 0.95); }
+.msg-reply-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.msg-reply-name { font-size: 11px; font-weight: 700; color: var(--primary); }
+.mine .msg-reply-name { color: rgba(255, 255, 255, 0.95); }
+.msg-reply-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mine .msg-reply-preview { color: rgba(255, 255, 255, 0.9); }
+
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.15) 0%, rgba(108, 99, 255, 0.06) 100%);
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+.reply-preview-content { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.reply-preview-icon { color: var(--primary); flex-shrink: 0; }
+.reply-preview-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reply-preview-name { font-size: 11px; font-weight: 700; color: var(--primary); }
+.reply-preview-msg { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-preview-close { background: none; border: none; color: var(--text-muted); padding: 4px; cursor: pointer; border-radius: 8px; }
+.reply-preview-close:active { background: rgba(0,0,0,0.08); }
+
+.slide-down-enter-active, .slide-down-leave-active { transition: all 0.2s ease; }
+.slide-down-enter-from, .slide-down-leave-to { opacity: 0; transform: translateY(-8px); }
+
+.share-to-conv-modal {
+  max-width: min(420px, 92vw);
+  width: 100%;
+  padding: 24px 20px;
+  font-family: 'Cairo', sans-serif;
+  align-items: stretch;
+  text-align: right;
+}
+.share-to-conv-modal .share-modal-title {
+  margin-bottom: 18px;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'Cairo', sans-serif;
+}
+.share-conv-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  min-height: 48px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.share-conv-search-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.share-conv-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+}
+.share-conv-search-input::placeholder {
+  color: var(--text-muted);
+}
+.share-conv-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-inline: 2px;
+}
+.share-conv-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: right;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, border-color 0.2s;
+}
+.share-conv-item:active { background: var(--bg-card-hover); border-color: rgba(108, 99, 255, 0.3); }
+.share-conv-avatar {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 19px;
+  color: white;
+  overflow: hidden;
+  font-family: 'Cairo', sans-serif;
+}
+.share-conv-avatar .avatar-img { width: 100%; height: 100%; object-fit: cover; }
+.share-conv-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-primary);
+  font-family: 'Cairo', sans-serif;
+}
+.share-conv-arrow { color: var(--primary); flex-shrink: 0; }
+.share-conv-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 32px 24px;
+  margin: 0;
+  font-family: 'Cairo', sans-serif;
+}
+.share-to-conv-modal .share-close-btn {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 20px;
 }
 
 .input-area {

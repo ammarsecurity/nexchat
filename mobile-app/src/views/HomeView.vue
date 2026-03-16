@@ -93,8 +93,9 @@ onMounted(async () => {
 
   try {
     await startHub(conversationHub)
-    const { data } = await api.get('/conversations', { params: { filter: 'all' } })
-    listStore.setList(data ?? [])
+    api.get('/conversations', { params: { filter: 'all' } }).then(({ data }) => {
+      listStore.setList(data ?? [])
+    }).catch(() => {})
     conversationHub.on('ConversationListUpdated', handleConversationListUpdated)
   } catch {}
 })
@@ -116,10 +117,9 @@ async function handleConversationListUpdated(payload) {
     LastMessageAt: at
   }, shouldIncrementUnread)
   if (!updated) {
-    try {
-      const { data: res } = await api.get('/conversations', { params: { filter: 'all' } })
+    api.get('/conversations', { params: { filter: 'all' } }).then(({ data: res }) => {
       listStore.setList(res ?? [])
-    } catch {}
+    }).catch(() => {})
   }
 }
 

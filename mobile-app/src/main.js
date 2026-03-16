@@ -20,6 +20,12 @@ i18n.global.locale.value = localeStore.locale
 
 // Expose router for notification click handler
 window.__nexchat_router__ = router
+// تشخيص الاتصال: استدعِ من الكونسول: diagnoseConnection()
+if (import.meta.env.DEV) {
+  import('./services/signalr').then(({ diagnoseConnection }) => {
+    window.diagnoseConnection = diagnoseConnection
+  })
+}
 
 // Apply saved theme before mount
 useThemeStore().applyTheme()
