@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause, Reply, Forward, Search } from 'lucide-vue-next'
+import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause, Reply, Forward } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
+import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub, ensureConnected } from '../services/signalr'
 import api from '../services/api'
+import { loadMessagesFromCache, saveMessagesForConversation, clearMessagesForConversation } from '../services/cache'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import CachedAvatar from '../components/CachedAvatar.vue'
@@ -19,8 +21,18 @@ const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationStore()
 const listStore = useConversationsListStore()
+const network = useNetworkStore()
 const localeStore = useLocaleStore()
 const { t } = useI18n()
+
+let saveMessagesToCacheTimer = null
+function debouncedSaveMessages(convId) {
+  if (saveMessagesToCacheTimer) clearTimeout(saveMessagesToCacheTimer)
+  saveMessagesToCacheTimer = setTimeout(() => {
+    saveMessagesToCacheTimer = null
+    saveMessagesForConversation(convId, convStore.messages)
+  }, 400)
+}
 
 const conversationId = route.params.conversationId
 const messageText = ref('')
@@ -42,9 +54,6 @@ const showMessageMenu = ref(null)
 const showMessageMenuMsg = ref(null)
 const msgMenuPosition = ref({})
 const replyingTo = ref(null)
-const showShareToConvModal = ref(false)
-const shareMessageTarget = ref(null)
-const shareSearchQuery = ref('')
 const showDeleteConvConfirm = ref(false)
 const showShareModal = ref(false)
 const shareCodeCopied = ref(false)
@@ -88,6 +97,14 @@ function formatAudioDuration(sec) {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function replyPreviewText(content) {
+  if (!content || typeof content !== 'string') return ''
+  const lower = content.toLowerCase()
+  if (/\.(webm|m4a|ogg|opus|mp3|wav)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('webm') || lower.includes('m4a') || lower.includes('ogg')))) return t('conversationChat.voiceMessage')
+  if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('jpg') || lower.includes('png') || lower.includes('webp')))) return t('conversationChat.replyPreviewImage')
+  return content
 }
 
 function getAudioProgress(msg) {
@@ -138,18 +155,7 @@ const partnerLetter = computed(() => partner.value?.name?.[0]?.toUpperCase() || 
 const partnerAvatarIsImage = computed(() =>
   partner.value?.avatar && (partner.value.avatar.startsWith('http') || partner.value.avatar.startsWith('/'))
 )
-
-const shareFilteredList = computed(() => {
-  const list = listStore.list.filter(c => String(c.id ?? c.Id) !== String(conversationId))
-  const q = shareSearchQuery.value.trim()
-  if (!q) return list
-  const lower = q.toLowerCase()
-  return list.filter(c =>
-    (c.partnerName ?? c.PartnerName ?? '').toLowerCase().includes(lower) ||
-    (c.partnerPhone ?? c.PartnerPhone ?? '').includes(q) ||
-    (c.partnerUniqueCode ?? c.PartnerUniqueCode ?? '').toLowerCase().includes(lower)
-  )
-})
+const partnerIsOnline = computed(() => partner.value?.isOnline ?? partner.value?.IsOnline ?? false)
 
 function normalizeMsg(msg) {
   return {
@@ -182,7 +188,6 @@ function markAsReadDebounced() {
 }
 
 onMounted(async () => {
-  loading.value = true
   const partnerFromList = listStore.list.find(
     (c) => String(c.id ?? c.Id) === String(conversationId)
   )
@@ -194,6 +199,15 @@ onMounted(async () => {
       }
     : null
   convStore.setConversation(conversationId, partnerInfo)
+
+  const cachedMessages = await loadMessagesFromCache(conversationId)
+  if (cachedMessages?.length) {
+    convStore.setMessages(cachedMessages)
+    nextTick(scrollToBottom)
+  }
+  loading.value = false
+  if (!network.isOnline) return
+
   await startHub(conversationHub)
 
   conversationHub.on('ReceiveMessage', (msg) => {
@@ -218,6 +232,7 @@ onMounted(async () => {
       markAsReadDebounced()
     }
     nextTick(scrollToBottom)
+    debouncedSaveMessages(conversationId)
   })
 
   conversationHub.on('UserTyping', () => { convStore.partnerTyping = true })
@@ -234,6 +249,7 @@ onMounted(async () => {
   conversationHub.on('ConversationDeletedForMe', () => {
     listStore.removeConversation(conversationId)
     convStore.clearConversation()
+    clearMessagesForConversation(conversationId)
     router.replace('/conversations')
   })
 
@@ -256,6 +272,7 @@ onMounted(async () => {
     convStore.setMessages(merged)
     nextTick(scrollToBottom)
     loading.value = false
+    saveMessagesForConversation(conversationId, merged)
   })
 
   conversationHub.on('PartnerReadUpTo', (payload) => {
@@ -321,6 +338,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   mounted = false
+  if (saveMessagesToCacheTimer) clearTimeout(saveMessagesToCacheTimer)
   if (markAsReadTimer) clearTimeout(markAsReadTimer)
   if (markAsReadInterval) clearInterval(markAsReadInterval)
   if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
@@ -612,36 +630,25 @@ function scrollToRepliedMessage(replyToMessageId) {
   }
 }
 
-async function openShareToConvModal(msg) {
+function openShareToConvModal(msg) {
   showMessageMenu.value = null
   showMessageMenuMsg.value = null
-  shareMessageTarget.value = msg
-  if (!listStore.list.length) {
-    try {
-      const { data } = await api.get('/conversations', { params: { filter: 'all' } })
-      listStore.setList(data ?? [])
-    } catch {}
-  }
-  showShareToConvModal.value = true
+  router.push({
+    path: '/share-message',
+    state: {
+      shareMessage: { content: msg.content, type: msg.type || 'text' },
+      sourceConversationId: conversationId
+    }
+  })
 }
 
-function closeShareToConvModal() {
-  showShareToConvModal.value = false
-  shareMessageTarget.value = null
-  shareSearchQuery.value = ''
-}
-
-async function shareToConversation(targetConvId) {
-  const msg = shareMessageTarget.value
-  if (!msg || !targetConvId) return
-  closeShareToConvModal()
-  const content = msg.content
-  const type = msg.type || 'text'
-  try {
-    await ensureConnected(conversationHub)
-    await conversationHub.invoke('SendMessage', targetConvId, content, type, null)
-    router.push(`/conversation/${targetConvId}`)
-  } catch {}
+function goToPartnerProfile() {
+  const pid = convStore.partner?.id
+  if (!pid) return
+  router.push({
+    path: `/profile/${pid}`,
+    state: { conversationId }
+  })
 }
 
 function toggleMessageMenu(msg, e) {
@@ -801,7 +808,7 @@ async function leaveChat() {
       <button class="back-btn" @click="leaveChat" :aria-label="t('common.cancel')">
         <ChevronRight :size="22" />
       </button>
-      <div class="partner-info">
+      <button type="button" class="partner-info partner-info-btn" @click="goToPartnerProfile">
         <div class="avatar-wrap">
           <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: 'var(--primary)' }">
             <CachedAvatar v-if="partnerAvatarIsImage" :url="partner?.avatar" img-class="avatar-img" />
@@ -811,10 +818,14 @@ async function leaveChat() {
         <div class="partner-meta">
           <div class="partner-name">{{ partner?.name || '...' }}</div>
           <div class="typing-status">
-            <span v-if="convStore.partnerTyping" class="typing-text">يكتب...</span>
+            <span v-if="convStore.partnerTyping" class="typing-text">{{ t('conversationChat.typing') }}</span>
+            <span v-else class="partner-online-status" :class="{ online: partnerIsOnline }">
+              <span class="partner-online-dot"></span>
+              {{ partnerIsOnline ? t('profile.online') : t('profile.offline') }}
+            </span>
           </div>
         </div>
-      </div>
+      </button>
       <div class="header-actions">
         <button class="icon-btn" @click="showDeleteConvConfirm = true" :title="t('conversationChat.deleteConversation')">
           <Trash2 :size="20" />
@@ -837,7 +848,7 @@ async function leaveChat() {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ msg.replyToContent || '' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
             </div>
           </div>
           <img v-if="!msg.deletedForEveryone" :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
@@ -848,7 +859,7 @@ async function leaveChat() {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ msg.replyToContent || '' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
             </div>
           </div>
           <template v-if="!msg.deletedForEveryone">
@@ -890,7 +901,7 @@ async function leaveChat() {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ msg.replyToContent || '' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
             </div>
           </div>
           <span v-if="msg.deletedForEveryone" class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
@@ -1051,42 +1062,6 @@ async function leaveChat() {
 
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showShareToConvModal" class="share-overlay" @click.self="closeShareToConvModal">
-          <div class="share-modal glass-card share-to-conv-modal">
-            <h3 class="share-modal-title">{{ t('conversationChat.shareToConversation') }}</h3>
-            <div class="share-conv-search-wrap">
-              <Search :size="18" class="share-conv-search-icon" />
-              <input
-                v-model="shareSearchQuery"
-                type="text"
-                class="share-conv-search-input"
-                :placeholder="t('conversationChat.shareSearchPlaceholder')"
-              />
-            </div>
-            <div class="share-conv-list">
-              <button
-                v-for="c in shareFilteredList"
-                :key="c.id ?? c.Id"
-                class="share-conv-item"
-                @click="shareToConversation(c.id ?? c.Id)"
-              >
-                <div class="share-conv-avatar" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-                  <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
-                  <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
-                </div>
-                <span class="share-conv-name">{{ c.partnerName ?? c.PartnerName ?? '—' }}</span>
-                <Forward :size="18" class="share-conv-arrow" />
-              </button>
-              <p v-if="!shareFilteredList.length" class="share-conv-empty">{{ shareSearchQuery.trim() ? t('conversationChat.noSearchResults') : t('conversationChat.noOtherConversations') }}</p>
-            </div>
-            <button class="share-close-btn" @click="closeShareToConvModal">{{ t('common.cancel') }}</button>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal">
         <div v-if="showShareModal" class="share-overlay" @click.self="closeShareModal">
           <div class="share-modal glass-card">
             <div class="share-modal-header">
@@ -1163,6 +1138,17 @@ async function leaveChat() {
   gap: 10px;
   min-width: 0;
   flex: 1;
+}
+
+.partner-info-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: start;
+  -webkit-tap-highlight-color: transparent;
+  font: inherit;
+  color: inherit;
   margin-inline-start: 12px;
   margin-inline-end: 12px;
 }
@@ -1188,9 +1174,35 @@ async function leaveChat() {
   font-size: 12px;
   color: var(--text-muted);
   min-height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .typing-text { font-family: 'Cairo', sans-serif; }
+
+.partner-online-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Cairo', sans-serif;
+  color: var(--text-tertiary);
+}
+
+.partner-online-status.online { color: var(--text-secondary); }
+
+.partner-online-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.partner-online-status.online .partner-online-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 1px var(--bg-primary);
+}
 
 .header-actions { display: flex; gap: 8px; }
 
@@ -1460,109 +1472,6 @@ async function leaveChat() {
 
 .slide-down-enter-active, .slide-down-leave-active { transition: all 0.2s ease; }
 .slide-down-enter-from, .slide-down-leave-to { opacity: 0; transform: translateY(-8px); }
-
-.share-to-conv-modal {
-  max-width: min(420px, 92vw);
-  width: 100%;
-  padding: 24px 20px;
-  font-family: 'Cairo', sans-serif;
-  align-items: stretch;
-  text-align: right;
-}
-.share-to-conv-modal .share-modal-title {
-  margin-bottom: 18px;
-  font-size: 18px;
-  font-weight: 700;
-  font-family: 'Cairo', sans-serif;
-}
-.share-conv-search-wrap {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  min-height: 48px;
-  margin-bottom: 16px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-}
-.share-conv-search-icon {
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-.share-conv-search-input {
-  flex: 1;
-  min-width: 0;
-  padding: 14px 0;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-family: 'Cairo', sans-serif;
-  outline: none;
-}
-.share-conv-search-input::placeholder {
-  color: var(--text-muted);
-}
-.share-conv-list {
-  max-height: 320px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 18px;
-  padding-inline: 2px;
-}
-.share-conv-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  cursor: pointer;
-  text-align: right;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s, border-color 0.2s;
-}
-.share-conv-item:active { background: var(--bg-card-hover); border-color: rgba(108, 99, 255, 0.3); }
-.share-conv-avatar {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 19px;
-  color: white;
-  overflow: hidden;
-  font-family: 'Cairo', sans-serif;
-}
-.share-conv-avatar .avatar-img { width: 100%; height: 100%; object-fit: cover; }
-.share-conv-name {
-  flex: 1;
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--text-primary);
-  font-family: 'Cairo', sans-serif;
-}
-.share-conv-arrow { color: var(--primary); flex-shrink: 0; }
-.share-conv-empty {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 15px;
-  padding: 32px 24px;
-  margin: 0;
-  font-family: 'Cairo', sans-serif;
-}
-.share-to-conv-modal .share-close-btn {
-  font-size: 15px;
-  font-weight: 600;
-  padding: 10px 20px;
-}
 
 .input-area {
   padding: 8px var(--spacing) calc(var(--spacing) + var(--safe-bottom));

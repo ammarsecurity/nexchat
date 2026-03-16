@@ -1,5 +1,6 @@
 export default {
   common: {
+    back: 'رجوع',
     cancel: 'إلغاء',
     copy: 'نسخ',
     copied: 'تم النسخ',
@@ -39,6 +40,20 @@ export default {
     addCode: 'إضافة كود',
     noSavedCodes: 'لا توجد أكواد محفوظة',
     codeLabelPlaceholder: 'تسمية (اختياري)'
+  },
+  profile: {
+    title: 'الملف الشخصي',
+    viewProfile: 'عرض الملف الشخصي',
+    notFound: 'المستخدم غير متوفر أو تم حظره.',
+    genderMale: 'ذكر',
+    genderFemale: 'أنثى',
+    genderOther: 'آخر',
+    online: 'متصل الآن',
+    offline: 'غير متصل',
+    phone: 'رقم الهاتف',
+    phoneNotSet: 'غير متوفر',
+    openChat: 'فتح المحادثة',
+    startChat: 'بدء محادثة'
   },
   settings: {
     title: 'الإعدادات',
@@ -201,7 +216,8 @@ export default {
   noConnection: {
     title: 'لا يوجد اتصال بالإنترنت',
     desc: 'تحقق من اتصالك بالشبكة وحاول مرة أخرى',
-    retry: 'إعادة المحاولة'
+    retry: 'إعادة المحاولة',
+    offlineBanner: 'لا اتصال - البيانات من الذاكرة المحلية'
   },
   gender: {
     male: 'ذكر',
@@ -245,10 +261,13 @@ export default {
     unarchive: 'إلغاء الأرشفة',
     delete: 'حذف المحادثة',
     markRead: 'وضع كمقروء',
-    needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات'
+    needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات',
+    optionsTitle: 'خيارات المحادثة',
+    notFound: 'المحادثة غير موجودة'
   },
   conversationChat: {
     empty: 'ابدأ المحادثة بأول رسالة! 👋',
+    typing: 'يكتب...',
     messagePlaceholder: 'رسالة',
     reply: 'رد',
     share: 'مشاركة',
@@ -273,6 +292,7 @@ export default {
     attachOrVoice: 'مرفقات أو رسالة صوتية',
     attachImage: 'إرفاق صورة',
     voiceMessage: 'رسالة صوتية',
+    replyPreviewImage: 'صورة',
     voiceNotSupported: 'التسجيل الصوتي غير مدعوم في هذا المتصفح',
     voicePermissionDenied: 'يجب السماح بالوصول للميكروفون',
     voiceUploadFailed: 'فشل رفع الرسالة الصوتية',

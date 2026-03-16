@@ -120,6 +120,7 @@ public class ConversationsController(AppDbContext db) : ControllerBase
             var preview = lastMsg == null ? null :
                 lastMsg.DeletedForEveryone ? "تم حذف هذه الرسالة" :
                 lastMsg.Type == "image" ? "صورة" :
+                lastMsg.Type == "audio" ? "رسالة صوتية" :
                 lastMsg.Content.Length > 50 ? lastMsg.Content[..50] + "…" : lastMsg.Content;
 
             result.Add(new ConversationListItemDto(

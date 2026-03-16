@@ -157,7 +157,18 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("NexChatPolicy");
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var origin = ctx.Context.Request.Headers.Origin.FirstOrDefault();
+        if (!string.IsNullOrEmpty(origin))
+        {
+            ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", origin);
+            ctx.Context.Response.Headers.Append("Access-Control-Allow-Credentials", "true");
+        }
+    }
+});
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

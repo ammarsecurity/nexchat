@@ -62,18 +62,26 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             .ToListAsync();
 
         var replyIds = messagesRaw.Where(m => m.ReplyToMessageId != null).Select(m => m.ReplyToMessageId!.Value).Distinct().ToList();
-        Dictionary<Guid, (string? Content, string? SenderName)> replyData;
+        Dictionary<Guid, (string? Content, string Type, string? SenderName)> replyData;
         if (replyIds.Count > 0)
         {
             var replyList = await db.ConversationMessages
                 .Where(m => replyIds.Contains(m.Id))
-                .Select(m => new { m.Id, m.Content, SenderName = m.Sender.Name })
+                .Select(m => new { m.Id, m.Content, m.Type, SenderName = m.Sender.Name })
                 .ToListAsync();
-            replyData = replyList.ToDictionary(m => m.Id, m => (m.Content, m.SenderName));
+            replyData = replyList.ToDictionary(m => m.Id, m => (m.Content, m.Type ?? "text", m.SenderName));
         }
         else
         {
-            replyData = new Dictionary<Guid, (string? Content, string? SenderName)>();
+            replyData = new Dictionary<Guid, (string? Content, string Type, string? SenderName)>();
+        }
+
+        static string GetReplyPreview(string? content, string type)
+        {
+            if (type == "audio") return "رسالة صوتية";
+            if (type == "image") return "صورة";
+            if (string.IsNullOrEmpty(content)) return "";
+            return content.Length > 80 ? content[..80] + "…" : content;
         }
 
         var messages = messagesRaw.Select(m =>
@@ -82,7 +90,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             var replyToSenderName = (string?)null;
             if (m.ReplyToMessageId != null && replyData.TryGetValue(m.ReplyToMessageId.Value, out var rd))
             {
-                replyToContent = rd.Content?.Length > 80 ? rd.Content[..80] + "…" : rd.Content;
+                replyToContent = GetReplyPreview(rd.Content, rd.Type);
                 replyToSenderName = rd.SenderName ?? "—";
             }
             return new
@@ -103,7 +111,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         await Clients.Caller.SendAsync("ConversationJoined", new
         {
             Id = conv.Id,
-            Partner = new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar },
+            Partner = new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, partner.IsOnline },
             Messages = messages
         });
 
@@ -232,7 +240,8 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
                 if (replyTo != null)
                 {
                     replyToId = rid;
-                    replyToContent = replyTo.Content?.Length > 80 ? replyTo.Content[..80] + "…" : replyTo.Content;
+                    var rt = replyTo.Type ?? "text";
+                    replyToContent = rt == "audio" ? "رسالة صوتية" : rt == "image" ? "صورة" : (replyTo.Content?.Length > 80 ? replyTo.Content[..80] + "…" : replyTo.Content);
                     var replySender = await db.Users.FindAsync(replyTo.SenderId);
                     replyToSenderName = replySender?.Name ?? (replyTo.SenderId == userId ? "أنت" : "طرف آخر");
                 }

@@ -35,6 +35,19 @@ public record UpdateBirthDateRequest(string BirthDate);
 
 public record UpdateProfileContactRequest(string Country, string CountryCode, string PhoneNumber);
 
+/// <summary>بروفايل عام لمستخدم آخر.</summary>
+public record PublicProfileDto(
+    Guid Id,
+    string Name,
+    string Gender,
+    string UniqueCode,
+    string? Avatar,
+    bool IsFeatured = false,
+    bool IsOnline = false,
+    string? PhoneNumber = null,
+    string? Country = null
+);
+
 public record DeleteAccountRequest(string Password);
 
 public record AddSavedCodeRequest(string Code, string? Label);

@@ -11,7 +11,6 @@ import { validatePhone, getPhoneErrorMessage } from '../utils/phoneValidation'
 const router = useRouter()
 const { t } = useI18n()
 
-const loading = ref(false)
 const contacts = ref([])
 const showAddModal = ref(false)
 const addCountry = ref(null)
@@ -30,18 +29,15 @@ const countryCode = computed(() => {
 const filteredContacts = computed(() => contacts.value)
 
 async function fetchContacts() {
-  loading.value = true
   needPhone.value = false
   try {
-    const { data } = await api.get('/contacts')
+    const { data } = await api.get('/contacts', { skipGlobalLoader: true })
     contacts.value = data ?? []
   } catch (e) {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
     }
     contacts.value = []
-  } finally {
-    loading.value = false
   }
 }
 
@@ -136,8 +132,7 @@ function goBack() {
     </div>
 
     <div class="scroll-area">
-      <div v-if="loading" class="loading-msg">{{ t('common.loading') }}</div>
-      <div v-else-if="!contacts.length && !needPhone" class="empty-state">
+      <div v-if="!contacts.length && !needPhone" class="empty-state">
         <UserPlus :size="48" class="empty-icon" />
         <p>{{ t('contacts.empty') }}</p>
         <p class="empty-hint">{{ t('contacts.addFirst') }}</p>
@@ -296,7 +291,7 @@ function goBack() {
   padding: var(--spacing);
 }
 
-.loading-msg, .empty-state {
+.empty-state {
   text-align: center;
   padding: 48px 24px;
 }

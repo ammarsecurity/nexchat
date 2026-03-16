@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, Archive, Trash2, Check, MoreVertical, Users } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -11,9 +11,12 @@ import { useLocaleStore } from '../stores/locale'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useConversationStore } from '../stores/conversation'
 import { useAuthStore } from '../stores/auth'
+import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub } from '../services/signalr'
+import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
 
 const router = useRouter()
+const network = useNetworkStore()
 const route = useRoute()
 const { t } = useI18n()
 const localeStore = useLocaleStore()
@@ -21,13 +24,11 @@ const listStore = useConversationsListStore()
 const convStore = useConversationStore()
 const auth = useAuthStore()
 
-const loading = ref(false)
+const ready = ref(false)
 const conversations = computed(() => listStore.list)
 const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
-const contextConv = ref(null)
-const showContextMenu = ref(false)
 
 const filteredList = computed(() => {
   let list = conversations.value
@@ -43,64 +44,31 @@ const filteredList = computed(() => {
 })
 
 async function fetchConversations() {
+  const cached = await loadConversationsListFromCache()
+  if (cached?.length) listStore.setList(cached)
+  ready.value = true
+
   needPhone.value = false
-  loading.value = true
+  if (!network.isOnline) return
   try {
     const { data } = await api.get('/conversations', {
-      params: { filter: filter.value, search: searchQuery.value || undefined }
+      params: { filter: filter.value, search: searchQuery.value || undefined },
+      skipGlobalLoader: true
     })
-    listStore.setList(data ?? [])
+    const list = data ?? []
+    listStore.setList(list)
+    await saveConversationsList(list)
   } catch (e) {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
     }
-    // عدم مسح القائمة عند فشل الـ API للحفاظ على العداد والكاش
-  } finally {
-    loading.value = false
   }
-}
-
-async function togglePin(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.put(`/conversations/${id}/pin`)
-    listStore.updateConversation(id, { isPinned: !(c.isPinned ?? c.IsPinned) })
-  } catch {}
-  showContextMenu.value = false
-}
-
-async function toggleArchive(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.put(`/conversations/${id}/archive`)
-    listStore.updateConversation(id, { isArchived: !(c.isArchived ?? c.IsArchived) })
-    await fetchConversations()
-  } catch {}
-  showContextMenu.value = false
-}
-
-async function markRead(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.put(`/conversations/${id}/read`)
-    listStore.updateConversation(id, { unreadCount: 0 })
-  } catch {}
-  showContextMenu.value = false
-}
-
-async function deleteConversation(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.delete(`/conversations/${id}`)
-    listStore.removeConversation(id)
-  } catch {}
-  showContextMenu.value = false
 }
 
 function openContextMenu(conv, e) {
   e?.stopPropagation()
-  contextConv.value = conv
-  showContextMenu.value = true
+  const id = conv?.id ?? conv?.Id
+  if (id) router.push(`/conversations/${id}/options`)
 }
 
 function formatTime(ts) {
@@ -124,8 +92,8 @@ function getUnreadCount(c) {
 
 watch(filter, fetchConversations, { immediate: true })
 
-watch([() => route.query.open, loading], ([openId, isLoading]) => {
-  if (!openId || isLoading) return
+watch([() => route.query.open, ready], ([openId, isReady]) => {
+  if (!openId || !isReady) return
   nextTick(() => router.replace(`/conversation/${openId}`))
 })
 
@@ -145,6 +113,7 @@ async function handleListUpdated(payload) {
     LastMessagePreview: preview,
     LastMessageAt: at
   }, shouldIncrementUnread)
+  if (updated) await saveConversationsList(listStore.list)
   if (!updated) await fetchConversations()
 }
 
@@ -216,8 +185,7 @@ function goBack() {
     </div>
 
     <div class="scroll-area">
-      <div v-if="loading" class="loading-msg">{{ t('common.loading') }}</div>
-      <div v-else-if="!filteredList.length" class="empty-state">
+      <div v-if="!filteredList.length" class="empty-state">
         <MessageCircle :size="48" class="empty-icon" />
         <p>{{ t('conversations.empty') }}</p>
         <button class="btn-gradient" @click="goToContacts">{{ t('conversations.newChat') }}</button>
@@ -264,28 +232,6 @@ function goBack() {
       </div>
     </div>
 
-    <Teleport to="body">
-      <div v-if="showContextMenu && contextConv" class="modal-overlay" @click="showContextMenu = false">
-        <div class="context-menu" @click.stop>
-          <button @click="togglePin(contextConv)">
-            <Pin :size="18" />
-            {{ (contextConv.isPinned ?? contextConv.IsPinned) ? t('conversations.unpin') : t('conversations.pin') }}
-          </button>
-          <button @click="toggleArchive(contextConv)">
-            <Archive :size="18" />
-            {{ (contextConv.isArchived ?? contextConv.IsArchived) ? t('conversations.unarchive') : t('conversations.archive') }}
-          </button>
-          <button v-if="getUnreadCount(contextConv) > 0" @click="markRead(contextConv)">
-            <Check :size="18" />
-            {{ t('conversations.markRead') }}
-          </button>
-          <button class="danger" @click="deleteConversation(contextConv)">
-            <Trash2 :size="18" />
-            {{ t('conversations.delete') }}
-          </button>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -428,14 +374,6 @@ function goBack() {
   overflow-x: hidden;
   padding: 0 var(--spacing);
   -webkit-overflow-scrolling: touch;
-}
-
-.loading-msg {
-  font-size: 14px;
-  color: var(--text-muted);
-  padding: 32px;
-  text-align: center;
-  font-family: 'Cairo', sans-serif;
 }
 
 .empty-state {
@@ -595,47 +533,6 @@ function goBack() {
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
   flex-shrink: 0;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.context-menu {
-  min-width: 220px;
-  padding: 8px 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.context-menu button {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 16px;
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  text-align: start;
-}
-
-.context-menu button:hover {
-  background: var(--bg-elevated);
-}
-
-.context-menu button.danger {
-  color: #f44336;
 }
 
 .btn-gradient {

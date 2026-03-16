@@ -31,6 +31,24 @@ public class UserController(AppDbContext db) : ControllerBase
         ));
     }
 
+    /// <summary>بروفايل عام لمستخدم آخر (للعرض فقط، بدون هاتف أو تاريخ ميلاد).</summary>
+    [HttpGet("profile/{userId:guid}")]
+    public async Task<ActionResult<PublicProfileDto>> GetPublicProfile(Guid userId)
+    {
+        if (userId == CurrentUserId)
+            return BadRequest(new { message = "استخدم /user/me لملفك الشخصي" });
+        var user = await db.Users.FindAsync(userId);
+        if (user == null || user.IsBanned) return NotFound();
+        var blocked = await db.UserBlocks
+            .AnyAsync(b => (b.BlockerId == CurrentUserId && b.BlockedUserId == userId) ||
+                           (b.BlockerId == userId && b.BlockedUserId == CurrentUserId));
+        if (blocked) return NotFound();
+        return Ok(new PublicProfileDto(
+            user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, user.IsOnline,
+            user.PhoneNumber, user.Country
+        ));
+    }
+
     [HttpPut("birth-date")]
     public async Task<IActionResult> UpdateBirthDate([FromBody] UpdateBirthDateRequest req)
     {

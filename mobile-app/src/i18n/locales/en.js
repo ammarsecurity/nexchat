@@ -1,5 +1,6 @@
 export default {
   common: {
+    back: 'Back',
     cancel: 'Cancel',
     copy: 'Copy',
     copied: 'Copied',
@@ -39,6 +40,20 @@ export default {
     addCode: 'Add code',
     noSavedCodes: 'No saved codes',
     codeLabelPlaceholder: 'Label (optional)'
+  },
+  profile: {
+    title: 'Profile',
+    viewProfile: 'View profile',
+    notFound: 'User is not available or has been blocked.',
+    genderMale: 'Male',
+    genderFemale: 'Female',
+    genderOther: 'Other',
+    online: 'Online now',
+    offline: 'Offline',
+    phone: 'Phone number',
+    phoneNotSet: 'Not set',
+    openChat: 'Open chat',
+    startChat: 'Start chat'
   },
   settings: {
     title: 'Settings',
@@ -201,7 +216,8 @@ export default {
   noConnection: {
     title: 'No internet connection',
     desc: 'Check your network connection and try again',
-    retry: 'Retry'
+    retry: 'Retry',
+    offlineBanner: 'Offline - Showing cached data'
   },
   gender: {
     male: 'Male',
@@ -245,10 +261,13 @@ export default {
     unarchive: 'Unarchive',
     delete: 'Delete conversation',
     markRead: 'Mark as read',
-    needPhone: 'Add your phone number from settings to use conversations'
+    needPhone: 'Add your phone number from settings to use conversations',
+    optionsTitle: 'Conversation options',
+    notFound: 'Conversation not found'
   },
   conversationChat: {
     empty: 'Start the conversation with your first message! 👋',
+    typing: 'Typing...',
     messagePlaceholder: 'Message',
     reply: 'Reply',
     share: 'Share',
@@ -273,6 +292,7 @@ export default {
     attachOrVoice: 'Attach or voice',
     attachImage: 'Attach image',
     voiceMessage: 'Voice message',
+    replyPreviewImage: 'Image',
     voiceNotSupported: 'Voice recording is not supported in this browser',
     voicePermissionDenied: 'Microphone access is required',
     voiceUploadFailed: 'Failed to upload voice message',
