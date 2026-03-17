@@ -42,6 +42,7 @@ const navItems = [
   { title: 'الإعلانات', icon: 'mdi-image-multiple', to: '/ads' },
   { title: 'الإشعارات العامة', icon: 'mdi-bell-ring', to: '/notifications' },
   { title: 'تحديث التطبيق', icon: 'mdi-cellphone-arrow-down', to: '/app-update' },
+  { title: 'ميزات التطبيق', icon: 'mdi-toggle-switch', to: '/features' },
   { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
   { title: 'التواصل الاجتماعي', icon: 'mdi-share-variant', to: '/social' },
   { title: 'الصفحات الاسترشادية', icon: 'mdi-book-open-page-variant', to: '/onboarding' },
@@ -146,28 +147,18 @@ function logout() {
         />
         <v-app-bar-title class="font-weight-bold" :class="{ 'text-h6': mobile }">{{ currentTitle }}</v-app-bar-title>
         <template #append>
-          <v-chip
-            v-if="!mobile"
-            prepend-icon="mdi-circle"
-            color="success"
-            size="small"
-            variant="tonal"
-            class="mr-4"
-          >
-            <span class="online-dot mr-1"></span>
-            نشط
-          </v-chip>
-          <v-chip
-            v-else
-            prepend-icon="mdi-circle"
-            color="success"
-            size="x-small"
-            variant="tonal"
-            density="compact"
-          >
-            <span class="online-dot mr-1"></span>
-            نشط
-          </v-chip>
+          <div class="toolbar-append">
+            <v-chip
+              color="success"
+              size="small"
+              variant="tonal"
+              density="comfortable"
+              class="status-chip"
+            >
+              <v-icon start size="x-small" icon="mdi-circle" class="status-dot" />
+              نشط
+            </v-chip>
+          </div>
         </template>
       </v-app-bar>
 
@@ -206,5 +197,19 @@ function logout() {
 
 .mobile-drawer :deep(.v-list-item) {
   min-height: 48px;
+}
+
+/* شريط التطبيق - منطقة «نشط» */
+.toolbar-append {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding-inline-start: 12px;
+}
+.status-chip {
+  flex-shrink: 0;
+}
+.status-chip .status-dot {
+  opacity: 0.9;
 }
 </style>

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, X, Globe, UserCircle, UsersRound, Users } from 'lucide-vue-next'
+import { X, Globe, UserCircle, UsersRound, Users } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useMatchingStore } from '../stores/matching'
@@ -75,13 +75,15 @@ async function cancel() {
       <!-- Search visual -->
       <section class="search-section">
         <div class="search-visual">
-          <div class="search-ring s-ring-1"></div>
-          <div class="search-ring s-ring-2"></div>
-          <div class="search-ring s-ring-3"></div>
-          <div class="search-ring s-ring-4"></div>
-          <div class="search-center">
-            <Search :size="40" class="search-icon" />
-          </div>
+          <Vue3Lottie
+            animation-link="/json/world-map-searching.json"
+            width="100%"
+            height="100%"
+            :speed="0.8"
+            :loop="true"
+            :auto-play="true"
+            class="search-visual-lottie"
+          />
         </div>
         <div class="search-text">
           <h2 class="search-heading">{{ t('matching.searching') }}{{ dots }}</h2>
@@ -202,42 +204,23 @@ async function cancel() {
 
 .search-visual {
   position: relative;
-  width: 270px;
-  height: 270px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 280px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-
-.search-ring {
-  border-radius: 50%;
-  border: 2px solid;
-  position: absolute;
-  animation: radar 3s ease-out infinite;
+.search-visual-lottie {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
-.s-ring-1 { width: 96px; height: 96px; border-color: rgba(108,99,255,0.5); animation-delay: 0s; }
-.s-ring-2 { width: 148px; height: 148px; border-color: rgba(108,99,255,0.35); animation-delay: 0.6s; }
-.s-ring-3 { width: 200px; height: 200px; border-color: rgba(108,99,255,0.2); animation-delay: 1.2s; }
-.s-ring-4 { width: 252px; height: 252px; border-color: rgba(108,99,255,0.08); animation-delay: 1.8s; }
-
-@keyframes radar {
-  0% { opacity: 1; transform: scale(0.85); }
-  100% { opacity: 0; transform: scale(1.12); }
+.search-visual-lottie :deep(.lottie-animation-container),
+.search-visual-lottie :deep(svg) {
+  width: 100% !important;
+  height: 100% !important;
 }
-
-.search-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
-  color: white;
-  box-shadow: 0 4px 16px rgba(108, 99, 255, 0.4);
-  z-index: 5;
-}
-.search-icon { color: white; }
 
 .search-text { text-align: center; }
 .search-heading {

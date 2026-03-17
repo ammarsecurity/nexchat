@@ -43,9 +43,11 @@ public class UserController(AppDbContext db) : ControllerBase
             .AnyAsync(b => (b.BlockerId == CurrentUserId && b.BlockedUserId == userId) ||
                            (b.BlockerId == userId && b.BlockedUserId == CurrentUserId));
         if (blocked) return NotFound();
+        var isContact = await db.Contacts
+            .AnyAsync(c => c.UserId == CurrentUserId && c.ContactUserId == userId);
         return Ok(new PublicProfileDto(
             user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, user.IsOnline,
-            user.PhoneNumber, user.Country
+            user.PhoneNumber, user.Country, isContact
         ));
     }
 

@@ -29,7 +29,8 @@ public class ConversationsController(AppDbContext db) : ControllerBase
             return BadRequest(new { message = "يجب إضافة رقم الهاتف من الإعدادات أولاً" });
 
         var convQuery = db.Conversations
-            .Where(c => c.User1Id == CurrentUserId || c.User2Id == CurrentUserId);
+            .Where(c => (c.Type == ConversationType.Private && (c.User1Id == CurrentUserId || c.User2Id == CurrentUserId))
+                || (c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == c.Id && m.UserId == CurrentUserId)));
 
         var deletedIds = await db.UserConversationDeletions
             .Where(d => d.UserId == CurrentUserId)
@@ -92,10 +93,12 @@ public class ConversationsController(AppDbContext db) : ControllerBase
         {
             convs = convs.Where(c =>
             {
+                if (c.Type == ConversationType.Group)
+                    return (c.Name?.ToLowerInvariant().Contains(searchLower) ?? false);
                 var partner = c.User1Id == CurrentUserId ? c.User2 : c.User1;
-                return (partner.Name?.ToLowerInvariant().Contains(searchLower) ?? false) ||
+                return partner != null && ((partner.Name?.ToLowerInvariant().Contains(searchLower) ?? false) ||
                        (partner.PhoneNumber?.Contains(searchLower) ?? false) ||
-                       (partner.UniqueCode?.ToLowerInvariant().Contains(searchLower) ?? false);
+                       (partner.UniqueCode?.ToLowerInvariant().Contains(searchLower) ?? false));
             }).ToList();
         }
 
@@ -103,7 +106,27 @@ public class ConversationsController(AppDbContext db) : ControllerBase
         var result = new List<ConversationListItemDto>();
         foreach (var c in convs)
         {
-            var partner = c.User1Id == CurrentUserId ? c.User2 : c.User1;
+            Guid partnerId;
+            string partnerName;
+            string? partnerAvatar;
+            string? partnerPhone = null;
+            string? partnerUniqueCode = null;
+            if (c.Type == ConversationType.Group)
+            {
+                partnerId = c.Id;
+                partnerName = c.Name ?? "مجموعة";
+                partnerAvatar = c.ImageUrl;
+            }
+            else
+            {
+                var partner = c.User1Id == CurrentUserId ? c.User2 : c.User1;
+                if (partner == null) continue;
+                partnerId = partner.Id;
+                partnerName = partner.Name ?? "";
+                partnerAvatar = partner.Avatar;
+                partnerPhone = partner.PhoneNumber;
+                partnerUniqueCode = partner.UniqueCode;
+            }
             lastMsgDict.TryGetValue(c.Id, out var lastMsgObj);
             var lastMsg = lastMsgObj;
             var state = await db.UserConversationStates
@@ -125,16 +148,17 @@ public class ConversationsController(AppDbContext db) : ControllerBase
 
             result.Add(new ConversationListItemDto(
                 c.Id,
-                partner.Id,
-                partner.Name,
-                partner.Avatar,
-                partner.PhoneNumber,
-                partner.UniqueCode,
+                partnerId,
+                partnerName,
+                partnerAvatar,
+                partnerPhone,
+                partnerUniqueCode,
                 preview,
                 lastMsg?.SentAt,
                 unreadCount,
                 state?.IsPinned ?? false,
-                state?.IsArchived ?? false
+                state?.IsArchived ?? false,
+                c.Type == ConversationType.Group
             ));
         }
 
@@ -158,8 +182,11 @@ public class ConversationsController(AppDbContext db) : ControllerBase
         var deleted = await db.UserConversationDeletions
             .AnyAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
         if (deleted) return NotFound();
+        if (conv.Type == ConversationType.Group)
+            return Ok(new { id = conv.Id, type = "group", groupName = conv.Name ?? "مجموعة", groupImageUrl = conv.ImageUrl });
         var partner = conv.User1Id == CurrentUserId ? conv.User2 : conv.User1;
-        return Ok(new { id = conv.Id, partnerId = partner.Id, partnerName = partner.Name, partnerAvatar = partner.Avatar });
+        if (partner == null) return NotFound();
+        return Ok(new { id = conv.Id, type = "private", partnerId = partner.Id, partnerName = partner.Name, partnerAvatar = partner.Avatar });
     }
 
     [HttpPost]
@@ -189,11 +216,11 @@ public class ConversationsController(AppDbContext db) : ControllerBase
         if (u1.CompareTo(u2) > 0) (u1, u2) = (u2, u1);
 
         var conv = await db.Conversations
-            .FirstOrDefaultAsync(c => c.User1Id == u1 && c.User2Id == u2);
+            .FirstOrDefaultAsync(c => c.Type == ConversationType.Private && c.User1Id == u1 && c.User2Id == u2);
 
         if (conv == null)
         {
-            conv = new Conversation { User1Id = u1, User2Id = u2 };
+            conv = new Conversation { Type = ConversationType.Private, User1Id = u1, User2Id = u2 };
             db.Conversations.Add(conv);
             await db.SaveChangesAsync();
         }
@@ -245,12 +272,134 @@ public class ConversationsController(AppDbContext db) : ControllerBase
         var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
         if (conv != null)
         {
-            var partnerId = conv.User1Id == CurrentUserId ? conv.User2Id : conv.User1Id;
-            await db.ConversationMessages
-                .Where(m => m.ConversationId == id && m.SenderId == partnerId && !m.IsRead)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+            var partnerId = conv.Type == ConversationType.Private ? (conv.User1Id == CurrentUserId ? conv.User2Id : conv.User1Id) : null;
+            if (partnerId.HasValue)
+                await db.ConversationMessages
+                    .Where(m => m.ConversationId == id && m.SenderId == partnerId.Value && !m.IsRead)
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+            else if (conv.Type == ConversationType.Group)
+                await db.ConversationMessages
+                    .Where(m => m.ConversationId == id && m.SenderId != CurrentUserId && !m.IsRead)
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
         }
 
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPost("group")]
+    public async Task<ActionResult<object>> CreateGroup([FromBody] CreateGroupRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name) || req.Name.Length > 100)
+            return BadRequest(new { message = "اسم المجموعة مطلوب (حتى 100 حرف)" });
+        var memberIds = (req.MemberUserIds ?? new List<Guid>()).Distinct().Where(id => id != CurrentUserId).Take(255).ToList();
+        var isContact = memberIds.Count == 0 || await db.Contacts
+            .CountAsync(c => c.UserId == CurrentUserId && memberIds.Contains(c.ContactUserId)) == memberIds.Count;
+        if (!isContact)
+            return BadRequest(new { message = "يجب أن يكون جميع الأعضاء من جهات الاتصال" });
+        var conv = new Conversation
+        {
+            Type = ConversationType.Group,
+            Name = req.Name.Trim(),
+            ImageUrl = req.ImageUrl?.Trim().Length > 0 ? req.ImageUrl.Trim() : null,
+            CreatedById = CurrentUserId
+        };
+        db.Conversations.Add(conv);
+        await db.SaveChangesAsync();
+        db.ConversationMembers.Add(new ConversationMember { ConversationId = conv.Id, UserId = CurrentUserId, Role = "Admin" });
+        foreach (var uid in memberIds)
+            db.ConversationMembers.Add(new ConversationMember { ConversationId = conv.Id, UserId = uid, Role = "Member" });
+        await db.SaveChangesAsync();
+        return Ok(new { id = conv.Id, groupName = conv.Name, groupImageUrl = conv.ImageUrl });
+    }
+
+    [HttpPut("{id:guid}/group")]
+    public async Task<ActionResult<object>> UpdateGroup(Guid id, [FromBody] UpdateGroupRequest req)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
+        if (conv?.Type != ConversationType.Group) return NotFound();
+        var myMember = await db.ConversationMembers.FirstOrDefaultAsync(m => m.ConversationId == id && m.UserId == CurrentUserId);
+        if (myMember?.Role != "Admin") return Forbid();
+        if (req.Name != null)
+        {
+            var name = req.Name.Trim();
+            if (name.Length == 0 || name.Length > 100)
+                return BadRequest(new { message = "اسم المجموعة يجب أن يكون بين 1 و 100 حرف" });
+            conv.Name = name;
+        }
+        if (req.ImageUrl != null)
+            conv.ImageUrl = req.ImageUrl.Trim().Length > 0 ? req.ImageUrl.Trim() : null;
+        await db.SaveChangesAsync();
+        return Ok(new { groupName = conv.Name, groupImageUrl = conv.ImageUrl });
+    }
+
+    [HttpGet("{id:guid}/members")]
+    public async Task<ActionResult<IEnumerable<GroupMemberDto>>> GetMembers(Guid id)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
+        if (conv?.Type != ConversationType.Group) return NotFound();
+        var members = await db.ConversationMembers
+            .Where(m => m.ConversationId == id)
+            .Include(m => m.User)
+            .OrderBy(m => m.Role == "Admin" ? 0 : 1).ThenBy(m => m.JoinedAt)
+            .Select(m => new GroupMemberDto(m.UserId, m.User!.Name ?? "", m.User.Avatar, m.Role, m.JoinedAt))
+            .ToListAsync();
+        return Ok(members);
+    }
+
+    [HttpPost("{id:guid}/members")]
+    public async Task<IActionResult> AddMember(Guid id, [FromBody] Guid userId)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
+        if (conv?.Type != ConversationType.Group) return NotFound();
+        var isContact = await db.Contacts.AnyAsync(c => c.UserId == CurrentUserId && c.ContactUserId == userId);
+        if (!isContact) return BadRequest(new { message = "يجب إضافة المستخدم كجهة اتصال أولاً" });
+        if (await db.ConversationMembers.AnyAsync(m => m.ConversationId == id && m.UserId == userId))
+            return BadRequest(new { message = "المستخدم عضو بالفعل" });
+        db.ConversationMembers.Add(new ConversationMember { ConversationId = id, UserId = userId, Role = "Member" });
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpDelete("{id:guid}/members/{memberUserId:guid}")]
+    public async Task<IActionResult> RemoveMember(Guid id, Guid memberUserId)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
+        if (conv?.Type != ConversationType.Group) return NotFound();
+        var myMember = await db.ConversationMembers.FirstOrDefaultAsync(m => m.ConversationId == id && m.UserId == CurrentUserId);
+        if (myMember?.Role != "Admin" && memberUserId != CurrentUserId) return Forbid();
+        var toRemove = await db.ConversationMembers.FirstOrDefaultAsync(m => m.ConversationId == id && m.UserId == memberUserId);
+        if (toRemove == null) return NotFound();
+        if (myMember!.Role != "Admin" && memberUserId == CurrentUserId) { db.ConversationMembers.Remove(toRemove); await db.SaveChangesAsync(); return Ok(); }
+        if (toRemove.Role == "Admin")
+        {
+            var adminCount = await db.ConversationMembers.CountAsync(m => m.ConversationId == id && m.Role == "Admin");
+            if (adminCount <= 1) return BadRequest(new { message = "يجب أن يبقى مدير واحد على الأقل" });
+        }
+        db.ConversationMembers.Remove(toRemove);
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPost("{id:guid}/leave")]
+    public async Task<IActionResult> LeaveGroup(Guid id)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
+        if (conv?.Type != ConversationType.Group) return NotFound();
+        var myMember = await db.ConversationMembers.FirstOrDefaultAsync(m => m.ConversationId == id && m.UserId == CurrentUserId);
+        if (myMember == null) return NotFound();
+        var adminCount = await db.ConversationMembers.CountAsync(m => m.ConversationId == id && m.Role == "Admin");
+        if (adminCount == 1 && myMember.Role == "Admin")
+        {
+            var next = await db.ConversationMembers.Where(m => m.ConversationId == id && m.UserId != CurrentUserId).OrderBy(m => m.JoinedAt).FirstOrDefaultAsync();
+            if (next != null) next.Role = "Admin";
+        }
+        db.ConversationMembers.Remove(myMember);
         await db.SaveChangesAsync();
         return Ok();
     }
@@ -285,7 +434,8 @@ public class ConversationsController(AppDbContext db) : ControllerBase
 
     private async Task<bool> IsParticipant(Guid conversationId) =>
         await db.Conversations.AnyAsync(c => c.Id == conversationId &&
-            (c.User1Id == CurrentUserId || c.User2Id == CurrentUserId));
+            (c.Type == ConversationType.Private && (c.User1Id == CurrentUserId || c.User2Id == CurrentUserId))
+            || (c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == conversationId && m.UserId == CurrentUserId)));
 
     private async Task<UserConversationState> GetOrCreateState(Guid conversationId)
     {

@@ -109,7 +109,11 @@ const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 onMounted(fetchContacts)
 
 function goBack() {
-  router.replace('/conversations')
+  if (window.history.length > 2) {
+    router.back()
+  } else {
+    router.replace('/conversations')
+  }
 }
 </script>
 

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight, MessageCircle } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -36,6 +36,8 @@ const waitingForAccept = ref(false)
 const showLogoutConfirm = ref(false)
 const profileBannerDismissed = ref(false)
 const notifPromptLoading = ref(false)
+const randomChatEnabled = ref(true)
+const randomChatSettingLoaded = ref(false)
 let connectionTimeoutId = null
 
 const user = computed(() => auth.user)
@@ -98,6 +100,15 @@ onMounted(async () => {
     }).catch(() => {})
     conversationHub.on('ConversationListUpdated', handleConversationListUpdated)
   } catch {}
+
+  api.get('SiteContent/random_chat_enabled', { skipGlobalLoader: true })
+    .then(({ data }) => {
+      randomChatEnabled.value = (data?.content ?? 'true') === 'true'
+    })
+    .catch(() => {})
+    .finally(() => {
+      randomChatSettingLoaded.value = true
+    })
 })
 
 async function handleConversationListUpdated(payload) {
@@ -328,11 +339,19 @@ const genderFilters = computed(() => [
       </div>
     </Transition>
 
-    <!-- CTA + Filter - unified section -->
-    <div class="cta-filter-card">
+    <!-- CTA + Filter - unified section (hidden until API loaded, then by setting) -->
+    <div v-if="randomChatSettingLoaded && randomChatEnabled" class="cta-filter-card">
       <div class="main-cta-wrap">
         <button class="main-cta-circle" :disabled="loading" @click="startRandom">
-          <Zap :size="32" class="cta-icon" />
+          <Vue3Lottie
+            animation-link="/json/chat.json"
+            :height="88"
+            :width="88"
+            :speed="0.85"
+            :loop="true"
+            :auto-play="true"
+            class="cta-circle-lottie"
+          />
           <span class="cta-text">{{ t('home.startRandom') }}</span>
         </button>
       </div>
@@ -354,6 +373,26 @@ const genderFilters = computed(() => [
         </button>
       </div>
     </div>
+    </div>
+
+    <!-- Replacement card when random chat is disabled (only after API loaded) -->
+    <div v-if="randomChatSettingLoaded && !randomChatEnabled" class="cta-replacement-card">
+      <div class="cta-replacement-lottie">
+        <Vue3Lottie
+          animation-link="/json/chat.json"
+          :height="80"
+          :width="120"
+          :speed="0.7"
+          :loop="true"
+          :auto-play="true"
+        />
+      </div>
+      <h3 class="cta-replacement-title">{{ t('home.connectWithCodeTitle') }}</h3>
+      <p class="cta-replacement-desc">{{ t('home.connectWithCodeDesc') }}</p>
+      <RouterLink to="/conversations" class="cta-replacement-btn">
+        <MessageCircle :size="20" stroke-width="2" />
+        <span>{{ t('home.goToConversations') }}</span>
+      </RouterLink>
     </div>
 
     <!-- رابط الأكواد المحفوظة -->
@@ -400,7 +439,7 @@ const genderFilters = computed(() => [
       <AppFooter />
     </div>
 
-    <HomeNavBar :loading="loading" @launch="startRandom" />
+    <HomeNavBar :loading="loading" :random-chat-enabled="randomChatSettingLoaded && randomChatEnabled" @launch="startRandom" />
   </div>
 </template>
 
@@ -591,6 +630,56 @@ html.light .avatar-crown-home {
 .cta-filter-card > * {
   position: relative;
   z-index: 1;
+}
+
+/* Replacement card when random chat is disabled */
+.cta-replacement-card {
+  margin: 10px var(--spacing) 24px;
+  padding: 24px var(--spacing);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.cta-replacement-lottie {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: -8px 0 0;
+}
+.cta-replacement-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cta-replacement-desc {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.cta-replacement-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--primary);
+  color: white;
+  border-radius: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.cta-replacement-btn:active {
+  opacity: 0.9;
+  transform: scale(0.98);
 }
 
 /* Main CTA - circular button with animation */

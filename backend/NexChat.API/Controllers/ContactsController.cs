@@ -102,6 +102,42 @@ public class ContactsController(AppDbContext db) : ControllerBase
         ));
     }
 
+    /// <summary>إضافة مستخدم كجهة اتصال بواسطة معرّفه (من بروفايله).</summary>
+    [HttpPost("by-user/{userId:guid}")]
+    public async Task<ActionResult<ContactDto>> AddContactByUserId(Guid userId)
+    {
+        if (userId == CurrentUserId)
+            return BadRequest(new { message = "لا يمكن إضافة نفسك" });
+        var targetUser = await db.Users.FindAsync(userId);
+        if (targetUser == null || targetUser.IsBanned)
+            return NotFound(new { message = "المستخدم غير متوفر" });
+        var isBlocked = await db.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == CurrentUserId && b.BlockedUserId == userId) ||
+            (b.BlockerId == userId && b.BlockedUserId == CurrentUserId));
+        if (isBlocked)
+            return BadRequest(new { message = "لا يمكن إضافة هذا المستخدم" });
+        var exists = await db.Contacts.AnyAsync(c =>
+            c.UserId == CurrentUserId && c.ContactUserId == userId);
+        if (exists)
+            return Conflict(new { message = "المستخدم مضاف مسبقاً" });
+        var contact = new Contact
+        {
+            UserId = CurrentUserId,
+            ContactUserId = userId
+        };
+        db.Contacts.Add(contact);
+        await db.SaveChangesAsync();
+        return Ok(new ContactDto(
+            contact.Id,
+            targetUser.Id,
+            targetUser.Name,
+            targetUser.Avatar,
+            targetUser.PhoneNumber,
+            targetUser.UniqueCode,
+            contact.CreatedAt
+        ));
+    }
+
     [HttpDelete("{contactUserId:guid}")]
     public async Task<IActionResult> RemoveContact(Guid contactUserId)
     {

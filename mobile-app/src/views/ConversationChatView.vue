@@ -62,6 +62,10 @@ const playingAudioId = ref(null)
 const audioProgress = ref({})
 const audioDurations = ref({})
 const highlightedMessageId = ref(null)
+const groupSenders = ref({})
+const showReactionPickerMsg = ref(null)
+const reactionPickerPosition = ref({})
+const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🙏']
 
 function getMsgKey(msg) {
   return msg.tempId || msg.id || msg.Id
@@ -150,6 +154,21 @@ function onAudioLoadedMetadata(msg, e) {
 
 const currentUserId = computed(() => auth.user?.id)
 const partner = computed(() => convStore.partner)
+
+function getMyReaction(msg) {
+  if (!msg?.reactions?.length || !currentUserId.value) return msg?.myReaction ?? null
+  const id = String(currentUserId.value)
+  for (const r of msg.reactions) {
+    const userIds = r.userIds ?? r.UserIds ?? []
+    if (userIds.some(uid => String(uid) === id)) return r.emoji ?? r.Emoji ?? null
+  }
+  return null
+}
+
+function messageReactionsList(msg) {
+  const list = msg?.reactions ?? []
+  return Array.isArray(list) ? list : []
+}
 const messages = computed(() => convStore.messages)
 const partnerLetter = computed(() => partner.value?.name?.[0]?.toUpperCase() || '?')
 const partnerAvatarIsImage = computed(() =>
@@ -168,7 +187,11 @@ function normalizeMsg(msg) {
     isRead: msg.isRead ?? msg.IsRead,
     replyToMessageId: msg.replyToMessageId ?? msg.ReplyToMessageId,
     replyToContent: msg.replyToContent ?? msg.ReplyToContent,
-    replyToSenderName: msg.replyToSenderName ?? msg.ReplyToSenderName
+    replyToSenderName: msg.replyToSenderName ?? msg.ReplyToSenderName,
+    senderName: msg.senderName ?? msg.SenderName,
+    senderAvatar: msg.senderAvatar ?? msg.SenderAvatar,
+    reactions: msg.reactions ?? msg.Reactions ?? [],
+    myReaction: msg.myReaction ?? msg.MyReaction ?? null
   }
 }
 
@@ -191,14 +214,35 @@ onMounted(async () => {
   const partnerFromList = listStore.list.find(
     (c) => String(c.id ?? c.Id) === String(conversationId)
   )
-  const partnerInfo = partnerFromList
+  let partnerInfo = partnerFromList
     ? {
         id: partnerFromList.partnerId ?? partnerFromList.PartnerId,
         name: partnerFromList.partnerName ?? partnerFromList.PartnerName,
         avatar: partnerFromList.partnerAvatar ?? partnerFromList.PartnerAvatar
       }
     : null
-  convStore.setConversation(conversationId, partnerInfo)
+  let isGroupConv = partnerFromList ? (partnerFromList.isGroup ?? partnerFromList.IsGroup ?? false) : false
+  if (!partnerFromList && network.isOnline) {
+    try {
+      const { data } = await api.get(`/conversations/${conversationId}`, { skipGlobalLoader: true })
+      if (data?.type === 'group') {
+        isGroupConv = true
+        partnerInfo = {
+          id: conversationId,
+          name: data.groupName ?? 'مجموعة',
+          avatar: data.groupImageUrl ?? null
+        }
+      } else if (data?.type === 'private' && data?.partnerId) {
+        partnerInfo = {
+          id: data.partnerId,
+          name: data.partnerName ?? '',
+          avatar: data.partnerAvatar ?? null
+        }
+      }
+    } catch (_) {}
+  }
+  convStore.setConversation(conversationId, partnerInfo, { isGroup: isGroupConv })
+  if (isGroupConv && network.isOnline) await fetchGroupSenders()
 
   const cachedMessages = await loadMessagesFromCache(conversationId)
   if (cachedMessages?.length) {
@@ -255,13 +299,22 @@ onMounted(async () => {
 
   conversationHub.on('ConversationJoined', (data) => {
     const p = data.partner ?? data.Partner
+    const isGroupFromHub = data.type === 1 || data.Type === 1 || data.type === 'Group' || data.Type === 'Group' || (data.groupName ?? data.GroupName) != null
     const msgs = data.messages ?? data.Messages ?? []
     const localPending = convStore.messages.filter((m) => m.tempId)
-    convStore.setConversation(conversationId, p)
+    let partnerInfo = p
+    if (isGroupFromHub) {
+      partnerInfo = {
+        id: conversationId,
+        name: data.groupName ?? data.GroupName ?? 'مجموعة',
+        avatar: data.groupImageUrl ?? data.GroupImageUrl ?? null
+      }
+    }
+    convStore.setConversation(conversationId, partnerInfo, { isGroup: isGroupFromHub })
     listStore.updateConversation(conversationId, {
       unreadCount: 0,
-      partnerAvatar: p?.avatar ?? p?.Avatar,
-      PartnerAvatar: p?.avatar ?? p?.Avatar
+      partnerAvatar: partnerInfo?.avatar ?? partnerInfo?.Avatar,
+      PartnerAvatar: partnerInfo?.avatar ?? partnerInfo?.Avatar
     })
     const serverNormalized = (msgs || []).map((m) => ({ ...normalizeMsg(m), status: 'sent' }))
     const serverIds = new Set(serverNormalized.map((m) => String(m.id ?? m.Id)))
@@ -273,6 +326,7 @@ onMounted(async () => {
     nextTick(scrollToBottom)
     loading.value = false
     saveMessagesForConversation(conversationId, merged)
+    if (isGroupFromHub) fetchGroupSenders()
   })
 
   conversationHub.on('PartnerReadUpTo', (payload) => {
@@ -302,6 +356,15 @@ onMounted(async () => {
         LastMessagePreview: preview,
         LastMessageAt: at
       }, false)
+    }
+  })
+
+  conversationHub.on('ReactionUpdated', (payload) => {
+    const mid = payload?.messageId ?? payload?.MessageId
+    const reactions = payload?.reactions ?? payload?.Reactions ?? []
+    if (mid) {
+      convStore.updateMessageReactions(mid, reactions)
+      debouncedSaveMessages(conversationId)
     }
   })
 
@@ -359,6 +422,7 @@ onUnmounted(() => {
   conversationHub.off('MessagesRead')
   conversationHub.off('Error')
   conversationHub.off('ConversationListUpdated')
+  conversationHub.off('ReactionUpdated')
   ensureConnected(conversationHub).then(() =>
     conversationHub.invoke('LeaveConversation', conversationId)
   ).catch(() => {})
@@ -643,12 +707,50 @@ function openShareToConvModal(msg) {
 }
 
 function goToPartnerProfile() {
+  if (convStore.isGroup) {
+    router.push(`/conversation/${conversationId}/group-info`)
+    return
+  }
   const pid = convStore.partner?.id
   if (!pid) return
   router.push({
     path: `/profile/${pid}`,
     state: { conversationId }
   })
+}
+
+function openSenderProfile(senderId) {
+  if (!senderId) return
+  router.push({
+    path: `/profile/${senderId}`,
+    state: { conversationId }
+  })
+}
+
+async function fetchGroupSenders() {
+  if (!convStore.isGroup || !conversationId) return
+  try {
+    const { data } = await api.get(`/conversations/${conversationId}/members`, { skipGlobalLoader: true })
+    const list = data ?? []
+    const map = {}
+    for (const m of list) {
+      const id = m.userId ?? m.UserId
+      if (id) map[String(id)] = { name: m.name ?? m.Name ?? '—', avatar: m.avatar ?? m.Avatar ?? null }
+    }
+    groupSenders.value = map
+  } catch {
+    groupSenders.value = {}
+  }
+}
+
+function getSenderDisplay(msg) {
+  const id = msg?.senderId ?? msg?.SenderId
+  const fromMsg = { name: msg?.senderName ?? msg?.SenderName, avatar: msg?.senderAvatar ?? msg?.SenderAvatar }
+  const fromMap = id ? groupSenders.value[String(id)] : null
+  return {
+    name: fromMsg?.name || fromMap?.name || '—',
+    avatar: fromMsg?.avatar ?? fromMap?.avatar ?? null
+  }
 }
 
 function toggleMessageMenu(msg, e) {
@@ -661,14 +763,14 @@ function toggleMessageMenu(msg, e) {
   const btn = e?.currentTarget
   if (btn) {
     const rect = btn.getBoundingClientRect()
-    const spaceAbove = rect.top
-    const spaceBelow = window.innerHeight - rect.bottom
-    const popupH = 90
-    const showAbove = spaceAbove >= popupH || spaceAbove >= spaceBelow
+    const popupWidth = 150
+    const padding = 8
+    let left = rect.right - popupWidth
+    if (left < padding) left = padding
+    if (left + popupWidth > window.innerWidth - padding) left = window.innerWidth - popupWidth - padding
     msgMenuPosition.value = {
-      top: showAbove ? undefined : rect.bottom + 4 + 'px',
-      bottom: showAbove ? window.innerHeight - rect.top + 4 + 'px' : undefined,
-      left: Math.max(8, rect.right - 150) + 'px'
+      bottom: (window.innerHeight - rect.top + 4) + 'px',
+      left: left + 'px'
     }
   }
   showMessageMenu.value = id
@@ -798,6 +900,104 @@ async function leaveChat() {
   convStore.clearConversation()
   router.replace('/conversations')
 }
+
+let longPressTimer = null
+let longPressMsg = null
+let longPressEvent = null
+let justOpenedReactionPicker = false
+
+function startLongPress(msg, e) {
+  if (msg.deletedForEveryone) return
+  longPressMsg = msg
+  longPressEvent = e
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    justOpenedReactionPicker = true
+    openReactionPicker(longPressMsg, longPressEvent)
+    longPressMsg = null
+    longPressEvent = null
+  }, 400)
+}
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+  longPressMsg = null
+  longPressEvent = null
+}
+
+function onMessageTouchStart(msg, e) {
+  startLongPress(msg, e)
+}
+function onMessageTouchEnd() {
+  cancelLongPress()
+}
+function onMessageTouchCancel() {
+  cancelLongPress()
+}
+
+function onMessageMouseDown(msg, e) {
+  startLongPress(msg, e)
+}
+function onMessageMouseUp() {
+  cancelLongPress()
+}
+function onMessageMouseLeave() {
+  cancelLongPress()
+}
+function onBubbleClick(e) {
+  if (justOpenedReactionPicker) {
+    e.preventDefault()
+    e.stopPropagation()
+    justOpenedReactionPicker = false
+  }
+}
+
+function openReactionPicker(msg, e) {
+  if (!(msg?.id ?? msg?.Id) || msg.deletedForEveryone) return
+  showReactionPickerMsg.value = msg
+  const btn = e?.currentTarget
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const padding = 16
+    const maxPickerWidth = Math.min(280, window.innerWidth - padding * 2)
+    let left = rect.left + (rect.width / 2) - (maxPickerWidth / 2)
+    if (left + maxPickerWidth > window.innerWidth - padding) left = window.innerWidth - maxPickerWidth - padding
+    if (left < padding) left = padding
+    reactionPickerPosition.value = {
+      bottom: window.innerHeight - rect.top + 8 + 'px',
+      left: left + 'px',
+      maxWidth: maxPickerWidth + 'px'
+    }
+  } else {
+    reactionPickerPosition.value = {}
+  }
+}
+function closeReactionPicker() {
+  showReactionPickerMsg.value = null
+}
+async function pickReaction(msg, emoji) {
+  const id = msg.id ?? msg.Id
+  if (!id) return
+  closeReactionPicker()
+  const previousReactions = JSON.parse(JSON.stringify(msg.reactions || []))
+  convStore.applyOptimisticReaction(id, currentUserId.value, emoji)
+  try {
+    await ensureConnected(conversationHub)
+    await conversationHub.invoke('AddReaction', conversationId, id, emoji)
+  } catch {
+    convStore.updateMessageReactions(id, previousReactions)
+  }
+}
+function removeReaction(msg) {
+  const id = msg.id ?? msg.Id
+  if (!id) return
+  closeReactionPicker()
+  ensureConnected(conversationHub).then(() =>
+    conversationHub.invoke('RemoveReaction', conversationId, id)
+  ).catch(() => {})
+}
 </script>
 
 <template>
@@ -819,6 +1019,7 @@ async function leaveChat() {
           <div class="partner-name">{{ partner?.name || '...' }}</div>
           <div class="typing-status">
             <span v-if="convStore.partnerTyping" class="typing-text">{{ t('conversationChat.typing') }}</span>
+            <span v-else-if="convStore.isGroup" class="group-label">{{ t('groups.members') }}</span>
             <span v-else class="partner-online-status" :class="{ online: partnerIsOnline }">
               <span class="partner-online-dot"></span>
               {{ partnerIsOnline ? t('profile.online') : t('profile.offline') }}
@@ -843,7 +1044,34 @@ async function leaveChat() {
         :data-msg-id="getMsgKey(msg)"
         :class="['message-wrap', msg.senderId === currentUserId ? 'mine' : 'theirs', { 'msg-highlighted': highlightedMessageId === String(getMsgKey(msg)) }]"
       >
-        <div v-if="msg.type === 'image'" class="bubble image-bubble">
+        <button
+          v-if="convStore.isGroup && msg.senderId !== currentUserId"
+          type="button"
+          class="msg-sender-row"
+          @click.stop="openSenderProfile(msg.senderId)"
+        >
+          <div
+            class="msg-sender-avatar"
+            :style="{ background: (getSenderDisplay(msg).avatar && (getSenderDisplay(msg).avatar.startsWith('http') || getSenderDisplay(msg).avatar.startsWith('/'))) ? 'var(--bg-elevated)' : 'var(--primary)' }"
+          >
+            <CachedAvatar v-if="getSenderDisplay(msg).avatar && (getSenderDisplay(msg).avatar.startsWith('http') || getSenderDisplay(msg).avatar.startsWith('/'))" :url="getSenderDisplay(msg).avatar" img-class="msg-sender-avatar-img" />
+            <span v-else>{{ (getSenderDisplay(msg).name || '?')?.[0]?.toUpperCase() }}</span>
+          </div>
+          <span class="msg-sender-name">{{ getSenderDisplay(msg).name }}</span>
+        </button>
+        <div
+          v-if="msg.type === 'image'"
+          class="bubble image-bubble"
+          @touchstart.passive="onMessageTouchStart(msg, $event)"
+          @touchmove="cancelLongPress"
+          @touchend="onMessageTouchEnd"
+          @touchcancel="onMessageTouchCancel"
+          @mousedown="onMessageMouseDown(msg, $event)"
+          @mouseup="onMessageMouseUp"
+          @mouseleave="onMessageMouseUp"
+          @click="onBubbleClick"
+          @contextmenu.prevent
+        >
           <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
@@ -854,7 +1082,19 @@ async function leaveChat() {
           <img v-if="!msg.deletedForEveryone" :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
-        <div v-else-if="msg.type === 'audio'" class="bubble audio-bubble">
+        <div
+          v-else-if="msg.type === 'audio'"
+          class="bubble audio-bubble"
+          @touchstart.passive="onMessageTouchStart(msg, $event)"
+          @touchmove="cancelLongPress"
+          @touchend="onMessageTouchEnd"
+          @touchcancel="onMessageTouchCancel"
+          @mousedown="onMessageMouseDown(msg, $event)"
+          @mouseup="onMessageMouseUp"
+          @mouseleave="onMessageMouseUp"
+          @click="onBubbleClick"
+          @contextmenu.prevent
+        >
           <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
@@ -896,7 +1136,19 @@ async function leaveChat() {
           </template>
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
-        <div v-else class="bubble">
+        <div
+          v-else
+          class="bubble"
+          @touchstart.passive="onMessageTouchStart(msg, $event)"
+          @touchmove="cancelLongPress"
+          @touchend="onMessageTouchEnd"
+          @touchcancel="onMessageTouchCancel"
+          @mousedown="onMessageMouseDown(msg, $event)"
+          @mouseup="onMessageMouseUp"
+          @mouseleave="onMessageMouseUp"
+          @click="onBubbleClick"
+          @contextmenu.prevent
+        >
           <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
@@ -926,6 +1178,19 @@ async function leaveChat() {
             <MoreVertical :size="14" />
           </button>
         </div>
+        <div v-if="!msg.deletedForEveryone && messageReactionsList(msg).length > 0" class="msg-reactions-row">
+          <template v-for="r in messageReactionsList(msg)" :key="r.emoji">
+            <button
+              type="button"
+              class="reaction-chip"
+              :class="{ 'reaction-chip-mine': getMyReaction(msg) === (r.emoji ?? r.Emoji) }"
+              @click="pickReaction(msg, r.emoji ?? r.Emoji)"
+            >
+              <span class="reaction-emoji">{{ r.emoji ?? r.Emoji }}</span>
+              <span v-if="(r.count ?? r.Count) > 1" class="reaction-count">{{ r.count ?? r.Count }}</span>
+            </button>
+          </template>
+        </div>
 
       </div>
 
@@ -935,6 +1200,23 @@ async function leaveChat() {
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showReactionPickerMsg" class="reaction-picker-backdrop" @click="closeReactionPicker" />
+      </Transition>
+      <Transition name="fade">
+        <div v-if="showReactionPickerMsg" class="reaction-picker-popup glass-card" :style="reactionPickerPosition" @click.stop>
+          <button
+            v-for="emoji in REACTION_EMOJIS"
+            :key="emoji"
+            type="button"
+            class="reaction-picker-emoji"
+            @click="pickReaction(showReactionPickerMsg, emoji)"
+          >{{ emoji }}</button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="fade">
@@ -1173,6 +1455,11 @@ async function leaveChat() {
   margin-top: 2px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.group-label {
+  font-size: 12px;
+  color: var(--text-muted);
   min-height: 16px;
   display: flex;
   align-items: center;
@@ -1249,6 +1536,53 @@ async function leaveChat() {
 .message-wrap.mine { align-self: flex-end; align-items: flex-end; }
 .message-wrap.theirs { align-self: flex-start; align-items: flex-start; }
 
+.msg-sender-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding-inline-start: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+  text-align: start;
+}
+
+.msg-sender-row:active {
+  opacity: 0.85;
+}
+
+.msg-sender-avatar {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.msg-sender-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.msg-sender-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: 'Cairo', sans-serif;
+}
+
+
 .message-wrap.msg-highlighted .bubble {
   animation: msg-highlight-pulse 1.5s ease-out;
 }
@@ -1301,7 +1635,7 @@ async function leaveChat() {
   gap: 6px;
   margin-top: 4px;
 }
-.msg-time { font-size: 11px; color: var(--text-muted); font-family: 'Cairo', sans-serif; }
+.msg-time { font-size: 12px; color: var(--text-muted); font-family: 'Cairo', sans-serif; }
 .msg-status { display: inline-flex; align-items: center; }
 .status-pending { color: var(--text-muted); opacity: 0.8; }
 .status-sent { color: var(--primary); }
@@ -1321,7 +1655,7 @@ async function leaveChat() {
   border-radius: 6px;
   color: var(--danger);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-family: 'Cairo', sans-serif;
   padding: 2px 6px;
   -webkit-tap-highlight-color: transparent;
@@ -1414,6 +1748,92 @@ async function leaveChat() {
 .msg-action-share { color: var(--primary); }
 .msg-action-share:hover, .msg-action-share:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
 
+.msg-reactions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-inline-start: 2px;
+}
+.reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.reaction-chip:active { background: var(--bg-card-hover); }
+.reaction-chip-mine {
+  border-color: var(--primary);
+  background: rgba(108, 99, 255, 0.15);
+}
+.reaction-emoji { line-height: 1; }
+.reaction-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 12px;
+}
+.reaction-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}
+.reaction-picker-popup {
+  position: fixed;
+  z-index: 46;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+}
+.reaction-picker-emoji {
+  width: 36px;
+  height: 36px;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  cursor: pointer;
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.reaction-picker-emoji:active {
+  background: var(--bg-card-hover);
+  transform: scale(1.1);
+}
+@media (max-width: 360px) {
+  .reaction-picker-popup {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .reaction-picker-emoji {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+}
+
 .msg-reply-block {
   display: flex;
   align-items: flex-start;
@@ -1446,7 +1866,7 @@ async function leaveChat() {
 .msg-reply-icon { flex-shrink: 0; color: var(--primary); }
 .mine .msg-reply-icon { color: rgba(255, 255, 255, 0.95); }
 .msg-reply-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.msg-reply-name { font-size: 11px; font-weight: 700; color: var(--primary); }
+.msg-reply-name { font-size: 12px; font-weight: 700; color: var(--primary); }
 .mine .msg-reply-name { color: rgba(255, 255, 255, 0.95); }
 .msg-reply-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mine .msg-reply-preview { color: rgba(255, 255, 255, 0.9); }
@@ -1465,7 +1885,7 @@ async function leaveChat() {
 .reply-preview-content { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .reply-preview-icon { color: var(--primary); flex-shrink: 0; }
 .reply-preview-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.reply-preview-name { font-size: 11px; font-weight: 700; color: var(--primary); }
+.reply-preview-name { font-size: 12px; font-weight: 700; color: var(--primary); }
 .reply-preview-msg { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reply-preview-close { background: none; border: none; color: var(--text-muted); padding: 4px; cursor: pointer; border-radius: 8px; }
 .reply-preview-close:active { background: rgba(0,0,0,0.08); }

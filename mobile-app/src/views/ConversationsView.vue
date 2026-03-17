@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -42,6 +42,10 @@ const filteredList = computed(() => {
   }
   return list
 })
+
+function goToCreateGroup() {
+  router.push('/conversations/create-group')
+}
 
 async function fetchConversations() {
   const cached = await loadConversationsListFromCache()
@@ -150,9 +154,14 @@ function goBack() {
         <ChevronRight :size="22" />
       </button>
       <span class="top-title">{{ t('conversations.title') }}</span>
-      <button class="new-chat-btn" @click="goToContacts" :aria-label="t('conversations.newChat')">
-        <Users :size="22" />
-      </button>
+      <div class="header-actions">
+        <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
+          <UsersRound :size="22" />
+        </button>
+        <button class="new-chat-btn" @click="goToContacts" :aria-label="t('conversations.newChat')" :title="t('conversations.newChat')">
+          <Users :size="22" />
+        </button>
+      </div>
     </header>
 
     <div v-if="needPhone" class="need-phone-banner">
@@ -195,18 +204,20 @@ function goBack() {
           v-for="c in filteredList"
           :key="c.id ?? c.Id"
           class="conv-item"
-          :class="{ unread: getUnreadCount(c) > 0 }"
+          :class="{ unread: getUnreadCount(c) > 0, 'is-group': c.isGroup ?? c.IsGroup }"
           @click="goToConversation(c)"
           @contextmenu.prevent="openContextMenu(c, $event)"
         >
-          <div class="item-avatar" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+          <div class="item-avatar" :class="{ 'avatar-group': c.isGroup ?? c.IsGroup }" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
             <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
+            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="22" class="avatar-group-icon" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">
-            <div class="item-row">
+            <div class="item-row item-row-name">
               <span class="item-name">{{ c.partnerName ?? c.PartnerName ?? '—' }}</span>
               <span class="item-meta-row">
+                <span v-if="c.isGroup ?? c.IsGroup" class="group-badge">{{ t('groups.groupLabel') }}</span>
                 <span v-if="getUnreadCount(c) > 0" class="unread-badge-inline">{{ getUnreadCount(c) > 99 ? '99+' : getUnreadCount(c) }}</span>
                 <span class="item-time">{{ formatTime(c.lastMessageAt ?? c.LastMessageAt) }}</span>
               </span>
@@ -280,6 +291,7 @@ function goBack() {
   -webkit-tap-highlight-color: transparent;
 }
 .back-btn:active, .new-chat-btn:active { background: var(--bg-card-hover); }
+.header-actions { display: flex; gap: 8px; }
 .new-chat-btn { color: var(--primary); }
 
 .need-phone-banner {
@@ -418,6 +430,15 @@ function goBack() {
 
 .conv-item:active { background: var(--bg-card-hover); }
 
+.conv-item.is-group {
+  border-inline-start: 3px solid var(--primary);
+  background: rgba(108, 99, 255, 0.06);
+}
+
+.conv-item.is-group:active {
+  background: rgba(108, 99, 255, 0.1);
+}
+
 .conv-item.unread .item-name { font-weight: 700; }
 
 .item-avatar {
@@ -458,6 +479,9 @@ function goBack() {
   gap: 8px;
 }
 
+.item-row-name {
+  min-width: 0;
+}
 .item-name {
   font-weight: 600;
   font-size: 15px;
@@ -466,6 +490,30 @@ function goBack() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.group-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-family: 'Cairo', sans-serif;
+}
+
+.item-avatar.avatar-group {
+  background: rgba(108, 99, 255, 0.2) !important;
+}
+
+.avatar-group-icon {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .item-meta-row {
@@ -508,12 +556,18 @@ function goBack() {
 }
 
 .context-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  padding: 4px;
   background: none;
   border: none;
   color: var(--text-tertiary);
-  padding: 4px;
   cursor: pointer;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .item-actions {
@@ -545,5 +599,21 @@ function goBack() {
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   margin-top: 16px;
+}
+
+@media (max-width: 360px) {
+  .conv-item {
+    padding: 12px var(--spacing);
+    gap: 12px;
+  }
+  .item-avatar {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    font-size: 16px;
+  }
+  .item-name { font-size: 14px; }
+  .item-time { font-size: 12px; }
+  .item-preview { font-size: 12px; }
 }
 </style>

@@ -37,6 +37,9 @@ export default {
     enableNow: 'Enable now',
     enabling: 'Enabling...',
     savedCodes: 'Saved codes',
+    connectWithCodeTitle: 'Connect with friends',
+    connectWithCodeDesc: 'Use your contact code to connect with people you know',
+    goToConversations: 'Conversations',
     addCode: 'Add code',
     noSavedCodes: 'No saved codes',
     codeLabelPlaceholder: 'Label (optional)'
@@ -53,7 +56,9 @@ export default {
     phone: 'Phone number',
     phoneNotSet: 'Not set',
     openChat: 'Open chat',
-    startChat: 'Start chat'
+    startChat: 'Start chat',
+    addAsContact: 'Add as contact',
+    addedToContacts: 'In contacts'
   },
   settings: {
     title: 'Settings',
@@ -263,7 +268,32 @@ export default {
     markRead: 'Mark as read',
     needPhone: 'Add your phone number from settings to use conversations',
     optionsTitle: 'Conversation options',
-    notFound: 'Conversation not found'
+    notFound: 'Conversation not found',
+    newGroup: 'New group'
+  },
+  groups: {
+    createTitle: 'Create group',
+    groupName: 'Group name',
+    groupNamePlaceholder: 'Enter group name',
+    groupPhoto: 'Group photo',
+    selectMembers: 'Select members',
+    create: 'Create',
+    creating: 'Creating...',
+    infoTitle: 'Group info',
+    members: 'Members',
+    addMember: 'Add member',
+    leaveGroup: 'Leave group',
+    leaveConfirm: 'Are you sure you want to leave the group?',
+    removeMember: 'Remove from group',
+    admin: 'Admin',
+    member: 'Member',
+    groupNameRequired: 'Group name is required',
+    selectAtLeastOne: 'Select at least one member',
+    editGroupName: 'Edit name',
+    editGroupPhoto: 'Edit photo',
+    save: 'Save',
+    updated: 'Updated',
+    groupLabel: 'Group'
   },
   conversationChat: {
     empty: 'Start the conversation with your first message! 👋',
@@ -299,7 +329,8 @@ export default {
     imageUploadFailed: 'Failed to upload image',
     voiceRecordingTooShort: 'Recording too short, try recording for more than a second',
     sendVoice: 'Send',
-    uploadingVoice: 'Uploading voice message...'
+    uploadingVoice: 'Uploading voice message...',
+    reaction: 'Reaction'
   },
   phoneValidation: {
     invalidCountryCode: 'Invalid country code',

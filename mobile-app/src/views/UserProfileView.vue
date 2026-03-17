@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Copy, MessageCircle, Crown } from 'lucide-vue-next'
+import { ChevronRight, Copy, MessageCircle, Crown, UserPlus, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import CachedAvatar from '../components/CachedAvatar.vue'
@@ -16,6 +16,7 @@ const error = ref(false)
 const copiedCode = ref(false)
 const copiedPhone = ref(false)
 const startingChat = ref(false)
+const addingContact = ref(false)
 const conversationIdFromState = ref(null)
 
 const formattedPhone = computed(() => {
@@ -75,6 +76,8 @@ async function copyPhone() {
   } catch {}
 }
 
+const isContact = computed(() => profile.value?.isContact ?? profile.value?.IsContact ?? false)
+
 async function openChat() {
   const convId = conversationIdFromState.value
   if (convId) {
@@ -91,6 +94,20 @@ async function openChat() {
   } catch {
     startingChat.value = false
   }
+}
+
+async function addAsContact() {
+  if (!userId.value) return
+  addingContact.value = true
+  try {
+    await api.post(`/contacts/by-user/${userId.value}`)
+    if (profile.value) {
+      profile.value = { ...profile.value, isContact: true, IsContact: true }
+    }
+  } catch {
+    addingContact.value = false
+  }
+  addingContact.value = false
 }
 
 onMounted(() => {
@@ -204,6 +221,25 @@ onMounted(() => {
           </div>
           <div v-else class="profile-code-row glass-card profile-phone-empty">
             <span class="profile-phone-placeholder">{{ t('profile.phoneNotSet') }}</span>
+          </div>
+        </section>
+
+        <!-- إضافة كجهة اتصال (إذا لم يكن في جهاتك) -->
+        <section v-if="!isContact" class="profile-block profile-block-action">
+          <button
+            class="profile-add-contact-btn"
+            :disabled="addingContact"
+            @click="addAsContact"
+          >
+            <UserPlus v-if="!addingContact" :size="20" />
+            <span v-else class="profile-btn-dot">...</span>
+            <span>{{ addingContact ? t('common.loading') : t('profile.addAsContact') }}</span>
+          </button>
+        </section>
+        <section v-else class="profile-block profile-block-contact-badge">
+          <div class="profile-contact-badge">
+            <Check :size="18" />
+            <span>{{ t('profile.addedToContacts') }}</span>
           </div>
         </section>
 
@@ -537,5 +573,59 @@ onMounted(() => {
 .profile-chat-btn:disabled {
   opacity: 0.75;
   cursor: not-allowed;
+}
+
+.profile-add-contact-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 20px;
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  background: rgba(108, 99, 255, 0.08);
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-add-contact-btn:active:not(:disabled) {
+  background: rgba(108, 99, 255, 0.15);
+}
+
+.profile-add-contact-btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.profile-btn-dot {
+  font-size: 14px;
+}
+
+.profile-block-contact-badge {
+  margin-bottom: 0;
+  margin-top: 4px;
+}
+
+.profile-contact-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+}
+
+.profile-contact-badge svg {
+  flex-shrink: 0;
 }
 </style>

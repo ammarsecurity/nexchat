@@ -45,7 +45,8 @@ public record PublicProfileDto(
     bool IsFeatured = false,
     bool IsOnline = false,
     string? PhoneNumber = null,
-    string? Country = null
+    string? Country = null,
+    bool IsContact = false
 );
 
 public record DeleteAccountRequest(string Password);

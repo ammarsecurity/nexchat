@@ -11,6 +11,8 @@ namespace NexChat.API.Hubs;
 [Authorize]
 public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env) : Hub
 {
+    private static readonly HashSet<string> AllowedReactionEmojis = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
+
     /// <summary>تشخيص: التأكد أن استدعاءات الـ Hub تصل للـ backend.</summary>
     public Task<string> Ping() => Task.FromResult($"pong-{DateTime.UtcNow:HHmmss}");
 
@@ -32,7 +34,8 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             .Include(c => c.User1)
             .Include(c => c.User2)
             .FirstOrDefaultAsync(c => c.Id == cid &&
-                (c.User1Id == userId || c.User2Id == userId));
+                (c.Type == ConversationType.Private && (c.User1Id == userId || c.User2Id == userId)
+                 || c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == cid && m.UserId == userId)));
 
         if (conv == null)
         {
@@ -51,8 +54,8 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         var groupName = cid.ToString();
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
 
-        var partner = conv.User1Id == userId ? conv.User2 : conv.User1;
-        var partnerId = conv.User1Id == userId ? conv.User2Id : conv.User1Id;
+        var partner = conv.Type == ConversationType.Private ? (conv.User1Id == userId ? conv.User2 : conv.User1) : null;
+        var partnerId = conv.Type == ConversationType.Private ? (conv.User1Id == userId ? conv.User2Id : conv.User1Id) : null;
         var messagesRaw = await db.ConversationMessages
             .Where(m => m.ConversationId == cid &&
                 !m.DeletedForEveryone &&
@@ -60,6 +63,16 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             .OrderBy(m => m.SentAt)
             .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId })
             .ToListAsync();
+
+        var messageIds = messagesRaw.Select(m => m.Id).ToList();
+        var reactionsByMessage = messageIds.Count > 0
+            ? (await db.MessageReactions
+                .Where(r => messageIds.Contains(r.MessageId))
+                .Select(r => new { r.MessageId, r.UserId, r.Emoji })
+                .ToListAsync())
+                .GroupBy(r => r.MessageId)
+                .ToDictionary(g => g.Key, g => g.Select(r => (r.UserId, r.Emoji)).ToList())
+            : new Dictionary<Guid, List<(Guid UserId, string Emoji)>>();
 
         var replyIds = messagesRaw.Where(m => m.ReplyToMessageId != null).Select(m => m.ReplyToMessageId!.Value).Distinct().ToList();
         Dictionary<Guid, (string? Content, string Type, string? SenderName)> replyData;
@@ -84,6 +97,14 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             return content.Length > 80 ? content[..80] + "…" : content;
         }
 
+        Dictionary<Guid, (string Name, string? Avatar)>? senderNames = null;
+        if (conv.Type == ConversationType.Group && messagesRaw.Count > 0)
+        {
+            var senderIds = messagesRaw.Select(m => m.SenderId).Distinct().ToList();
+            var senders = await db.Users.Where(u => senderIds.Contains(u.Id)).Select(u => new { u.Id, u.Name, u.Avatar }).ToListAsync();
+            senderNames = senders.ToDictionary(u => u.Id, u => (u.Name ?? "—", u.Avatar));
+        }
+
         var messages = messagesRaw.Select(m =>
         {
             var replyToContent = (string?)null;
@@ -92,6 +113,24 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             {
                 replyToContent = GetReplyPreview(rd.Content, rd.Type);
                 replyToSenderName = rd.SenderName ?? "—";
+            }
+            var senderName = (string?)null;
+            var senderAvatar = (string?)null;
+            if (senderNames != null && senderNames.TryGetValue(m.SenderId, out var sn))
+            {
+                senderName = sn.Name;
+                senderAvatar = sn.Avatar;
+            }
+            string? myReaction = null;
+            var reactions = new List<object>();
+            if (reactionsByMessage.TryGetValue(m.Id, out var rlist))
+            {
+                myReaction = rlist.FirstOrDefault(r => r.UserId == userId).Emoji;
+                reactions = rlist
+                    .GroupBy(r => r.Emoji)
+                    .Select(gg => new { emoji = gg.Key, count = gg.Count(), userIds = gg.Select(x => x.UserId).ToList() })
+                    .Cast<object>()
+                    .ToList();
             }
             return new
             {
@@ -104,14 +143,21 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
                 m.IsRead,
                 m.ReplyToMessageId,
                 ReplyToContent = replyToContent,
-                ReplyToSenderName = replyToSenderName
+                ReplyToSenderName = replyToSenderName,
+                SenderName = senderName,
+                SenderAvatar = senderAvatar,
+                Reactions = reactions,
+                MyReaction = myReaction
             };
         }).ToList();
 
         await Clients.Caller.SendAsync("ConversationJoined", new
         {
             Id = conv.Id,
-            Partner = new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, partner.IsOnline },
+            Type = conv.Type,
+            Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, partner.IsOnline } : null,
+            GroupName = conv.Type == ConversationType.Group ? conv.Name : null,
+            GroupImageUrl = conv.Type == ConversationType.Group ? conv.ImageUrl : null,
             Messages = messages
         });
 
@@ -133,10 +179,9 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         }
         state.UpdatedAt = DateTime.UtcNow;
 
-        var messageIdsToMark = await db.ConversationMessages
-            .Where(m => m.ConversationId == cid && m.SenderId == partnerId && !m.IsRead)
-            .Select(m => m.Id)
-            .ToListAsync();
+        var messageIdsToMark = conv.Type == ConversationType.Group
+            ? await db.ConversationMessages.Where(m => m.ConversationId == cid && m.SenderId != userId && !m.IsRead).Select(m => m.Id).ToListAsync()
+            : await db.ConversationMessages.Where(m => m.ConversationId == cid && partnerId.HasValue && m.SenderId == partnerId.Value && !m.IsRead).Select(m => m.Id).ToListAsync();
         if (messageIdsToMark.Count > 0)
         {
             await db.ConversationMessages
@@ -146,12 +191,21 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
 
         await db.SaveChangesAsync();
 
-        await Clients.User(partnerId.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt });
-        if (messageIdsToMark.Count > 0)
+        if (conv.Type == ConversationType.Group)
         {
-            var readPayload = new { messageIds = messageIdsToMark };
-            await Clients.User(partnerId.ToString()).SendAsync("MessagesRead", readPayload);
-            await Clients.Group(cid.ToString()).SendAsync("MessagesRead", readPayload);
+            await Clients.Group(cid.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt, ReaderId = userId });
+            if (messageIdsToMark.Count > 0)
+                await Clients.Group(cid.ToString()).SendAsync("MessagesRead", new { messageIds = messageIdsToMark });
+        }
+        else if (partnerId.HasValue)
+        {
+            await Clients.User(partnerId.Value.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt });
+            if (messageIdsToMark.Count > 0)
+            {
+                var readPayload = new { messageIds = messageIdsToMark };
+                await Clients.User(partnerId.Value.ToString()).SendAsync("MessagesRead", readPayload);
+                await Clients.Group(cid.ToString()).SendAsync("MessagesRead", readPayload);
+            }
         }
     }
 
@@ -162,10 +216,9 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
 
         if (!await IsParticipant(cid, userId)) return;
 
-        var partnerId = (await db.Conversations.FirstOrDefaultAsync(c => c.Id == cid)) is { } conv
-            ? (conv.User1Id == userId ? conv.User2Id : conv.User1Id)
-            : Guid.Empty;
-        if (partnerId == Guid.Empty) return;
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == cid);
+        if (conv == null) return;
+        var partnerId = conv.Type == ConversationType.Private ? (conv.User1Id == userId ? conv.User2Id : conv.User1Id) : (Guid?)null;
 
         var state = await db.UserConversationStates
             .FirstOrDefaultAsync(s => s.UserId == userId && s.ConversationId == cid);
@@ -185,10 +238,9 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         }
         state.UpdatedAt = DateTime.UtcNow;
 
-        var messageIdsToMark = await db.ConversationMessages
-            .Where(m => m.ConversationId == cid && m.SenderId == partnerId && !m.IsRead)
-            .Select(m => m.Id)
-            .ToListAsync();
+        var messageIdsToMark = conv.Type == ConversationType.Group
+            ? await db.ConversationMessages.Where(m => m.ConversationId == cid && m.SenderId != userId && !m.IsRead).Select(m => m.Id).ToListAsync()
+            : await db.ConversationMessages.Where(m => m.ConversationId == cid && partnerId.HasValue && m.SenderId == partnerId.Value && !m.IsRead).Select(m => m.Id).ToListAsync();
         if (messageIdsToMark.Count > 0)
         {
             await db.ConversationMessages
@@ -199,13 +251,15 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         await db.SaveChangesAsync();
 
         var payload = new { LastReadAt = state.LastReadAt, ReaderId = userId };
-        await Clients.User(partnerId.ToString()).SendAsync("PartnerReadUpTo", payload);
         await Clients.Group(cid.ToString()).SendAsync("PartnerReadUpTo", payload);
+        if (partnerId.HasValue)
+            await Clients.User(partnerId.Value.ToString()).SendAsync("PartnerReadUpTo", payload);
         if (messageIdsToMark.Count > 0)
         {
             var readPayload = new { messageIds = messageIdsToMark };
-            await Clients.User(partnerId.ToString()).SendAsync("MessagesRead", readPayload);
             await Clients.Group(cid.ToString()).SendAsync("MessagesRead", readPayload);
+            if (partnerId.HasValue)
+                await Clients.User(partnerId.Value.ToString()).SendAsync("MessagesRead", readPayload);
         }
     }
 
@@ -222,7 +276,8 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
 
             var conv = await db.Conversations
                 .FirstOrDefaultAsync(c => c.Id == cid &&
-                    (c.User1Id == userId || c.User2Id == userId));
+                    (c.Type == ConversationType.Private && (c.User1Id == userId || c.User2Id == userId)
+                     || c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == cid && m.UserId == userId)));
 
             if (conv == null) return;
 
@@ -256,12 +311,15 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
                 ReplyToMessageId = replyToId
             };
             db.ConversationMessages.Add(msg);
-            var recipientId = conv.User1Id == userId ? conv.User2Id : conv.User1Id;
-            var recipientDeletion = await db.UserConversationDeletions
-                .FirstOrDefaultAsync(d => d.UserId == recipientId && d.ConversationId == cid);
-            if (recipientDeletion != null)
+            var recipientId = conv.Type == ConversationType.Group ? (Guid?)null : (conv.User1Id == userId ? conv.User2Id : conv.User1Id);
+            if (recipientId.HasValue)
             {
-                db.UserConversationDeletions.Remove(recipientDeletion);
+                var recipientDeletion = await db.UserConversationDeletions
+                    .FirstOrDefaultAsync(d => d.UserId == recipientId.Value && d.ConversationId == cid);
+                if (recipientDeletion != null)
+                {
+                    db.UserConversationDeletions.Remove(recipientDeletion);
+                }
             }
             try
             {
@@ -275,23 +333,55 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             }
             logger.LogInformation("SendMessage SaveChanges OK");
 
-            var receivePayload = new
+            var senderUser = conv.Type == ConversationType.Group ? await db.Users.FindAsync(userId) : null;
+            object receivePayload;
+            if (conv.Type == ConversationType.Group)
             {
-                msg.Id,
-                msg.SenderId,
-                msg.Content,
-                msg.Type,
-                msg.SentAt,
-                msg.DeletedForEveryone,
-                msg.ReplyToMessageId,
-                ReplyToContent = replyToContent,
-                ReplyToSenderName = replyToSenderName,
-                IsRead = false
-            };
+                receivePayload = new
+                {
+                    msg.Id,
+                    msg.SenderId,
+                    msg.Content,
+                    msg.Type,
+                    msg.SentAt,
+                    msg.DeletedForEveryone,
+                    msg.ReplyToMessageId,
+                    ReplyToContent = replyToContent,
+                    ReplyToSenderName = replyToSenderName,
+                    IsRead = false,
+                    SenderName = senderUser?.Name ?? "—",
+                    SenderAvatar = senderUser?.Avatar,
+                    Reactions = Array.Empty<object>(),
+                    MyReaction = (string?)null
+                };
+            }
+            else
+            {
+                receivePayload = new
+                {
+                    msg.Id,
+                    msg.SenderId,
+                    msg.Content,
+                    msg.Type,
+                    msg.SentAt,
+                    msg.DeletedForEveryone,
+                    msg.ReplyToMessageId,
+                    ReplyToContent = replyToContent,
+                    ReplyToSenderName = replyToSenderName,
+                    IsRead = false,
+                    Reactions = Array.Empty<object>(),
+                    MyReaction = (string?)null
+                };
+            }
             try
             {
-                await Clients.User(userId.ToString()).SendAsync("ReceiveMessage", receivePayload);
-                await Clients.User(recipientId.ToString()).SendAsync("ReceiveMessage", receivePayload);
+                if (conv.Type == ConversationType.Group)
+                    await Clients.Group(cid.ToString()).SendAsync("ReceiveMessage", receivePayload);
+                else if (recipientId.HasValue)
+                {
+                    await Clients.User(userId.ToString()).SendAsync("ReceiveMessage", receivePayload);
+                    await Clients.User(recipientId.Value.ToString()).SendAsync("ReceiveMessage", receivePayload);
+                }
             }
             catch (Exception ex)
             {
@@ -300,10 +390,11 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             }
             logger.LogInformation("SendMessage ReceiveMessage sent");
 
-            var sender = await db.Users.FindAsync(userId);
+            var sender = senderUser ?? await db.Users.FindAsync(userId);
             var preview = type == "text" ? content.Trim() : (type == "audio" ? "رسالة صوتية" : "صورة");
             if (preview.Length > 80) preview = preview[..80] + "…";
-            _ = oneSignal.SendNewConversationMessageAsync(recipientId, sender?.Name ?? "شخص", preview, cid);
+            if (recipientId.HasValue)
+                _ = oneSignal.SendNewConversationMessageAsync(recipientId.Value, sender?.Name ?? "شخص", preview, cid);
 
             var listUpdate = new
             {
@@ -314,8 +405,14 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             };
             try
             {
-                await Clients.User(userId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
-                await Clients.User(recipientId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+                if (conv.Type == ConversationType.Group)
+                    await Clients.Group(cid.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+                else
+                {
+                    await Clients.User(userId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+                    if (recipientId.HasValue)
+                        await Clients.User(recipientId.Value.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+                }
             }
             catch (Exception ex)
             {
@@ -431,6 +528,75 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, conversationId);
     }
 
+    public async Task AddReaction(string conversationId, string messageId, string emoji)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid) || !Guid.TryParse(messageId, out var mid))
+            return;
+        if (!await IsParticipant(cid, userId)) return;
+
+        var trimmed = (emoji ?? "").Trim();
+        if (string.IsNullOrEmpty(trimmed) || trimmed.Length > 20 || !AllowedReactionEmojis.Contains(trimmed))
+            return;
+
+        var msg = await db.ConversationMessages
+            .FirstOrDefaultAsync(m => m.Id == mid && m.ConversationId == cid && !m.DeletedForEveryone);
+        if (msg == null) return;
+
+        var existing = await db.MessageReactions.FindAsync(mid, userId);
+        if (existing != null)
+        {
+            if (existing.Emoji == trimmed)
+            {
+                db.MessageReactions.Remove(existing);
+                await db.SaveChangesAsync();
+                await BroadcastReactionUpdated(cid, mid, userId, existing.Emoji, isAdded: false);
+                return;
+            }
+            existing.Emoji = trimmed;
+        }
+        else
+        {
+            db.MessageReactions.Add(new MessageReaction { MessageId = mid, UserId = userId, Emoji = trimmed });
+        }
+        await db.SaveChangesAsync();
+        await BroadcastReactionUpdated(cid, mid, userId, trimmed, isAdded: true);
+    }
+
+    public async Task RemoveReaction(string conversationId, string messageId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid) || !Guid.TryParse(messageId, out var mid))
+            return;
+        if (!await IsParticipant(cid, userId)) return;
+
+        var existing = await db.MessageReactions.FindAsync(mid, userId);
+        if (existing == null) return;
+
+        var emoji = existing.Emoji;
+        db.MessageReactions.Remove(existing);
+        await db.SaveChangesAsync();
+        await BroadcastReactionUpdated(cid, mid, userId, emoji, isAdded: false);
+    }
+
+    private async Task BroadcastReactionUpdated(Guid conversationId, Guid messageId, Guid userId, string emoji, bool isAdded)
+    {
+        var reactions = await db.MessageReactions
+            .Where(r => r.MessageId == messageId)
+            .Select(r => new { r.UserId, r.Emoji })
+            .ToListAsync();
+        var payload = new
+        {
+            messageId,
+            userId,
+            emoji,
+            isAdded,
+            reactions = reactions
+                .GroupBy(r => r.Emoji)
+                .Select(gg => new { emoji = gg.Key, count = gg.Count(), userIds = gg.Select(x => x.UserId).ToList() })
+                .ToList()
+        };
+        await Clients.Group(conversationId.ToString()).SendAsync("ReactionUpdated", payload);
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         await base.OnDisconnectedAsync(exception);
@@ -438,5 +604,6 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
 
     private async Task<bool> IsParticipant(Guid conversationId, Guid userId) =>
         await db.Conversations.AnyAsync(c => c.Id == conversationId &&
-            (c.User1Id == userId || c.User2Id == userId));
+            (c.Type == ConversationType.Private && (c.User1Id == userId || c.User2Id == userId)
+             || c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == conversationId && m.UserId == userId)));
 }

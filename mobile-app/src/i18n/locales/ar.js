@@ -37,6 +37,9 @@ export default {
     enableNow: 'تفعيل الآن',
     enabling: 'جاري...',
     savedCodes: 'أكوادي المحفوظة',
+    connectWithCodeTitle: 'تواصل مع أصدقائك',
+    connectWithCodeDesc: 'استخدم كود الاتصال للتواصل مع من تعرف',
+    goToConversations: 'المحادثات',
     addCode: 'إضافة كود',
     noSavedCodes: 'لا توجد أكواد محفوظة',
     codeLabelPlaceholder: 'تسمية (اختياري)'
@@ -53,7 +56,9 @@ export default {
     phone: 'رقم الهاتف',
     phoneNotSet: 'غير متوفر',
     openChat: 'فتح المحادثة',
-    startChat: 'بدء محادثة'
+    startChat: 'بدء محادثة',
+    addAsContact: 'إضافة كجهة اتصال',
+    addedToContacts: 'في جهات الاتصال'
   },
   settings: {
     title: 'الإعدادات',
@@ -263,7 +268,32 @@ export default {
     markRead: 'وضع كمقروء',
     needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات',
     optionsTitle: 'خيارات المحادثة',
-    notFound: 'المحادثة غير موجودة'
+    notFound: 'المحادثة غير موجودة',
+    newGroup: 'مجموعة جديدة'
+  },
+  groups: {
+    createTitle: 'إنشاء مجموعة',
+    groupName: 'اسم المجموعة',
+    groupNamePlaceholder: 'أدخل اسم المجموعة',
+    groupPhoto: 'صورة المجموعة',
+    selectMembers: 'اختر الأعضاء',
+    create: 'إنشاء',
+    creating: 'جاري الإنشاء...',
+    infoTitle: 'معلومات المجموعة',
+    members: 'الأعضاء',
+    addMember: 'إضافة عضو',
+    leaveGroup: 'مغادرة المجموعة',
+    leaveConfirm: 'هل أنت متأكد من مغادرة المجموعة؟',
+    removeMember: 'إزالة من المجموعة',
+    admin: 'مدير',
+    member: 'عضو',
+    groupNameRequired: 'اسم المجموعة مطلوب',
+    selectAtLeastOne: 'اختر عضواً واحداً على الأقل',
+    editGroupName: 'تعديل الاسم',
+    editGroupPhoto: 'تعديل الصورة',
+    save: 'حفظ',
+    updated: 'تم التحديث',
+    groupLabel: 'مجموعة'
   },
   conversationChat: {
     empty: 'ابدأ المحادثة بأول رسالة! 👋',
@@ -299,7 +329,8 @@ export default {
     imageUploadFailed: 'فشل رفع الصورة',
     voiceRecordingTooShort: 'التسجيل قصير جداً، جرّب التسجيل لأكثر من ثانية',
     sendVoice: 'إرسال',
-    uploadingVoice: 'جاري رفع الرسالة الصوتية...'
+    uploadingVoice: 'جاري رفع الرسالة الصوتية...',
+    reaction: 'رد فعل'
   },
   phoneValidation: {
     invalidCountryCode: 'مفتاح الدولة غير صالح',

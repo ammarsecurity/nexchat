@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import Vue3Lottie from 'vue3-lottie'
 import App from './App.vue'
 import router from './router'
 import { i18n } from './i18n'
@@ -13,6 +14,7 @@ const app = createApp(App)
 app.use(pinia)
 app.use(i18n)
 app.use(router)
+app.use(Vue3Lottie, { name: 'Vue3Lottie' })
 
 // Sync locale store with i18n and apply saved locale
 const localeStore = useLocaleStore()

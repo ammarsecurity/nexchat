@@ -59,11 +59,7 @@ builder.Services.AddAuthorization(opt =>
 });
 
 builder.Services.AddControllers();
-builder.Services.AddSignalR(opt =>
-{
-    if (builder.Environment.IsDevelopment())
-        opt.EnableDetailedErrors = true;
-});
+builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -157,18 +153,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("NexChatPolicy");
-app.UseStaticFiles(new StaticFileOptions
-{
-    OnPrepareResponse = ctx =>
-    {
-        var origin = ctx.Context.Request.Headers.Origin.FirstOrDefault();
-        if (!string.IsNullOrEmpty(origin))
-        {
-            ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", origin);
-            ctx.Context.Response.Headers.Append("Access-Control-Allow-Credentials", "true");
-        }
-    }
-});
+app.UseStaticFiles();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

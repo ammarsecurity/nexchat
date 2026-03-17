@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Pin, Archive, Trash2, Check, User } from 'lucide-vue-next'
+import { ChevronRight, Pin, Archive, Trash2, Check, User, Users } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import CachedAvatar from '../components/CachedAvatar.vue'
@@ -29,6 +29,12 @@ function goBack() {
 
 function openProfile() {
   if (!conv.value) return
+  const id = conv.value.id ?? conv.value.Id
+  const isGroupConv = conv.value.isGroup ?? conv.value.IsGroup
+  if (isGroupConv && id) {
+    router.push(`/conversation/${id}/group-info`)
+    return
+  }
   const pid = conv.value.partnerId ?? conv.value.PartnerId
   if (!pid) return
   router.push({
@@ -110,8 +116,8 @@ async function deleteConversation() {
 
       <div class="options-list">
         <button class="option-btn" @click="openProfile">
-          <User :size="20" />
-          <span>{{ t('profile.viewProfile') }}</span>
+          <component :is="(conv.isGroup ?? conv.IsGroup) ? Users : User" :size="20" />
+          <span>{{ (conv.isGroup ?? conv.IsGroup) ? t('groups.infoTitle') : t('profile.viewProfile') }}</span>
         </button>
         <button class="option-btn" @click="togglePin">
           <Pin :size="20" />
