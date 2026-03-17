@@ -15,8 +15,12 @@ import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
 import { matchingHub, startHub, stopHub } from './services/signalr'
 import { startIncomingCallSound, stopIncomingCallSound } from './utils/sounds'
+import { useNetworkStore } from './stores/network'
+import { useI18n } from 'vue-i18n'
 
-const isOnline = ref(navigator.onLine)
+const { t } = useI18n()
+const network = useNetworkStore()
+const isOnline = computed(() => network.isOnline)
 const showUpdateModal = ref(false)
 const updateDownloadUrl = ref('')
 const auth = useAuthStore()
@@ -53,11 +57,18 @@ const router = useRouter()
 const route = useRoute()
 
 function handleOnline() {
-  isOnline.value = true
+  network.setOnline(true)
   runUpdateCheck()
 }
 function handleOffline() {
-  isOnline.value = false
+  network.setOnline(false)
+}
+
+function retryConnection() {
+  if (navigator.onLine) {
+    network.setOnline(true)
+    window.location.reload()
+  }
 }
 
 function handleUnauthorized() {
@@ -96,7 +107,7 @@ function setupMatchingHubListeners() {
 }
 
 // إبقاء MatchingHub متصلاً عند المستخدم المسجّل - لاستقبال طلبات الاتصال بالكود من أي صفحة
-watch([isOnline, () => auth.token], ([online, token]) => {
+watch([() => network.isOnline, () => auth.token], ([online, token]) => {
   if (online && token) {
     setupMatchingHubListeners()
     startHub(matchingHub).catch(() => {})
@@ -111,6 +122,7 @@ const tabRoots = ['/', '/onboarding', '/login', '/register', '/home', '/matching
 let backButtonListener = null
 
 onMounted(() => {
+  network.setOnline(navigator.onLine)
   applyHtmlLocale()
   runUpdateCheck()
   window.addEventListener('online', handleOnline)
@@ -143,12 +155,22 @@ onUnmounted(() => {
 
 <template>
   <div id="app-root">
-    <NoConnectionView v-if="!isOnline" />
-    <RouterView v-else v-slot="{ Component }">
-      <Transition name="page" mode="out-in">
-        <component :is="Component" />
-      </Transition>
-    </RouterView>
+    <NoConnectionView v-if="!isOnline && !auth.token" />
+    <template v-else>
+      <div v-if="!isOnline" class="offline-banner">
+        <span>{{ t('noConnection.offlineBanner') }}</span>
+        <button type="button" class="offline-retry" @click="retryConnection">
+          {{ t('noConnection.retry') }}
+        </button>
+      </div>
+      <div class="app-content" :class="{ 'has-offline-banner': !isOnline }">
+      <RouterView v-slot="{ Component }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </RouterView>
+      </div>
+    </template>
     <IncomingConnectionRequestDialog v-if="auth.token" />
     <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
     <LoaderOverlay :show="apiLoading.showOverlay" />
@@ -161,5 +183,44 @@ onUnmounted(() => {
   width: 100%;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--text-primary, #1a1a1a);
+  color: var(--bg-primary, #fff);
+  font-size: 14px;
+  flex-wrap: wrap;
+}
+.offline-retry {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.app-content.has-offline-banner {
+  padding-top: 48px;
 }
 </style>

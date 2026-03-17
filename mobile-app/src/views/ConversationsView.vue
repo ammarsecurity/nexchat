@@ -2,17 +2,21 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, Archive, Trash2, Check, MoreVertical, Users } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import CachedAvatar from '../components/CachedAvatar.vue'
 import { useLocaleStore } from '../stores/locale'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useConversationStore } from '../stores/conversation'
 import { useAuthStore } from '../stores/auth'
+import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub } from '../services/signalr'
+import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
 
 const router = useRouter()
+const network = useNetworkStore()
 const route = useRoute()
 const { t } = useI18n()
 const localeStore = useLocaleStore()
@@ -20,13 +24,11 @@ const listStore = useConversationsListStore()
 const convStore = useConversationStore()
 const auth = useAuthStore()
 
-const loading = ref(false)
+const ready = ref(false)
 const conversations = computed(() => listStore.list)
 const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
-const contextConv = ref(null)
-const showContextMenu = ref(false)
 
 const filteredList = computed(() => {
   let list = conversations.value
@@ -41,65 +43,36 @@ const filteredList = computed(() => {
   return list
 })
 
+function goToCreateGroup() {
+  router.push('/conversations/create-group')
+}
+
 async function fetchConversations() {
-  loading.value = true
+  const cached = await loadConversationsListFromCache()
+  if (cached?.length) listStore.setList(cached)
+  ready.value = true
+
   needPhone.value = false
+  if (!network.isOnline) return
   try {
     const { data } = await api.get('/conversations', {
-      params: { filter: filter.value, search: searchQuery.value || undefined }
+      params: { filter: filter.value, search: searchQuery.value || undefined },
+      skipGlobalLoader: true
     })
-    listStore.setList(data ?? [])
+    const list = data ?? []
+    listStore.setList(list)
+    await saveConversationsList(list)
   } catch (e) {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
     }
-    listStore.setList([])
-  } finally {
-    loading.value = false
   }
-}
-
-async function togglePin(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.put(`/conversations/${id}/pin`)
-    listStore.updateConversation(id, { isPinned: !(c.isPinned ?? c.IsPinned) })
-  } catch {}
-  showContextMenu.value = false
-}
-
-async function toggleArchive(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.put(`/conversations/${id}/archive`)
-    listStore.updateConversation(id, { isArchived: !(c.isArchived ?? c.IsArchived) })
-    await fetchConversations()
-  } catch {}
-  showContextMenu.value = false
-}
-
-async function markRead(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.put(`/conversations/${id}/read`)
-    listStore.updateConversation(id, { unreadCount: 0 })
-  } catch {}
-  showContextMenu.value = false
-}
-
-async function deleteConversation(c) {
-  try {
-    const id = c.id ?? c.Id
-    await api.delete(`/conversations/${id}`)
-    listStore.removeConversation(id)
-  } catch {}
-  showContextMenu.value = false
 }
 
 function openContextMenu(conv, e) {
   e?.stopPropagation()
-  contextConv.value = conv
-  showContextMenu.value = true
+  const id = conv?.id ?? conv?.Id
+  if (id) router.push(`/conversations/${id}/options`)
 }
 
 function formatTime(ts) {
@@ -123,8 +96,8 @@ function getUnreadCount(c) {
 
 watch(filter, fetchConversations, { immediate: true })
 
-watch([() => route.query.open, loading], ([openId, isLoading]) => {
-  if (!openId || isLoading) return
+watch([() => route.query.open, ready], ([openId, isReady]) => {
+  if (!openId || !isReady) return
   nextTick(() => router.replace(`/conversation/${openId}`))
 })
 
@@ -144,13 +117,8 @@ async function handleListUpdated(payload) {
     LastMessagePreview: preview,
     LastMessageAt: at
   }, shouldIncrementUnread)
+  if (updated) await saveConversationsList(listStore.list)
   if (!updated) await fetchConversations()
-}
-
-function onVisibilityChange() {
-  if (document.visibilityState === 'visible' && route.path === '/conversations') {
-    fetchConversations()
-  }
 }
 
 onMounted(async () => {
@@ -159,12 +127,10 @@ onMounted(async () => {
     await startHub(conversationHub)
     conversationHub.on('ConversationListUpdated', handleListUpdated)
   } catch (_) {}
-  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
   conversationHub.off('ConversationListUpdated', handleListUpdated)
-  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
 function goToConversation(c) {
@@ -188,9 +154,14 @@ function goBack() {
         <ChevronRight :size="22" />
       </button>
       <span class="top-title">{{ t('conversations.title') }}</span>
-      <button class="new-chat-btn" @click="goToContacts" :aria-label="t('conversations.newChat')">
-        <Users :size="22" />
-      </button>
+      <div class="header-actions">
+        <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
+          <UsersRound :size="22" />
+        </button>
+        <button class="new-chat-btn" @click="goToContacts" :aria-label="t('conversations.newChat')" :title="t('conversations.newChat')">
+          <Users :size="22" />
+        </button>
+      </div>
     </header>
 
     <div v-if="needPhone" class="need-phone-banner">
@@ -223,8 +194,7 @@ function goBack() {
     </div>
 
     <div class="scroll-area">
-      <div v-if="loading" class="loading-msg">{{ t('common.loading') }}</div>
-      <div v-else-if="!filteredList.length" class="empty-state">
+      <div v-if="!filteredList.length" class="empty-state">
         <MessageCircle :size="48" class="empty-icon" />
         <p>{{ t('conversations.empty') }}</p>
         <button class="btn-gradient" @click="goToContacts">{{ t('conversations.newChat') }}</button>
@@ -234,18 +204,20 @@ function goBack() {
           v-for="c in filteredList"
           :key="c.id ?? c.Id"
           class="conv-item"
-          :class="{ unread: getUnreadCount(c) > 0 }"
+          :class="{ unread: getUnreadCount(c) > 0, 'is-group': c.isGroup ?? c.IsGroup }"
           @click="goToConversation(c)"
           @contextmenu.prevent="openContextMenu(c, $event)"
         >
-          <div class="item-avatar" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-            <img v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :src="ensureAbsoluteUrl(c.partnerAvatar ?? c.PartnerAvatar)" class="avatar-img" referrerpolicy="no-referrer" />
+          <div class="item-avatar" :class="{ 'avatar-group': c.isGroup ?? c.IsGroup }" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+            <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
+            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="22" class="avatar-group-icon" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">
-            <div class="item-row">
+            <div class="item-row item-row-name">
               <span class="item-name">{{ c.partnerName ?? c.PartnerName ?? '—' }}</span>
               <span class="item-meta-row">
+                <span v-if="c.isGroup ?? c.IsGroup" class="group-badge">{{ t('groups.groupLabel') }}</span>
                 <span v-if="getUnreadCount(c) > 0" class="unread-badge-inline">{{ getUnreadCount(c) > 99 ? '99+' : getUnreadCount(c) }}</span>
                 <span class="item-time">{{ formatTime(c.lastMessageAt ?? c.LastMessageAt) }}</span>
               </span>
@@ -271,28 +243,6 @@ function goBack() {
       </div>
     </div>
 
-    <Teleport to="body">
-      <div v-if="showContextMenu && contextConv" class="modal-overlay" @click="showContextMenu = false">
-        <div class="context-menu" @click.stop>
-          <button @click="togglePin(contextConv)">
-            <Pin :size="18" />
-            {{ (contextConv.isPinned ?? contextConv.IsPinned) ? t('conversations.unpin') : t('conversations.pin') }}
-          </button>
-          <button @click="toggleArchive(contextConv)">
-            <Archive :size="18" />
-            {{ (contextConv.isArchived ?? contextConv.IsArchived) ? t('conversations.unarchive') : t('conversations.archive') }}
-          </button>
-          <button v-if="getUnreadCount(contextConv) > 0" @click="markRead(contextConv)">
-            <Check :size="18" />
-            {{ t('conversations.markRead') }}
-          </button>
-          <button class="danger" @click="deleteConversation(contextConv)">
-            <Trash2 :size="18" />
-            {{ t('conversations.delete') }}
-          </button>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -341,6 +291,7 @@ function goBack() {
   -webkit-tap-highlight-color: transparent;
 }
 .back-btn:active, .new-chat-btn:active { background: var(--bg-card-hover); }
+.header-actions { display: flex; gap: 8px; }
 .new-chat-btn { color: var(--primary); }
 
 .need-phone-banner {
@@ -437,14 +388,6 @@ function goBack() {
   -webkit-overflow-scrolling: touch;
 }
 
-.loading-msg {
-  font-size: 14px;
-  color: var(--text-muted);
-  padding: 32px;
-  text-align: center;
-  font-family: 'Cairo', sans-serif;
-}
-
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -487,6 +430,15 @@ function goBack() {
 
 .conv-item:active { background: var(--bg-card-hover); }
 
+.conv-item.is-group {
+  border-inline-start: 3px solid var(--primary);
+  background: rgba(108, 99, 255, 0.06);
+}
+
+.conv-item.is-group:active {
+  background: rgba(108, 99, 255, 0.1);
+}
+
 .conv-item.unread .item-name { font-weight: 700; }
 
 .item-avatar {
@@ -527,6 +479,9 @@ function goBack() {
   gap: 8px;
 }
 
+.item-row-name {
+  min-width: 0;
+}
 .item-name {
   font-weight: 600;
   font-size: 15px;
@@ -535,6 +490,30 @@ function goBack() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.group-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-family: 'Cairo', sans-serif;
+}
+
+.item-avatar.avatar-group {
+  background: rgba(108, 99, 255, 0.2) !important;
+}
+
+.avatar-group-icon {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .item-meta-row {
@@ -577,12 +556,18 @@ function goBack() {
 }
 
 .context-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  padding: 4px;
   background: none;
   border: none;
   color: var(--text-tertiary);
-  padding: 4px;
   cursor: pointer;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .item-actions {
@@ -604,47 +589,6 @@ function goBack() {
   flex-shrink: 0;
 }
 
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.context-menu {
-  min-width: 220px;
-  padding: 8px 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.context-menu button {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 16px;
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  text-align: start;
-}
-
-.context-menu button:hover {
-  background: var(--bg-elevated);
-}
-
-.context-menu button.danger {
-  color: #f44336;
-}
-
 .btn-gradient {
   padding: 12px 24px;
   background: var(--primary);
@@ -655,5 +599,21 @@ function goBack() {
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   margin-top: 16px;
+}
+
+@media (max-width: 360px) {
+  .conv-item {
+    padding: 12px var(--spacing);
+    gap: 12px;
+  }
+  .item-avatar {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    font-size: 16px;
+  }
+  .item-name { font-size: 14px; }
+  .item-time { font-size: 12px; }
+  .item-preview { font-size: 12px; }
 }
 </style>

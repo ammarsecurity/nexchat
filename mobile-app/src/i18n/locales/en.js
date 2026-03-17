@@ -1,5 +1,6 @@
 export default {
   common: {
+    back: 'Back',
     cancel: 'Cancel',
     copy: 'Copy',
     copied: 'Copied',
@@ -36,9 +37,28 @@ export default {
     enableNow: 'Enable now',
     enabling: 'Enabling...',
     savedCodes: 'Saved codes',
+    connectWithCodeTitle: 'Connect with friends',
+    connectWithCodeDesc: 'Use your contact code to connect with people you know',
+    goToConversations: 'Conversations',
     addCode: 'Add code',
     noSavedCodes: 'No saved codes',
     codeLabelPlaceholder: 'Label (optional)'
+  },
+  profile: {
+    title: 'Profile',
+    viewProfile: 'View profile',
+    notFound: 'User is not available or has been blocked.',
+    genderMale: 'Male',
+    genderFemale: 'Female',
+    genderOther: 'Other',
+    online: 'Online now',
+    offline: 'Offline',
+    phone: 'Phone number',
+    phoneNotSet: 'Not set',
+    openChat: 'Open chat',
+    startChat: 'Start chat',
+    addAsContact: 'Add as contact',
+    addedToContacts: 'In contacts'
   },
   settings: {
     title: 'Settings',
@@ -201,7 +221,8 @@ export default {
   noConnection: {
     title: 'No internet connection',
     desc: 'Check your network connection and try again',
-    retry: 'Retry'
+    retry: 'Retry',
+    offlineBanner: 'Offline - Showing cached data'
   },
   gender: {
     male: 'Male',
@@ -245,11 +266,47 @@ export default {
     unarchive: 'Unarchive',
     delete: 'Delete conversation',
     markRead: 'Mark as read',
-    needPhone: 'Add your phone number from settings to use conversations'
+    needPhone: 'Add your phone number from settings to use conversations',
+    optionsTitle: 'Conversation options',
+    notFound: 'Conversation not found',
+    newGroup: 'New group'
+  },
+  groups: {
+    createTitle: 'Create group',
+    groupName: 'Group name',
+    groupNamePlaceholder: 'Enter group name',
+    groupPhoto: 'Group photo',
+    selectMembers: 'Select members',
+    create: 'Create',
+    creating: 'Creating...',
+    infoTitle: 'Group info',
+    members: 'Members',
+    addMember: 'Add member',
+    leaveGroup: 'Leave group',
+    leaveConfirm: 'Are you sure you want to leave the group?',
+    removeMember: 'Remove from group',
+    admin: 'Admin',
+    member: 'Member',
+    groupNameRequired: 'Group name is required',
+    selectAtLeastOne: 'Select at least one member',
+    editGroupName: 'Edit name',
+    editGroupPhoto: 'Edit photo',
+    save: 'Save',
+    updated: 'Updated',
+    groupLabel: 'Group'
   },
   conversationChat: {
     empty: 'Start the conversation with your first message! 👋',
+    typing: 'Typing...',
     messagePlaceholder: 'Message',
+    reply: 'Reply',
+    share: 'Share',
+    replyTo: 'Reply to',
+    shareToConversation: 'Share to another conversation',
+    shareSearchPlaceholder: 'Search by name or number',
+    selectConversation: 'Select conversation',
+    noOtherConversations: 'No other conversations',
+    noSearchResults: 'No search results',
     deleteForMe: 'Delete for me',
     deleteForEveryone: 'Delete for everyone',
     deleteConversation: 'Delete conversation',
@@ -265,12 +322,15 @@ export default {
     attachOrVoice: 'Attach or voice',
     attachImage: 'Attach image',
     voiceMessage: 'Voice message',
+    replyPreviewImage: 'Image',
     voiceNotSupported: 'Voice recording is not supported in this browser',
     voicePermissionDenied: 'Microphone access is required',
     voiceUploadFailed: 'Failed to upload voice message',
+    imageUploadFailed: 'Failed to upload image',
     voiceRecordingTooShort: 'Recording too short, try recording for more than a second',
     sendVoice: 'Send',
-    uploadingVoice: 'Uploading voice message...'
+    uploadingVoice: 'Uploading voice message...',
+    reaction: 'Reaction'
   },
   phoneValidation: {
     invalidCountryCode: 'Invalid country code',

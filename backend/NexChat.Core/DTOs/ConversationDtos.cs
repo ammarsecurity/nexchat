@@ -23,10 +23,18 @@ public record ConversationListItemDto(
     DateTime? LastMessageAt,
     int UnreadCount,
     bool IsPinned,
-    bool IsArchived
+    bool IsArchived,
+    bool IsGroup = false
 );
 
 public record CreateConversationRequest(Guid ContactUserId);
+
+public record CreateGroupRequest(string Name, string? ImageUrl, List<Guid> MemberUserIds);
+
+/// <summary>تعديل اسم أو صورة المجموعة (للمدير). يمكن إرسال أحدهما أو كليهما.</summary>
+public record UpdateGroupRequest(string? Name, string? ImageUrl);
+
+public record GroupMemberDto(Guid UserId, string Name, string? Avatar, string Role, DateTime JoinedAt);
 
 public record BlockedUserDto(
     Guid Id,
