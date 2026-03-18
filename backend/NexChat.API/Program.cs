@@ -152,8 +152,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "NexChat API v1"));
 }
 
-app.UseStaticFiles();
 app.UseCors("NexChatPolicy");
+app.UseStaticFiles();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

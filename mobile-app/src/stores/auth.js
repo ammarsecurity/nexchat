@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import api from '../services/api'
 import { initNotifications, clearUser } from '../services/notifications'
+import { clearUserCache } from '../services/cache'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('nexchat_token') || '')
@@ -70,6 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     clearUser()
+    clearUserCache()
     token.value = ''
     user.value = null
     avatar.value = null

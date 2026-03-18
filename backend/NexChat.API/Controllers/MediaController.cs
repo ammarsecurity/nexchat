@@ -105,4 +105,27 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
             : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
         return Ok(new { url });
     }
+
+    /// <summary>
+    /// Proxy for avatar images - enables caching without CORS issues.
+    /// GET /api/media/avatar/xxx.png
+    /// </summary>
+    [HttpGet("avatar/{fileName}")]
+    public async Task<IActionResult> GetAvatar(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName) || fileName.Contains(".."))
+            return BadRequest();
+        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
+        var filePath = Path.Combine(uploadsPath, Path.GetFileName(fileName));
+        if (!System.IO.File.Exists(filePath))
+            return NotFound();
+        var contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            _ => "image/jpeg"
+        };
+        return PhysicalFile(filePath, contentType, enableRangeProcessing: true);
+    }
 }

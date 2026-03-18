@@ -1,5 +1,6 @@
 export default {
   common: {
+    back: 'رجوع',
     cancel: 'إلغاء',
     copy: 'نسخ',
     copied: 'تم النسخ',
@@ -36,9 +37,28 @@ export default {
     enableNow: 'تفعيل الآن',
     enabling: 'جاري...',
     savedCodes: 'أكوادي المحفوظة',
+    connectWithCodeTitle: 'تواصل مع أصدقائك',
+    connectWithCodeDesc: 'استخدم كود الاتصال للتواصل مع من تعرف',
+    goToConversations: 'المحادثات',
     addCode: 'إضافة كود',
     noSavedCodes: 'لا توجد أكواد محفوظة',
     codeLabelPlaceholder: 'تسمية (اختياري)'
+  },
+  profile: {
+    title: 'الملف الشخصي',
+    viewProfile: 'عرض الملف الشخصي',
+    notFound: 'المستخدم غير متوفر أو تم حظره.',
+    genderMale: 'ذكر',
+    genderFemale: 'أنثى',
+    genderOther: 'آخر',
+    online: 'متصل الآن',
+    offline: 'غير متصل',
+    phone: 'رقم الهاتف',
+    phoneNotSet: 'غير متوفر',
+    openChat: 'فتح المحادثة',
+    startChat: 'بدء محادثة',
+    addAsContact: 'إضافة كجهة اتصال',
+    addedToContacts: 'في جهات الاتصال'
   },
   settings: {
     title: 'الإعدادات',
@@ -201,7 +221,8 @@ export default {
   noConnection: {
     title: 'لا يوجد اتصال بالإنترنت',
     desc: 'تحقق من اتصالك بالشبكة وحاول مرة أخرى',
-    retry: 'إعادة المحاولة'
+    retry: 'إعادة المحاولة',
+    offlineBanner: 'لا اتصال - البيانات من الذاكرة المحلية'
   },
   gender: {
     male: 'ذكر',
@@ -245,11 +266,47 @@ export default {
     unarchive: 'إلغاء الأرشفة',
     delete: 'حذف المحادثة',
     markRead: 'وضع كمقروء',
-    needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات'
+    needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات',
+    optionsTitle: 'خيارات المحادثة',
+    notFound: 'المحادثة غير موجودة',
+    newGroup: 'مجموعة جديدة'
+  },
+  groups: {
+    createTitle: 'إنشاء مجموعة',
+    groupName: 'اسم المجموعة',
+    groupNamePlaceholder: 'أدخل اسم المجموعة',
+    groupPhoto: 'صورة المجموعة',
+    selectMembers: 'اختر الأعضاء',
+    create: 'إنشاء',
+    creating: 'جاري الإنشاء...',
+    infoTitle: 'معلومات المجموعة',
+    members: 'الأعضاء',
+    addMember: 'إضافة عضو',
+    leaveGroup: 'مغادرة المجموعة',
+    leaveConfirm: 'هل أنت متأكد من مغادرة المجموعة؟',
+    removeMember: 'إزالة من المجموعة',
+    admin: 'مدير',
+    member: 'عضو',
+    groupNameRequired: 'اسم المجموعة مطلوب',
+    selectAtLeastOne: 'اختر عضواً واحداً على الأقل',
+    editGroupName: 'تعديل الاسم',
+    editGroupPhoto: 'تعديل الصورة',
+    save: 'حفظ',
+    updated: 'تم التحديث',
+    groupLabel: 'مجموعة'
   },
   conversationChat: {
     empty: 'ابدأ المحادثة بأول رسالة! 👋',
+    typing: 'يكتب...',
     messagePlaceholder: 'رسالة',
+    reply: 'رد',
+    share: 'مشاركة',
+    replyTo: 'رد على',
+    shareToConversation: 'مشاركة لمحادثة أخرى',
+    shareSearchPlaceholder: 'بحث بالاسم أو الرقم',
+    selectConversation: 'اختر المحادثة',
+    noOtherConversations: 'لا توجد محادثات أخرى',
+    noSearchResults: 'لا توجد نتائج للبحث',
     deleteForMe: 'حذف عندي',
     deleteForEveryone: 'حذف للجميع',
     deleteConversation: 'حذف المحادثة',
@@ -265,12 +322,15 @@ export default {
     attachOrVoice: 'مرفقات أو رسالة صوتية',
     attachImage: 'إرفاق صورة',
     voiceMessage: 'رسالة صوتية',
+    replyPreviewImage: 'صورة',
     voiceNotSupported: 'التسجيل الصوتي غير مدعوم في هذا المتصفح',
     voicePermissionDenied: 'يجب السماح بالوصول للميكروفون',
     voiceUploadFailed: 'فشل رفع الرسالة الصوتية',
+    imageUploadFailed: 'فشل رفع الصورة',
     voiceRecordingTooShort: 'التسجيل قصير جداً، جرّب التسجيل لأكثر من ثانية',
     sendVoice: 'إرسال',
-    uploadingVoice: 'جاري رفع الرسالة الصوتية...'
+    uploadingVoice: 'جاري رفع الرسالة الصوتية...',
+    reaction: 'رد فعل'
   },
   phoneValidation: {
     invalidCountryCode: 'مفتاح الدولة غير صالح',

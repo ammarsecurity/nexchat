@@ -9,23 +9,23 @@ const api = axios.create({
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('nexchat_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
-  try {
-    useApiLoadingStore().startRequest()
-  } catch {}
+  if (!config.skipGlobalLoader) {
+    try { useApiLoadingStore().startRequest() } catch {}
+  }
   return config
 })
 
 api.interceptors.response.use(
   res => {
-    try {
-      useApiLoadingStore().endRequest()
-    } catch {}
+    if (!res.config.skipGlobalLoader) {
+      try { useApiLoadingStore().endRequest() } catch {}
+    }
     return res
   },
   err => {
-    try {
-      useApiLoadingStore().endRequest()
-    } catch {}
+    if (!err.config?.skipGlobalLoader) {
+      try { useApiLoadingStore().endRequest() } catch {}
+    }
     if (err.response?.status === 401) {
       window.dispatchEvent(new CustomEvent('nexchat:unauthorized'))
     }

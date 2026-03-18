@@ -12,7 +12,8 @@ export const useConversationsListStore = defineStore('conversationsList', () => 
     const id = String(conversationId)
     const idx = list.value.findIndex(c => String(c.id ?? c.Id) === id)
     if (idx < 0) return false
-    const item = { ...list.value[idx], ...updates }
+    const oldItem = list.value[idx]
+    const item = { ...oldItem, ...updates }
     if (incrementUnreadForRecipient) {
       const current = item.unreadCount ?? item.UnreadCount ?? 0
       item.unreadCount = current + 1

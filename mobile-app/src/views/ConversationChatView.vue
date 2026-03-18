@@ -1,13 +1,17 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause } from 'lucide-vue-next'
+import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause, Reply, Forward } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
+import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub, ensureConnected } from '../services/signalr'
+import api from '../services/api'
+import { loadMessagesFromCache, saveMessagesForConversation, clearMessagesForConversation } from '../services/cache'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import CachedAvatar from '../components/CachedAvatar.vue'
 import { formatTime12 } from '../utils/formatTime'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
@@ -17,8 +21,18 @@ const router = useRouter()
 const auth = useAuthStore()
 const convStore = useConversationStore()
 const listStore = useConversationsListStore()
+const network = useNetworkStore()
 const localeStore = useLocaleStore()
 const { t } = useI18n()
+
+let saveMessagesToCacheTimer = null
+function debouncedSaveMessages(convId) {
+  if (saveMessagesToCacheTimer) clearTimeout(saveMessagesToCacheTimer)
+  saveMessagesToCacheTimer = setTimeout(() => {
+    saveMessagesToCacheTimer = null
+    saveMessagesForConversation(convId, convStore.messages)
+  }, 400)
+}
 
 const conversationId = route.params.conversationId
 const messageText = ref('')
@@ -37,6 +51,9 @@ const recordingSeconds = ref(0)
 let recordingTimer = null
 const imageModalUrl = ref(null)
 const showMessageMenu = ref(null)
+const showMessageMenuMsg = ref(null)
+const msgMenuPosition = ref({})
+const replyingTo = ref(null)
 const showDeleteConvConfirm = ref(false)
 const showShareModal = ref(false)
 const shareCodeCopied = ref(false)
@@ -44,12 +61,17 @@ const showInputActionsMenu = ref(false)
 const playingAudioId = ref(null)
 const audioProgress = ref({})
 const audioDurations = ref({})
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const highlightedMessageId = ref(null)
+const groupSenders = ref({})
+const showReactionPickerMsg = ref(null)
+const reactionPickerPosition = ref({})
+const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🙏']
 
 function getMsgKey(msg) {
   return msg.tempId || msg.id || msg.Id
 }
+
+const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
 function linkifyText(text) {
   if (!text || typeof text !== 'string') return ''
@@ -79,6 +101,14 @@ function formatAudioDuration(sec) {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function replyPreviewText(content) {
+  if (!content || typeof content !== 'string') return ''
+  const lower = content.toLowerCase()
+  if (/\.(webm|m4a|ogg|opus|mp3|wav)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('webm') || lower.includes('m4a') || lower.includes('ogg')))) return t('conversationChat.voiceMessage')
+  if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('jpg') || lower.includes('png') || lower.includes('webp')))) return t('conversationChat.replyPreviewImage')
+  return content
 }
 
 function getAudioProgress(msg) {
@@ -124,11 +154,27 @@ function onAudioLoadedMetadata(msg, e) {
 
 const currentUserId = computed(() => auth.user?.id)
 const partner = computed(() => convStore.partner)
+
+function getMyReaction(msg) {
+  if (!msg?.reactions?.length || !currentUserId.value) return msg?.myReaction ?? null
+  const id = String(currentUserId.value)
+  for (const r of msg.reactions) {
+    const userIds = r.userIds ?? r.UserIds ?? []
+    if (userIds.some(uid => String(uid) === id)) return r.emoji ?? r.Emoji ?? null
+  }
+  return null
+}
+
+function messageReactionsList(msg) {
+  const list = msg?.reactions ?? []
+  return Array.isArray(list) ? list : []
+}
 const messages = computed(() => convStore.messages)
 const partnerLetter = computed(() => partner.value?.name?.[0]?.toUpperCase() || '?')
 const partnerAvatarIsImage = computed(() =>
   partner.value?.avatar && (partner.value.avatar.startsWith('http') || partner.value.avatar.startsWith('/'))
 )
+const partnerIsOnline = computed(() => partner.value?.isOnline ?? partner.value?.IsOnline ?? false)
 
 function normalizeMsg(msg) {
   return {
@@ -138,7 +184,14 @@ function normalizeMsg(msg) {
     type: msg.type ?? msg.Type ?? 'text',
     sentAt: msg.sentAt ?? msg.SentAt,
     deletedForEveryone: msg.deletedForEveryone ?? msg.DeletedForEveryone,
-    isRead: msg.isRead ?? msg.IsRead
+    isRead: msg.isRead ?? msg.IsRead,
+    replyToMessageId: msg.replyToMessageId ?? msg.ReplyToMessageId,
+    replyToContent: msg.replyToContent ?? msg.ReplyToContent,
+    replyToSenderName: msg.replyToSenderName ?? msg.ReplyToSenderName,
+    senderName: msg.senderName ?? msg.SenderName,
+    senderAvatar: msg.senderAvatar ?? msg.SenderAvatar,
+    reactions: msg.reactions ?? msg.Reactions ?? [],
+    myReaction: msg.myReaction ?? msg.MyReaction ?? null
   }
 }
 
@@ -158,7 +211,47 @@ function markAsReadDebounced() {
 }
 
 onMounted(async () => {
-  loading.value = true
+  const partnerFromList = listStore.list.find(
+    (c) => String(c.id ?? c.Id) === String(conversationId)
+  )
+  let partnerInfo = partnerFromList
+    ? {
+        id: partnerFromList.partnerId ?? partnerFromList.PartnerId,
+        name: partnerFromList.partnerName ?? partnerFromList.PartnerName,
+        avatar: partnerFromList.partnerAvatar ?? partnerFromList.PartnerAvatar
+      }
+    : null
+  let isGroupConv = partnerFromList ? (partnerFromList.isGroup ?? partnerFromList.IsGroup ?? false) : false
+  if (!partnerFromList && network.isOnline) {
+    try {
+      const { data } = await api.get(`/conversations/${conversationId}`, { skipGlobalLoader: true })
+      if (data?.type === 'group') {
+        isGroupConv = true
+        partnerInfo = {
+          id: conversationId,
+          name: data.groupName ?? 'مجموعة',
+          avatar: data.groupImageUrl ?? null
+        }
+      } else if (data?.type === 'private' && data?.partnerId) {
+        partnerInfo = {
+          id: data.partnerId,
+          name: data.partnerName ?? '',
+          avatar: data.partnerAvatar ?? null
+        }
+      }
+    } catch (_) {}
+  }
+  convStore.setConversation(conversationId, partnerInfo, { isGroup: isGroupConv })
+  if (isGroupConv && network.isOnline) await fetchGroupSenders()
+
+  const cachedMessages = await loadMessagesFromCache(conversationId)
+  if (cachedMessages?.length) {
+    convStore.setMessages(cachedMessages)
+    nextTick(scrollToBottom)
+  }
+  loading.value = false
+  if (!network.isOnline) return
+
   await startHub(conversationHub)
 
   conversationHub.on('ReceiveMessage', (msg) => {
@@ -176,12 +269,14 @@ onMounted(async () => {
           pendingAudioBlobs.delete(pending.tempId)
         }
       }
-      convStore.updatePendingMessage(m)
+      const updated = convStore.updatePendingMessage(m)
+      if (!updated) convStore.addMessage({ ...m, status: 'sent' })
     } else {
       convStore.addMessage({ ...m, status: 'sent' })
       markAsReadDebounced()
     }
     nextTick(scrollToBottom)
+    debouncedSaveMessages(conversationId)
   })
 
   conversationHub.on('UserTyping', () => { convStore.partnerTyping = true })
@@ -198,18 +293,40 @@ onMounted(async () => {
   conversationHub.on('ConversationDeletedForMe', () => {
     listStore.removeConversation(conversationId)
     convStore.clearConversation()
+    clearMessagesForConversation(conversationId)
     router.replace('/conversations')
   })
 
   conversationHub.on('ConversationJoined', (data) => {
     const p = data.partner ?? data.Partner
+    const isGroupFromHub = data.type === 1 || data.Type === 1 || data.type === 'Group' || data.Type === 'Group' || (data.groupName ?? data.GroupName) != null
     const msgs = data.messages ?? data.Messages ?? []
-    convStore.setConversation(conversationId, p)
-    listStore.updateConversation(conversationId, { unreadCount: 0 })
-    if (msgs?.length) {
-      msgs.forEach(m => convStore.addMessage({ ...normalizeMsg(m), status: 'sent' }))
-      nextTick(scrollToBottom)
+    const localPending = convStore.messages.filter((m) => m.tempId)
+    let partnerInfo = p
+    if (isGroupFromHub) {
+      partnerInfo = {
+        id: conversationId,
+        name: data.groupName ?? data.GroupName ?? 'مجموعة',
+        avatar: data.groupImageUrl ?? data.GroupImageUrl ?? null
+      }
     }
+    convStore.setConversation(conversationId, partnerInfo, { isGroup: isGroupFromHub })
+    listStore.updateConversation(conversationId, {
+      unreadCount: 0,
+      partnerAvatar: partnerInfo?.avatar ?? partnerInfo?.Avatar,
+      PartnerAvatar: partnerInfo?.avatar ?? partnerInfo?.Avatar
+    })
+    const serverNormalized = (msgs || []).map((m) => ({ ...normalizeMsg(m), status: 'sent' }))
+    const serverIds = new Set(serverNormalized.map((m) => String(m.id ?? m.Id)))
+    const toKeep = localPending.filter((m) => !serverIds.has(String(m.id ?? m.Id)))
+    const merged = [...serverNormalized, ...toKeep].sort(
+      (a, b) => new Date(a.sentAt || 0).getTime() - new Date(b.sentAt || 0).getTime()
+    )
+    convStore.setMessages(merged)
+    nextTick(scrollToBottom)
+    loading.value = false
+    saveMessagesForConversation(conversationId, merged)
+    if (isGroupFromHub) fetchGroupSenders()
   })
 
   conversationHub.on('PartnerReadUpTo', (payload) => {
@@ -239,6 +356,15 @@ onMounted(async () => {
         LastMessagePreview: preview,
         LastMessageAt: at
       }, false)
+    }
+  })
+
+  conversationHub.on('ReactionUpdated', (payload) => {
+    const mid = payload?.messageId ?? payload?.MessageId
+    const reactions = payload?.reactions ?? payload?.Reactions ?? []
+    if (mid) {
+      convStore.updateMessageReactions(mid, reactions)
+      debouncedSaveMessages(conversationId)
     }
   })
 
@@ -275,6 +401,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   mounted = false
+  if (saveMessagesToCacheTimer) clearTimeout(saveMessagesToCacheTimer)
   if (markAsReadTimer) clearTimeout(markAsReadTimer)
   if (markAsReadInterval) clearInterval(markAsReadInterval)
   if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
@@ -295,6 +422,7 @@ onUnmounted(() => {
   conversationHub.off('MessagesRead')
   conversationHub.off('Error')
   conversationHub.off('ConversationListUpdated')
+  conversationHub.off('ReactionUpdated')
   ensureConnected(conversationHub).then(() =>
     conversationHub.invoke('LeaveConversation', conversationId)
   ).catch(() => {})
@@ -335,7 +463,10 @@ async function handleInput() {
 async function sendMessage() {
   const text = messageText.value.trim()
   if (!text) return
+  const reply = replyingTo.value
+  const replyId = reply?.id
   messageText.value = ''
+  replyingTo.value = null
   nextTick(resizeMsgInput)
   if (typingTimeout) {
     clearTimeout(typingTimeout)
@@ -349,12 +480,15 @@ async function sendMessage() {
     content: text,
     type: 'text',
     sentAt: new Date(),
-    status: 'pending'
+    status: 'pending',
+    replyToMessageId: replyId,
+    replyToContent: reply?.content,
+    replyToSenderName: reply?.senderName
   })
   scrollToBottom()
   try {
     await ensureConnected(conversationHub)
-    await conversationHub.invoke('SendMessage', conversationId, text, 'text')
+    await conversationHub.invoke('SendMessage', conversationId, text, 'text', replyId || undefined)
   } catch {
     convStore.updateMessage(tempId, { status: 'failed' })
   }
@@ -366,17 +500,13 @@ async function handleImageUpload(e) {
   imageInput.value.value = ''
   const formData = new FormData()
   formData.append('file', file)
-  const token = localStorage.getItem('nexchat_token')
   uploadingImage.value = true
+  const tempId = `temp-${Date.now()}`
   try {
-    const res = await fetch(`${API_BASE}/media/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData
-    })
-    if (!res.ok) throw new Error()
-    const { url } = await res.json()
-    const tempId = `temp-${Date.now()}`
+    await ensureConnected(conversationHub, 25000)
+    const { data } = await api.post('/media/upload', formData, { timeout: 60000 })
+    const url = data?.url
+    if (!url || typeof url !== 'string') throw new Error('Invalid upload response')
     convStore.addMessage({
       tempId,
       senderId: currentUserId.value,
@@ -387,11 +517,14 @@ async function handleImageUpload(e) {
     })
     scrollToBottom()
     try {
-      await ensureConnected(conversationHub)
-      await conversationHub.invoke('SendMessage', conversationId, url, 'image')
-    } catch {
+      await ensureConnected(conversationHub, 25000)
+      await conversationHub.invoke('SendMessage', conversationId, url, 'image', null)
+    } catch (err) {
       convStore.updateMessage(tempId, { status: 'failed' })
+      console.warn('SendMessage failed after image upload:', err?.message ?? err)
     }
+  } catch (err) {
+    alert(err?.response?.data?.message || err?.userMessage || t('conversationChat.imageUploadFailed'))
   } finally {
     uploadingImage.value = false
   }
@@ -491,26 +624,33 @@ function stopAndSendVoice() {
     uploadingVoice.value = true
 
     try {
+      await ensureConnected(conversationHub, 25000)
       const formData = new FormData()
       const ext = blob.type.includes('webm') ? '.webm' : blob.type.includes('mp4') ? '.m4a' : '.ogg'
       formData.append('file', blob, `voice${ext}`)
-      const token = localStorage.getItem('nexchat_token')
-      const res = await fetch(`${API_BASE}/media/upload-audio`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      })
-      if (!res.ok) throw new Error()
-      const { url } = await res.json()
-      try {
-        await ensureConnected(conversationHub)
-        await conversationHub.invoke('SendMessage', conversationId, url, 'audio')
-      } catch {
-        convStore.updateMessage(tempId, { status: 'failed' })
+      const { data } = await api.post('/media/upload-audio', formData, { timeout: 60000 })
+      const url = data?.url ?? data?.data?.url
+      if (!url || typeof url !== 'string') throw new Error('Invalid upload response')
+      convStore.updateMessage(tempId, { content: url })
+      pendingAudioBlobs.delete(tempId)
+      try { URL.revokeObjectURL(blobUrl) } catch {}
+      let sent = false
+      for (let attempt = 0; attempt < 2 && !sent; attempt++) {
+        try {
+          await ensureConnected(conversationHub, 25000)
+          await conversationHub.invoke('SendMessage', conversationId, url, 'audio', null)
+          sent = true
+        } catch (err) {
+          if (attempt === 1) {
+            convStore.updateMessage(tempId, { status: 'failed' })
+            const msg = err?.message ?? err?.errorMessage ?? (typeof err === 'string' ? err : JSON.stringify(err))
+            console.warn('SendMessage failed after upload:', msg, err)
+          }
+        }
       }
-    } catch {
+    } catch (err) {
       convStore.updateMessage(tempId, { status: 'failed' })
-      alert(t('conversationChat.voiceUploadFailed'))
+      alert(err?.response?.data?.message || err?.userMessage || t('conversationChat.voiceUploadFailed'))
     } finally {
       uploadingVoice.value = false
     }
@@ -526,8 +666,120 @@ function toggleVoiceRecording() {
   }
 }
 
+function replyToMessage(msg) {
+  showMessageMenu.value = null
+  showMessageMenuMsg.value = null
+  const isMine = String(msg.senderId) === String(currentUserId.value)
+  const preview = msg.type === 'text' ? (msg.content || '').slice(0, 50) : (msg.type === 'audio' ? '🎤' : '🖼')
+  replyingTo.value = {
+    id: msg.id || msg.Id,
+    content: preview,
+    senderName: isMine ? (localeStore.locale === 'ar' ? 'أنت' : 'You') : (partner.value?.name || '—')
+  }
+  msgInputRef.value?.focus()
+}
+
+function cancelReply() {
+  replyingTo.value = null
+}
+
+function scrollToRepliedMessage(replyToMessageId) {
+  if (!replyToMessageId) return
+  const id = String(replyToMessageId)
+  const el = messagesEl.value?.querySelector(`[data-msg-id="${id}"]`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    highlightedMessageId.value = id
+    setTimeout(() => { highlightedMessageId.value = null }, 1500)
+  }
+}
+
+function openShareToConvModal(msg) {
+  showMessageMenu.value = null
+  showMessageMenuMsg.value = null
+  router.push({
+    path: '/share-message',
+    state: {
+      shareMessage: { content: msg.content, type: msg.type || 'text' },
+      sourceConversationId: conversationId
+    }
+  })
+}
+
+function goToPartnerProfile() {
+  if (convStore.isGroup) {
+    router.push(`/conversation/${conversationId}/group-info`)
+    return
+  }
+  const pid = convStore.partner?.id
+  if (!pid) return
+  router.push({
+    path: `/profile/${pid}`,
+    state: { conversationId }
+  })
+}
+
+function openSenderProfile(senderId) {
+  if (!senderId) return
+  router.push({
+    path: `/profile/${senderId}`,
+    state: { conversationId }
+  })
+}
+
+async function fetchGroupSenders() {
+  if (!convStore.isGroup || !conversationId) return
+  try {
+    const { data } = await api.get(`/conversations/${conversationId}/members`, { skipGlobalLoader: true })
+    const list = data ?? []
+    const map = {}
+    for (const m of list) {
+      const id = m.userId ?? m.UserId
+      if (id) map[String(id)] = { name: m.name ?? m.Name ?? '—', avatar: m.avatar ?? m.Avatar ?? null }
+    }
+    groupSenders.value = map
+  } catch {
+    groupSenders.value = {}
+  }
+}
+
+function getSenderDisplay(msg) {
+  const id = msg?.senderId ?? msg?.SenderId
+  const fromMsg = { name: msg?.senderName ?? msg?.SenderName, avatar: msg?.senderAvatar ?? msg?.SenderAvatar }
+  const fromMap = id ? groupSenders.value[String(id)] : null
+  return {
+    name: fromMsg?.name || fromMap?.name || '—',
+    avatar: fromMsg?.avatar ?? fromMap?.avatar ?? null
+  }
+}
+
+function toggleMessageMenu(msg, e) {
+  const id = msg.id || msg.Id
+  if (showMessageMenu.value === id) {
+    showMessageMenu.value = null
+    showMessageMenuMsg.value = null
+    return
+  }
+  const btn = e?.currentTarget
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const popupWidth = 150
+    const padding = 8
+    let left = rect.right - popupWidth
+    if (left < padding) left = padding
+    if (left + popupWidth > window.innerWidth - padding) left = window.innerWidth - popupWidth - padding
+    msgMenuPosition.value = {
+      bottom: (window.innerHeight - rect.top + 4) + 'px',
+      left: left + 'px'
+    }
+  }
+  showMessageMenu.value = id
+  showMessageMenuMsg.value = msg
+}
+
 async function deleteForMe(msg) {
   showMessageMenu.value = null
+  showMessageMenuMsg.value = null
   try {
     await conversationHub.invoke('DeleteMessageForMe', conversationId, msg.id || msg.Id)
   } catch {}
@@ -535,6 +787,7 @@ async function deleteForMe(msg) {
 
 async function deleteForEveryone(msg) {
   showMessageMenu.value = null
+  showMessageMenuMsg.value = null
   try {
     await conversationHub.invoke('DeleteMessageForEveryone', conversationId, msg.id || msg.Id)
   } catch {}
@@ -554,23 +807,19 @@ async function retryMessage(msg) {
   try {
     if (isAudio && entry?.blob) {
       const blob = entry.blob
+      await ensureConnected(conversationHub, 25000)
       const formData = new FormData()
       const ext = blob.type.includes('webm') ? '.webm' : blob.type.includes('mp4') ? '.m4a' : '.ogg'
       formData.append('file', blob, `voice${ext}`)
-      const token = localStorage.getItem('nexchat_token')
-      const res = await fetch(`${API_BASE}/media/upload-audio`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      })
-      if (!res.ok) throw new Error()
-      const { url } = await res.json()
-      await ensureConnected(conversationHub)
-      await conversationHub.invoke('SendMessage', conversationId, url, 'audio')
+      const { data } = await api.post('/media/upload-audio', formData, { timeout: 60000 })
+      const url = data?.url ?? data?.data?.url
+      if (!url) throw new Error()
+      await ensureConnected(conversationHub, 25000)
+      await conversationHub.invoke('SendMessage', conversationId, url, 'audio', null)
       pendingAudioBlobs.delete(newTempId)
     } else {
       await ensureConnected(conversationHub)
-      await conversationHub.invoke('SendMessage', conversationId, msg.content, msg.type || 'text')
+      await conversationHub.invoke('SendMessage', conversationId, msg.content, msg.type || 'text', null)
     }
   } catch {
     convStore.updateMessage(newTempId, { status: 'failed' })
@@ -641,7 +890,7 @@ async function shareCodeInChat() {
   scrollToBottom()
   try {
     await ensureConnected(conversationHub)
-    await conversationHub.invoke('SendMessage', conversationId, text, 'text')
+    await conversationHub.invoke('SendMessage', conversationId, text, 'text', null)
   } catch {
     convStore.updateMessage(tempId, { status: 'failed' })
   }
@@ -650,6 +899,104 @@ async function shareCodeInChat() {
 async function leaveChat() {
   convStore.clearConversation()
   router.replace('/conversations')
+}
+
+let longPressTimer = null
+let longPressMsg = null
+let longPressEvent = null
+let justOpenedReactionPicker = false
+
+function startLongPress(msg, e) {
+  if (msg.deletedForEveryone) return
+  longPressMsg = msg
+  longPressEvent = e
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    justOpenedReactionPicker = true
+    openReactionPicker(longPressMsg, longPressEvent)
+    longPressMsg = null
+    longPressEvent = null
+  }, 400)
+}
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+  longPressMsg = null
+  longPressEvent = null
+}
+
+function onMessageTouchStart(msg, e) {
+  startLongPress(msg, e)
+}
+function onMessageTouchEnd() {
+  cancelLongPress()
+}
+function onMessageTouchCancel() {
+  cancelLongPress()
+}
+
+function onMessageMouseDown(msg, e) {
+  startLongPress(msg, e)
+}
+function onMessageMouseUp() {
+  cancelLongPress()
+}
+function onMessageMouseLeave() {
+  cancelLongPress()
+}
+function onBubbleClick(e) {
+  if (justOpenedReactionPicker) {
+    e.preventDefault()
+    e.stopPropagation()
+    justOpenedReactionPicker = false
+  }
+}
+
+function openReactionPicker(msg, e) {
+  if (!(msg?.id ?? msg?.Id) || msg.deletedForEveryone) return
+  showReactionPickerMsg.value = msg
+  const btn = e?.currentTarget
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const padding = 16
+    const maxPickerWidth = Math.min(280, window.innerWidth - padding * 2)
+    let left = rect.left + (rect.width / 2) - (maxPickerWidth / 2)
+    if (left + maxPickerWidth > window.innerWidth - padding) left = window.innerWidth - maxPickerWidth - padding
+    if (left < padding) left = padding
+    reactionPickerPosition.value = {
+      bottom: window.innerHeight - rect.top + 8 + 'px',
+      left: left + 'px',
+      maxWidth: maxPickerWidth + 'px'
+    }
+  } else {
+    reactionPickerPosition.value = {}
+  }
+}
+function closeReactionPicker() {
+  showReactionPickerMsg.value = null
+}
+async function pickReaction(msg, emoji) {
+  const id = msg.id ?? msg.Id
+  if (!id) return
+  closeReactionPicker()
+  const previousReactions = JSON.parse(JSON.stringify(msg.reactions || []))
+  convStore.applyOptimisticReaction(id, currentUserId.value, emoji)
+  try {
+    await ensureConnected(conversationHub)
+    await conversationHub.invoke('AddReaction', conversationId, id, emoji)
+  } catch {
+    convStore.updateMessageReactions(id, previousReactions)
+  }
+}
+function removeReaction(msg) {
+  const id = msg.id ?? msg.Id
+  if (!id) return
+  closeReactionPicker()
+  ensureConnected(conversationHub).then(() =>
+    conversationHub.invoke('RemoveReaction', conversationId, id)
+  ).catch(() => {})
 }
 </script>
 
@@ -661,20 +1008,25 @@ async function leaveChat() {
       <button class="back-btn" @click="leaveChat" :aria-label="t('common.cancel')">
         <ChevronRight :size="22" />
       </button>
-      <div class="partner-info">
+      <button type="button" class="partner-info partner-info-btn" @click="goToPartnerProfile">
         <div class="avatar-wrap">
           <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: 'var(--primary)' }">
-            <img v-if="partnerAvatarIsImage" :src="ensureAbsoluteUrl(partner?.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+            <CachedAvatar v-if="partnerAvatarIsImage" :url="partner?.avatar" img-class="avatar-img" />
             <span v-else>{{ partnerLetter }}</span>
           </div>
         </div>
         <div class="partner-meta">
           <div class="partner-name">{{ partner?.name || '...' }}</div>
           <div class="typing-status">
-            <span v-if="convStore.partnerTyping" class="typing-text">يكتب...</span>
+            <span v-if="convStore.partnerTyping" class="typing-text">{{ t('conversationChat.typing') }}</span>
+            <span v-else-if="convStore.isGroup" class="group-label">{{ t('groups.members') }}</span>
+            <span v-else class="partner-online-status" :class="{ online: partnerIsOnline }">
+              <span class="partner-online-dot"></span>
+              {{ partnerIsOnline ? t('profile.online') : t('profile.offline') }}
+            </span>
           </div>
         </div>
-      </div>
+      </button>
       <div class="header-actions">
         <button class="icon-btn" @click="showDeleteConvConfirm = true" :title="t('conversationChat.deleteConversation')">
           <Trash2 :size="20" />
@@ -683,19 +1035,73 @@ async function leaveChat() {
     </header>
 
     <div class="messages-area" ref="messagesEl">
-      <div v-if="showMessageMenu" class="msg-actions-backdrop" @click="showMessageMenu = null" />
+      <div v-if="showMessageMenu" class="msg-actions-backdrop" @click="showMessageMenu = null; showMessageMenuMsg = null" />
       <div v-if="!messages.length" class="empty-chat text-muted text-sm">{{ t('conversationChat.empty') }}</div>
 
       <div
         v-for="msg in messages"
         :key="msg.tempId || msg.id"
-        :class="['message-wrap', msg.senderId === currentUserId ? 'mine' : 'theirs']"
+        :data-msg-id="getMsgKey(msg)"
+        :class="['message-wrap', msg.senderId === currentUserId ? 'mine' : 'theirs', { 'msg-highlighted': highlightedMessageId === String(getMsgKey(msg)) }]"
       >
-        <div v-if="msg.type === 'image'" class="bubble image-bubble">
+        <button
+          v-if="convStore.isGroup && msg.senderId !== currentUserId"
+          type="button"
+          class="msg-sender-row"
+          @click.stop="openSenderProfile(msg.senderId)"
+        >
+          <div
+            class="msg-sender-avatar"
+            :style="{ background: (getSenderDisplay(msg).avatar && (getSenderDisplay(msg).avatar.startsWith('http') || getSenderDisplay(msg).avatar.startsWith('/'))) ? 'var(--bg-elevated)' : 'var(--primary)' }"
+          >
+            <CachedAvatar v-if="getSenderDisplay(msg).avatar && (getSenderDisplay(msg).avatar.startsWith('http') || getSenderDisplay(msg).avatar.startsWith('/'))" :url="getSenderDisplay(msg).avatar" img-class="msg-sender-avatar-img" />
+            <span v-else>{{ (getSenderDisplay(msg).name || '?')?.[0]?.toUpperCase() }}</span>
+          </div>
+          <span class="msg-sender-name">{{ getSenderDisplay(msg).name }}</span>
+        </button>
+        <div
+          v-if="msg.type === 'image'"
+          class="bubble image-bubble"
+          @touchstart.passive="onMessageTouchStart(msg, $event)"
+          @touchmove="cancelLongPress"
+          @touchend="onMessageTouchEnd"
+          @touchcancel="onMessageTouchCancel"
+          @mousedown="onMessageMouseDown(msg, $event)"
+          @mouseup="onMessageMouseUp"
+          @mouseleave="onMessageMouseUp"
+          @click="onBubbleClick"
+          @contextmenu.prevent
+        >
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+            </div>
+          </div>
           <img v-if="!msg.deletedForEveryone" :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
-        <div v-else-if="msg.type === 'audio'" class="bubble audio-bubble">
+        <div
+          v-else-if="msg.type === 'audio'"
+          class="bubble audio-bubble"
+          @touchstart.passive="onMessageTouchStart(msg, $event)"
+          @touchmove="cancelLongPress"
+          @touchend="onMessageTouchEnd"
+          @touchcancel="onMessageTouchCancel"
+          @mousedown="onMessageMouseDown(msg, $event)"
+          @mouseup="onMessageMouseUp"
+          @mouseleave="onMessageMouseUp"
+          @click="onBubbleClick"
+          @contextmenu.prevent
+        >
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+            </div>
+          </div>
           <template v-if="!msg.deletedForEveryone">
             <div class="audio-bubble-inner">
               <button
@@ -730,7 +1136,26 @@ async function leaveChat() {
           </template>
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
-        <div v-else class="bubble">
+        <div
+          v-else
+          class="bubble"
+          @touchstart.passive="onMessageTouchStart(msg, $event)"
+          @touchmove="cancelLongPress"
+          @touchend="onMessageTouchEnd"
+          @touchcancel="onMessageTouchCancel"
+          @mousedown="onMessageMouseDown(msg, $event)"
+          @mouseup="onMessageMouseUp"
+          @mouseleave="onMessageMouseUp"
+          @click="onBubbleClick"
+          @contextmenu.prevent
+        >
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+            </div>
+          </div>
           <span v-if="msg.deletedForEveryone" class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
           <span v-else class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
         </div>
@@ -748,24 +1173,25 @@ async function leaveChat() {
           <button
             v-if="!msg.deletedForEveryone"
             class="msg-menu-btn"
-            @click="showMessageMenu = showMessageMenu === (msg.id || msg.Id) ? null : (msg.id || msg.Id)"
+            @click="toggleMessageMenu(msg, $event)"
           >
             <MoreVertical :size="14" />
           </button>
         </div>
+        <div v-if="!msg.deletedForEveryone && messageReactionsList(msg).length > 0" class="msg-reactions-row">
+          <template v-for="r in messageReactionsList(msg)" :key="r.emoji">
+            <button
+              type="button"
+              class="reaction-chip"
+              :class="{ 'reaction-chip-mine': getMyReaction(msg) === (r.emoji ?? r.Emoji) }"
+              @click="pickReaction(msg, r.emoji ?? r.Emoji)"
+            >
+              <span class="reaction-emoji">{{ r.emoji ?? r.Emoji }}</span>
+              <span v-if="(r.count ?? r.Count) > 1" class="reaction-count">{{ r.count ?? r.Count }}</span>
+            </button>
+          </template>
+        </div>
 
-        <Transition name="fade">
-          <div v-if="showMessageMenu === (msg.id || msg.Id)" class="msg-actions-popup glass-card">
-            <button class="msg-action-btn msg-action-me" @click="deleteForMe(msg)">
-              <Trash2 :size="14" stroke-width="2" class="msg-action-icon" />
-              <span class="msg-action-label">{{ t('conversationChat.deleteForMe') }}</span>
-            </button>
-            <button v-if="msg.senderId === currentUserId" class="msg-action-btn msg-action-everyone" @click="deleteForEveryone(msg)">
-              <UserX :size="14" stroke-width="2" class="msg-action-icon" />
-              <span class="msg-action-label">{{ t('conversationChat.deleteForEveryone') }}</span>
-            </button>
-          </div>
-        </Transition>
       </div>
 
       <div v-if="convStore.partnerTyping" class="message-wrap theirs">
@@ -775,8 +1201,62 @@ async function leaveChat() {
       </div>
     </div>
 
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showReactionPickerMsg" class="reaction-picker-backdrop" @click="closeReactionPicker" />
+      </Transition>
+      <Transition name="fade">
+        <div v-if="showReactionPickerMsg" class="reaction-picker-popup glass-card" :style="reactionPickerPosition" @click.stop>
+          <button
+            v-for="emoji in REACTION_EMOJIS"
+            :key="emoji"
+            type="button"
+            class="reaction-picker-emoji"
+            @click="pickReaction(showReactionPickerMsg, emoji)"
+          >{{ emoji }}</button>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showMessageMenu && showMessageMenuMsg" class="msg-actions-popup glass-card msg-actions-popup-fixed" :style="msgMenuPosition">
+          <button class="msg-action-btn msg-action-reply" @click="replyToMessage(showMessageMenuMsg)">
+            <Reply :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.reply') }}</span>
+          </button>
+          <button class="msg-action-btn msg-action-share" @click="openShareToConvModal(showMessageMenuMsg)">
+            <Forward :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.share') }}</span>
+          </button>
+          <button class="msg-action-btn msg-action-me" @click="deleteForMe(showMessageMenuMsg)">
+            <Trash2 :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.deleteForMe') }}</span>
+          </button>
+          <button v-if="showMessageMenuMsg.senderId === currentUserId" class="msg-action-btn msg-action-everyone" @click="deleteForEveryone(showMessageMenuMsg)">
+            <UserX :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.deleteForEveryone') }}</span>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
     <div class="input-area">
-      <button v-if="!isRecording && !uploadingVoice" class="share-code-bar" @click="openShareModal">
+      <Transition name="slide-down">
+        <div v-if="replyingTo" class="reply-preview-bar">
+          <div class="reply-preview-content">
+            <Reply :size="16" class="reply-preview-icon" />
+            <div class="reply-preview-text">
+              <span class="reply-preview-name">{{ replyingTo.senderName }}</span>
+              <span class="reply-preview-msg">{{ replyingTo.content }}</span>
+            </div>
+          </div>
+          <button class="reply-preview-close" @click="cancelReply" :aria-label="t('common.cancel')">
+            <X :size="18" />
+          </button>
+        </div>
+      </Transition>
+      <button v-if="!isRecording && !uploadingVoice && !replyingTo" class="share-code-bar" @click="openShareModal">
         <Share2 :size="18" stroke-width="2" />
         <span>{{ t('conversationChat.shareYourCode') }}</span>
       </button>
@@ -940,6 +1420,17 @@ async function leaveChat() {
   gap: 10px;
   min-width: 0;
   flex: 1;
+}
+
+.partner-info-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: start;
+  -webkit-tap-highlight-color: transparent;
+  font: inherit;
+  color: inherit;
   margin-inline-start: 12px;
   margin-inline-end: 12px;
 }
@@ -964,10 +1455,41 @@ async function leaveChat() {
   margin-top: 2px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.group-label {
+  font-size: 12px;
+  color: var(--text-muted);
   min-height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .typing-text { font-family: 'Cairo', sans-serif; }
+
+.partner-online-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Cairo', sans-serif;
+  color: var(--text-tertiary);
+}
+
+.partner-online-status.online { color: var(--text-secondary); }
+
+.partner-online-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.partner-online-status.online .partner-online-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 1px var(--bg-primary);
+}
 
 .header-actions { display: flex; gap: 8px; }
 
@@ -1014,6 +1536,70 @@ async function leaveChat() {
 .message-wrap.mine { align-self: flex-end; align-items: flex-end; }
 .message-wrap.theirs { align-self: flex-start; align-items: flex-start; }
 
+.msg-sender-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding-inline-start: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+  text-align: start;
+}
+
+.msg-sender-row:active {
+  opacity: 0.85;
+}
+
+.msg-sender-avatar {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.msg-sender-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.msg-sender-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: 'Cairo', sans-serif;
+}
+
+
+.message-wrap.msg-highlighted .bubble {
+  animation: msg-highlight-pulse 1.5s ease-out;
+}
+@keyframes msg-highlight-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(108, 99, 255, 0.5); }
+  30% { box-shadow: 0 0 0 8px rgba(108, 99, 255, 0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(108, 99, 255, 0); }
+}
+.message-wrap.mine.msg-highlighted .bubble {
+  animation: msg-highlight-pulse-mine 1.5s ease-out;
+}
+@keyframes msg-highlight-pulse-mine {
+  0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
+  30% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+
 .bubble {
   background: var(--msg-theirs-bg);
   color: var(--msg-theirs-color);
@@ -1049,7 +1635,7 @@ async function leaveChat() {
   gap: 6px;
   margin-top: 4px;
 }
-.msg-time { font-size: 11px; color: var(--text-muted); font-family: 'Cairo', sans-serif; }
+.msg-time { font-size: 12px; color: var(--text-muted); font-family: 'Cairo', sans-serif; }
 .msg-status { display: inline-flex; align-items: center; }
 .status-pending { color: var(--text-muted); opacity: 0.8; }
 .status-sent { color: var(--primary); }
@@ -1069,7 +1655,7 @@ async function leaveChat() {
   border-radius: 6px;
   color: var(--danger);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-family: 'Cairo', sans-serif;
   padding: 2px 6px;
   -webkit-tap-highlight-color: transparent;
@@ -1091,9 +1677,6 @@ async function leaveChat() {
 }
 
 .msg-actions-popup {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
   display: flex;
   flex-direction: column;
   min-width: 150px;
@@ -1103,6 +1686,9 @@ async function leaveChat() {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
   z-index: 50;
   direction: rtl;
+}
+.msg-actions-popup.msg-actions-popup-fixed {
+  position: fixed;
 }
 
 .msg-action-btn {
@@ -1156,6 +1742,156 @@ async function leaveChat() {
   background: rgba(255, 101, 132, 0.15);
   color: var(--danger);
 }
+
+.msg-action-reply { color: var(--primary); }
+.msg-action-reply:hover, .msg-action-reply:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
+.msg-action-share { color: var(--primary); }
+.msg-action-share:hover, .msg-action-share:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
+
+.msg-reactions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-inline-start: 2px;
+}
+.reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.reaction-chip:active { background: var(--bg-card-hover); }
+.reaction-chip-mine {
+  border-color: var(--primary);
+  background: rgba(108, 99, 255, 0.15);
+}
+.reaction-emoji { line-height: 1; }
+.reaction-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 12px;
+}
+.reaction-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}
+.reaction-picker-popup {
+  position: fixed;
+  z-index: 46;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+}
+.reaction-picker-emoji {
+  width: 36px;
+  height: 36px;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  cursor: pointer;
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.reaction-picker-emoji:active {
+  background: var(--bg-card-hover);
+  transform: scale(1.1);
+}
+@media (max-width: 360px) {
+  .reaction-picker-popup {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .reaction-picker-emoji {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+}
+
+.msg-reply-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0 0 8px 0;
+  border-inline-start: 3px solid var(--primary);
+  background: rgba(108, 99, 255, 0.1);
+  border-radius: 8px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s;
+  appearance: none;
+}
+.msg-reply-block:active { background: rgba(108, 99, 255, 0.18); }
+.msg-reply-block:hover { background: rgba(108, 99, 255, 0.16); }
+.mine .msg-reply-block {
+  border-inline-start: 3px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.15);
+}
+.mine .msg-reply-block:hover { background: rgba(255, 255, 255, 0.2); }
+.mine .msg-reply-block:active { background: rgba(255, 255, 255, 0.22); }
+.msg-reply-icon { flex-shrink: 0; color: var(--primary); }
+.mine .msg-reply-icon { color: rgba(255, 255, 255, 0.95); }
+.msg-reply-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.msg-reply-name { font-size: 12px; font-weight: 700; color: var(--primary); }
+.mine .msg-reply-name { color: rgba(255, 255, 255, 0.95); }
+.msg-reply-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mine .msg-reply-preview { color: rgba(255, 255, 255, 0.9); }
+
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.15) 0%, rgba(108, 99, 255, 0.06) 100%);
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+.reply-preview-content { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.reply-preview-icon { color: var(--primary); flex-shrink: 0; }
+.reply-preview-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reply-preview-name { font-size: 12px; font-weight: 700; color: var(--primary); }
+.reply-preview-msg { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-preview-close { background: none; border: none; color: var(--text-muted); padding: 4px; cursor: pointer; border-radius: 8px; }
+.reply-preview-close:active { background: rgba(0,0,0,0.08); }
+
+.slide-down-enter-active, .slide-down-leave-active { transition: all 0.2s ease; }
+.slide-down-enter-from, .slide-down-leave-to { opacity: 0; transform: translateY(-8px); }
 
 .input-area {
   padding: 8px var(--spacing) calc(var(--spacing) + var(--safe-bottom));

@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { Rocket, Settings, MessageCircle } from 'lucide-vue-next'
+import { Settings, MessageCircle } from 'lucide-vue-next'
 import { useConversationsListStore } from '../stores/conversationsList'
 
 const listStore = useConversationsListStore()
@@ -14,7 +14,8 @@ const totalUnread = computed(() => {
 })
 
 const props = defineProps({
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  randomChatEnabled: { type: Boolean, default: true }
 })
 
 const emit = defineEmits(['launch'])
@@ -24,7 +25,7 @@ const { t } = useI18n()
 const isLaunching = ref(false)
 
 async function onRocketClick() {
-  if (props.loading || isLaunching.value) return
+  if (!props.randomChatEnabled || props.loading || isLaunching.value) return
   isLaunching.value = true
   emit('launch')
   // انتظار انتهاء الحركة قبل إعادة التفعيل
@@ -42,7 +43,7 @@ async function onRocketClick() {
       <span class="nav-label">{{ t('conversations.title') }}</span>
     </RouterLink>
 
-    <div class="nav-center">
+    <div v-if="randomChatEnabled" class="nav-center">
       <button
         class="rocket-btn"
         :class="{ launching: isLaunching || loading }"
@@ -51,7 +52,15 @@ async function onRocketClick() {
         @click="onRocketClick"
       >
         <div class="rocket-wrap">
-          <Rocket :size="36" stroke-width="2" class="rocket-icon" />
+          <Vue3Lottie
+            animation-link="/json/Rocket%20Lunch.json"
+            :height="150"
+            :width="150"
+            :speed="0.9"
+            :loop="true"
+            :auto-play="true"
+            class="nav-rocket-lottie"
+          />
           <div class="rocket-flame"></div>
         </div>
       </button>
@@ -227,9 +236,11 @@ async function onRocketClick() {
 }
 
 /* حركة الانطلاق */
-.rocket-btn.launching .rocket-icon {
-  transform: rotate(-45deg) translateY(-50px);
+.rocket-btn.launching .nav-rocket-lottie :deep(.lottie-animation-container),
+.rocket-btn.launching .nav-rocket-lottie :deep(svg) {
+  transform: translateY(-50px);
   opacity: 0;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out;
 }
 .rocket-btn.launching .rocket-flame {
   transform: scaleY(2) scaleX(1.5);

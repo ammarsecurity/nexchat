@@ -31,3 +31,21 @@ export function ensureAbsoluteUrl(url) {
   }
   return `${API_ORIGIN}${path.startsWith('/') ? path : '/' + path}`
 }
+
+/**
+ * Returns API proxy URL for avatar fetch (avoids CORS).
+ * Use when the URL is from our uploads (same API domain).
+ */
+export function getAvatarProxyUrl(absoluteUrl) {
+  if (!absoluteUrl || !absoluteUrl.startsWith('http')) return null
+  try {
+    const u = new URL(absoluteUrl)
+    const apiOrigin = new URL(API_ORIGIN)
+    if (u.origin !== apiOrigin.origin) return null
+    const match = /\/uploads\/([^/?#]+)/.exec(u.pathname)
+    if (!match) return null
+    return `${API_ORIGIN}/api/media/avatar/${encodeURIComponent(match[1])}`
+  } catch {
+    return null
+  }
+}
