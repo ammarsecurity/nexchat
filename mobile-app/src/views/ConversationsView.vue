@@ -247,7 +247,7 @@ function goBack() {
         >
           <div class="item-avatar" :class="{ 'avatar-group': c.isGroup ?? c.IsGroup }" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
             <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
-            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="18" class="avatar-group-icon" />
+            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="16" class="avatar-group-icon" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">
@@ -263,7 +263,7 @@ function goBack() {
               <span class="item-preview">{{ (c.lastMessagePreview ?? c.LastMessagePreview) || '—' }}</span>
               <span class="item-actions">
                 <span v-if="c.isPinned ?? c.IsPinned" class="pin-badge" :title="t('conversations.pin')">
-                  <Pin :size="11" />
+                  <Pin :size="10" />
                 </span>
                 <button
                   v-if="c.partnerId ?? c.PartnerId"
@@ -271,7 +271,7 @@ function goBack() {
                   @click.stop="openContextMenu(c, $event)"
                   :aria-label="t('common.cancel')"
                 >
-                  <MoreVertical :size="16" />
+                  <MoreVertical :size="15" />
                 </button>
               </span>
             </div>
@@ -475,17 +475,17 @@ function goBack() {
 .conv-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-bottom: 24px;
+  gap: 6px;
+  padding-bottom: 20px;
 }
 
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   cursor: pointer;
-  border-radius: 12px;
+  border-radius: 10px;
   position: relative;
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -506,15 +506,15 @@ function goBack() {
 .conv-item.unread .item-name { font-weight: 700; }
 
 .item-avatar {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 14px;
   color: white;
   flex-shrink: 0;
   position: relative;
@@ -548,7 +548,7 @@ function goBack() {
 }
 .item-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-primary);
   font-family: 'Cairo', sans-serif;
   white-space: nowrap;
@@ -561,11 +561,11 @@ function goBack() {
 .group-badge {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border-radius: 5px;
+  padding: 0 5px;
+  border-radius: 4px;
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
   font-family: 'Cairo', sans-serif;
@@ -588,28 +588,28 @@ function goBack() {
 }
 
 .item-time {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
 }
 
 .unread-badge-inline {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   background: #25D366;
   color: white;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   font-family: 'Cairo', sans-serif;
-  border-radius: 9px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .item-preview {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -623,8 +623,8 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 32px;
+  min-height: 32px;
   padding: 2px;
   background: none;
   border: none;
@@ -645,9 +645,9 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
   flex-shrink: 0;
@@ -689,17 +689,17 @@ function goBack() {
     padding: 6px 0;
   }
   .conv-item {
-    padding: 8px 10px;
-    gap: 8px;
+    padding: 7px 8px;
+    gap: 7px;
   }
   .item-avatar {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    font-size: 14px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    font-size: 13px;
   }
-  .item-name { font-size: 13px; }
-  .item-time { font-size: 10px; }
-  .item-preview { font-size: 11px; }
+  .item-name { font-size: 12px; }
+  .item-time { font-size: 9px; }
+  .item-preview { font-size: 10px; }
 }
 </style>

@@ -134,7 +134,7 @@ onMounted(() => {
     </header>
 
     <div class="share-search-wrap">
-      <Search :size="18" class="share-search-icon" />
+      <Search :size="14" class="share-search-icon" />
       <input
         v-model="searchQuery"
         type="text"
@@ -173,7 +173,7 @@ onMounted(() => {
                 <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
               </div>
               <span class="share-name">{{ c.partnerName ?? c.PartnerName ?? '—' }}</span>
-              <Forward :size="18" class="share-arrow" />
+              <Forward :size="14" class="share-arrow" />
             </button>
           </div>
         </section>
@@ -197,7 +197,7 @@ onMounted(() => {
                 <span v-else>{{ c.name?.[0]?.toUpperCase() || '?' }}</span>
               </div>
               <span class="share-name">{{ c.name ?? '—' }}</span>
-              <Forward :size="18" class="share-arrow" />
+              <Forward :size="14" class="share-arrow" />
             </button>
           </div>
         </section>
@@ -266,11 +266,11 @@ onMounted(() => {
 .share-search-wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  min-height: 48px;
-  margin: 0 var(--spacing) 16px;
-  border-radius: 14px;
+  gap: 6px;
+  padding: 0 10px;
+  min-height: 36px;
+  margin: 0 var(--spacing) 10px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   flex-shrink: 0;
@@ -284,11 +284,11 @@ onMounted(() => {
 .share-search-input {
   flex: 1;
   min-width: 0;
-  padding: 14px 0;
+  padding: 7px 0;
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 13px;
   font-family: 'Cairo', sans-serif;
   outline: none;
 }
@@ -300,14 +300,14 @@ onMounted(() => {
 }
 
 .share-section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .share-section-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-tertiary);
-  margin: 0 0 10px 0;
+  margin: 0 0 8px 0;
   padding: 0 4px;
   font-family: 'Cairo', sans-serif;
 }
@@ -315,17 +315,17 @@ onMounted(() => {
 .share-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .share-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 8px 10px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 10px;
   cursor: pointer;
   text-align: right;
   -webkit-tap-highlight-color: transparent;
@@ -345,15 +345,15 @@ onMounted(() => {
 }
 
 .share-avatar {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 19px;
+  font-size: 14px;
   color: white;
   overflow: hidden;
 }
@@ -367,7 +367,7 @@ onMounted(() => {
 .share-name {
   flex: 1;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 13px;
   color: var(--text-primary);
   text-align: right;
 }
@@ -388,13 +388,14 @@ onMounted(() => {
 
 .share-cancel-btn {
   flex-shrink: 0;
-  margin: 16px var(--spacing);
-  padding: 14px;
-  border-radius: 14px;
+  margin: 12px var(--spacing);
+  padding: 10px 12px;
+  min-height: 40px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;

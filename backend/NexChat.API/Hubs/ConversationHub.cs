@@ -465,6 +465,14 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         db.UserMessageDeletions.Add(new UserMessageDeletion { UserId = userId, MessageId = mid });
         await db.SaveChangesAsync();
         await Clients.Caller.SendAsync("MessageDeletedForMe", mid);
+        var (p, at, sid) = await GetLastListPreviewForUserAsync(cid, userId);
+        await Clients.Caller.SendAsync("ConversationListUpdated", new
+        {
+            ConversationId = cid,
+            LastMessagePreview = p ?? "",
+            LastMessageAt = at,
+            SenderId = sid
+        });
     }
 
     public async Task DeleteMessageForEveryone(string conversationId, string messageId)
@@ -481,6 +489,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         msg.DeletedForEveryone = true;
         await db.SaveChangesAsync();
         await Clients.Group(cid.ToString()).SendAsync("MessageDeletedForEveryone", mid);
+        await NotifyConversationListPreviewToParticipantsAsync(cid);
     }
 
     public async Task DeleteConversationForMe(string conversationId)
@@ -680,4 +689,58 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         await db.Conversations.AnyAsync(c => c.Id == conversationId &&
             (c.Type == ConversationType.Private && (c.User1Id == userId || c.User2Id == userId)
              || c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == conversationId && m.UserId == userId)));
+
+    /// <summary>آخر رسالة يظهر معاينتها لهذا المستخدم (تجاهل المحذوفة للجميع ولـ «حذف لي»).</summary>
+    private async Task<(string? Preview, DateTime? SentAt, string? SenderId)> GetLastListPreviewForUserAsync(Guid conversationId, Guid viewerUserId)
+    {
+        var lastMsg = await db.ConversationMessages
+            .AsNoTracking()
+            .Where(m => m.ConversationId == conversationId &&
+                !m.DeletedForEveryone &&
+                !db.UserMessageDeletions.Any(d => d.UserId == viewerUserId && d.MessageId == m.Id))
+            .OrderByDescending(m => m.SentAt)
+            .FirstOrDefaultAsync();
+        if (lastMsg == null) return (null, null, null);
+        return (BuildListPreview(lastMsg), lastMsg.SentAt, lastMsg.SenderId.ToString());
+    }
+
+    private static string BuildListPreview(ConversationMessage m)
+    {
+        if (m.Type == "image") return "صورة";
+        if (m.Type == "audio") return "رسالة صوتية";
+        var c = m.Content ?? "";
+        return c.Length > 50 ? c[..50] + "…" : c;
+    }
+
+    /// <summary>بعد حذف للجميع: تحديث معاينة القائمة لكل مشارك حسب آخر رسالة مرئية لديه.</summary>
+    private async Task NotifyConversationListPreviewToParticipantsAsync(Guid cid)
+    {
+        var conv = await db.Conversations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == cid);
+        if (conv == null) return;
+        List<Guid> userIds;
+        if (conv.Type == ConversationType.Group)
+        {
+            userIds = await db.ConversationMembers
+                .Where(m => m.ConversationId == cid)
+                .Select(m => m.UserId)
+                .ToListAsync();
+        }
+        else
+        {
+            userIds = new List<Guid>();
+            if (conv.User1Id.HasValue) userIds.Add(conv.User1Id.Value);
+            if (conv.User2Id.HasValue) userIds.Add(conv.User2Id.Value);
+        }
+        foreach (var uid in userIds.Distinct())
+        {
+            var (preview, sentAt, senderId) = await GetLastListPreviewForUserAsync(cid, uid);
+            await Clients.User(uid.ToString()).SendAsync("ConversationListUpdated", new
+            {
+                ConversationId = cid,
+                LastMessagePreview = preview ?? "",
+                LastMessageAt = sentAt,
+                SenderId = senderId
+            });
+        }
+    }
 }

@@ -347,8 +347,8 @@ onMounted(() => {
             <div v-else class="avatar-circle" :style="{ background: auth.avatarColor }">
               <span class="av-letter">{{ user?.name?.[0]?.toUpperCase() }}</span>
             </div>
-            <Crown v-if="user?.isFeatured" class="avatar-crown-settings" :size="20" fill="currentColor" stroke-width="1" />
-            <div class="edit-badge"><Pencil :size="12" /></div>
+            <Crown v-if="user?.isFeatured" class="avatar-crown-settings" :size="18" fill="currentColor" stroke-width="1" />
+            <div class="edit-badge"><Pencil :size="11" /></div>
           </div>
           <div class="profile-details">
             <div class="profile-name">{{ user?.name }}</div>
@@ -360,14 +360,14 @@ onMounted(() => {
       <!-- كود الاتصال - بطاقة منفصلة -->
       <div class="profile-code-card glass-card" @click="copyCode">
         <div class="profile-code-icon-wrap">
-          <Hash :size="22" />
+          <Hash :size="18" />
         </div>
         <div class="profile-code-text">
           <span class="profile-code-title">{{ t('settings.contactCode') }}</span>
           <span class="profile-code-value">{{ user?.uniqueCode }}</span>
         </div>
         <button type="button" class="profile-code-copy-btn" :title="copiedCode ? t('common.copied') : t('common.copy')" @click.stop="copyCode">
-          <Copy v-if="!copiedCode" :size="18" stroke-width="2" />
+          <Copy v-if="!copiedCode" :size="16" stroke-width="2" />
           <span v-else class="copied-text">{{ t('common.copiedShort') }}</span>
         </button>
       </div>
@@ -375,24 +375,24 @@ onMounted(() => {
       <!-- البلد ورقم الهاتف -->
       <RouterLink to="/complete-profile" class="profile-code-card glass-card birth-date-card link-card">
         <div class="profile-code-icon-wrap">
-          <Globe :size="22" />
+          <Globe :size="18" />
         </div>
         <div class="profile-code-text">
           <span class="profile-code-title">{{ t('completeProfile.country') }} & {{ t('completeProfile.phone') }}</span>
           <span class="profile-code-value">{{ profileCountryPhone || t('completeProfile.selectCountry') }}</span>
         </div>
-        <ChevronRight :size="20" class="link-arrow" />
+        <ChevronRight :size="18" class="link-arrow" />
       </RouterLink>
       <!-- تاريخ الميلاد -->
       <div class="profile-code-card glass-card birth-date-card" @click="openBirthDateModal">
         <div class="profile-code-icon-wrap">
-          <Calendar :size="22" />
+          <Calendar :size="18" />
         </div>
         <div class="profile-code-text">
           <span class="profile-code-title">{{ t('settings.birthDate') }}</span>
           <span class="profile-code-value">{{ formattedBirthDate ?? t('settings.birthDateNotSet') }}</span>
         </div>
-        <ChevronRight :size="20" class="link-arrow" />
+        <ChevronRight :size="18" class="link-arrow" />
       </div>
 
       <!-- Support Chat - بارز -->
@@ -413,13 +413,13 @@ onMounted(() => {
       <div class="section-label">{{ t('settings.permissions') }}</div>
       <div class="links-group glass-card">
         <button class="link-row" :disabled="mediaPermLoading" @click="requestMediaPerms">
-          <div class="link-icon-wrap perm-icon"><Camera :size="20" /><Mic :size="14" class="mic-overlay" /></div>
+          <div class="link-icon-wrap perm-icon"><Camera :size="18" /><Mic :size="12" class="mic-overlay" /></div>
           <div class="link-text-col">
             <span>{{ t('settings.cameraMicPermissions') }}</span>
             <span class="link-desc">{{ t('settings.cameraMicDesc') }}</span>
           </div>
           <span v-if="mediaPermMessage" class="perm-feedback" :class="mediaPermSuccess ? 'success' : 'error'">{{ mediaPermMessage }}</span>
-          <ChevronRight v-else :size="18" class="link-arrow" />
+          <ChevronRight v-else :size="16" class="link-arrow" />
         </button>
       </div>
 
@@ -427,18 +427,18 @@ onMounted(() => {
       <div class="section-label">{{ t('settings.general') }}</div>
       <div class="links-group glass-card">
         <button class="link-row" @click="localeStore.toggleLocale(i18n)">
-          <Globe :size="20" class="link-icon" />
+          <Globe :size="18" class="link-icon" />
           <span>{{ t('settings.language') }}</span>
           <span class="theme-badge">{{ localeStore.locale === 'ar' ? 'عربي' : 'English' }}</span>
         </button>
         <button class="link-row theme-toggle-row" @click="theme.toggleTheme">
-          <Sun v-if="!theme.isLight" :size="20" class="link-icon" />
-          <Moon v-else :size="20" class="link-icon" />
+          <Sun v-if="!theme.isLight" :size="18" class="link-icon" />
+          <Moon v-else :size="18" class="link-icon" />
           <span>{{ theme.isLight ? t('settings.darkMode') : t('settings.lightMode') }}</span>
           <span class="theme-badge">{{ theme.isLight ? t('settings.dark') : t('settings.light') }}</span>
         </button>
         <div class="notif-buttons-row">
-          <span class="notif-label"><Bell :size="20" class="link-icon" /> {{ t('settings.notifications') }}</span>
+          <span class="notif-label"><Bell :size="18" class="link-icon" /> {{ t('settings.notifications') }}</span>
           <template v-if="isNative">
             <div class="notif-btns">
               <button
@@ -462,28 +462,28 @@ onMounted(() => {
           <span v-else class="notif-web-msg">{{ t('settings.notifWebOnly') }}</span>
         </div>
         <RouterLink to="/notifications" class="link-row">
-          <Bell :size="20" class="link-icon" />
+          <Bell :size="18" class="link-icon" />
           <span>{{ t('settings.notificationCenter') }}</span>
-          <ChevronRight :size="18" class="link-arrow" />
+          <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
         <RouterLink v-if="codeConnectFeaturesEnabled" to="/connection-history" class="link-row">
-          <Send :size="20" class="link-icon" />
+          <Send :size="18" class="link-icon" />
           <span>{{ t('connectionHistory.title') }}</span>
-          <ChevronRight :size="18" class="link-arrow" />
+          <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
         <RouterLink to="/blocked" class="link-row">
-          <Ban :size="20" class="link-icon" />
+          <Ban :size="18" class="link-icon" />
           <span>{{ t('blocked.title') }}</span>
-          <ChevronRight :size="18" class="link-arrow" />
+          <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
         <RouterLink v-if="codeConnectFeaturesEnabled" to="/saved-codes" class="link-row">
-          <BookmarkPlus :size="20" class="link-icon" />
+          <BookmarkPlus :size="18" class="link-icon" />
           <span>{{ t('home.savedCodes') }}</span>
-          <ChevronRight :size="18" class="link-arrow" />
+          <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
         <div class="notif-buttons-row online-status-row">
           <div class="online-status-col">
-            <span class="notif-label"><Eye :size="20" class="link-icon" /> {{ t('settings.showOnlineStatus') }}</span>
+            <span class="notif-label"><Eye :size="18" class="link-icon" /> {{ t('settings.showOnlineStatus') }}</span>
             <span class="online-status-desc">{{ t('settings.showOnlineStatusDesc') }}</span>
           </div>
           <div class="notif-btns">
@@ -508,9 +508,9 @@ onMounted(() => {
           </div>
         </div>
         <RouterLink to="/privacy" class="link-row">
-          <Shield :size="20" class="link-icon" />
+          <Shield :size="18" class="link-icon" />
           <span>{{ t('settings.privacyPolicy') }}</span>
-          <ChevronRight :size="18" class="link-arrow" />
+          <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
       </div>
 
@@ -779,16 +779,16 @@ onMounted(() => {
 .profile-card-inner {
   align-items: center;
   display: flex;
-  gap: 16px;
-  padding: var(--spacing);
+  gap: 12px;
+  padding: 10px 12px;
 }
 
 .avatar-wrap {
   cursor: pointer;
   flex-shrink: 0;
-  height: 64px;
+  height: 56px;
   position: relative;
-  width: 64px;
+  width: 56px;
 }
 .avatar-wrap.avatar-wrap-featured::after {
   content: '';
@@ -822,8 +822,8 @@ html.light .avatar-crown-settings {
 .avatar-circle {
   border: 2px solid var(--border);
   border-radius: 50%;
-  height: 64px;
-  width: 64px;
+  height: 56px;
+  width: 56px;
 }
 .avatar-img { object-fit: cover; display: block; }
 .avatar-circle {
@@ -831,8 +831,8 @@ html.light .avatar-crown-settings {
   display: flex;
   justify-content: center;
 }
-.av-letter { color: white; font-size: 24px; font-weight: 700; }
-.av-emoji { font-size: 32px; line-height: 1; }
+.av-letter { color: white; font-size: 20px; font-weight: 700; }
+.av-emoji { font-size: 26px; line-height: 1; }
 
 .edit-badge {
   align-items: center;
@@ -841,11 +841,11 @@ html.light .avatar-crown-settings {
   bottom: 0;
   color: white;
   display: flex;
-  height: 22px;
+  height: 20px;
   justify-content: center;
   position: absolute;
   inset-inline-end: 0;
-  width: 22px;
+  width: 20px;
   z-index: 2;
 }
 
@@ -854,22 +854,23 @@ html.light .avatar-crown-settings {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .profile-name {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
+  line-height: 1.25;
 }
 
 .profile-gender-badge {
   display: inline-block;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--primary);
   background: rgba(108, 99, 255, 0.15);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
   width: fit-content;
 }
@@ -878,8 +879,8 @@ html.light .avatar-crown-settings {
 .profile-code-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: var(--spacing);
+  gap: 10px;
+  padding: 10px 12px;
   overflow: hidden;
   border: 1px solid rgba(108, 99, 255, 0.25);
   background: linear-gradient(135deg, rgba(108, 99, 255, 0.08) 0%, rgba(108, 99, 255, 0.02) 100%);
@@ -893,8 +894,8 @@ html.light .avatar-crown-settings {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-sm);
   background: rgba(108, 99, 255, 0.2);
   color: var(--primary);
@@ -904,21 +905,21 @@ html.light .avatar-crown-settings {
 .profile-code-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   flex: 1;
   min-width: 0;
 }
 
 .profile-code-title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .profile-code-value {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   color: var(--primary);
 }
 
@@ -926,9 +927,9 @@ html.light .avatar-crown-settings {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   padding: 0;
   background: rgba(108, 99, 255, 0.15);
   border: 1px solid rgba(108, 99, 255, 0.3);
@@ -938,7 +939,7 @@ html.light .avatar-crown-settings {
   transition: background 0.2s, color 0.2s;
 }
 .profile-code-copy-btn:active { background: rgba(108, 99, 255, 0.25); }
-.copied-text { color: var(--success); font-size: 12px; font-weight: 600; }
+.copied-text { color: var(--success); font-size: 11px; font-weight: 600; }
 
 /* Support card - بارز ومرتب */
 .support-card {
@@ -1020,8 +1021,9 @@ html.light .avatar-crown-settings {
   cursor: pointer;
   display: flex;
   font: inherit;
-  gap: 12px;
-  padding: var(--spacing);
+  font-size: 14px;
+  gap: 10px;
+  padding: 10px 12px;
   text-align: start;
   text-decoration: none;
   transition: background 0.2s;
@@ -1039,9 +1041,9 @@ html.light .avatar-crown-settings {
   margin-inline-start: auto;
   background: rgba(108,99,255,0.15);
   color: var(--primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
 }
 .theme-badge.muted {
@@ -1058,28 +1060,29 @@ html.light .avatar-crown-settings {
   background: rgba(108,99,255,0.15);
   border-radius: var(--radius-sm);
   color: var(--primary);
-  height: 40px;
+  height: 36px;
   position: relative;
-  width: 40px;
+  width: 36px;
 }
 .perm-icon .mic-overlay {
-  bottom: 4px;
+  bottom: 3px;
   position: absolute;
-  right: 4px;
+  right: 3px;
 }
 .link-text-col {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   flex: 1;
   min-width: 0;
 }
 .link-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
+  line-height: 1.35;
 }
 .perm-feedback {
-  font-size: 12px;
+  font-size: 11px;
   max-width: 160px;
   text-align: left;
 }
@@ -1091,27 +1094,27 @@ html.light .avatar-crown-settings {
 .notif-buttons-row {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: var(--spacing);
+  gap: 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
 }
 .notif-label {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 15px;
+  gap: 10px;
+  font-size: 14px;
   color: var(--text-secondary);
 }
 .notif-btns {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 .notif-btn {
   flex: 1;
-  min-height: 40px;
+  min-height: 36px;
   border-radius: var(--radius-sm);
   font-family: 'Cairo', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: 0.2s;
@@ -1142,20 +1145,20 @@ html.light .avatar-crown-settings {
   cursor: default;
 }
 .notif-web-msg {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .online-status-row .online-status-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
 }
 .online-status-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
-  line-height: 1.45;
-  padding-inline-start: 32px;
+  line-height: 1.4;
+  padding-inline-start: 28px;
 }
 
 /* About */

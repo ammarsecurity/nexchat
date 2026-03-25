@@ -84,7 +84,8 @@ public class ConversationsController(AppDbContext db, OneSignalService oneSignal
 
         var convIds = convs.Select(c => c.Id).ToList();
         var lastMessages = await db.ConversationMessages
-            .Where(m => convIds.Contains(m.ConversationId) && !m.DeletedForEveryone)
+            .Where(m => convIds.Contains(m.ConversationId) && !m.DeletedForEveryone &&
+                !db.UserMessageDeletions.Any(d => d.UserId == CurrentUserId && d.MessageId == m.Id))
             .GroupBy(m => m.ConversationId)
             .Select(g => new { ConvId = g.Key, Msg = g.OrderByDescending(m => m.SentAt).First() })
             .ToListAsync();
@@ -142,7 +143,6 @@ public class ConversationsController(AppDbContext db, OneSignalService oneSignal
                     (lastRead == null || m.SentAt > lastRead));
 
             var preview = lastMsg == null ? null :
-                lastMsg.DeletedForEveryone ? "تم حذف هذه الرسالة" :
                 lastMsg.Type == "image" ? "صورة" :
                 lastMsg.Type == "audio" ? "رسالة صوتية" :
                 lastMsg.Content.Length > 50 ? lastMsg.Content[..50] + "…" : lastMsg.Content;
