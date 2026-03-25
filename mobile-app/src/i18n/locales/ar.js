@@ -70,7 +70,9 @@ export default {
     title: 'طلبات المراسلة',
     empty: 'لا توجد طلبات معلقة',
     accept: 'قبول',
-    decline: 'رفض'
+    decline: 'رفض',
+    waitingForAcceptFromOther: 'تم إرسال طلب المراسلة. انتظر حتى يقبل الطرف الآخر المحادثة.',
+    waitingForAcceptCannotShare: 'لا يمكن إكمال المشاركة حتى يقبل الطرف الآخر طلب المراسلة.'
   },
   settings: {
     title: 'الإعدادات',

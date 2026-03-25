@@ -70,7 +70,9 @@ export default {
     title: 'Message requests',
     empty: 'No pending requests',
     accept: 'Accept',
-    decline: 'Decline'
+    decline: 'Decline',
+    waitingForAcceptFromOther: 'A message request was sent. Wait until the other person accepts.',
+    waitingForAcceptCannotShare: 'Sharing cannot complete until the other person accepts your message request.'
   },
   settings: {
     title: 'Settings',

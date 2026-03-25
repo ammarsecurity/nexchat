@@ -11,7 +11,7 @@ using System.Security.Claims;
 namespace NexChat.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/message-requests")]
 [Authorize]
 [EnableRateLimiting("api")]
 public class MessageRequestsController(AppDbContext db, OneSignalService oneSignal) : ControllerBase
@@ -68,10 +68,12 @@ public class MessageRequestsController(AppDbContext db, OneSignalService oneSign
         if (isBlocked)
             return BadRequest(new { message = "لا يمكن إرسال طلب لهذا المستخدم" });
 
-        var alreadyContact = await db.Contacts.AnyAsync(c =>
+        var iHaveTarget = await db.Contacts.AnyAsync(c =>
             c.UserId == CurrentUserId && c.ContactUserId == targetId);
-        if (alreadyContact)
-            return BadRequest(new { message = "المستخدم مضاف كجهة اتصال بالفعل" });
+        var targetHasMe = await db.Contacts.AnyAsync(c =>
+            c.UserId == targetId && c.ContactUserId == CurrentUserId);
+        if (iHaveTarget && targetHasMe)
+            return BadRequest(new { message = "يمكنك بدء المحادثة مباشرة دون طلب مراسلة" });
 
         var existing = await db.MessageRequests
             .FirstOrDefaultAsync(r => r.RequesterId == CurrentUserId && r.TargetId == targetId);
@@ -110,7 +112,7 @@ public class MessageRequestsController(AppDbContext db, OneSignalService oneSign
         await oneSignal.SendMessageRequestAsync(targetId, name, messageRequestId);
     }
 
-    /// <summary>قبول الطلب: إنشاء جهة اتصال من المُرسل إلى المستقبل حتى يستطيع المُرسل فتح المحادثة.</summary>
+    /// <summary>قبول الطلب: إنشاء جهات اتصال متبادلة حتى يعمل CreateOrGetConversation لكلا الطرفين.</summary>
     [HttpPost("{id:guid}/accept")]
     public async Task<ActionResult<object>> Accept(Guid id)
     {
@@ -123,15 +125,23 @@ public class MessageRequestsController(AppDbContext db, OneSignalService oneSign
         if (req.Status != MessageRequestStatus.Pending)
             return BadRequest(new { message = "الطلب لم يعد معلقاً" });
 
-        // صف يمكّن المُرسل (A) من POST /conversations مع contactUserId = B
-        var contactExists = await db.Contacts.AnyAsync(c =>
-            c.UserId == req.RequesterId && c.ContactUserId == req.TargetId);
-        if (!contactExists)
+        if (!await db.Contacts.AnyAsync(c =>
+                c.UserId == req.RequesterId && c.ContactUserId == req.TargetId))
         {
             db.Contacts.Add(new Contact
             {
                 UserId = req.RequesterId,
                 ContactUserId = req.TargetId
+            });
+        }
+
+        if (!await db.Contacts.AnyAsync(c =>
+                c.UserId == req.TargetId && c.ContactUserId == req.RequesterId))
+        {
+            db.Contacts.Add(new Contact
+            {
+                UserId = req.TargetId,
+                ContactUserId = req.RequesterId
             });
         }
 

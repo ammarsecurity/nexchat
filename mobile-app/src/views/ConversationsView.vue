@@ -33,6 +33,19 @@ const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
 
+/** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
+const pendingMessageRequestsCount = computed(() => msgReqStore.pendingCount)
+const messageRequestsBadgeText = computed(() => {
+  const n = pendingMessageRequestsCount.value
+  if (n <= 0) return ''
+  return n > 99 ? '99+' : String(n)
+})
+const messageRequestsButtonLabel = computed(() => {
+  const base = t('conversations.messageRequests')
+  const n = pendingMessageRequestsCount.value
+  return n > 0 ? `${base} (${n})` : base
+})
+
 const filteredList = computed(() => {
   let list = conversations.value
   if (searchQuery.value.trim()) {
@@ -65,7 +78,6 @@ async function fetchConversations() {
     const list = data ?? []
     listStore.setList(list)
     await saveConversationsList(list)
-    await msgReqStore.fetchPendingCount()
   } catch (e) {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
@@ -100,6 +112,13 @@ function getUnreadCount(c) {
 
 watch(filter, fetchConversations, { immediate: true })
 
+watch(
+  () => route.path,
+  (path) => {
+    if (path === '/conversations') msgReqStore.fetchPendingCount()
+  }
+)
+
 watch([() => route.query.open, ready], ([openId, isReady]) => {
   if (!openId || !isReady) return
   nextTick(() => router.replace(`/conversation/${openId}`))
@@ -126,6 +145,7 @@ async function handleListUpdated(payload) {
 }
 
 onMounted(async () => {
+  msgReqStore.fetchPendingCount()
   convStore.clearConversation()
   try {
     await startHub(conversationHub)
@@ -166,11 +186,11 @@ function goBack() {
         <button
           class="new-chat-btn new-chat-btn-badge-wrap"
           @click="goToMessageRequests"
-          :aria-label="t('conversations.messageRequests')"
-          :title="t('conversations.messageRequests')"
+          :aria-label="messageRequestsButtonLabel"
+          :title="messageRequestsButtonLabel"
         >
           <Mail :size="22" />
-          <span v-if="msgReqStore.pendingCount > 0" class="header-btn-badge">{{ msgReqStore.pendingCount > 99 ? '99+' : msgReqStore.pendingCount }}</span>
+          <span v-if="messageRequestsBadgeText" class="header-btn-badge">{{ messageRequestsBadgeText }}</span>
         </button>
         <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
           <UsersRound :size="22" />
@@ -315,19 +335,26 @@ function goBack() {
 }
 .header-btn-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  top: -5px;
+  inset-inline-end: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
   font-size: 10px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 1;
   text-align: center;
   color: white;
   background: #f97316;
-  border-radius: 8px;
+  border-radius: 9px;
   font-family: 'Cairo', sans-serif;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
 }
 
 .need-phone-banner {

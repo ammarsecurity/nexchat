@@ -6,8 +6,11 @@ import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import { conversationHub, ensureConnected } from '../services/signalr'
+import { createPrivateConversationOrRequest, goToMessageRequestsOutgoingNotice } from '../utils/conversationOrMessageRequest'
+import { useMessageRequestsStore } from '../stores/messageRequests'
 
 const router = useRouter()
+const msgReqStore = useMessageRequestsStore()
 const { t } = useI18n()
 
 const shareMessage = ref(null)
@@ -91,13 +94,20 @@ async function shareToContact(contact) {
   if (!msg || !contactUserId || sending.value) return
   sending.value = true
   try {
-    const { data } = await api.post('/conversations', { contactUserId })
-    const convId = data?.id ?? data?.Id
+    const r = await createPrivateConversationOrRequest(contactUserId)
+    if (r.kind === 'messageRequest') {
+      await msgReqStore.fetchPendingCount()
+      goToMessageRequestsOutgoingNotice(router, 'share')
+      sending.value = false
+      return
+    }
+    const convId = r.conversationId
     if (!convId) throw new Error('No conversation id')
     await ensureConnected(conversationHub)
     await conversationHub.invoke('SendMessage', convId, msg.content, msg.type || 'text', null)
     router.replace(`/conversation/${convId}`)
-  } catch {
+  } catch (e) {
+    window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
     sending.value = false
   }
 }

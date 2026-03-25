@@ -1,12 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Check, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 
+const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const msgReqStore = useMessageRequestsStore()
@@ -14,6 +15,19 @@ const msgReqStore = useMessageRequestsStore()
 const loading = ref(true)
 const list = ref([])
 const actionId = ref(null)
+
+/** شريط طلب صادر: يُعرض بعد التوجيه من جهات الاتصال / الملف الشخصي / المشاركة */
+const outgoingBannerKind = ref(null)
+
+const outgoingBannerText = computed(() => {
+  if (outgoingBannerKind.value === 'share') return t('messageRequests.waitingForAcceptCannotShare')
+  if (outgoingBannerKind.value === 'wait') return t('messageRequests.waitingForAcceptFromOther')
+  return ''
+})
+
+function dismissOutgoingBanner() {
+  outgoingBannerKind.value = null
+}
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
@@ -65,7 +79,15 @@ function goBack() {
   else router.replace('/conversations')
 }
 
-onMounted(fetchList)
+onMounted(async () => {
+  const n = route.query.notice
+  if (n === 'outgoing-wait') outgoingBannerKind.value = 'wait'
+  else if (n === 'outgoing-share-wait') outgoingBannerKind.value = 'share'
+  if (outgoingBannerKind.value) {
+    router.replace({ path: '/message-requests' })
+  }
+  await fetchList()
+})
 </script>
 
 <template>
@@ -79,6 +101,12 @@ onMounted(fetchList)
     </header>
 
     <div class="scroll-area">
+      <div v-if="outgoingBannerText" class="outgoing-banner glass-card" role="status">
+        <p class="outgoing-banner-text">{{ outgoingBannerText }}</p>
+        <button type="button" class="outgoing-banner-dismiss" :aria-label="t('common.cancel')" @click="dismissOutgoingBanner">
+          ×
+        </button>
+      </div>
       <div v-if="loading" class="loading-msg">{{ t('common.loading') }}</div>
       <div v-else-if="!list.length" class="empty-state">
         <p>{{ t('messageRequests.empty') }}</p>
@@ -110,7 +138,7 @@ onMounted(fetchList)
               :aria-label="t('messageRequests.accept')"
               @click="accept(r.id ?? r.Id)"
             >
-              <Check :size="20" />
+              <Check :size="16" stroke-width="2.5" />
             </button>
             <button
               type="button"
@@ -119,7 +147,7 @@ onMounted(fetchList)
               :aria-label="t('messageRequests.decline')"
               @click="decline(r.id ?? r.Id)"
             >
-              <X :size="20" />
+              <X :size="16" stroke-width="2.5" />
             </button>
           </div>
         </li>
@@ -178,6 +206,44 @@ onMounted(fetchList)
   width: 100%;
 }
 
+.outgoing-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: rgba(108, 99, 255, 0.1);
+  border: 1px solid rgba(108, 99, 255, 0.28);
+}
+
+.outgoing-banner-text {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  text-align: start;
+}
+
+.outgoing-banner-dismiss {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.outgoing-banner-dismiss:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 .loading-msg,
 .empty-state {
   padding: 48px 16px;
@@ -191,15 +257,15 @@ onMounted(fetchList)
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .req-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 14px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
 }
 
 .req-avatar {
@@ -207,8 +273,8 @@ onMounted(fetchList)
 }
 
 .avatar-img-wrap {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   overflow: hidden;
 }
@@ -220,8 +286,8 @@ onMounted(fetchList)
 }
 
 .avatar-letter {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--primary);
   color: white;
@@ -229,7 +295,7 @@ onMounted(fetchList)
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 14px;
 }
 
 .req-body {
@@ -240,27 +306,29 @@ onMounted(fetchList)
 .req-name {
   font-weight: 600;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 .req-code {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: 1px;
+  letter-spacing: 0.02em;
 }
 
 .req-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .btn-accept,
 .btn-decline {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;

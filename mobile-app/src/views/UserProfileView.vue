@@ -5,6 +5,14 @@ import { ChevronRight, Copy, MessageCircle, Crown, UserPlus, Check } from 'lucid
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import CachedAvatar from '../components/CachedAvatar.vue'
+import {
+  createPrivateConversationOrRequest,
+  goToMessageRequestsOutgoingNotice,
+  validate409AsSuccess
+} from '../utils/conversationOrMessageRequest'
+import { useMessageRequestsStore } from '../stores/messageRequests'
+
+const msgReqStore = useMessageRequestsStore()
 
 // المسار الافتراضي من الحوار: إضافة كجهة اتصال ثم فتح المحادثة. البديل: طلب مراسلة فقط (يُعرض في صفحة طلبات المراسلة لدى المستقبل).
 const route = useRoute()
@@ -102,9 +110,13 @@ async function openChat() {
   if (isContact.value) {
     startingChat.value = true
     try {
-      const { data } = await api.post('/conversations', { contactUserId: id }, { skipGlobalLoader: true })
-      const cid = data?.id ?? data?.Id
-      if (cid) router.replace(`/conversation/${cid}`)
+      const r = await createPrivateConversationOrRequest(id)
+      if (r.kind === 'conversation' && r.conversationId) {
+        router.replace(`/conversation/${r.conversationId}`)
+      } else {
+        await msgReqStore.fetchPendingCount()
+        goToMessageRequestsOutgoingNotice(router)
+      }
     } catch (e) {
       window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
     } finally {
@@ -126,10 +138,14 @@ async function confirmAddAndChat() {
   try {
     await api.post(`/contacts/by-user/${userId.value}`, {}, { skipGlobalLoader: true })
     profile.value = { ...profile.value, isContact: true, IsContact: true }
-    const { data } = await api.post('/conversations', { contactUserId: id }, { skipGlobalLoader: true })
-    const cid = data?.id ?? data?.Id
+    const r = await createPrivateConversationOrRequest(id)
     showChatGateModal.value = false
-    if (cid) router.replace(`/conversation/${cid}`)
+    if (r.kind === 'conversation' && r.conversationId) {
+      router.replace(`/conversation/${r.conversationId}`)
+    } else {
+      await msgReqStore.fetchPendingCount()
+      goToMessageRequestsOutgoingNotice(router)
+    }
   } catch (e) {
     chatGateError.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {
@@ -144,8 +160,13 @@ async function sendMessageRequestOnly() {
   chatGateError.value = ''
   chatGateSuccess.value = ''
   try {
-    await api.post('/message-requests', { targetUserId: id }, { skipGlobalLoader: true })
-    chatGateSuccess.value = t('profile.messageRequestSent')
+    await api.post('/message-requests', { targetUserId: id }, {
+      skipGlobalLoader: true,
+      ...validate409AsSuccess
+    })
+    showChatGateModal.value = false
+    await msgReqStore.fetchPendingCount()
+    goToMessageRequestsOutgoingNotice(router)
   } catch (e) {
     chatGateError.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {
