@@ -15,7 +15,16 @@ const routes = [
       { path: 'users', component: () => import('../views/UsersView.vue') },
       { path: 'sessions', component: () => import('../views/SessionsView.vue') },
       { path: 'messages', component: () => import('../views/MessagesView.vue') },
-      { path: 'conversations', component: () => import('../views/ConversationsView.vue') },
+      {
+        path: 'conversations',
+        component: () => import('../views/ConversationsView.vue'),
+        meta: { conversationKind: 'private' }
+      },
+      {
+        path: 'group-conversations',
+        component: () => import('../views/ConversationsView.vue'),
+        meta: { conversationKind: 'group' }
+      },
       { path: 'blocks', component: () => import('../views/BlockedView.vue') },
       { path: 'contacts', component: () => import('../views/ContactsView.vue') },
       { path: 'support', component: () => import('../views/SupportView.vue') },

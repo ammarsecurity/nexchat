@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using NexChat.Core;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
@@ -159,7 +160,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         {
             Id = conv.Id,
             Type = conv.Type,
-            Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, partner.IsOnline } : null,
+            Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsOnline = UserOnlineVisibility.VisibleToOthers(partner) } : null,
             GroupName = conv.Type == ConversationType.Group ? conv.Name : null,
             GroupImageUrl = conv.Type == ConversationType.Group ? conv.ImageUrl : null,
             Messages = messages

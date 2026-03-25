@@ -35,6 +35,7 @@ const navItems = [
   { title: 'الجلسات', icon: 'mdi-chat', to: '/sessions' },
   { title: 'الرسائل', icon: 'mdi-message-text', to: '/messages' },
   { title: 'المحادثات', icon: 'mdi-forum', to: '/conversations' },
+  { title: 'المجموعات', icon: 'mdi-account-group', to: '/group-conversations' },
   { title: 'المحظورون', icon: 'mdi-block-helper', to: '/blocks' },
   { title: 'جهات الاتصال', icon: 'mdi-account-multiple', to: '/contacts' },
   { title: 'دردشة الدعم', icon: 'mdi-headset', to: '/support' },

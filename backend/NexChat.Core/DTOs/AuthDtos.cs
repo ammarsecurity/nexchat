@@ -26,7 +26,8 @@ public record UserProfileDto(
     bool IsFeatured = false,
     DateOnly? BirthDate = null,
     string? Country = null,
-    string? PhoneNumber = null
+    string? PhoneNumber = null,
+    bool ShowOnlineStatusToOthers = true
 );
 
 public record UpdateAvatarRequest(string? Avatar);
@@ -34,6 +35,8 @@ public record UpdateAvatarRequest(string? Avatar);
 public record UpdateBirthDateRequest(string BirthDate);
 
 public record UpdateProfileContactRequest(string Country, string CountryCode, string PhoneNumber);
+
+public record UpdatePrivacyRequest(bool ShowOnlineStatusToOthers);
 
 /// <summary>بروفايل عام لمستخدم آخر.</summary>
 public record PublicProfileDto(

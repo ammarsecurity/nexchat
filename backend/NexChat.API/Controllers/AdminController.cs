@@ -548,23 +548,36 @@ public class AdminController(
         return Ok(new PagedResult<AdminMessageDto>(messages, total, page, pageSize));
     }
 
+    /// <summary>قائمة المحادثات للإدارة.</summary>
+    /// <param name="kind">private = ثنائية فقط (افتراضي)، group = مجموعات فقط</param>
     [HttpGet("conversations")]
     public async Task<ActionResult<PagedResult<AdminConversationDto>>> GetConversations(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] string? kind = null)
     {
+        var isGroupList = string.Equals(kind, "group", StringComparison.OrdinalIgnoreCase);
+
         var query = db.Conversations
             .Include(c => c.User1)
             .Include(c => c.User2)
             .AsQueryable();
 
+        if (isGroupList)
+            query = query.Where(c => c.Type == ConversationType.Group);
+        else
+            query = query.Where(c => c.Type == ConversationType.Private);
+
         if (!string.IsNullOrEmpty(search))
         {
             var s = search.Trim().ToLower();
-            query = query.Where(c =>
-                c.User1.Name.ToLower().Contains(s) ||
-                c.User2.Name.ToLower().Contains(s));
+            if (isGroupList)
+                query = query.Where(c => c.Name != null && c.Name.ToLower().Contains(s));
+            else
+                query = query.Where(c =>
+                    (c.User1 != null && c.User1.Name.ToLower().Contains(s)) ||
+                    (c.User2 != null && c.User2.Name.ToLower().Contains(s)));
         }
 
         var total = await query.CountAsync();
@@ -574,8 +587,10 @@ public class AdminController(
             .Take(pageSize)
             .Select(c => new AdminConversationDto(
                 c.Id,
-                c.User1.Name,
-                c.User2.Name,
+                c.Type,
+                c.User1 != null ? c.User1.Name : null,
+                c.User2 != null ? c.User2.Name : null,
+                c.Type == ConversationType.Group ? c.Name : null,
                 c.CreatedAt,
                 c.Messages.Count,
                 c.Messages.Any() ? c.Messages.Max(m => m.SentAt) : (DateTime?)null

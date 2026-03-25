@@ -9,6 +9,8 @@ public class User
     public DateOnly? BirthDate { get; set; }
     public string UniqueCode { get; set; } = string.Empty;
     public bool IsOnline { get; set; } = false;
+    /// <summary>إذا كان false يُعرض للآخرين كغير متصل حتى لو كان IsOnline true.</summary>
+    public bool ShowOnlineStatusToOthers { get; set; } = true;
     public bool IsBanned { get; set; } = false;
     public bool IsAdmin { get; set; } = false;
     public bool IsFeatured { get; set; } = false;

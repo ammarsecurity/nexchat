@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -40,6 +40,9 @@ const deleting = ref(false)
 const copiedCode = ref(false)
 const mediaPermLoading = ref(false)
 const profileData = ref(null)
+/** يعكس إعداد الخادم: إظهار حالة متصل للآخرين */
+const showOnlineToOthers = ref(true)
+const showOnlineSaving = ref(false)
 const showBirthDateModal = ref(false)
 const birthDay = ref('')
 const birthMonth = ref('')
@@ -241,7 +244,22 @@ async function loadProfile() {
   try {
     const res = await api.get('/user/me')
     profileData.value = res.data
+    showOnlineToOthers.value = res.data.showOnlineStatusToOthers !== false
   } catch {}
+}
+
+async function setShowOnlineStatusToOthers(value) {
+  if (showOnlineSaving.value || showOnlineToOthers.value === value) return
+  showOnlineSaving.value = true
+  try {
+    await api.put('/user/privacy', { showOnlineStatusToOthers: value }, { skipGlobalLoader: true })
+    showOnlineToOthers.value = value
+    if (profileData.value) profileData.value = { ...profileData.value, showOnlineStatusToOthers: value }
+  } catch (e) {
+    window.alert(e.response?.data?.message ?? t('common.error'))
+  } finally {
+    showOnlineSaving.value = false
+  }
 }
 
 function openBirthDateModal() {
@@ -463,6 +481,32 @@ onMounted(() => {
           <span>{{ t('home.savedCodes') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
+        <div class="notif-buttons-row online-status-row">
+          <div class="online-status-col">
+            <span class="notif-label"><Eye :size="20" class="link-icon" /> {{ t('settings.showOnlineStatus') }}</span>
+            <span class="online-status-desc">{{ t('settings.showOnlineStatusDesc') }}</span>
+          </div>
+          <div class="notif-btns">
+            <button
+              type="button"
+              class="notif-btn enable"
+              :class="{ active: showOnlineToOthers }"
+              :disabled="showOnlineToOthers || showOnlineSaving"
+              @click="setShowOnlineStatusToOthers(true)"
+            >
+              {{ t('settings.showOnlineStatusOn') }}
+            </button>
+            <button
+              type="button"
+              class="notif-btn disable"
+              :class="{ active: !showOnlineToOthers }"
+              :disabled="!showOnlineToOthers || showOnlineSaving"
+              @click="setShowOnlineStatusToOthers(false)"
+            >
+              {{ t('settings.showOnlineStatusOff') }}
+            </button>
+          </div>
+        </div>
         <RouterLink to="/privacy" class="link-row">
           <Shield :size="20" class="link-icon" />
           <span>{{ t('settings.privacyPolicy') }}</span>
@@ -1100,6 +1144,18 @@ html.light .avatar-crown-settings {
 .notif-web-msg {
   font-size: 13px;
   color: var(--text-muted);
+}
+.online-status-row .online-status-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.online-status-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  padding-inline-start: 32px;
 }
 
 /* About */

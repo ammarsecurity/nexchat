@@ -1,6 +1,12 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '../services/api'
+
+const route = useRoute()
+/** private = محادثات ثنائية، group = مجموعات */
+const conversationKind = computed(() => route.meta.conversationKind || 'private')
+const isGroupPage = computed(() => conversationKind.value === 'group')
 
 const conversations = ref([])
 const totalConvos = ref(0)
@@ -30,7 +36,8 @@ async function fetchConversations() {
       params: {
         page: convoPage.value,
         pageSize: convoPageSize.value,
-        search: searchQuery.value || undefined
+        search: searchQuery.value || undefined,
+        kind: conversationKind.value
       }
     })
     conversations.value = res.data.items
@@ -100,6 +107,14 @@ watch(searchQuery, () => {
 
 watch(convoPage, fetchConversations)
 
+watch(conversationKind, () => {
+  convoPage.value = 1
+  selectedConversation.value = null
+  messages.value = []
+  selectedConvoIds.value = new Set()
+  fetchConversations()
+})
+
 fetchConversations()
 
 function formatTime(dt) {
@@ -116,11 +131,24 @@ function formatDate(dt) {
 }
 
 function convoTitle(conv) {
-  return `${conv.user1Name} ↔ ${conv.user2Name}`
+  if (!conv) return ''
+  const t = conv.type ?? conv.Type
+  if (t === 1 || conv.groupName || conv.GroupName) {
+    return conv.groupName || conv.GroupName || 'مجموعة'
+  }
+  return `${conv.user1Name ?? conv.User1Name ?? '—'} ↔ ${conv.user2Name ?? conv.User2Name ?? '—'}`
+}
+
+function isGroupConv(conv) {
+  if (!conv) return false
+  const t = conv.type ?? conv.Type
+  return t === 1 || !!(conv.groupName || conv.GroupName)
 }
 
 function isFromUser1(msg) {
-  return selectedConversation.value && msg.senderName === selectedConversation.value.user1Name
+  if (!selectedConversation.value) return false
+  if (isGroupConv(selectedConversation.value)) return false
+  return msg.senderName === selectedConversation.value.user1Name
 }
 
 const filteredMessages = computed(() => {
@@ -226,9 +254,9 @@ async function confirmDeleteMsgs() {
   <div class="conversations-page">
     <div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-2">
       <div>
-        <div class="text-h5 font-weight-bold">المحادثات</div>
+        <div class="text-h5 font-weight-bold">{{ isGroupPage ? 'المجموعات' : 'المحادثات' }}</div>
         <div class="text-body-2 text-medium-emphasis">
-          {{ totalConvos.toLocaleString() }} محادثة
+          {{ totalConvos.toLocaleString() }} {{ isGroupPage ? 'مجموعة' : 'محادثة' }}
         </div>
       </div>
       <div v-if="someConvosSelected" class="d-flex align-center gap-2">
@@ -249,7 +277,7 @@ async function confirmDeleteMsgs() {
         <div class="search-wrap pa-3">
           <v-text-field
             v-model="searchQuery"
-            placeholder="بحث بالاسم..."
+            :placeholder="isGroupPage ? 'بحث باسم المجموعة...' : 'بحث بالاسم...'"
             prepend-inner-icon="mdi-magnify"
             variant="outlined"
             density="compact"
@@ -265,8 +293,8 @@ async function confirmDeleteMsgs() {
         </div>
 
         <div v-else-if="conversations.length === 0" class="empty-list pa-6 text-center">
-          <v-icon size="48" color="medium-emphasis">mdi-forum-outline</v-icon>
-          <div class="text-body-2 text-medium-emphasis mt-2">لا توجد محادثات</div>
+          <v-icon size="48" color="medium-emphasis">{{ isGroupPage ? 'mdi-account-group-outline' : 'mdi-forum-outline' }}</v-icon>
+          <div class="text-body-2 text-medium-emphasis mt-2">{{ isGroupPage ? 'لا توجد مجموعات' : 'لا توجد محادثات' }}</div>
         </div>
 
         <div v-else class="convo-items">
@@ -299,8 +327,11 @@ async function confirmDeleteMsgs() {
               class="convo-checkbox"
               @click.stop="toggleConvo(c)"
             />
-            <div class="convo-avatar">
-              {{ c.user1Name?.[0]?.toUpperCase() }}{{ c.user2Name?.[0]?.toUpperCase() }}
+            <div class="convo-avatar" :class="{ 'convo-avatar--group': isGroupConv(c) }">
+              <v-icon v-if="isGroupConv(c)" size="22" color="primary">mdi-account-group</v-icon>
+              <template v-else>
+                {{ c.user1Name?.[0]?.toUpperCase() }}{{ c.user2Name?.[0]?.toUpperCase() }}
+              </template>
             </div>
             <div class="convo-info">
               <div class="convo-title">{{ convoTitle(c) }}</div>
@@ -324,9 +355,9 @@ async function confirmDeleteMsgs() {
 
       <div class="chat-panel">
         <div v-if="!selectedConversation" class="chat-placeholder">
-          <v-icon size="80" color="medium-emphasis">mdi-forum-outline</v-icon>
+          <v-icon size="80" color="medium-emphasis">{{ isGroupPage ? 'mdi-account-group-outline' : 'mdi-forum-outline' }}</v-icon>
           <div class="text-h6 font-weight-medium text-medium-emphasis mt-3">
-            اختر محادثة لعرض الرسائل
+            {{ isGroupPage ? 'اختر مجموعة لعرض الرسائل' : 'اختر محادثة لعرض الرسائل' }}
           </div>
         </div>
 
@@ -529,6 +560,9 @@ async function confirmDeleteMsgs() {
   font-weight: 700;
   color: white;
   flex-shrink: 0;
+}
+.convo-avatar--group {
+  background: rgba(108, 99, 255, 0.35);
 }
 
 .convo-info {
