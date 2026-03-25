@@ -11,7 +11,7 @@ using System.Security.Claims;
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env) : Hub
+public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto) : Hub
 {
     private static readonly HashSet<string> AllowedReactionEmojis = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
 
@@ -80,18 +80,20 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             : new Dictionary<Guid, List<(Guid UserId, string Emoji)>>();
 
         var replyIds = messagesRaw.Where(m => m.ReplyToMessageId != null).Select(m => m.ReplyToMessageId!.Value).Distinct().ToList();
-        Dictionary<Guid, (string? Content, string Type, string? SenderName)> replyData;
+        Dictionary<Guid, (string Content, string Type, string? SenderName)> replyData;
         if (replyIds.Count > 0)
         {
             var replyList = await db.ConversationMessages
                 .Where(m => replyIds.Contains(m.Id))
                 .Select(m => new { m.Id, m.Content, m.Type, SenderName = m.Sender.Name })
                 .ToListAsync();
-            replyData = replyList.ToDictionary(m => m.Id, m => (m.Content, m.Type ?? "text", m.SenderName));
+            replyData = replyList.ToDictionary(
+                m => m.Id,
+                m => (messageCrypto.DecryptFromStorage(m.Content ?? ""), m.Type ?? "text", (string?)m.SenderName));
         }
         else
         {
-            replyData = new Dictionary<Guid, (string? Content, string Type, string? SenderName)>();
+            replyData = new Dictionary<Guid, (string Content, string Type, string? SenderName)>();
         }
 
         static string GetReplyPreview(string? content, string type)
@@ -112,6 +114,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
 
         var messages = messagesRaw.Select(m =>
         {
+            var decryptedContent = messageCrypto.DecryptFromStorage(m.Content ?? "");
             var replyToContent = (string?)null;
             var replyToSenderName = (string?)null;
             if (m.ReplyToMessageId != null && replyData.TryGetValue(m.ReplyToMessageId.Value, out var rd))
@@ -141,7 +144,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             {
                 m.Id,
                 m.SenderId,
-                m.Content,
+                Content = decryptedContent,
                 m.Type,
                 m.SentAt,
                 m.DeletedForEveryone,
@@ -301,17 +304,19 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
                 {
                     replyToId = rid;
                     var rt = replyTo.Type ?? "text";
-                    replyToContent = rt == "audio" ? "رسالة صوتية" : rt == "image" ? "صورة" : (replyTo.Content?.Length > 80 ? replyTo.Content[..80] + "…" : replyTo.Content);
+                    var replyPlain = messageCrypto.DecryptFromStorage(replyTo.Content ?? "");
+                    replyToContent = rt == "audio" ? "رسالة صوتية" : rt == "image" ? "صورة" : (replyPlain.Length > 80 ? replyPlain[..80] + "…" : replyPlain);
                     var replySender = await db.Users.FindAsync(replyTo.SenderId);
                     replyToSenderName = replySender?.Name ?? (replyTo.SenderId == userId ? "أنت" : "طرف آخر");
                 }
             }
 
+            var plainBody = type == "text" ? content.Trim() : content;
             var msg = new ConversationMessage
             {
                 ConversationId = cid,
                 SenderId = userId,
-                Content = type == "text" ? content.Trim() : content,
+                Content = messageCrypto.EncryptForStorage(plainBody),
                 Type = type,
                 ReplyToMessageId = replyToId
             };
@@ -346,7 +351,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
                 {
                     msg.Id,
                     msg.SenderId,
-                    msg.Content,
+                    Content = plainBody,
                     msg.Type,
                     msg.SentAt,
                     msg.DeletedForEveryone,
@@ -366,7 +371,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
                 {
                     msg.Id,
                     msg.SenderId,
-                    msg.Content,
+                    Content = plainBody,
                     msg.Type,
                     msg.SentAt,
                     msg.DeletedForEveryone,
@@ -396,7 +401,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             logger.LogInformation("SendMessage ReceiveMessage sent");
 
             var sender = senderUser ?? await db.Users.FindAsync(userId);
-            var preview = type == "text" ? content.Trim() : (type == "audio" ? "رسالة صوتية" : "صورة");
+            var preview = type == "text" ? plainBody : (type == "audio" ? "رسالة صوتية" : "صورة");
             if (preview.Length > 80) preview = preview[..80] + "…";
             if (recipientId.HasValue)
                 _ = oneSignal.SendNewConversationMessageAsync(recipientId.Value, sender?.Name ?? "شخص", preview, cid);
@@ -704,11 +709,11 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         return (BuildListPreview(lastMsg), lastMsg.SentAt, lastMsg.SenderId.ToString());
     }
 
-    private static string BuildListPreview(ConversationMessage m)
+    private string BuildListPreview(ConversationMessage m)
     {
         if (m.Type == "image") return "صورة";
         if (m.Type == "audio") return "رسالة صوتية";
-        var c = m.Content ?? "";
+        var c = messageCrypto.DecryptFromStorage(m.Content ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
     }
 
