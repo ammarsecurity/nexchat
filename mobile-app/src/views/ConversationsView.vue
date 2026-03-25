@@ -189,14 +189,14 @@ function goBack() {
           :aria-label="messageRequestsButtonLabel"
           :title="messageRequestsButtonLabel"
         >
-          <Mail :size="22" />
+          <Mail :size="18" />
           <span v-if="messageRequestsBadgeText" class="header-btn-badge">{{ messageRequestsBadgeText }}</span>
         </button>
         <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
-          <UsersRound :size="22" />
+          <UsersRound :size="18" />
         </button>
         <button class="new-chat-btn" @click="goToContacts" :aria-label="t('conversations.newChat')" :title="t('conversations.newChat')">
-          <Users :size="22" />
+          <Users :size="18" />
         </button>
       </div>
     </header>
@@ -245,7 +245,14 @@ function goBack() {
           @click="goToConversation(c)"
           @contextmenu.prevent="openContextMenu(c, $event)"
         >
-          <div class="item-avatar" :class="{ 'avatar-group': c.isGroup ?? c.IsGroup }" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+          <div
+            class="item-avatar"
+            :class="{
+              'avatar-group': c.isGroup ?? c.IsGroup,
+              'avatar-elevated-bg': !(c.isGroup ?? c.IsGroup) && !(c.partnerAvatar ?? c.PartnerAvatar)
+            }"
+            :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }"
+          >
             <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
             <Users v-else-if="c.isGroup ?? c.IsGroup" :size="16" class="avatar-group-icon" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
@@ -306,11 +313,15 @@ function goBack() {
 
 .top-title {
   flex: 1;
+  min-width: 0;
   font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: 'Cairo', sans-serif;
   text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .back-btn, .new-chat-btn {
@@ -328,7 +339,12 @@ function goBack() {
   -webkit-tap-highlight-color: transparent;
 }
 .back-btn:active, .new-chat-btn:active { background: var(--bg-card-hover); }
-.header-actions { display: flex; gap: 8px; }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .new-chat-btn { color: var(--primary); }
 .new-chat-btn-badge-wrap {
   position: relative;
@@ -521,6 +537,12 @@ function goBack() {
   overflow: hidden;
 }
 
+/* حرف الاسم على خلفية فاتحة: في المود الفاتح لا يستخدم أبيض */
+[data-theme="light"] .item-avatar.avatar-elevated-bg,
+html.light .item-avatar.avatar-elevated-bg {
+  color: var(--primary);
+}
+
 .avatar-img {
   width: 100%;
   height: 100%;
@@ -663,6 +685,66 @@ function goBack() {
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   margin-top: 16px;
+}
+
+/* شريط العنوان: شاشات ضيقة (مثلاً ~240–360px) */
+@media (max-width: 420px) {
+  .top-bar {
+    padding: calc(var(--safe-top) + 8px) 8px 8px;
+    gap: 6px;
+  }
+  .top-title {
+    font-size: 15px;
+  }
+  .header-actions {
+    gap: 4px;
+  }
+  .top-bar .back-btn,
+  .top-bar .new-chat-btn {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    border-radius: 8px;
+  }
+  .top-bar .back-btn :deep(svg),
+  .top-bar .new-chat-btn :deep(svg) {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  .header-btn-badge {
+    min-width: 16px;
+    height: 16px;
+    font-size: 9px;
+    padding: 0 4px;
+    top: -4px;
+    inset-inline-end: -4px;
+  }
+}
+
+@media (max-width: 320px) {
+  .top-bar {
+    padding: calc(var(--safe-top) + 6px) 6px 6px;
+    gap: 4px;
+  }
+  .top-title {
+    font-size: 14px;
+  }
+  .header-actions {
+    gap: 2px;
+  }
+  .top-bar .back-btn,
+  .top-bar .new-chat-btn {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    min-height: 30px !important;
+  }
+  .top-bar .back-btn :deep(svg),
+  .top-bar .new-chat-btn :deep(svg) {
+    width: 15px !important;
+    height: 15px !important;
+  }
 }
 
 @media (max-width: 360px) {
