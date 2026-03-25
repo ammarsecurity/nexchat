@@ -253,7 +253,10 @@ export default {
   savedCodes: {
     addCodeDesc: 'أضف كود مستخدم بصيغة NX-XXXX للاتصال السريع لاحقاً',
     yourCodes: 'أكوادك المحفوظة',
-    addFirstHint: 'أضف أول كود من الأعلى'
+    addModalTitle: 'إضافة كود',
+    addFirstHint: 'اضغط على + في الأعلى لإضافة أول كود',
+    codePlaceholder: 'ادخل الكود (مثال: NX-XXXX)',
+    labelPlaceholder: 'تسمية اختيارية للكود'
   },
   contacts: {
     title: 'جهات الاتصال',

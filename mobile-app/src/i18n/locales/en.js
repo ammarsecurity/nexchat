@@ -253,7 +253,10 @@ export default {
   savedCodes: {
     addCodeDesc: 'Add a user code in NX-XXXX format for quick connection later',
     yourCodes: 'Your saved codes',
-    addFirstHint: 'Add your first code above'
+    addModalTitle: 'Add a code',
+    addFirstHint: 'Tap + at the top to add your first code',
+    codePlaceholder: 'Enter code (e.g. NX-XXXX)',
+    labelPlaceholder: 'Optional label for this code'
   },
   contacts: {
     title: 'Contacts',
