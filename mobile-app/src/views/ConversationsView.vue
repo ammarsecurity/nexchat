@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound, Mail } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -14,8 +14,11 @@ import { useAuthStore } from '../stores/auth'
 import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub } from '../services/signalr'
 import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
+import { formatGregorianDateTime } from '../utils/formatTime'
+import { useMessageRequestsStore } from '../stores/messageRequests'
 
 const router = useRouter()
+const msgReqStore = useMessageRequestsStore()
 const network = useNetworkStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -29,6 +32,19 @@ const conversations = computed(() => listStore.list)
 const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
+
+/** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
+const pendingMessageRequestsCount = computed(() => msgReqStore.pendingCount)
+const messageRequestsBadgeText = computed(() => {
+  const n = pendingMessageRequestsCount.value
+  if (n <= 0) return ''
+  return n > 99 ? '99+' : String(n)
+})
+const messageRequestsButtonLabel = computed(() => {
+  const base = t('conversations.messageRequests')
+  const n = pendingMessageRequestsCount.value
+  return n > 0 ? `${base} (${n})` : base
+})
 
 const filteredList = computed(() => {
   let list = conversations.value
@@ -84,7 +100,7 @@ function formatTime(ts) {
   if (diff < 60000) return t('connectionHistory.now')
   if (diff < 3600000) return t('connectionHistory.minutesAgo', { n: Math.floor(diff / 60000) })
   if (diff < 86400000) return t('connectionHistory.hoursAgo', { n: Math.floor(diff / 3600000) })
-  return d.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US') + ' ' + d.toLocaleTimeString(locale === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+  return formatGregorianDateTime(d, locale)
 }
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
@@ -95,6 +111,13 @@ function getUnreadCount(c) {
 }
 
 watch(filter, fetchConversations, { immediate: true })
+
+watch(
+  () => route.path,
+  (path) => {
+    if (path === '/conversations') msgReqStore.fetchPendingCount()
+  }
+)
 
 watch([() => route.query.open, ready], ([openId, isReady]) => {
   if (!openId || !isReady) return
@@ -122,6 +145,7 @@ async function handleListUpdated(payload) {
 }
 
 onMounted(async () => {
+  msgReqStore.fetchPendingCount()
   convStore.clearConversation()
   try {
     await startHub(conversationHub)
@@ -142,6 +166,10 @@ function goToContacts() {
   router.push('/contacts')
 }
 
+function goToMessageRequests() {
+  router.push('/message-requests')
+}
+
 function goBack() {
   router.replace('/home')
 }
@@ -155,6 +183,15 @@ function goBack() {
       </button>
       <span class="top-title">{{ t('conversations.title') }}</span>
       <div class="header-actions">
+        <button
+          class="new-chat-btn new-chat-btn-badge-wrap"
+          @click="goToMessageRequests"
+          :aria-label="messageRequestsButtonLabel"
+          :title="messageRequestsButtonLabel"
+        >
+          <Mail :size="22" />
+          <span v-if="messageRequestsBadgeText" class="header-btn-badge">{{ messageRequestsBadgeText }}</span>
+        </button>
         <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
           <UsersRound :size="22" />
         </button>
@@ -183,7 +220,7 @@ function goBack() {
 
     <div class="search-wrap">
       <div class="search-input-wrap">
-        <Search :size="18" class="search-icon" />
+        <Search :size="16" class="search-icon" />
         <input
           v-model="searchQuery"
           type="text"
@@ -210,7 +247,7 @@ function goBack() {
         >
           <div class="item-avatar" :class="{ 'avatar-group': c.isGroup ?? c.IsGroup }" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
             <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
-            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="22" class="avatar-group-icon" />
+            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="18" class="avatar-group-icon" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">
@@ -226,7 +263,7 @@ function goBack() {
               <span class="item-preview">{{ (c.lastMessagePreview ?? c.LastMessagePreview) || '—' }}</span>
               <span class="item-actions">
                 <span v-if="c.isPinned ?? c.IsPinned" class="pin-badge" :title="t('conversations.pin')">
-                  <Pin :size="12" />
+                  <Pin :size="11" />
                 </span>
                 <button
                   v-if="c.partnerId ?? c.PartnerId"
@@ -234,7 +271,7 @@ function goBack() {
                   @click.stop="openContextMenu(c, $event)"
                   :aria-label="t('common.cancel')"
                 >
-                  <MoreVertical :size="18" />
+                  <MoreVertical :size="16" />
                 </button>
               </span>
             </div>
@@ -293,6 +330,32 @@ function goBack() {
 .back-btn:active, .new-chat-btn:active { background: var(--bg-card-hover); }
 .header-actions { display: flex; gap: 8px; }
 .new-chat-btn { color: var(--primary); }
+.new-chat-btn-badge-wrap {
+  position: relative;
+}
+.header-btn-badge {
+  position: absolute;
+  top: -5px;
+  inset-inline-end: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  color: white;
+  background: #f97316;
+  border-radius: 9px;
+  font-family: 'Cairo', sans-serif;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
 
 .need-phone-banner {
   display: flex;
@@ -317,18 +380,19 @@ function goBack() {
 
 .filters-wrap {
   display: flex;
-  gap: 8px;
-  padding: 12px var(--spacing) 8px;
+  gap: 6px;
+  padding: 8px var(--spacing) 6px;
   flex-shrink: 0;
 }
 
 .filter-btn {
   flex: 1;
-  padding: 10px 12px;
-  font-size: 13px;
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 12px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-secondary);
@@ -343,17 +407,17 @@ function goBack() {
 }
 
 .search-wrap {
-  padding: 0 var(--spacing) 12px;
+  padding: 0 var(--spacing) 8px;
   flex-shrink: 0;
 }
 
 .search-input-wrap {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  min-height: 44px;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 0 10px;
+  min-height: 36px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
 }
@@ -366,11 +430,11 @@ function goBack() {
 .search-input {
   flex: 1;
   min-width: 0;
-  padding: 12px 0;
+  padding: 8px 0;
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-family: 'Cairo', sans-serif;
   outline: none;
 }
@@ -411,17 +475,17 @@ function goBack() {
 .conv-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding-bottom: 24px;
 }
 
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 10px 12px;
   cursor: pointer;
-  border-radius: 14px;
+  border-radius: 12px;
   position: relative;
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -442,15 +506,15 @@ function goBack() {
 .conv-item.unread .item-name { font-weight: 700; }
 
 .item-avatar {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 15px;
   color: white;
   flex-shrink: 0;
   position: relative;
@@ -469,7 +533,7 @@ function goBack() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .item-row {
@@ -484,7 +548,7 @@ function goBack() {
 }
 .item-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-primary);
   font-family: 'Cairo', sans-serif;
   white-space: nowrap;
@@ -497,11 +561,11 @@ function goBack() {
 .group-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   flex-shrink: 0;
   font-family: 'Cairo', sans-serif;
@@ -519,33 +583,33 @@ function goBack() {
 .item-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .item-time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
 }
 
 .unread-badge-inline {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   background: #25D366;
   color: white;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-family: 'Cairo', sans-serif;
-  border-radius: 11px;
+  border-radius: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .item-preview {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -559,9 +623,9 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-  padding: 4px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 2px;
   background: none;
   border: none;
   color: var(--text-tertiary);
@@ -581,9 +645,9 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
   flex-shrink: 0;
@@ -602,18 +666,40 @@ function goBack() {
 }
 
 @media (max-width: 360px) {
+  .filters-wrap {
+    padding: 6px var(--spacing) 4px;
+    gap: 4px;
+  }
+  .filter-btn {
+    min-height: 32px;
+    padding: 5px 6px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+  .search-wrap {
+    padding-bottom: 6px;
+  }
+  .search-input-wrap {
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 8px;
+  }
+  .search-input {
+    font-size: 12px;
+    padding: 6px 0;
+  }
   .conv-item {
-    padding: 12px var(--spacing);
-    gap: 12px;
+    padding: 8px 10px;
+    gap: 8px;
   }
   .item-avatar {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    font-size: 16px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 14px;
   }
-  .item-name { font-size: 14px; }
-  .item-time { font-size: 12px; }
-  .item-preview { font-size: 12px; }
+  .item-name { font-size: 13px; }
+  .item-time { font-size: 10px; }
+  .item-preview { font-size: 11px; }
 }
 </style>

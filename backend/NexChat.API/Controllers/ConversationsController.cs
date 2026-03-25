@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
+using NexChat.Infrastructure.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Controllers;
@@ -13,7 +14,7 @@ namespace NexChat.API.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class ConversationsController(AppDbContext db) : ControllerBase
+public class ConversationsController(AppDbContext db, OneSignalService oneSignal) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -202,6 +203,23 @@ public class ConversationsController(AppDbContext db) : ControllerBase
         if (!isContact)
             return BadRequest(new { message = "يجب إضافة المستخدم كجهة اتصال أولاً" });
 
+        // محادثات خاصة أنشئت قبل هذا الشرط قد تبقى في DB؛ القيد يطبق على إنشاء محادثة جديدة فقط.
+        var partnerHasMe = await db.Contacts.AnyAsync(c =>
+            c.UserId == req.ContactUserId && c.ContactUserId == CurrentUserId);
+        if (!partnerHasMe)
+        {
+            var acceptedRequest = await db.MessageRequests.AnyAsync(r =>
+                r.Status == MessageRequestStatus.Accepted &&
+                ((r.RequesterId == CurrentUserId && r.TargetId == req.ContactUserId) ||
+                 (r.RequesterId == req.ContactUserId && r.TargetId == CurrentUserId)));
+            if (!acceptedRequest)
+                return Conflict(new
+                {
+                    code = "NEEDS_MESSAGE_REQUEST",
+                    message = "يجب أن يضيفك الطرف كجهة اتصال أو قبول طلب المراسلة أولاً"
+                });
+        }
+
         var isBlocked = await db.UserBlocks.AnyAsync(b =>
             (b.BlockerId == CurrentUserId && b.BlockedUserId == req.ContactUserId) ||
             (b.BlockerId == req.ContactUserId && b.BlockedUserId == CurrentUserId));
@@ -237,6 +255,146 @@ public class ConversationsController(AppDbContext db) : ControllerBase
 
         var partner = await db.Users.FindAsync(req.ContactUserId);
         return Ok(new { id = conv.Id, partnerId = partner?.Id, partnerName = partner?.Name, partnerAvatar = partner?.Avatar });
+    }
+
+    /// <summary>
+    /// مسار واحد للعميل: فتح محادثة خاصة عند التبادل أو إنشاء/تأكيد طلب مراسلة.
+    /// يُرجع دائماً 200 للحالات المتوقعة (بدون Conflict 409) لتجنب تسجيل المتصفح لأخطاء وهمية في الـ console.
+    /// </summary>
+    [HttpPost("open-private-or-request")]
+    public async Task<ActionResult<object>> OpenPrivateOrRequest([FromBody] CreateConversationRequest req)
+    {
+        var user = await db.Users.FindAsync(CurrentUserId);
+        if (user == null) return NotFound();
+        if (string.IsNullOrWhiteSpace(user.PhoneNumber))
+            return BadRequest(new { message = "يجب إضافة رقم الهاتف من الإعدادات أولاً" });
+
+        var isContact = await db.Contacts.AnyAsync(c =>
+            c.UserId == CurrentUserId && c.ContactUserId == req.ContactUserId);
+        if (!isContact)
+            return BadRequest(new { message = "يجب إضافة المستخدم كجهة اتصال أولاً" });
+
+        var isBlocked = await db.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == CurrentUserId && b.BlockedUserId == req.ContactUserId) ||
+            (b.BlockerId == req.ContactUserId && b.BlockedUserId == CurrentUserId));
+        if (isBlocked)
+            return BadRequest(new { message = "لا يمكن إنشاء محادثة مع هذا المستخدم" });
+
+        if (req.ContactUserId == CurrentUserId)
+            return BadRequest(new { message = "لا يمكن إنشاء محادثة مع نفسك" });
+
+        var partnerHasMe = await db.Contacts.AnyAsync(c =>
+            c.UserId == req.ContactUserId && c.ContactUserId == CurrentUserId);
+        var acceptedRequest = await db.MessageRequests.AnyAsync(r =>
+            r.Status == MessageRequestStatus.Accepted &&
+            ((r.RequesterId == CurrentUserId && r.TargetId == req.ContactUserId) ||
+             (r.RequesterId == req.ContactUserId && r.TargetId == CurrentUserId)));
+
+        if (partnerHasMe || acceptedRequest)
+        {
+            var u1 = CurrentUserId;
+            var u2 = req.ContactUserId;
+            if (u1.CompareTo(u2) > 0) (u1, u2) = (u2, u1);
+
+            var conv = await db.Conversations
+                .FirstOrDefaultAsync(c => c.Type == ConversationType.Private && c.User1Id == u1 && c.User2Id == u2);
+
+            if (conv == null)
+            {
+                conv = new Conversation { Type = ConversationType.Private, User1Id = u1, User2Id = u2 };
+                db.Conversations.Add(conv);
+                await db.SaveChangesAsync();
+            }
+            else
+            {
+                var deletion = await db.UserConversationDeletions
+                    .FirstOrDefaultAsync(d => d.UserId == CurrentUserId && d.ConversationId == conv.Id);
+                if (deletion != null)
+                {
+                    db.UserConversationDeletions.Remove(deletion);
+                    await db.SaveChangesAsync();
+                }
+            }
+
+            var partner = await db.Users.FindAsync(req.ContactUserId);
+            return Ok(new
+            {
+                result = "opened",
+                id = conv.Id,
+                partnerId = partner?.Id,
+                partnerName = partner?.Name,
+                partnerAvatar = partner?.Avatar
+            });
+        }
+
+        var targetId = req.ContactUserId;
+        var targetUser = await db.Users.FindAsync(targetId);
+        if (targetUser == null || targetUser.IsBanned)
+            return NotFound(new { message = "المستخدم غير متوفر" });
+
+        var iHaveTarget = await db.Contacts.AnyAsync(c =>
+            c.UserId == CurrentUserId && c.ContactUserId == targetId);
+        var targetHasMeCheck = await db.Contacts.AnyAsync(c =>
+            c.UserId == targetId && c.ContactUserId == CurrentUserId);
+        if (iHaveTarget && targetHasMeCheck)
+            return BadRequest(new { message = "يمكنك بدء المحادثة مباشرة دون طلب مراسلة" });
+
+        var existing = await db.MessageRequests
+            .FirstOrDefaultAsync(r => r.RequesterId == CurrentUserId && r.TargetId == targetId);
+
+        if (existing != null)
+        {
+            if (existing.Status == MessageRequestStatus.Pending)
+                return Ok(new { result = "messageRequestPending" });
+            if (existing.Status == MessageRequestStatus.Accepted)
+            {
+                var u1b = CurrentUserId;
+                var u2b = req.ContactUserId;
+                if (u1b.CompareTo(u2b) > 0) (u1b, u2b) = (u2b, u1b);
+                var convB = await db.Conversations
+                    .FirstOrDefaultAsync(c => c.Type == ConversationType.Private && c.User1Id == u1b && c.User2Id == u2b);
+                if (convB == null)
+                {
+                    convB = new Conversation { Type = ConversationType.Private, User1Id = u1b, User2Id = u2b };
+                    db.Conversations.Add(convB);
+                    await db.SaveChangesAsync();
+                }
+                var partnerB = await db.Users.FindAsync(req.ContactUserId);
+                return Ok(new
+                {
+                    result = "opened",
+                    id = convB.Id,
+                    partnerId = partnerB?.Id,
+                    partnerName = partnerB?.Name,
+                    partnerAvatar = partnerB?.Avatar
+                });
+            }
+
+            existing.Status = MessageRequestStatus.Pending;
+            existing.CreatedAt = DateTime.UtcNow;
+            existing.RespondedAt = null;
+            await db.SaveChangesAsync();
+            await NotifyMessageRequestAsync(targetId, existing.Id);
+            return Ok(new { result = "messageRequestCreated", messageRequestId = existing.Id });
+        }
+
+        var row = new MessageRequest
+        {
+            RequesterId = CurrentUserId,
+            TargetId = targetId,
+            Status = MessageRequestStatus.Pending
+        };
+        db.MessageRequests.Add(row);
+        await db.SaveChangesAsync();
+        await NotifyMessageRequestAsync(targetId, row.Id);
+        return Ok(new { result = "messageRequestCreated", messageRequestId = row.Id });
+    }
+
+    private async Task NotifyMessageRequestAsync(Guid targetId, Guid messageRequestId)
+    {
+        var requester = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+        var name = requester?.Name ?? "";
+        await oneSignal.SendMessageRequestAsync(targetId, name, messageRequestId);
     }
 
     [HttpPut("{id:guid}/pin")]

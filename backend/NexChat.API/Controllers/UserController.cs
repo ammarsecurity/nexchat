@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using NexChat.API.Services;
+using NexChat.Core;
 using NexChat.Core.DTOs;
 using NexChat.Infrastructure.Data;
 using System.Security.Claims;
@@ -45,10 +46,20 @@ public class UserController(AppDbContext db) : ControllerBase
         if (blocked) return NotFound();
         var isContact = await db.Contacts
             .AnyAsync(c => c.UserId == CurrentUserId && c.ContactUserId == userId);
+        var visibleOnline = UserOnlineVisibility.VisibleToOthers(user);
         return Ok(new PublicProfileDto(
-            user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, user.IsOnline,
+            user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, visibleOnline,
             user.PhoneNumber, user.Country, isContact
         ));
+    }
+
+    [HttpPut("privacy")]
+    public async Task<IActionResult> UpdatePrivacy([FromBody] UpdatePrivacyRequest req)
+    {
+        await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.ShowOnlineStatusToOthers, req.ShowOnlineStatusToOthers));
+        return Ok();
     }
 
     [HttpPut("birth-date")]

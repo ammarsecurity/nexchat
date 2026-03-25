@@ -39,6 +39,8 @@ export default {
     savedCodes: 'أكوادي المحفوظة',
     connectWithCodeTitle: 'تواصل مع أصدقائك',
     connectWithCodeDesc: 'استخدم كود الاتصال للتواصل مع من تعرف',
+    randomOffNoCodeTitle: 'تصفح محادثاتك',
+    randomOffNoCodeDesc: 'افتح قائمة المحادثات للتواصل مع جهاتك',
     goToConversations: 'المحادثات',
     addCode: 'إضافة كود',
     noSavedCodes: 'لا توجد أكواد محفوظة',
@@ -58,7 +60,19 @@ export default {
     openChat: 'فتح المحادثة',
     startChat: 'بدء محادثة',
     addAsContact: 'إضافة كجهة اتصال',
-    addedToContacts: 'في جهات الاتصال'
+    addedToContacts: 'في جهات الاتصال',
+    chatGateMessage: 'لبدء المحادثة يجب إضافة هذا المستخدم كجهة اتصال، أو يمكنك إرسال طلب مراسلة ليُراجعه الطرف الآخر.',
+    chatGateAddAndChat: 'إضافة وبدء المحادثة',
+    chatGateSendRequestOnly: 'إرسال طلب مراسلة فقط',
+    messageRequestSent: 'تم إرسال طلب المراسلة.'
+  },
+  messageRequests: {
+    title: 'طلبات المراسلة',
+    empty: 'لا توجد طلبات معلقة',
+    accept: 'قبول',
+    decline: 'رفض',
+    waitingForAcceptFromOther: 'تم إرسال طلب المراسلة. انتظر حتى يقبل الطرف الآخر المحادثة.',
+    waitingForAcceptCannotShare: 'لا يمكن إكمال المشاركة حتى يقبل الطرف الآخر طلب المراسلة.'
   },
   settings: {
     title: 'الإعدادات',
@@ -80,6 +94,10 @@ export default {
     enable: 'تفعيل',
     disable: 'إلغاء تفعيل',
     notificationCenter: 'مركز الإشعارات',
+    showOnlineStatus: 'حالة «متصل» للآخرين',
+    showOnlineStatusDesc: 'عطّل الإظهار لتظهر دائماً كغير متصل لدى جهات الاتصال والمحادثات.',
+    showOnlineStatusOn: 'إظهار',
+    showOnlineStatusOff: 'إخفاء',
     privacyPolicy: 'سياسة الخصوصية',
     app: 'التطبيق',
     tagline: 'تواصل مع العالم بخطوة واحدة',
@@ -208,6 +226,9 @@ export default {
     cameraOff: 'إيقاف',
     cameraOn: 'تشغيل',
     endCallAria: 'إنهاء المكالمة',
+    voiceCallLive: 'مكالمة صوتية',
+    openChat: 'فتح الدردشة',
+    callInBackground: 'المكالمة مستمرة',
     filters: {
       none: 'عادي',
       grayscale: 'أبيض وأسود',
@@ -269,7 +290,8 @@ export default {
     needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات',
     optionsTitle: 'خيارات المحادثة',
     notFound: 'المحادثة غير موجودة',
-    newGroup: 'مجموعة جديدة'
+    newGroup: 'مجموعة جديدة',
+    messageRequests: 'طلبات المراسلة'
   },
   groups: {
     createTitle: 'إنشاء مجموعة',
@@ -277,6 +299,8 @@ export default {
     groupNamePlaceholder: 'أدخل اسم المجموعة',
     groupPhoto: 'صورة المجموعة',
     selectMembers: 'اختر الأعضاء',
+    searchMembersPlaceholder: 'بحث في جهات الاتصال',
+    noMembersMatch: 'لا يوجد اسم يطابق البحث',
     create: 'إنشاء',
     creating: 'جاري الإنشاء...',
     infoTitle: 'معلومات المجموعة',
@@ -330,7 +354,14 @@ export default {
     voiceRecordingTooShort: 'التسجيل قصير جداً، جرّب التسجيل لأكثر من ثانية',
     sendVoice: 'إرسال',
     uploadingVoice: 'جاري رفع الرسالة الصوتية...',
-    reaction: 'رد فعل'
+    reaction: 'رد فعل',
+    incomingVideoCall: 'يطلب مكالمة فيديو',
+    incomingVoiceCall: 'يطلب مكالمة صوتية',
+    videoCallConfirm: 'طلب مكالمة فيديو مع {name}؟',
+    voiceCallConfirm: 'طلب مكالمة صوتية مع {name}؟',
+    connectingCall: 'جاري الاتصال...',
+    callDeclined: 'رفض {name} المكالمة',
+    requestCall: 'طلب'
   },
   phoneValidation: {
     invalidCountryCode: 'مفتاح الدولة غير صالح',

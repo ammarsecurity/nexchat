@@ -1,21 +1,31 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle } from 'lucide-vue-next'
+import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle, MessageSquare } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
-import { joinLiveKitRoom, leaveLiveKitRoom } from '../services/livekit'
+import { useConversationStore } from '../stores/conversation'
+import { useActiveCallStore } from '../stores/activeCall'
+import {
+  joinLiveKitRoom,
+  leaveLiveKitRoom,
+  getRemoteTracksMediaStream,
+  setLiveKitHandlers
+} from '../services/livekit'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { createFilteredVideoStream } from '../utils/videoFilterStream'
 import { Track } from 'livekit-client'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import CachedAvatar from '../components/CachedAvatar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const chat = useChatStore()
+const convStore = useConversationStore()
 const { t } = useI18n()
 
 const sessionId = route.params.sessionId
+const voiceOnly = ref(typeof history !== 'undefined' && history.state?.voiceOnly === true)
 const localVideo = ref(null)
 const remoteVideo = ref(null)
 const roomRef = ref(null)
@@ -81,44 +91,136 @@ function replaceWithFilteredTrack(originalTrack) {
 
 let timerInterval
 
+const activeCall = useActiveCallStore()
+
+function isConversationRoom() {
+  return String(convStore.conversationId) === String(sessionId)
+}
+
+/** محادثة خاصة: convStore، أو activeCall قبل مسح conv، أو state من ConversationChatView */
+function isConversationCallContext() {
+  return (
+    isConversationRoom() ||
+    activeCall.isConversation ||
+    (typeof history !== 'undefined' && history.state?.fromConversation === true)
+  )
+}
+
+const partner = computed(() => {
+  if (String(convStore.conversationId) === String(sessionId)) return convStore.partner
+  if (
+    String(activeCall.sessionId) === String(sessionId) &&
+    (activeCall.partnerName || activeCall.partnerAvatar)
+  ) {
+    return {
+      name: activeCall.partnerName || '…',
+      avatar: activeCall.partnerAvatar || null
+    }
+  }
+  return chat.partner
+})
+const partnerLetter = computed(() => partner.value?.name?.[0]?.toUpperCase() || '?')
+const partnerAvatarIsImage = computed(() => {
+  const a = partner.value?.avatar
+  return a && (a.startsWith('http') || a.startsWith('/'))
+})
+const partnerColor = computed(() => {
+  if (!partner.value?.name) return 'var(--primary)'
+  const colors = ['#6C63FF', '#FF6584', '#00D4FF', '#FF8C42']
+  return colors[partner.value.name.charCodeAt(0) % colors.length]
+})
+
+function goBackAfterCall() {
+  const id = sessionId
+  const useConversation = isConversationCallContext()
+  activeCall.clear()
+  if (useConversation) router.replace(`/conversation/${id}`)
+  else router.replace(`/chat/${id}`)
+}
+
+function openChatDuringCall() {
+  const toConversation = isConversationCallContext()
+  activeCall.syncMeta({
+    sessionId,
+    voiceOnly: voiceOnly.value,
+    isConversation: toConversation,
+    partnerName: partner.value?.name || activeCall.partnerName,
+    partnerAvatar: partner.value?.avatar || activeCall.partnerAvatar
+  })
+  activeCall.minimize()
+  if (toConversation) router.push(`/conversation/${sessionId}`)
+  else router.push(`/chat/${sessionId}`)
+}
+
 onMounted(async () => {
+  activeCall.syncMeta({
+    sessionId,
+    voiceOnly: voiceOnly.value,
+    isConversation: isConversationCallContext(),
+    partnerName: partner.value?.name || activeCall.partnerName,
+    partnerAvatar: partner.value?.avatar || activeCall.partnerAvatar
+  })
+
   try {
     await requestMediaPermissions()
     const remoteStream = new MediaStream()
 
-    roomRef.value = await joinLiveKitRoom(
+    const { room: joinedRoom, reused } = await joinLiveKitRoom(
       sessionId,
-      (track) => {
-        remoteStream.addTrack(track.mediaStreamTrack)
-        if (remoteVideo.value) remoteVideo.value.srcObject = remoteStream
-        connected.value = true
+      {
+        onRemoteTrack: (track) => {
+          remoteStream.addTrack(track.mediaStreamTrack)
+          if (remoteVideo.value) remoteVideo.value.srcObject = remoteStream
+          connected.value = true
+        },
+        onConnected: () => {},
+        onDisconnected: () => {
+          connected.value = false
+        },
+        onParticipantLeft: () => {
+          goBackAfterCall()
+        },
+        onLocalTrack: (localTrack) => {
+          if (voiceOnly.value) return
+          nextTick().then(() => {
+            if (localTrack?.kind === 'video') {
+              replaceWithFilteredTrack(localTrack)
+            } else if (localVideo.value && localTrack) {
+              localTrack.attach(localVideo.value)
+              localVideo.value.play?.().catch(() => {})
+            }
+          })
+        },
+        onMediaError: (e) => {
+          error.value = e?.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
+        }
       },
-      () => {},
-      () => {
-        connected.value = false
-      },
-      () => {
-        router.replace(`/chat/${sessionId}`)
-      },
-      (localTrack) => {
-        nextTick().then(() => {
-          if (localTrack?.kind === 'video') {
-            replaceWithFilteredTrack(localTrack)
-          } else if (localVideo.value && localTrack) {
-            localTrack.attach(localVideo.value)
-            localVideo.value.play?.().catch(() => {})
-          }
-        })
-      },
-      (e) => {
-        error.value = e?.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
-      }
+      { voiceOnly: voiceOnly.value }
     )
 
+    roomRef.value = joinedRoom
+
     await nextTick()
-    const videoPub = roomRef.value?.localParticipant?.getTrackPublication(Track.Source.Camera)
-    if (videoPub?.track?.kind === 'video' && localVideo.value && !localVideo.value.srcObject) {
-      replaceWithFilteredTrack(videoPub.track)
+
+    if (reused) {
+      connected.value = true
+      const ms = getRemoteTracksMediaStream(joinedRoom)
+      if (remoteVideo.value) remoteVideo.value.srcObject = ms
+      callDuration.value = activeCall.startedAt
+        ? Math.floor((Date.now() - activeCall.startedAt) / 1000)
+        : 0
+      if (!voiceOnly.value) {
+        const videoPub = joinedRoom.localParticipant.getTrackPublication(Track.Source.Camera)
+        if (videoPub?.track?.kind === 'video' && localVideo.value) {
+          hasReplacedTrack.value = false
+          replaceWithFilteredTrack(videoPub.track)
+        }
+      }
+    } else if (!voiceOnly.value) {
+      const videoPub = roomRef.value?.localParticipant?.getTrackPublication(Track.Source.Camera)
+      if (videoPub?.track?.kind === 'video' && localVideo.value && !localVideo.value.srcObject) {
+        replaceWithFilteredTrack(videoPub.track)
+      }
     }
 
     timerInterval = setInterval(() => {
@@ -141,7 +243,27 @@ onUnmounted(() => {
   clearInterval(timerInterval)
   filterPipelineRef.value?.stop()
   filterPipelineRef.value = null
+
+  if (activeCall.minimized && activeCall.sessionId === sessionId) {
+    setLiveKitHandlers({
+      onParticipantLeft: () => {
+        leaveLiveKitRoom()
+        activeCall.clear()
+      },
+      onDisconnected: () => {
+        leaveLiveKitRoom()
+        activeCall.clear()
+      },
+      onRemoteTrack: () => {},
+      onLocalTrack: () => {},
+      onConnected: () => {},
+      onMediaError: () => {}
+    })
+    return
+  }
+
   leaveLiveKitRoom()
+  if (activeCall.sessionId === sessionId) activeCall.clear()
 })
 
 function toggleMute() {
@@ -150,6 +272,7 @@ function toggleMute() {
 }
 
 function toggleCamera() {
+  if (voiceOnly.value) return
   cameraOff.value = !cameraOff.value
   if (cameraOff.value && filterPipelineRef.value) {
     filterPipelineRef.value.stop()
@@ -160,7 +283,7 @@ function toggleCamera() {
 }
 
 function endCall() {
-  router.replace(`/chat/${sessionId}`)
+  goBackAfterCall()
 }
 
 function formatTime(sec) {
@@ -168,24 +291,55 @@ function formatTime(sec) {
   const s = (sec % 60).toString().padStart(2, '0')
   return `${m}:${s}`
 }
-
-const partner = chat.partner
-const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
 </script>
 
 <template>
-  <div class="video-call page">
+  <div class="video-call page" :class="{ 'voice-only-mode': voiceOnly }">
     <LoaderOverlay :show="initializing" :text="t('videoCall.preparing')" />
-    <!-- Remote Video (Full Screen) -->
+    <!-- Remote: في المكالمة الصوتية يبقى العنصر لتشغيل الصوت فقط (مخفي بصرياً) -->
     <video
       ref="remoteVideo"
       class="remote-video"
+      :class="{ 'remote-video--voice-audio-only': voiceOnly }"
       autoplay
       playsinline
     ></video>
 
-    <!-- No video placeholder -->
-    <div v-if="!connected" class="waiting-overlay">
+    <!-- وضع المكالمة الصوتية: صورة واسم الطرف الآخر بشكل مرتب -->
+    <div v-if="voiceOnly" class="voice-call-stage">
+      <div class="voice-call-card">
+        <div
+          class="voice-call-avatar"
+          :style="partnerAvatarIsImage ? {} : { background: partnerColor }"
+        >
+          <CachedAvatar
+            v-if="partnerAvatarIsImage"
+            :url="partner?.avatar"
+            img-class="voice-call-avatar-img"
+          />
+          <span v-else class="voice-call-letter">{{ partnerLetter }}</span>
+        </div>
+        <h2 class="voice-call-title">{{ partner?.name || '…' }}</h2>
+        <p v-if="!connected && !error" class="voice-call-sub">{{ t('videoCall.connecting') }}</p>
+        <div v-else-if="!connected && error" class="error-toast voice-call-error">
+          <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+          <span>{{ error }}</span>
+        </div>
+        <div v-else class="voice-call-live-row">
+          <span class="voice-live-pill">
+            <span class="live-dot"></span>
+            {{ t('videoCall.voiceCallLive') }}
+          </span>
+          <span class="voice-call-timer">{{ formatTime(callDuration) }}</span>
+        </div>
+        <div v-if="!connected && !error" class="connecting-dots voice-call-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- فيديو: انتظار قبل الاتصال -->
+    <div v-if="!connected && !voiceOnly" class="waiting-overlay">
       <div class="avatar avatar-xl gradient-bg">{{ partnerLetter }}</div>
       <div class="waiting-text">
         <div class="waiting-name gradient-text font-bold">{{ partner?.name }}</div>
@@ -205,6 +359,15 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
       <button class="top-bar-back" @click="endCall" :aria-label="t('videoCall.endCallAria')">
         <ChevronRight :size="22" />
       </button>
+      <button
+        type="button"
+        class="top-bar-chat"
+        :title="t('videoCall.openChat')"
+        :aria-label="t('videoCall.openChat')"
+        @click="openChatDuringCall"
+      >
+        <MessageSquare :size="20" />
+      </button>
       <div class="top-bar-info">
         <div class="top-bar-name">{{ partner?.name }}</div>
         <div class="top-bar-status">
@@ -218,7 +381,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
     </div>
 
     <!-- Local Video (PiP) - الفلتر مُطبّق على الستريم المرسل فيراه الطرف الآخر -->
-    <div class="pip-container">
+    <div v-if="!voiceOnly" class="pip-container">
       <video
         ref="localVideo"
         class="local-video"
@@ -230,7 +393,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
     </div>
 
     <!-- Filter Bar -->
-    <div class="filter-bar">
+    <div v-if="!voiceOnly" class="filter-bar">
       <div class="filter-scroll">
         <button
           v-for="f in cameraFilters"
@@ -267,6 +430,7 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
       </button>
 
       <button
+        v-if="!voiceOnly"
         class="ctrl-btn"
         :class="{ active: cameraOff }"
         @click="toggleCamera"
@@ -292,6 +456,133 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* إبقاء تشغيل الصوت البعيد دون عرض مساحة سوداء كاملة الشاشة */
+.remote-video--voice-audio-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  inset: auto;
+  left: 0;
+  top: 0;
+}
+
+.voice-call-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(100px + var(--safe-top)) var(--spacing) calc(200px + var(--safe-bottom));
+  background: radial-gradient(ellipse 120% 80% at 50% 35%, rgba(108, 99, 255, 0.22) 0%, transparent 55%),
+    linear-gradient(180deg, #0f0f12 0%, #050506 50%, #0a0a0c 100%);
+  pointer-events: none;
+}
+
+.voice-call-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
+.voice-call-avatar {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.08);
+}
+
+.voice-call-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.voice-call-letter {
+  font-size: 52px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  font-family: 'Cairo', sans-serif;
+}
+
+.voice-call-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-family: 'Cairo', sans-serif;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+.voice-call-sub {
+  margin: 0;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 500;
+}
+
+.voice-call-live-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  color: #86efac;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.voice-call-timer {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+
+.voice-call-dots {
+  margin-top: 4px;
+}
+
+.voice-call-error {
+  max-width: 100%;
+}
+
+.voice-only-mode {
+  background: #050506;
 }
 
 .waiting-overlay {
@@ -363,6 +654,27 @@ const partnerLetter = partner?.name?.[0]?.toUpperCase() || '?'
   transition: background 0.2s, transform 0.2s;
 }
 .top-bar-back:active { background: rgba(255,255,255,0.25); transform: scale(0.96); }
+
+.top-bar-chat {
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: rgba(108, 99, 255, 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  transition: background 0.2s, transform 0.2s;
+}
+.top-bar-chat:active { background: rgba(108, 99, 255, 0.5); transform: scale(0.96); }
 
 .top-bar-info {
   flex: 1;

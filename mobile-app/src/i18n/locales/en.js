@@ -39,6 +39,8 @@ export default {
     savedCodes: 'Saved codes',
     connectWithCodeTitle: 'Connect with friends',
     connectWithCodeDesc: 'Use your contact code to connect with people you know',
+    randomOffNoCodeTitle: 'Browse your chats',
+    randomOffNoCodeDesc: 'Open your conversation list to stay in touch',
     goToConversations: 'Conversations',
     addCode: 'Add code',
     noSavedCodes: 'No saved codes',
@@ -58,7 +60,19 @@ export default {
     openChat: 'Open chat',
     startChat: 'Start chat',
     addAsContact: 'Add as contact',
-    addedToContacts: 'In contacts'
+    addedToContacts: 'In contacts',
+    chatGateMessage: 'To start chatting you need to add this user as a contact, or send a message request for them to review.',
+    chatGateAddAndChat: 'Add and start chat',
+    chatGateSendRequestOnly: 'Send message request only',
+    messageRequestSent: 'Message request sent.'
+  },
+  messageRequests: {
+    title: 'Message requests',
+    empty: 'No pending requests',
+    accept: 'Accept',
+    decline: 'Decline',
+    waitingForAcceptFromOther: 'A message request was sent. Wait until the other person accepts.',
+    waitingForAcceptCannotShare: 'Sharing cannot complete until the other person accepts your message request.'
   },
   settings: {
     title: 'Settings',
@@ -80,6 +94,10 @@ export default {
     enable: 'Enable',
     disable: 'Disable',
     notificationCenter: 'Notification center',
+    showOnlineStatus: 'Online status for others',
+    showOnlineStatusDesc: 'When hidden, you always appear offline to contacts and in chats.',
+    showOnlineStatusOn: 'Show',
+    showOnlineStatusOff: 'Hide',
     privacyPolicy: 'Privacy policy',
     app: 'App',
     tagline: 'Connect with the world in one step',
@@ -208,6 +226,9 @@ export default {
     cameraOff: 'Stop',
     cameraOn: 'Start',
     endCallAria: 'End call',
+    voiceCallLive: 'Voice call',
+    openChat: 'Open chat',
+    callInBackground: 'Call in progress',
     filters: {
       none: 'Normal',
       grayscale: 'B&W',
@@ -269,7 +290,8 @@ export default {
     needPhone: 'Add your phone number from settings to use conversations',
     optionsTitle: 'Conversation options',
     notFound: 'Conversation not found',
-    newGroup: 'New group'
+    newGroup: 'New group',
+    messageRequests: 'Message requests'
   },
   groups: {
     createTitle: 'Create group',
@@ -277,6 +299,8 @@ export default {
     groupNamePlaceholder: 'Enter group name',
     groupPhoto: 'Group photo',
     selectMembers: 'Select members',
+    searchMembersPlaceholder: 'Search contacts',
+    noMembersMatch: 'No names match your search',
     create: 'Create',
     creating: 'Creating...',
     infoTitle: 'Group info',
@@ -330,7 +354,14 @@ export default {
     voiceRecordingTooShort: 'Recording too short, try recording for more than a second',
     sendVoice: 'Send',
     uploadingVoice: 'Uploading voice message...',
-    reaction: 'Reaction'
+    reaction: 'Reaction',
+    incomingVideoCall: 'Incoming video call',
+    incomingVoiceCall: 'Incoming voice call',
+    videoCallConfirm: 'Start a video call with {name}?',
+    voiceCallConfirm: 'Start a voice call with {name}?',
+    connectingCall: 'Connecting...',
+    callDeclined: '{name} declined the call',
+    requestCall: 'Call'
   },
   phoneValidation: {
     invalidCountryCode: 'Invalid country code',

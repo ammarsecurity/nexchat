@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NexChat.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using NexChat.Infrastructure.Data;
 namespace NexChat.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260325033505_AddMessageRequests")]
+    partial class AddMessageRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -540,9 +543,6 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.Property<string>("PhoneNumber")
                         .HasColumnType("varchar(255)");
-
-                    b.Property<bool>("ShowOnlineStatusToOthers")
-                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("UniqueCode")
                         .IsRequired()

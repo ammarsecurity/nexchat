@@ -1,5 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import api from '../services/api'
+import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 
 const routes = [
   { path: '/', component: () => import('../views/SplashScreen.vue'), meta: { public: true } },
@@ -8,13 +10,14 @@ const routes = [
   { path: '/register', component: () => import('../views/auth/RegisterView.vue'), meta: { public: true } },
   { path: '/complete-profile', component: () => import('../views/auth/CompleteProfileView.vue') },
   { path: '/home', component: () => import('../views/HomeView.vue') },
-  { path: '/saved-codes', component: () => import('../views/SavedCodesView.vue') },
-  { path: '/connection-history', component: () => import('../views/ConnectionHistoryView.vue') },
+  { path: '/saved-codes', component: () => import('../views/SavedCodesView.vue'), meta: { requiresCodeConnectFeatures: true } },
+  { path: '/connection-history', component: () => import('../views/ConnectionHistoryView.vue'), meta: { requiresCodeConnectFeatures: true } },
   { path: '/blocked', component: () => import('../views/BlockedView.vue') },
   { path: '/matching', component: () => import('../views/MatchingView.vue') },
   { path: '/chat/:sessionId', component: () => import('../views/ChatView.vue') },
   { path: '/video/:sessionId', component: () => import('../views/VideoCallView.vue') },
   { path: '/conversations', component: () => import('../views/ConversationsView.vue') },
+  { path: '/message-requests', component: () => import('../views/MessageRequestsView.vue') },
   { path: '/conversations/create-group', component: () => import('../views/CreateGroupView.vue') },
   { path: '/conversation/:conversationId/group-info', component: () => import('../views/GroupInfoView.vue') },
   { path: '/conversations/:conversationId/options', component: () => import('../views/ConversationOptionsView.vue') },
@@ -32,11 +35,15 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.token) return '/login'
   if (auth.token && auth.needsProfileContactRedirect && to.path !== '/complete-profile')
     return '/complete-profile'
+  if (to.meta.requiresCodeConnectFeatures && auth.token) {
+    const ok = await getCodeConnectFeaturesEnabled(api)
+    if (!ok) return '/home'
+  }
 })
 
 export default router

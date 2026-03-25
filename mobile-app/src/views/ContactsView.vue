@@ -1,12 +1,16 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban } from 'lucide-vue-next'
+import { ChevronRight, UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban, Loader2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { countries } from '../data/countries'
 import { validatePhone, getPhoneErrorMessage } from '../utils/phoneValidation'
+import { createPrivateConversationOrRequest, goToMessageRequestsOutgoingNotice } from '../utils/conversationOrMessageRequest'
+import { useMessageRequestsStore } from '../stores/messageRequests'
+
+const msgReqStore = useMessageRequestsStore()
 
 const router = useRouter()
 const { t } = useI18n()
@@ -20,6 +24,8 @@ const addError = ref('')
 const needPhone = ref(false)
 const contextContact = ref(null)
 const showContextMenu = ref(false)
+/** جهة الاتصال التي تُفتح محادثتها حالياً (لودر على البطاقة) */
+const openingContactId = ref(null)
 
 const countryCode = computed(() => {
   const c = countries.find(x => x.code === addCountry.value)
@@ -89,11 +95,20 @@ function openContextMenu(contact, e) {
 }
 
 async function startConversation(contact) {
+  if (openingContactId.value) return
+  openingContactId.value = contact.contactUserId
   try {
-    const { data } = await api.post('/conversations', { contactUserId: contact.contactUserId })
-    router.push(`/conversation/${data.id}`)
+    const r = await createPrivateConversationOrRequest(contact.contactUserId)
+    if (r.kind === 'conversation') {
+      router.push(`/conversation/${r.conversationId}`)
+    } else {
+      await msgReqStore.fetchPendingCount()
+      goToMessageRequestsOutgoingNotice(router)
+    }
   } catch (e) {
-    console.error(e)
+    window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
+  } finally {
+    openingContactId.value = null
   }
 }
 
@@ -147,9 +162,17 @@ function goBack() {
           v-for="c in filteredContacts"
           :key="c.id"
           class="contact-item glass-card"
+          :class="{ 'is-opening': openingContactId === c.contactUserId }"
           @click="startConversation(c)"
           @contextmenu.prevent="openContextMenu(c, $event)"
         >
+          <div
+            v-if="openingContactId === c.contactUserId"
+            class="item-opening-overlay"
+            aria-hidden="true"
+          >
+            <Loader2 class="item-opening-spinner" :size="22" />
+          </div>
           <div class="item-avatar" :style="{ background: c.avatar && !isImageAvatar(c.avatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
             <img v-if="c.avatar && isImageAvatar(c.avatar)" :src="ensureAbsoluteUrl(c.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
             <span v-else>{{ c.name?.[0]?.toUpperCase() || '?' }}</span>
@@ -318,12 +341,40 @@ function goBack() {
 }
 
 .contact-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
   cursor: pointer;
   border-radius: 12px;
+}
+
+.contact-item.is-opening {
+  pointer-events: none;
+}
+
+.item-opening-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(1px);
+}
+
+.item-opening-spinner {
+  animation: contact-open-spin 0.65s linear infinite;
+  color: var(--primary);
+}
+
+@keyframes contact-open-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .item-avatar {

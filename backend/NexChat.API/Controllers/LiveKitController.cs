@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using System.Security.Claims;
 using Livekit.Server.Sdk.Dotnet;
@@ -30,16 +31,35 @@ public class LiveKitController : ControllerBase
             return BadRequest(new { message = "RoomName مطلوب" });
 
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId) || !Guid.TryParse(req.RoomName, out var sessionId))
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId) || !Guid.TryParse(req.RoomName, out var roomId))
             return Unauthorized();
 
-        var session = await _db.ChatSessions.FirstOrDefaultAsync(s =>
-            s.Id == sessionId && (s.User1Id == userId || s.User2Id == userId) &&
-            s.EndedAt == null &&
-            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
+        var allowed = false;
 
-        if (session == null)
-            return StatusCode(403, new { message = "لا يمكن الانضمام لمكالمة الفيديو. تأكد أن الجلسة نشطة ولم تنتهِ." });
+        var session = await _db.ChatSessions.FirstOrDefaultAsync(s =>
+            s.Id == roomId && (s.User1Id == userId || s.User2Id == userId) &&
+            s.EndedAt == null &&
+            s.Type != "support");
+
+        if (session != null)
+            allowed = true;
+        else
+        {
+            var conv = await _db.Conversations.FirstOrDefaultAsync(c =>
+                c.Id == roomId &&
+                c.Type == ConversationType.Private &&
+                (c.User1Id == userId || c.User2Id == userId));
+            if (conv != null)
+            {
+                var deleted = await _db.UserConversationDeletions
+                    .AnyAsync(d => d.UserId == userId && d.ConversationId == roomId);
+                if (!deleted)
+                    allowed = true;
+            }
+        }
+
+        if (!allowed)
+            return StatusCode(403, new { message = "لا يمكن الانضمام للمكالمة. تأكد أن الجلسة أو المحادثة نشطة وأنك طرف فيها." });
 
         var apiKey = _config["LiveKit:ApiKey"];
         var apiSecret = _config["LiveKit:ApiSecret"];

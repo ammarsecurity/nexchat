@@ -6,6 +6,7 @@ import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import NoConnectionView from './views/NoConnectionView.vue'
 import IncomingConnectionRequestDialog from './components/IncomingConnectionRequestDialog.vue'
+import IncomingConversationCallDialog from './components/IncomingConversationCallDialog.vue'
 import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
 import LoaderOverlay from './components/LoaderOverlay.vue'
 import { useApiLoadingStore } from './stores/apiLoading'
@@ -13,9 +14,16 @@ import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
-import { matchingHub, startHub, stopHub } from './services/signalr'
+import { matchingHub, conversationHub, startHub, stopHub } from './services/signalr'
 import { startIncomingCallSound, stopIncomingCallSound } from './utils/sounds'
 import { useNetworkStore } from './stores/network'
+import { useIncomingConversationCallStore } from './stores/incomingConversationCall'
+import { useConversationsListStore } from './stores/conversationsList'
+import { useActiveCallStore } from './stores/activeCall'
+import {
+  parseIncomingConversationCallPayload,
+  parseVideoCallAcceptedPayload
+} from './utils/incomingSignalrPayload'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -55,6 +63,9 @@ const matching = useMatchingStore()
 const chat = useChatStore()
 const router = useRouter()
 const route = useRoute()
+const incomingConvCall = useIncomingConversationCallStore()
+const conversationsList = useConversationsListStore()
+const activeCall = useActiveCallStore()
 
 function handleOnline() {
   network.setOnline(true)
@@ -73,6 +84,9 @@ function retryConnection() {
 
 function handleUnauthorized() {
   stopHub(matchingHub)
+  stopHub(conversationHub)
+  incomingConvCall.clear()
+  stopIncomingCallSound()
   useAuthStore().logout()
   router.replace('/login')
 }
@@ -106,13 +120,54 @@ function setupMatchingHubListeners() {
   })
 }
 
-// إبقاء MatchingHub متصلاً عند المستخدم المسجّل - لاستقبال طلبات الاتصال بالكود من أي صفحة
+function setupConversationHubGlobalListeners() {
+  conversationHub.off('IncomingVideoCall')
+  conversationHub.on('IncomingVideoCall', (cid, voiceOnly, callerName, callerAvatar) => {
+    const parsed = parseIncomingConversationCallPayload(cid, voiceOnly, callerName, callerAvatar)
+    if (!parsed) return
+    if (route.path.startsWith('/video/')) {
+      const vid = route.params.sessionId
+      if (vid != null && String(vid) === String(parsed.conversationId)) return
+    }
+    incomingConvCall.setIncoming(parsed)
+  })
+
+  conversationHub.off('VideoCallAccepted')
+  conversationHub.on('VideoCallAccepted', (cidStr, voiceOnly) => {
+    const parsed = parseVideoCallAcceptedPayload(cidStr, voiceOnly)
+    if (!parsed) return
+    const cid = parsed.conversationId
+    const vo = parsed.voiceOnly
+    const list = conversationsList.list
+    const item = list.find((c) => String(c.id ?? c.Id) === cid)
+    const partnerName = item?.partnerName ?? item?.PartnerName ?? ''
+    const partnerAvatar = item?.partnerAvatar ?? item?.PartnerAvatar ?? null
+    activeCall.syncMeta({
+      sessionId: cid,
+      voiceOnly: vo,
+      isConversation: true,
+      partnerName,
+      partnerAvatar
+    })
+    router.push({
+      path: `/video/${cid}`,
+      state: { initiator: true, voiceOnly: vo, fromConversation: true }
+    })
+  })
+}
+
+// إبقاء MatchingHub و ConversationHub متصلين عند المستخدم المسجّل — طلبات من أي صفحة
 watch([() => network.isOnline, () => auth.token], ([online, token]) => {
   if (online && token) {
     setupMatchingHubListeners()
+    setupConversationHubGlobalListeners()
     startHub(matchingHub).catch(() => {})
+    startHub(conversationHub).catch(() => {})
   } else {
     stopHub(matchingHub)
+    stopHub(conversationHub)
+    incomingConvCall.clear()
+    stopIncomingCallSound()
   }
 }, { immediate: true })
 
@@ -128,6 +183,13 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('nexchat:unauthorized', handleUnauthorized)
+
+  conversationHub.onreconnected(() => {
+    if (auth.token) setupConversationHubGlobalListeners()
+  })
+  matchingHub.onreconnected(() => {
+    if (auth.token) setupMatchingHubListeners()
+  })
 
   if (Capacitor.isNativePlatform() && typeof App?.addListener === 'function') {
     App.addListener('appStateChange', ({ isActive }) => {
@@ -163,7 +225,10 @@ onUnmounted(() => {
           {{ t('noConnection.retry') }}
         </button>
       </div>
-      <div class="app-content" :class="{ 'has-offline-banner': !isOnline }">
+      <div
+        class="app-content"
+        :class="{ 'has-offline-banner': !isOnline }"
+      >
       <RouterView v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />
@@ -172,6 +237,7 @@ onUnmounted(() => {
       </div>
     </template>
     <IncomingConnectionRequestDialog v-if="auth.token" />
+    <IncomingConversationCallDialog v-if="auth.token" />
     <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
     <LoaderOverlay :show="apiLoading.showOverlay" />
   </div>

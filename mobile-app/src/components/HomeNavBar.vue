@@ -1,16 +1,22 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Settings, MessageCircle } from 'lucide-vue-next'
 import { useConversationsListStore } from '../stores/conversationsList'
+import { useMessageRequestsStore } from '../stores/messageRequests'
 
 const listStore = useConversationsListStore()
+const msgReqStore = useMessageRequestsStore()
 const totalUnread = computed(() => {
   return listStore.list.reduce((sum, c) => {
     const n = c?.unreadCount ?? c?.UnreadCount ?? 0
     return sum + (typeof n === 'number' ? n : parseInt(n, 10) || 0)
   }, 0)
+})
+
+onMounted(() => {
+  msgReqStore.fetchPendingCount()
 })
 
 const props = defineProps({
@@ -39,6 +45,7 @@ async function onRocketClick() {
       <span class="nav-icon-wrap">
         <MessageCircle :size="24" stroke-width="2" />
         <span v-if="totalUnread > 0" class="nav-badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+        <span v-if="msgReqStore.pendingCount > 0" class="nav-badge nav-badge-msg-req">{{ msgReqStore.pendingCount > 99 ? '99+' : msgReqStore.pendingCount }}</span>
       </span>
       <span class="nav-label">{{ t('conversations.title') }}</span>
     </RouterLink>
@@ -125,6 +132,13 @@ async function onRocketClick() {
   background: var(--danger);
   border-radius: 9px;
   font-family: 'Cairo', sans-serif;
+}
+.nav-badge-msg-req {
+  top: auto;
+  bottom: -4px;
+  right: auto;
+  left: -6px;
+  background: #f97316;
 }
 .nav-label {
   font-size: 11px;

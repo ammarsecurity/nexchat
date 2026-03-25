@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2, Share2, Copy, Crown } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { useMatchingStore } from '../stores/matching'
 import { chatHub, startHub, ensureConnected } from '../services/signalr'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import ActiveCallBar from '../components/ActiveCallBar.vue'
+import { useActiveCallStore } from '../stores/activeCall'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { formatTime12 } from '../utils/formatTime'
 import { useLocaleStore } from '../stores/locale'
@@ -112,6 +114,14 @@ const partnerAvatarIsEmoji = computed(() =>
 )
 const isSupportChat = computed(() => partner.value?.name === 'دعم')
 const partnerIsFeatured = computed(() => partner.value?.isFeatured ?? partner.value?.IsFeatured ?? false)
+
+const activeCall = useActiveCallStore()
+const showEmbeddedActiveCallBar = computed(
+  () =>
+    activeCall.showFloatingBar &&
+    !activeCall.isConversation &&
+    String(activeCall.sessionId) === String(sessionId)
+)
 
 function normalizeServerMsg(msg) {
   return {
@@ -239,18 +249,36 @@ onMounted(async () => {
 
   document.addEventListener('visibilitychange', onVisibilityChange)
 
+  if (String(chat.session) === String(sessionId)) {
+    timerSeconds.value = chat.sessionTimer ?? 0
+  }
+
   timerInterval = setInterval(() => {
-    if (!sessionEnded.value) timerSeconds.value++
+    if (!sessionEnded.value) {
+      timerSeconds.value++
+      chat.sessionTimer = timerSeconds.value
+    }
   }, 1000)
+})
+
+/** لا نستدعي LeaveSession عند الذهاب لمكالمة فيديو/صوت لنفس الجلسة (الشريط، إلخ) */
+onBeforeRouteLeave((to) => {
+  if (sessionEnded.value || !sessionId) return true
+  const toVideoSameSession =
+    typeof to.path === 'string' &&
+    to.path.startsWith('/video/') &&
+    String(to.params.sessionId) === String(sessionId)
+  if (leavingProgrammatically || toVideoSameSession) {
+    return true
+  }
+  ensureConnected(chatHub).then(() => chatHub.invoke('LeaveSession', sessionId)).catch(() => {})
+  return true
 })
 
 onUnmounted(() => {
   chatMounted = false
   clearInterval(timerInterval)
   document.removeEventListener('visibilitychange', onVisibilityChange)
-  if (!sessionEnded.value && sessionId && !leavingProgrammatically) {
-    ensureConnected(chatHub).then(() => chatHub.invoke('LeaveSession', sessionId)).catch(() => {})
-  }
   chatHub.off('ReceiveMessage')
   chatHub.off('UserTyping')
   chatHub.off('UserStoppedTyping')
@@ -264,12 +292,15 @@ onUnmounted(() => {
 
 watch(messages, () => nextTick(scrollToBottom))
 
-watch(() => route.params.sessionId, (newId) => {
-  if (newId) {
-    sessionEnded.value = false
-    timerSeconds.value = 0
+watch(
+  () => route.params.sessionId,
+  (newId, oldId) => {
+    if (newId && oldId != null && String(newId) !== String(oldId)) {
+      sessionEnded.value = false
+      timerSeconds.value = 0
+    }
   }
-})
+)
 
 function scrollToBottom() {
   if (messagesEl.value)
@@ -508,6 +539,10 @@ async function shareCodeInChat() {
         </button>
       </div>
     </header>
+
+    <div v-if="showEmbeddedActiveCallBar" class="chat-active-call-slot">
+      <ActiveCallBar embedded />
+    </div>
 
     <!-- Incoming Call Overlay -->
     <Transition name="fade">
@@ -749,6 +784,11 @@ async function shareCodeInChat() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.chat-active-call-slot {
+  flex-shrink: 0;
+  padding: 0 var(--spacing) 8px;
 }
 
 .chat-header {

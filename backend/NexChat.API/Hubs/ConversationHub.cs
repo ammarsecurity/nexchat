@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using NexChat.Core;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
@@ -12,6 +14,9 @@ namespace NexChat.API.Hubs;
 public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env) : Hub
 {
     private static readonly HashSet<string> AllowedReactionEmojis = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
+
+    /// <summary>مكالمة فيديو/صوت قيد الانتظار — لإعلام المتصل بـ voiceOnly عند القبول حتى لو لم يعد في مجموعة SignalR.</summary>
+    private static readonly ConcurrentDictionary<Guid, bool> PendingConversationCallVoiceOnly = new();
 
     /// <summary>تشخيص: التأكد أن استدعاءات الـ Hub تصل للـ backend.</summary>
     public Task<string> Ping() => Task.FromResult($"pong-{DateTime.UtcNow:HHmmss}");
@@ -155,7 +160,7 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         {
             Id = conv.Id,
             Type = conv.Type,
-            Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, partner.IsOnline } : null,
+            Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsOnline = UserOnlineVisibility.VisibleToOthers(partner) } : null,
             GroupName = conv.Type == ConversationType.Group ? conv.Name : null,
             GroupImageUrl = conv.Type == ConversationType.Group ? conv.ImageUrl : null,
             Messages = messages
@@ -526,6 +531,75 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
     public async Task LeaveConversation(string conversationId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, conversationId);
+    }
+
+    public async Task RequestVideoCall(string conversationId, bool voiceOnly = false)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
+            return;
+
+        var conv = await db.Conversations
+            .Include(c => c.User1)
+            .Include(c => c.User2)
+            .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
+                (c.User1Id == userId || c.User2Id == userId));
+
+        if (conv == null) return;
+
+        if (await db.UserConversationDeletions.AnyAsync(d => d.UserId == userId && d.ConversationId == cid))
+            return;
+
+        PendingConversationCallVoiceOnly[cid] = voiceOnly;
+
+        var recipientId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
+        var caller = conv.User1Id == userId ? conv.User1 : conv.User2;
+        // إرسال للمستخدم مباشرة — لا يعتمد على JoinConversation (أي صفحة في التطبيق)
+        await Clients.User(recipientId.ToString()).SendAsync("IncomingVideoCall", cid.ToString(), voiceOnly, caller?.Name ?? "", caller?.Avatar ?? "");
+        _ = oneSignal.SendConversationVideoCallAsync(recipientId, caller?.Name ?? "شخص", cid, voiceOnly);
+    }
+
+    public async Task AcceptVideoCall(string conversationId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
+            return;
+        if (!await CanPrivateConversationVideoCall(cid, userId)) return;
+
+        PendingConversationCallVoiceOnly.TryRemove(cid, out var pendingVoiceOnly);
+
+        var conv = await db.Conversations.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
+                (c.User1Id == userId || c.User2Id == userId));
+        if (conv == null) return;
+
+        var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
+        await Clients.User(otherUserId.ToString()).SendAsync("VideoCallAccepted", conversationId, pendingVoiceOnly);
+    }
+
+    public async Task DeclineVideoCall(string conversationId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
+            return;
+        if (!await CanPrivateConversationVideoCall(cid, userId)) return;
+
+        PendingConversationCallVoiceOnly.TryRemove(cid, out _);
+
+        var conv = await db.Conversations.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
+                (c.User1Id == userId || c.User2Id == userId));
+        if (conv == null) return;
+
+        var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
+        await Clients.User(otherUserId.ToString()).SendAsync("VideoCallDeclined", conversationId);
+    }
+
+    private async Task<bool> CanPrivateConversationVideoCall(Guid cid, Guid userId)
+    {
+        var ok = await db.Conversations.AnyAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
+            (c.User1Id == userId || c.User2Id == userId));
+        if (!ok) return false;
+        if (await db.UserConversationDeletions.AnyAsync(d => d.UserId == userId && d.ConversationId == cid))
+            return false;
+        return true;
     }
 
     public async Task AddReaction(string conversationId, string messageId, string emoji)

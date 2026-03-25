@@ -87,7 +87,16 @@ public record SetFeaturedRequest(bool Featured);
 
 public record DeleteUsersRequest(IEnumerable<Guid> Ids);
 
-public record AdminConversationDto(Guid Id, string User1Name, string User2Name, DateTime CreatedAt, int MessageCount, DateTime? LastMessageAt);
+/// <summary>عنصر قائمة المحادثات للإدارة. Type: 0 ثنائية، 1 مجموعة.</summary>
+public record AdminConversationDto(
+    Guid Id,
+    int Type,
+    string? User1Name,
+    string? User2Name,
+    string? GroupName,
+    DateTime CreatedAt,
+    int MessageCount,
+    DateTime? LastMessageAt);
 public record AdminConversationMessageDto(Guid Id, string SenderName, string Content, string Type, DateTime SentAt);
 public record AdminBlockDto(Guid Id, string BlockerName, string BlockedUserName, DateTime CreatedAt);
 public record AdminContactDto(Guid Id, string UserName, string ContactUserName, DateTime CreatedAt);

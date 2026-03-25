@@ -5,6 +5,16 @@ import { ChevronRight, Copy, MessageCircle, Crown, UserPlus, Check } from 'lucid
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import CachedAvatar from '../components/CachedAvatar.vue'
+import {
+  createPrivateConversationOrRequest,
+  goToMessageRequestsOutgoingNotice,
+  validate409AsSuccess
+} from '../utils/conversationOrMessageRequest'
+import { useMessageRequestsStore } from '../stores/messageRequests'
+
+const msgReqStore = useMessageRequestsStore()
+
+// المسار الافتراضي من الحوار: إضافة كجهة اتصال ثم فتح المحادثة. البديل: طلب مراسلة فقط (يُعرض في صفحة طلبات المراسلة لدى المستقبل).
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
@@ -18,6 +28,10 @@ const copiedPhone = ref(false)
 const startingChat = ref(false)
 const addingContact = ref(false)
 const conversationIdFromState = ref(null)
+const showChatGateModal = ref(false)
+const chatGateBusy = ref(false)
+const chatGateError = ref('')
+const chatGateSuccess = ref('')
 
 const formattedPhone = computed(() => {
   const phone = profile.value?.phoneNumber ?? profile.value?.PhoneNumber
@@ -78,6 +92,13 @@ async function copyPhone() {
 
 const isContact = computed(() => profile.value?.isContact ?? profile.value?.IsContact ?? false)
 
+function closeChatGateModal() {
+  if (chatGateBusy.value) return
+  showChatGateModal.value = false
+  chatGateError.value = ''
+  chatGateSuccess.value = ''
+}
+
 async function openChat() {
   const convId = conversationIdFromState.value
   if (convId) {
@@ -86,13 +107,70 @@ async function openChat() {
   }
   if (!profile.value?.id && !profile.value?.Id) return
   const id = profile.value.id ?? profile.value.Id
-  startingChat.value = true
+  if (isContact.value) {
+    startingChat.value = true
+    try {
+      const r = await createPrivateConversationOrRequest(id)
+      if (r.kind === 'conversation' && r.conversationId) {
+        router.replace(`/conversation/${r.conversationId}`)
+      } else {
+        await msgReqStore.fetchPendingCount()
+        goToMessageRequestsOutgoingNotice(router)
+      }
+    } catch (e) {
+      window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
+    } finally {
+      startingChat.value = false
+    }
+    return
+  }
+  chatGateError.value = ''
+  chatGateSuccess.value = ''
+  showChatGateModal.value = true
+}
+
+async function confirmAddAndChat() {
+  if (!userId.value || !profile.value) return
+  const id = profile.value.id ?? profile.value.Id
+  chatGateBusy.value = true
+  chatGateError.value = ''
+  chatGateSuccess.value = ''
   try {
-    const { data } = await api.post('/conversations', { contactUserId: id }, { skipGlobalLoader: true })
-    const cid = data?.id ?? data?.Id
-    if (cid) router.replace(`/conversation/${cid}`)
-  } catch {
-    startingChat.value = false
+    await api.post(`/contacts/by-user/${userId.value}`, {}, { skipGlobalLoader: true })
+    profile.value = { ...profile.value, isContact: true, IsContact: true }
+    const r = await createPrivateConversationOrRequest(id)
+    showChatGateModal.value = false
+    if (r.kind === 'conversation' && r.conversationId) {
+      router.replace(`/conversation/${r.conversationId}`)
+    } else {
+      await msgReqStore.fetchPendingCount()
+      goToMessageRequestsOutgoingNotice(router)
+    }
+  } catch (e) {
+    chatGateError.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
+  } finally {
+    chatGateBusy.value = false
+  }
+}
+
+async function sendMessageRequestOnly() {
+  if (!profile.value) return
+  const id = profile.value.id ?? profile.value.Id
+  chatGateBusy.value = true
+  chatGateError.value = ''
+  chatGateSuccess.value = ''
+  try {
+    await api.post('/message-requests', { targetUserId: id }, {
+      skipGlobalLoader: true,
+      ...validate409AsSuccess
+    })
+    showChatGateModal.value = false
+    await msgReqStore.fetchPendingCount()
+    goToMessageRequestsOutgoingNotice(router)
+  } catch (e) {
+    chatGateError.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
+  } finally {
+    chatGateBusy.value = false
   }
 }
 
@@ -255,6 +333,41 @@ onMounted(() => {
           </button>
         </section>
       </template>
+    </div>
+
+    <div
+      v-if="showChatGateModal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      @click.self="closeChatGateModal"
+    >
+      <div class="modal-sheet glass-card">
+        <p class="modal-text">{{ t('profile.chatGateMessage') }}</p>
+        <p v-if="chatGateError" class="modal-error">{{ chatGateError }}</p>
+        <p v-if="chatGateSuccess" class="modal-success">{{ chatGateSuccess }}</p>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="modal-btn modal-btn-primary"
+            :disabled="chatGateBusy"
+            @click="confirmAddAndChat"
+          >
+            {{ chatGateBusy && !chatGateSuccess ? t('common.loading') : t('profile.chatGateAddAndChat') }}
+          </button>
+          <button
+            type="button"
+            class="modal-btn modal-btn-secondary"
+            :disabled="chatGateBusy"
+            @click="sendMessageRequestOnly"
+          >
+            {{ t('profile.chatGateSendRequestOnly') }}
+          </button>
+          <button type="button" class="modal-btn modal-btn-ghost" :disabled="chatGateBusy" @click="closeChatGateModal">
+            {{ t('common.cancel') }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -627,5 +740,85 @@ onMounted(() => {
 
 .profile-contact-badge svg {
   flex-shrink: 0;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24px;
+  padding-bottom: max(24px, var(--safe-bottom));
+}
+
+.modal-sheet {
+  width: 100%;
+  max-width: 400px;
+  padding: 20px;
+  border-radius: 16px;
+  margin-bottom: 8px;
+}
+
+.modal-text {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.modal-error {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.modal-success {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #16a34a;
+  text-align: center;
+}
+
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal-btn {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  border: none;
+  cursor: pointer;
+}
+
+.modal-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.modal-btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.modal-btn-secondary {
+  background: rgba(108, 99, 255, 0.12);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+.modal-btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
 }
 </style>
