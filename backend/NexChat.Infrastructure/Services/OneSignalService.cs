@@ -101,6 +101,14 @@ public class OneSignalService
             voiceOnly ? $"{callerName} يطلب مكالمة صوتية" : $"{callerName} يطلب مكالمة فيديو",
             new { type = "video_call", conversationId = conversationId.ToString() });
 
+    /// <summary>إشعار بطلب مراسلة جديد (يُفتح تطبيق صفحة الطلبات).</summary>
+    public Task<bool> SendMessageRequestAsync(Guid recipientId, string requesterName, Guid messageRequestId)
+        => SendToUserAsync(
+            recipientId,
+            "طلب مراسلة",
+            $"{requesterName} يريد مراسلتك",
+            new { type = "message_request", messageRequestId = messageRequestId.ToString() });
+
     /// <summary>
     /// إرسال إشعار لأجهزة محددة عبر subscription_ids (أكثر موثوقية من external_id)
     /// </summary>

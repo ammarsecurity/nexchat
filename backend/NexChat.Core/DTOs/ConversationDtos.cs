@@ -44,3 +44,14 @@ public record BlockedUserDto(
     string? UniqueCode,
     DateTime CreatedAt
 );
+
+public record CreateMessageRequestDto(Guid TargetUserId);
+
+public record MessageRequestListItemDto(
+    Guid Id,
+    Guid RequesterId,
+    string RequesterName,
+    string? RequesterAvatar,
+    string? RequesterUniqueCode,
+    DateTime CreatedAt
+);

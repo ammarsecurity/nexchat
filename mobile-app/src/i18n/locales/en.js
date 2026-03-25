@@ -60,7 +60,17 @@ export default {
     openChat: 'Open chat',
     startChat: 'Start chat',
     addAsContact: 'Add as contact',
-    addedToContacts: 'In contacts'
+    addedToContacts: 'In contacts',
+    chatGateMessage: 'To start chatting you need to add this user as a contact, or send a message request for them to review.',
+    chatGateAddAndChat: 'Add and start chat',
+    chatGateSendRequestOnly: 'Send message request only',
+    messageRequestSent: 'Message request sent.'
+  },
+  messageRequests: {
+    title: 'Message requests',
+    empty: 'No pending requests',
+    accept: 'Accept',
+    decline: 'Decline'
   },
   settings: {
     title: 'Settings',
@@ -274,7 +284,8 @@ export default {
     needPhone: 'Add your phone number from settings to use conversations',
     optionsTitle: 'Conversation options',
     notFound: 'Conversation not found',
-    newGroup: 'New group'
+    newGroup: 'New group',
+    messageRequests: 'Message requests'
   },
   groups: {
     createTitle: 'Create group',

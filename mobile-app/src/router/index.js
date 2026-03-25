@@ -17,6 +17,7 @@ const routes = [
   { path: '/chat/:sessionId', component: () => import('../views/ChatView.vue') },
   { path: '/video/:sessionId', component: () => import('../views/VideoCallView.vue') },
   { path: '/conversations', component: () => import('../views/ConversationsView.vue') },
+  { path: '/message-requests', component: () => import('../views/MessageRequestsView.vue') },
   { path: '/conversations/create-group', component: () => import('../views/CreateGroupView.vue') },
   { path: '/conversation/:conversationId/group-info', component: () => import('../views/GroupInfoView.vue') },
   { path: '/conversations/:conversationId/options', component: () => import('../views/ConversationOptionsView.vue') },

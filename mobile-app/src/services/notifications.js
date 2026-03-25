@@ -50,6 +50,7 @@ export async function initNotifications(userId) {
         body: notif?.body || '',
         sessionId: data.sessionId,
         conversationId: data.conversationId,
+        messageRequestId: data.messageRequestId,
         timestamp: Date.now()
       })
       handleNotificationClick(data)
@@ -146,6 +147,11 @@ function handleNotificationClick(data) {
 
   if (data?.type === 'conversation_message' && data?.conversationId) {
     router.push({ path: '/conversations', query: { open: data.conversationId } })
+    return
+  }
+
+  if (data?.type === 'message_request') {
+    router.push('/message-requests')
     return
   }
 

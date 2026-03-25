@@ -23,6 +23,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserConversationDeletion> UserConversationDeletions => Set<UserConversationDeletion>();
     public DbSet<UserConversationState> UserConversationStates => Set<UserConversationState>();
     public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
+    public DbSet<MessageRequest> MessageRequests => Set<MessageRequest>();
     public DbSet<BroadcastNotificationHistory> BroadcastNotificationHistory => Set<BroadcastNotificationHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -147,6 +148,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(x => x.ContactUserId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.UserId, x.ContactUserId }).IsUnique();
+        });
+
+        modelBuilder.Entity<MessageRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Requester)
+                .WithMany()
+                .HasForeignKey(x => x.RequesterId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Target)
+                .WithMany()
+                .HasForeignKey(x => x.TargetId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.RequesterId, x.TargetId }).IsUnique();
+            e.Property(x => x.Status).HasMaxLength(20);
         });
 
         modelBuilder.Entity<Conversation>(e =>

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound, Mail } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -15,8 +15,10 @@ import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub } from '../services/signalr'
 import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
 import { formatGregorianDateTime } from '../utils/formatTime'
+import { useMessageRequestsStore } from '../stores/messageRequests'
 
 const router = useRouter()
+const msgReqStore = useMessageRequestsStore()
 const network = useNetworkStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -63,6 +65,7 @@ async function fetchConversations() {
     const list = data ?? []
     listStore.setList(list)
     await saveConversationsList(list)
+    await msgReqStore.fetchPendingCount()
   } catch (e) {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
@@ -143,6 +146,10 @@ function goToContacts() {
   router.push('/contacts')
 }
 
+function goToMessageRequests() {
+  router.push('/message-requests')
+}
+
 function goBack() {
   router.replace('/home')
 }
@@ -156,6 +163,15 @@ function goBack() {
       </button>
       <span class="top-title">{{ t('conversations.title') }}</span>
       <div class="header-actions">
+        <button
+          class="new-chat-btn new-chat-btn-badge-wrap"
+          @click="goToMessageRequests"
+          :aria-label="t('conversations.messageRequests')"
+          :title="t('conversations.messageRequests')"
+        >
+          <Mail :size="22" />
+          <span v-if="msgReqStore.pendingCount > 0" class="header-btn-badge">{{ msgReqStore.pendingCount > 99 ? '99+' : msgReqStore.pendingCount }}</span>
+        </button>
         <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
           <UsersRound :size="22" />
         </button>
@@ -294,6 +310,25 @@ function goBack() {
 .back-btn:active, .new-chat-btn:active { background: var(--bg-card-hover); }
 .header-actions { display: flex; gap: 8px; }
 .new-chat-btn { color: var(--primary); }
+.new-chat-btn-badge-wrap {
+  position: relative;
+}
+.header-btn-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: white;
+  background: #f97316;
+  border-radius: 8px;
+  font-family: 'Cairo', sans-serif;
+}
 
 .need-phone-banner {
   display: flex;

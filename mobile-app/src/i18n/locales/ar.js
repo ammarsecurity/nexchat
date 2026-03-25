@@ -60,7 +60,17 @@ export default {
     openChat: 'فتح المحادثة',
     startChat: 'بدء محادثة',
     addAsContact: 'إضافة كجهة اتصال',
-    addedToContacts: 'في جهات الاتصال'
+    addedToContacts: 'في جهات الاتصال',
+    chatGateMessage: 'لبدء المحادثة يجب إضافة هذا المستخدم كجهة اتصال، أو يمكنك إرسال طلب مراسلة ليُراجعه الطرف الآخر.',
+    chatGateAddAndChat: 'إضافة وبدء المحادثة',
+    chatGateSendRequestOnly: 'إرسال طلب مراسلة فقط',
+    messageRequestSent: 'تم إرسال طلب المراسلة.'
+  },
+  messageRequests: {
+    title: 'طلبات المراسلة',
+    empty: 'لا توجد طلبات معلقة',
+    accept: 'قبول',
+    decline: 'رفض'
   },
   settings: {
     title: 'الإعدادات',
@@ -274,7 +284,8 @@ export default {
     needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات',
     optionsTitle: 'خيارات المحادثة',
     notFound: 'المحادثة غير موجودة',
-    newGroup: 'مجموعة جديدة'
+    newGroup: 'مجموعة جديدة',
+    messageRequests: 'طلبات المراسلة'
   },
   groups: {
     createTitle: 'إنشاء مجموعة',
