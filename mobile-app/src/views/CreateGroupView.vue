@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, Users, Image, UserPlus } from 'lucide-vue-next'
+import { ChevronRight, Users, Image, UserPlus, Search } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -16,12 +16,24 @@ const groupImageUrl = ref(null)
 const uploadingImage = ref(false)
 const groupImageInput = ref(null)
 const contacts = ref([])
+const memberSearchQuery = ref('')
 const selectedIds = ref(new Set())
 const creating = ref(false)
 const error = ref('')
 const needPhone = ref(false)
 
 const isImageUrl = (v) => v && (v.startsWith('http') || v.startsWith('/'))
+
+const filteredContacts = computed(() => {
+  const q = memberSearchQuery.value.trim().toLowerCase()
+  if (!q) return contacts.value
+  return contacts.value.filter((c) => {
+    const name = (c.name ?? '').toLowerCase()
+    const phone = String(c.phone ?? c.Phone ?? c.phoneNumber ?? c.PhoneNumber ?? '').toLowerCase()
+    const code = String(c.uniqueCode ?? c.UniqueCode ?? '').toLowerCase()
+    return name.includes(q) || phone.includes(q) || code.includes(q)
+  })
+})
 
 async function fetchContacts() {
   needPhone.value = false
@@ -124,13 +136,13 @@ onMounted(fetchContacts)
       <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
     </div>
 
-    <div class="scroll-area">
+    <div class="scroll-area" :class="{ 'scroll-area--fill': contacts.length > 0 }">
       <div class="form-section">
         <label class="label">{{ t('groups.groupName') }}</label>
         <input
           v-model="groupName"
           type="text"
-          class="input"
+          class="input input--group-name"
           :placeholder="t('groups.groupNamePlaceholder')"
           maxlength="100"
         />
@@ -163,7 +175,7 @@ onMounted(fetchContacts)
         </div>
       </div>
 
-      <div class="form-section">
+      <div class="form-section" :class="{ 'form-section--contacts': contacts.length > 0 }">
         <label class="label">{{ t('groups.selectMembers') }}</label>
         <div v-if="!contacts.length" class="empty-contacts">
           <div class="empty-contacts-icon-wrap">
@@ -176,22 +188,38 @@ onMounted(fetchContacts)
             <span>{{ t('contacts.addContact') }}</span>
           </button>
         </div>
-        <div v-else class="contacts-list">
-          <div
-            v-for="c in contacts"
-            :key="c.id ?? c.contactUserId"
-            class="contact-row"
-            :class="{ selected: isSelected(c.contactUserId) }"
-            @click="toggleContact(c.contactUserId)"
-          >
-            <div class="item-avatar" :style="{ background: c.avatar && !isImageUrl(c.avatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-              <CachedAvatar v-if="c.avatar && isImageUrl(c.avatar)" :url="c.avatar" img-class="avatar-img" />
-              <span v-else>{{ (c.name ?? '')?.[0]?.toUpperCase() || '?' }}</span>
-            </div>
-            <span class="contact-name">{{ c.name ?? '—' }}</span>
-            <div class="check-wrap">
-              <span v-if="isSelected(c.contactUserId)" class="check-dot" />
-            </div>
+        <div v-else class="contacts-block">
+          <div class="members-search-wrap">
+            <Search :size="16" class="members-search-icon" />
+            <input
+              v-model="memberSearchQuery"
+              type="search"
+              class="members-search-input"
+              :placeholder="t('groups.searchMembersPlaceholder')"
+              enterkeyhint="search"
+              autocomplete="off"
+            />
+          </div>
+          <div class="contacts-list">
+            <template v-if="filteredContacts.length">
+              <div
+                v-for="c in filteredContacts"
+                :key="c.id ?? c.contactUserId"
+                class="contact-row"
+                :class="{ selected: isSelected(c.contactUserId) }"
+                @click="toggleContact(c.contactUserId)"
+              >
+                <div class="item-avatar" :style="{ background: c.avatar && !isImageUrl(c.avatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+                  <CachedAvatar v-if="c.avatar && isImageUrl(c.avatar)" :url="c.avatar" img-class="avatar-img" />
+                  <span v-else>{{ (c.name ?? '')?.[0]?.toUpperCase() || '?' }}</span>
+                </div>
+                <span class="contact-name">{{ c.name ?? '—' }}</span>
+                <div class="check-wrap">
+                  <span v-if="isSelected(c.contactUserId)" class="check-dot" />
+                </div>
+              </div>
+            </template>
+            <p v-else class="contacts-filter-empty">{{ t('groups.noMembersMatch') }}</p>
           </div>
         </div>
       </div>
@@ -279,13 +307,39 @@ onMounted(fetchContacts)
 .scroll-area {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   padding: 16px var(--spacing);
   -webkit-overflow-scrolling: touch;
 }
 
+.scroll-area:not(.scroll-area--fill) {
+  overflow-y: auto;
+}
+
+/* عند وجود جهات اتصال: تمرير داخلي للقائمة فقط ويبقى زر الإنشاء أسفل الشاشة */
+.scroll-area.scroll-area--fill {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll-area.scroll-area--fill > .form-section:not(.form-section--contacts) {
+  flex-shrink: 0;
+}
+
 .form-section {
   margin-bottom: 24px;
+}
+
+.form-section--contacts {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.form-section--contacts .label {
+  flex-shrink: 0;
 }
 
 .label {
@@ -308,6 +362,18 @@ onMounted(fetchContacts)
   font-family: 'Cairo', sans-serif;
   outline: none;
   box-sizing: border-box;
+}
+
+.input--group-name {
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 10px;
+  min-height: 44px;
+}
+
+.form-section:first-of-type .label {
+  font-size: 13px;
+  margin-bottom: 6px;
 }
 
 .group-photo-wrap {
@@ -423,14 +489,68 @@ onMounted(fetchContacts)
   opacity: 0.92;
 }
 
+.contacts-block {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.members-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.members-search-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.members-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+  padding: 8px 0;
+}
+
+.members-search-input::placeholder {
+  color: var(--text-muted);
+}
+
 .contacts-list {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-card);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.contacts-filter-empty {
+  margin: 0;
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: 'Cairo', sans-serif;
 }
 
 .contact-row {
@@ -503,10 +623,12 @@ onMounted(fetchContacts)
   font-size: 14px;
   margin: 0 0 16px;
   font-family: 'Cairo', sans-serif;
+  flex-shrink: 0;
 }
 
 .actions {
   padding-top: 8px;
+  flex-shrink: 0;
 }
 
 .btn-gradient {
@@ -529,6 +651,19 @@ onMounted(fetchContacts)
 }
 
 @media (max-width: 360px) {
+  .input--group-name {
+    padding: 8px 12px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+  .members-search-wrap {
+    min-height: 34px;
+    padding: 0 8px;
+  }
+  .members-search-input {
+    font-size: 12px;
+    padding: 6px 0;
+  }
   .group-photo-btn {
     width: 80px;
     height: 80px;

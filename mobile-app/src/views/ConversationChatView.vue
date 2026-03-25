@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Share2, Copy, Mic, Play, Pause, Reply, Forward } from 'lucide-vue-next'
+import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
@@ -15,6 +15,8 @@ import CachedAvatar from '../components/CachedAvatar.vue'
 import { formatTime12 } from '../utils/formatTime'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
+import { useActiveCallStore } from '../stores/activeCall'
+import ActiveCallBar from '../components/ActiveCallBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,8 +57,6 @@ const showMessageMenuMsg = ref(null)
 const msgMenuPosition = ref({})
 const replyingTo = ref(null)
 const showDeleteConvConfirm = ref(false)
-const showShareModal = ref(false)
-const shareCodeCopied = ref(false)
 const showInputActionsMenu = ref(false)
 const playingAudioId = ref(null)
 const audioProgress = ref({})
@@ -66,6 +66,12 @@ const groupSenders = ref({})
 const showReactionPickerMsg = ref(null)
 const reactionPickerPosition = ref({})
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🙏']
+
+const showVideoConfirm = ref(false)
+const showVoiceConfirm = ref(false)
+const callingOut = ref(false)
+const pendingOutgoingVoiceOnly = ref(false)
+const callDeclined = ref(false)
 
 function getMsgKey(msg) {
   return msg.tempId || msg.id || msg.Id
@@ -171,10 +177,23 @@ function messageReactionsList(msg) {
 }
 const messages = computed(() => convStore.messages)
 const partnerLetter = computed(() => partner.value?.name?.[0]?.toUpperCase() || '?')
+const partnerColor = computed(() => {
+  if (!partner.value?.name) return 'var(--primary)'
+  const colors = ['#6C63FF', '#FF6584', '#00D4FF', '#FF8C42']
+  return colors[partner.value.name.charCodeAt(0) % colors.length]
+})
 const partnerAvatarIsImage = computed(() =>
   partner.value?.avatar && (partner.value.avatar.startsWith('http') || partner.value.avatar.startsWith('/'))
 )
 const partnerIsOnline = computed(() => partner.value?.isOnline ?? partner.value?.IsOnline ?? false)
+
+const activeCall = useActiveCallStore()
+const showEmbeddedActiveCallBar = computed(
+  () =>
+    activeCall.showFloatingBar &&
+    activeCall.isConversation &&
+    String(activeCall.sessionId) === String(conversationId)
+)
 
 function normalizeMsg(msg) {
   return {
@@ -368,6 +387,13 @@ onMounted(async () => {
     }
   })
 
+  conversationHub.on('VideoCallDeclined', (cidStr) => {
+    if (cidStr != null && cidStr !== '' && String(cidStr) !== String(conversationId)) return
+    callingOut.value = false
+    callDeclined.value = true
+    setTimeout(() => { callDeclined.value = false }, 3000)
+  })
+
   try {
     await conversationHub.invoke('JoinConversation', conversationId)
   } finally {
@@ -423,6 +449,7 @@ onUnmounted(() => {
   conversationHub.off('Error')
   conversationHub.off('ConversationListUpdated')
   conversationHub.off('ReactionUpdated')
+  conversationHub.off('VideoCallDeclined')
   ensureConnected(conversationHub).then(() =>
     conversationHub.invoke('LeaveConversation', conversationId)
   ).catch(() => {})
@@ -719,6 +746,46 @@ function goToPartnerProfile() {
   })
 }
 
+function openVideoConfirm() {
+  showVideoConfirm.value = true
+}
+
+function openVoiceConfirm() {
+  showVoiceConfirm.value = true
+}
+
+function cancelVideoConfirm() {
+  showVideoConfirm.value = false
+}
+
+function cancelVoiceConfirm() {
+  showVoiceConfirm.value = false
+}
+
+async function confirmStartVideo() {
+  showVideoConfirm.value = false
+  callingOut.value = true
+  pendingOutgoingVoiceOnly.value = false
+  try {
+    await ensureConnected(conversationHub)
+    await conversationHub.invoke('RequestVideoCall', conversationId, false)
+  } catch {
+    callingOut.value = false
+  }
+}
+
+async function confirmStartVoice() {
+  showVoiceConfirm.value = false
+  callingOut.value = true
+  pendingOutgoingVoiceOnly.value = true
+  try {
+    await ensureConnected(conversationHub)
+    await conversationHub.invoke('RequestVideoCall', conversationId, true)
+  } catch {
+    callingOut.value = false
+  }
+}
+
 function openSenderProfile(senderId) {
   if (!senderId) return
   router.push({
@@ -854,48 +921,6 @@ function closeImageModal() {
   imageModalUrl.value = null
 }
 
-function openShareModal() {
-  showShareModal.value = true
-  shareCodeCopied.value = false
-}
-
-function closeShareModal() {
-  showShareModal.value = false
-}
-
-async function copyShareCode() {
-  const code = auth.user?.uniqueCode
-  if (!code) return
-  try {
-    await navigator.clipboard.writeText(code)
-    shareCodeCopied.value = true
-    setTimeout(() => { shareCodeCopied.value = false }, 2000)
-  } catch {}
-}
-
-async function shareCodeInChat() {
-  const code = auth.user?.uniqueCode
-  if (!code) return
-  const text = t('conversationChat.shareCodeMessage', { code })
-  closeShareModal()
-  const tempId = `temp-${Date.now()}`
-  convStore.addMessage({
-    tempId,
-    senderId: currentUserId.value,
-    content: text,
-    type: 'text',
-    sentAt: new Date(),
-    status: 'pending'
-  })
-  scrollToBottom()
-  try {
-    await ensureConnected(conversationHub)
-    await conversationHub.invoke('SendMessage', conversationId, text, 'text', null)
-  } catch {
-    convStore.updateMessage(tempId, { status: 'failed' })
-  }
-}
-
 async function leaveChat() {
   convStore.clearConversation()
   router.replace('/conversations')
@@ -1004,6 +1029,62 @@ function removeReaction(msg) {
   <div class="conv-chat page">
     <LoaderOverlay :show="loading" :text="t('common.loading')" />
 
+    <Transition name="fade">
+      <div v-if="showVideoConfirm" class="call-overlay">
+        <div class="call-popup glass-card">
+          <div class="call-popup-avatar" :style="partnerAvatarIsImage ? { padding: 0, overflow: 'hidden' } : { background: partnerColor }">
+            <CachedAvatar v-if="partnerAvatarIsImage" :url="partner?.avatar" img-class="call-popup-avatar-img" />
+            <span v-else>{{ partnerLetter }}</span>
+          </div>
+          <div class="call-popup-name">{{ partner?.name }}</div>
+          <div class="call-popup-label">{{ t('conversationChat.videoCallConfirm', { name: partner?.name || '…' }) }}</div>
+          <div class="call-popup-actions">
+            <button type="button" class="call-btn decline" @click="cancelVideoConfirm"><X :size="18" /> {{ t('common.cancel') }}</button>
+            <button type="button" class="call-btn accept" @click="confirmStartVideo"><Video :size="18" /> {{ t('conversationChat.requestCall') }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="showVoiceConfirm" class="call-overlay">
+        <div class="call-popup glass-card">
+          <div class="call-popup-avatar" :style="partnerAvatarIsImage ? { padding: 0, overflow: 'hidden' } : { background: partnerColor }">
+            <CachedAvatar v-if="partnerAvatarIsImage" :url="partner?.avatar" img-class="call-popup-avatar-img" />
+            <span v-else>{{ partnerLetter }}</span>
+          </div>
+          <div class="call-popup-name">{{ partner?.name }}</div>
+          <div class="call-popup-label">{{ t('conversationChat.voiceCallConfirm', { name: partner?.name || '…' }) }}</div>
+          <div class="call-popup-actions">
+            <button type="button" class="call-btn decline" @click="cancelVoiceConfirm"><X :size="18" /> {{ t('common.cancel') }}</button>
+            <button type="button" class="call-btn accept" @click="confirmStartVoice"><Phone :size="18" /> {{ t('conversationChat.requestCall') }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="callingOut" class="call-overlay">
+        <div class="call-popup glass-card calling-popup">
+          <div class="calling-loader">
+            <Loader2 :size="48" class="spin" />
+          </div>
+          <div class="call-popup-name">{{ partner?.name }}</div>
+          <div class="call-popup-label">{{ t('conversationChat.connectingCall') }}</div>
+          <div class="calling-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <button type="button" class="call-btn decline calling-cancel" @click="callingOut = false">
+            <X :size="18" /> {{ t('common.cancel') }}
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="callDeclined" class="declined-toast">{{ t('conversationChat.callDeclined', { name: partner?.name || '…' }) }}</div>
+    </Transition>
+
     <header class="chat-header glass-card">
       <button class="back-btn" @click="leaveChat" :aria-label="t('common.cancel')">
         <ChevronRight :size="22" />
@@ -1028,11 +1109,23 @@ function removeReaction(msg) {
         </div>
       </button>
       <div class="header-actions">
+        <template v-if="!convStore.isGroup">
+          <button type="button" class="icon-btn" @click="openVideoConfirm" :title="t('conversationChat.incomingVideoCall')">
+            <Video :size="20" />
+          </button>
+          <button type="button" class="icon-btn" @click="openVoiceConfirm" :title="t('conversationChat.incomingVoiceCall')">
+            <Phone :size="20" />
+          </button>
+        </template>
         <button class="icon-btn" @click="showDeleteConvConfirm = true" :title="t('conversationChat.deleteConversation')">
           <Trash2 :size="20" />
         </button>
       </div>
     </header>
+
+    <div v-if="showEmbeddedActiveCallBar" class="conv-active-call-slot">
+      <ActiveCallBar embedded />
+    </div>
 
     <div class="messages-area" ref="messagesEl">
       <div v-if="showMessageMenu" class="msg-actions-backdrop" @click="showMessageMenu = null; showMessageMenuMsg = null" />
@@ -1256,10 +1349,6 @@ function removeReaction(msg) {
           </button>
         </div>
       </Transition>
-      <button v-if="!isRecording && !uploadingVoice && !replyingTo" class="share-code-bar" @click="openShareModal">
-        <Share2 :size="18" stroke-width="2" />
-        <span>{{ t('conversationChat.shareYourCode') }}</span>
-      </button>
 
       <!-- شريط التسجيل الصوتي -->
       <Transition name="slide-up">
@@ -1343,32 +1432,6 @@ function removeReaction(msg) {
     </Teleport>
 
     <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showShareModal" class="share-overlay" @click.self="closeShareModal">
-          <div class="share-modal glass-card">
-            <div class="share-modal-header">
-              <Share2 :size="20" stroke-width="2" class="share-modal-icon" />
-              <h3 class="share-modal-title">{{ t('conversationChat.shareCodeTitle') }}</h3>
-            </div>
-            <div class="share-code-display">{{ auth.user?.uniqueCode }}</div>
-            <div class="share-modal-actions">
-              <button class="share-btn primary-btn" @click="shareCodeInChat">
-                <Send :size="18" stroke-width="2" />
-                <span>{{ t('conversationChat.sendInChat') }}</span>
-              </button>
-              <button class="share-btn copy-btn" @click="copyShareCode">
-                <Copy v-if="!shareCodeCopied" :size="18" stroke-width="2" />
-                <Check v-else :size="18" stroke-width="2" />
-                <span>{{ shareCodeCopied ? t('conversationChat.copied') : t('conversationChat.copy') }}</span>
-              </button>
-            </div>
-            <button class="share-close-btn" @click="closeShareModal">{{ t('common.cancel') }}</button>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
       <div v-if="imageModalUrl" class="image-modal-overlay" @click.self="closeImageModal">
         <button class="image-modal-close" @click="closeImageModal"><X :size="24" /></button>
         <img :src="ensureAbsoluteUrl(imageModalUrl)" class="image-modal-img" alt="" referrerpolicy="no-referrer" />
@@ -1379,6 +1442,7 @@ function removeReaction(msg) {
 
 <style scoped>
 .conv-chat {
+  position: relative;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
@@ -1386,6 +1450,11 @@ function removeReaction(msg) {
   min-height: 0;
   overflow: hidden;
   font-family: 'Cairo', sans-serif;
+}
+
+.conv-active-call-slot {
+  flex-shrink: 0;
+  padding: 0 var(--spacing) 8px;
 }
 
 .chat-header {
@@ -1902,26 +1971,6 @@ function removeReaction(msg) {
   min-height: 0;
 }
 
-.share-code-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.12) 0%, rgba(108, 99, 255, 0.06) 100%);
-  border: 1px solid rgba(108, 99, 255, 0.25);
-  border-radius: 12px;
-  color: var(--primary);
-  font-size: 14px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: all 0.2s;
-}
-.share-code-bar:active { background: rgba(108, 99, 255, 0.2); }
-
 .message-input-row {
   display: flex;
   gap: 10px;
@@ -2322,101 +2371,6 @@ function removeReaction(msg) {
 .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 
-/* Share Code Modal - compact for mobile */
-.share-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1500;
-  padding: 16px;
-  backdrop-filter: blur(6px);
-}
-.share-modal {
-  width: 100%;
-  max-width: 300px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-}
-.share-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--primary);
-}
-.share-modal-icon { flex-shrink: 0; }
-.share-modal-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-  font-family: 'Cairo', sans-serif;
-}
-.share-code-display {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--primary);
-  padding: 10px 18px;
-  background: rgba(108, 99, 255, 0.1);
-  border-radius: 10px;
-  border: 1px solid rgba(108, 99, 255, 0.25);
-  font-family: 'Cairo', sans-serif;
-}
-.share-modal-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  width: 100%;
-}
-.share-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-.share-btn.copy-btn {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-}
-.share-btn.copy-btn:active { background: var(--bg-card-hover); }
-.share-btn.primary-btn {
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
-  border: none;
-  color: white;
-  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
-}
-.share-btn.primary-btn:active { opacity: 0.9; transform: scale(0.98); }
-.share-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  padding: 4px 12px;
-  -webkit-tap-highlight-color: transparent;
-}
-.share-close-btn:active { opacity: 0.8; }
-
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -2499,4 +2453,150 @@ function removeReaction(msg) {
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.25s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
+
+.call-popup-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.call-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.call-popup {
+  width: 80%;
+  max-width: 300px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.call-popup-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+  animation: ring-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(108,99,255,0.4);
+}
+@keyframes ring-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(108,99,255,0.5); }
+  70% { box-shadow: 0 0 0 16px rgba(108,99,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(108,99,255,0); }
+}
+
+.call-popup-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.call-popup-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
+}
+
+.call-popup-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.call-btn {
+  align-items: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font-family: 'Cairo';
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  min-height: var(--touch-min);
+  padding: 0 12px;
+  transition: opacity 0.2s;
+}
+.call-btn.accept { background: var(--success); color: white; }
+.call-btn.accept:active { opacity: 0.9; }
+.call-btn.decline { background: rgba(255,101,132,0.2); color: var(--danger); border: 1px solid rgba(255,101,132,0.3); }
+.call-btn.decline:active { opacity: 0.9; }
+
+.calling-popup { gap: 16px; }
+.calling-cancel {
+  width: 100%;
+  margin-top: 8px;
+  box-shadow: 0 2px 12px rgba(255,101,132,0.25);
+}
+.calling-loader {
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.calling-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.calling-dots span {
+  background: rgba(255,255,255,0.4);
+  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.calling-dots span:nth-child(2) { animation-delay: 0.2s; }
+.calling-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.declined-toast {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(255,101,132,0.15);
+  border: 1px solid rgba(255,101,132,0.3);
+  border-radius: var(--radius-full);
+  color: #FF6584;
+  font-size: 13px;
+  padding: 8px 18px;
+  z-index: 50;
+}
+
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

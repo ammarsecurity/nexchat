@@ -17,6 +17,7 @@ import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestPermissionAndRegister, scheduleRegistrationRetry } from '../services/notifications'
 import api from '../services/api'
+import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
@@ -38,6 +39,8 @@ const profileBannerDismissed = ref(false)
 const notifPromptLoading = ref(false)
 const randomChatEnabled = ref(true)
 const randomChatSettingLoaded = ref(false)
+const codeConnectEnabled = ref(true)
+const codeConnectLoaded = ref(false)
 let connectionTimeoutId = null
 
 const user = computed(() => auth.user)
@@ -101,14 +104,19 @@ onMounted(async () => {
     conversationHub.on('ConversationListUpdated', handleConversationListUpdated)
   } catch {}
 
-  api.get('SiteContent/random_chat_enabled', { skipGlobalLoader: true })
-    .then(({ data }) => {
-      randomChatEnabled.value = (data?.content ?? 'true') === 'true'
+  Promise.all([
+    api.get('SiteContent/random_chat_enabled', { skipGlobalLoader: true })
+      .then(({ data }) => {
+        randomChatEnabled.value = (data?.content ?? 'true') === 'true'
+      })
+      .catch(() => {}),
+    getCodeConnectFeaturesEnabled(api).then((enabled) => {
+      codeConnectEnabled.value = enabled
     })
-    .catch(() => {})
-    .finally(() => {
-      randomChatSettingLoaded.value = true
-    })
+  ]).finally(() => {
+    randomChatSettingLoaded.value = true
+    codeConnectLoaded.value = true
+  })
 })
 
 async function handleConversationListUpdated(payload) {
@@ -246,6 +254,15 @@ const genderFilters = computed(() => [
   { value: 'male', label: t('home.filterMale'), Icon: UserCircle, color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
   { value: 'female', label: t('home.filterFemale'), Icon: UsersRound, color: '#EC4899', bg: 'rgba(236, 72, 153, 0.15)' }
 ])
+
+/** بطاقة بديل فقط (دردشة عشوائية معطّلة + ميزة الكود معطّلة): نوسّط المحتوى ونملأ المسافة بين الهيدر والفوتر */
+const homePrimaryCompact = computed(
+  () =>
+    randomChatSettingLoaded.value &&
+    !randomChatEnabled.value &&
+    codeConnectLoaded.value &&
+    !codeConnectEnabled.value
+)
 </script>
 
 <template>
@@ -339,104 +356,119 @@ const genderFilters = computed(() => [
       </div>
     </Transition>
 
-    <!-- CTA + Filter - unified section (hidden until API loaded, then by setting) -->
-    <div v-if="randomChatSettingLoaded && randomChatEnabled" class="cta-filter-card">
-      <div class="main-cta-wrap">
-        <button class="main-cta-circle" :disabled="loading" @click="startRandom">
-          <Vue3Lottie
-            animation-link="/json/chat.json"
-            :height="88"
-            :width="88"
-            :speed="0.85"
-            :loop="true"
-            :auto-play="true"
-            class="cta-circle-lottie"
-          />
-          <span class="cta-text">{{ t('home.startRandom') }}</span>
-        </button>
-      </div>
-      <div class="segment-wrap">
-        <span class="segment-label">{{ t('home.filterLabel') }}</span>
-        <div class="segment-control">
-        <button
-          v-for="f in genderFilters"
-          :key="f.value"
-          class="segment-btn"
-          :class="{ active: matching.genderFilter === f.value }"
-          :style="matching.genderFilter === f.value ? { '--seg-color': f.color, '--seg-bg': f.bg } : {}"
-          @click="matching.genderFilter = f.value"
-        >
-          <span class="segment-icon" :class="{ active: matching.genderFilter === f.value }">
-            <component :is="f.Icon" :size="20" stroke-width="2" />
-          </span>
-          <span class="segment-text">{{ f.label }}</span>
-        </button>
-      </div>
-    </div>
-    </div>
+    <div class="home-scroll-body">
+      <!-- CTA + Filter - unified section (hidden until API loaded, then by setting) -->
+      <div
+        class="home-primary"
+        :class="{ 'home-primary--compact': homePrimaryCompact }"
+      >
+        <div v-if="randomChatSettingLoaded && randomChatEnabled" class="cta-filter-card">
+          <div class="main-cta-wrap">
+            <button class="main-cta-circle" :disabled="loading" @click="startRandom">
+              <Vue3Lottie
+                animation-link="/json/chat.json"
+                :height="88"
+                :width="88"
+                :speed="0.85"
+                :loop="true"
+                :auto-play="true"
+                class="cta-circle-lottie"
+              />
+              <span class="cta-text">{{ t('home.startRandom') }}</span>
+            </button>
+          </div>
+          <div class="segment-wrap">
+            <span class="segment-label">{{ t('home.filterLabel') }}</span>
+            <div class="segment-control">
+              <button
+                v-for="f in genderFilters"
+                :key="f.value"
+                class="segment-btn"
+                :class="{ active: matching.genderFilter === f.value }"
+                :style="matching.genderFilter === f.value ? { '--seg-color': f.color, '--seg-bg': f.bg } : {}"
+                @click="matching.genderFilter = f.value"
+              >
+                <span class="segment-icon" :class="{ active: matching.genderFilter === f.value }">
+                  <component :is="f.Icon" :size="20" stroke-width="2" />
+                </span>
+                <span class="segment-text">{{ f.label }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-    <!-- Replacement card when random chat is disabled (only after API loaded) -->
-    <div v-if="randomChatSettingLoaded && !randomChatEnabled" class="cta-replacement-card">
-      <div class="cta-replacement-lottie">
-        <Vue3Lottie
-          animation-link="/json/chat.json"
-          :height="80"
-          :width="120"
-          :speed="0.7"
-          :loop="true"
-          :auto-play="true"
-        />
+        <!-- Replacement card when random chat is disabled (only after API loaded) -->
+        <div v-if="randomChatSettingLoaded && !randomChatEnabled && codeConnectLoaded" class="cta-replacement-card">
+          <div class="cta-replacement-lottie">
+            <Vue3Lottie
+              animation-link="/json/chat.json"
+              :height="80"
+              :width="120"
+              :speed="0.7"
+              :loop="true"
+              :auto-play="true"
+            />
+          </div>
+          <template v-if="codeConnectEnabled">
+            <h3 class="cta-replacement-title">{{ t('home.connectWithCodeTitle') }}</h3>
+            <p class="cta-replacement-desc">{{ t('home.connectWithCodeDesc') }}</p>
+          </template>
+          <template v-else>
+            <h3 class="cta-replacement-title">{{ t('home.randomOffNoCodeTitle') }}</h3>
+            <p class="cta-replacement-desc">{{ t('home.randomOffNoCodeDesc') }}</p>
+          </template>
+          <RouterLink to="/conversations" class="cta-replacement-btn">
+            <MessageCircle :size="20" stroke-width="2" />
+            <span>{{ t('home.goToConversations') }}</span>
+          </RouterLink>
+        </div>
+
+        <template v-if="codeConnectLoaded && codeConnectEnabled">
+          <!-- رابط الأكواد المحفوظة -->
+          <RouterLink to="/saved-codes" class="saved-codes-link">
+            <BookmarkPlus :size="18" stroke-width="2" class="saved-codes-link-icon" />
+            <span class="saved-codes-link-title">{{ t('home.savedCodes') }}</span>
+            <ChevronRight :size="18" class="saved-codes-link-arrow" />
+          </RouterLink>
+
+          <!-- Divider -->
+          <div class="divider">
+            <span class="divider-txt">{{ t('home.orConnectByCode') }}</span>
+          </div>
+
+          <!-- Code input - زر الاتصال داخل الـ input -->
+          <div class="code-section">
+            <div class="code-input-wrap">
+              <input
+                v-model="codeInput"
+                class="code-input"
+                :placeholder="t('home.enterUserCode')"
+                maxlength="7"
+                @input="codeInput = codeInput.toUpperCase()"
+                @keyup.enter="connectByCode"
+              />
+              <button
+                class="code-submit"
+                :class="{ disabled: !codeInput.trim() || loading }"
+                :disabled="!codeInput.trim() || loading"
+                :aria-label="t('home.connect')"
+                @click="connectByCode"
+              >
+                <PhoneCall :size="22" stroke-width="2" />
+              </button>
+            </div>
+            <div v-if="codeError" class="error-toast">
+              <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+              <span>{{ codeError }}</span>
+            </div>
+          </div>
+        </template>
       </div>
-      <h3 class="cta-replacement-title">{{ t('home.connectWithCodeTitle') }}</h3>
-      <p class="cta-replacement-desc">{{ t('home.connectWithCodeDesc') }}</p>
-      <RouterLink to="/conversations" class="cta-replacement-btn">
-        <MessageCircle :size="20" stroke-width="2" />
-        <span>{{ t('home.goToConversations') }}</span>
-      </RouterLink>
-    </div>
 
-    <!-- رابط الأكواد المحفوظة -->
-    <RouterLink to="/saved-codes" class="saved-codes-link">
-      <BookmarkPlus :size="18" stroke-width="2" class="saved-codes-link-icon" />
-      <span class="saved-codes-link-title">{{ t('home.savedCodes') }}</span>
-      <ChevronRight :size="18" class="saved-codes-link-arrow" />
-    </RouterLink>
-
-    <!-- Divider -->
-    <div class="divider">
-      <span class="divider-txt">{{ t('home.orConnectByCode') }}</span>
-    </div>
-
-    <!-- Code input - زر الاتصال داخل الـ input -->
-    <div class="code-section">
-      <div class="code-input-wrap">
-        <input
-          v-model="codeInput"
-          class="code-input"
-          :placeholder="t('home.enterUserCode')"
-          maxlength="7"
-          @input="codeInput = codeInput.toUpperCase()"
-          @keyup.enter="connectByCode"
-        />
-        <button
-          class="code-submit"
-          :class="{ disabled: !codeInput.trim() || loading }"
-          :disabled="!codeInput.trim() || loading"
-          :aria-label="t('home.connect')"
-          @click="connectByCode"
-        >
-          <PhoneCall :size="22" stroke-width="2" />
-        </button>
+      <div class="home-bottom">
+        <BannerStrip placement="home" />
+        <AppFooter />
       </div>
-      <div v-if="codeError" class="error-toast">
-        <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
-        <span>{{ codeError }}</span>
-      </div>
-    </div>
-
-    <div class="home-bottom">
-      <BannerStrip placement="home" />
-      <AppFooter />
     </div>
 
     <HomeNavBar :loading="loading" :random-chat-enabled="randomChatSettingLoaded && randomChatEnabled" @launch="startRandom" />
@@ -454,10 +486,34 @@ const genderFilters = computed(() => [
   -webkit-overflow-scrolling: touch;
 }
 
+/* يملأ المسافة تحت الهيدر: المحتوى الرئيسي ثم الفوتر مثبت أسفل المنطقة عند وجود فراغ */
+.home-scroll-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+
+.home-primary {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.home-primary.home-primary--compact {
+  flex: 1 1 auto;
+  justify-content: center;
+  padding-block: 20px;
+}
+
 .home-bottom {
   display: flex;
   flex-direction: column;
   padding-top: 8px;
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
 .profile-complete-modal .logout-dialog-icon { color: var(--primary); }

@@ -4,15 +4,15 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "com.nexchat.app",
+  "applicationId": "site.nexchat.app",
   "variantName": "release",
   "elements": [
     {
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 2,
-      "versionName": "1.0.1",
+      "versionCode": 7,
+      "versionName": "1.0.6",
       "outputFile": "app-release.apk"
     }
   ],

@@ -162,7 +162,7 @@ function goBack() {
         <ChevronRight :size="22" />
       </button>
       <span class="top-title">{{ t('home.savedCodes') }}</span>
-      <div style="width: 40px"></div>
+      <div class="top-bar-width-spacer" aria-hidden="true"></div>
     </header>
 
     <div class="scroll-area">

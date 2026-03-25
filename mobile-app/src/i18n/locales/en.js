@@ -39,6 +39,8 @@ export default {
     savedCodes: 'Saved codes',
     connectWithCodeTitle: 'Connect with friends',
     connectWithCodeDesc: 'Use your contact code to connect with people you know',
+    randomOffNoCodeTitle: 'Browse your chats',
+    randomOffNoCodeDesc: 'Open your conversation list to stay in touch',
     goToConversations: 'Conversations',
     addCode: 'Add code',
     noSavedCodes: 'No saved codes',
@@ -208,6 +210,9 @@ export default {
     cameraOff: 'Stop',
     cameraOn: 'Start',
     endCallAria: 'End call',
+    voiceCallLive: 'Voice call',
+    openChat: 'Open chat',
+    callInBackground: 'Call in progress',
     filters: {
       none: 'Normal',
       grayscale: 'B&W',
@@ -277,6 +282,8 @@ export default {
     groupNamePlaceholder: 'Enter group name',
     groupPhoto: 'Group photo',
     selectMembers: 'Select members',
+    searchMembersPlaceholder: 'Search contacts',
+    noMembersMatch: 'No names match your search',
     create: 'Create',
     creating: 'Creating...',
     infoTitle: 'Group info',
@@ -330,7 +337,14 @@ export default {
     voiceRecordingTooShort: 'Recording too short, try recording for more than a second',
     sendVoice: 'Send',
     uploadingVoice: 'Uploading voice message...',
-    reaction: 'Reaction'
+    reaction: 'Reaction',
+    incomingVideoCall: 'Incoming video call',
+    incomingVoiceCall: 'Incoming voice call',
+    videoCallConfirm: 'Start a video call with {name}?',
+    voiceCallConfirm: 'Start a voice call with {name}?',
+    connectingCall: 'Connecting...',
+    callDeclined: '{name} declined the call',
+    requestCall: 'Call'
   },
   phoneValidation: {
     invalidCountryCode: 'Invalid country code',

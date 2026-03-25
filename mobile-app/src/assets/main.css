@@ -24,6 +24,8 @@
   --radius-sm: 8px;
   --radius-full: 9999px;
   --touch-min: 44px;
+  /* أزرار شريط العنوان / الدردشة — أصغر من الحد الأدنى للمسّ مع بقاء منطقة لمس معقولة */
+  --header-btn-size: 36px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --spacing: 16px;
@@ -301,6 +303,55 @@ body {
 [dir="ltr"] .back-btn svg,
 [dir="ltr"] .top-bar-back svg {
   transform: scaleX(-1);
+}
+
+/* أزرار الرجوع وأيقونات شريط الدردشة — حجم موحّد عبر الصفحات */
+button.back-btn {
+  width: var(--header-btn-size) !important;
+  height: var(--header-btn-size) !important;
+  min-width: var(--header-btn-size) !important;
+  min-height: var(--header-btn-size) !important;
+}
+
+button.clear-btn,
+button.new-chat-btn {
+  width: var(--header-btn-size) !important;
+  height: var(--header-btn-size) !important;
+  min-width: var(--header-btn-size) !important;
+  min-height: var(--header-btn-size) !important;
+}
+
+header.top-bar > button.add-btn {
+  width: var(--header-btn-size) !important;
+  height: var(--header-btn-size) !important;
+  min-width: var(--header-btn-size) !important;
+  min-height: var(--header-btn-size) !important;
+}
+
+header.chat-header button.icon-btn {
+  width: var(--header-btn-size) !important;
+  height: var(--header-btn-size) !important;
+  min-width: var(--header-btn-size) !important;
+  min-height: var(--header-btn-size) !important;
+}
+
+button.top-bar-back,
+button.top-bar-chat {
+  width: var(--header-btn-size) !important;
+  height: var(--header-btn-size) !important;
+  min-width: var(--header-btn-size) !important;
+  min-height: var(--header-btn-size) !important;
+}
+
+header.top-bar > .top-placeholder,
+header.top-bar > span.top-bar-spacer,
+header.top-bar > .top-bar-spacer,
+header.top-bar .top-bar-width-spacer {
+  width: var(--header-btn-size);
+  min-width: var(--header-btn-size);
+  flex-shrink: 0;
+  display: inline-block;
+  box-sizing: border-box;
 }
 
 /* Auth pages background pattern */

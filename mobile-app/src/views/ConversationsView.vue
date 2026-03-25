@@ -14,6 +14,7 @@ import { useAuthStore } from '../stores/auth'
 import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub } from '../services/signalr'
 import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
+import { formatGregorianDateTime } from '../utils/formatTime'
 
 const router = useRouter()
 const network = useNetworkStore()
@@ -84,7 +85,7 @@ function formatTime(ts) {
   if (diff < 60000) return t('connectionHistory.now')
   if (diff < 3600000) return t('connectionHistory.minutesAgo', { n: Math.floor(diff / 60000) })
   if (diff < 86400000) return t('connectionHistory.hoursAgo', { n: Math.floor(diff / 3600000) })
-  return d.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US') + ' ' + d.toLocaleTimeString(locale === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+  return formatGregorianDateTime(d, locale)
 }
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
@@ -183,7 +184,7 @@ function goBack() {
 
     <div class="search-wrap">
       <div class="search-input-wrap">
-        <Search :size="18" class="search-icon" />
+        <Search :size="16" class="search-icon" />
         <input
           v-model="searchQuery"
           type="text"
@@ -210,7 +211,7 @@ function goBack() {
         >
           <div class="item-avatar" :class="{ 'avatar-group': c.isGroup ?? c.IsGroup }" :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
             <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
-            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="22" class="avatar-group-icon" />
+            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="18" class="avatar-group-icon" />
             <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">
@@ -226,7 +227,7 @@ function goBack() {
               <span class="item-preview">{{ (c.lastMessagePreview ?? c.LastMessagePreview) || '—' }}</span>
               <span class="item-actions">
                 <span v-if="c.isPinned ?? c.IsPinned" class="pin-badge" :title="t('conversations.pin')">
-                  <Pin :size="12" />
+                  <Pin :size="11" />
                 </span>
                 <button
                   v-if="c.partnerId ?? c.PartnerId"
@@ -234,7 +235,7 @@ function goBack() {
                   @click.stop="openContextMenu(c, $event)"
                   :aria-label="t('common.cancel')"
                 >
-                  <MoreVertical :size="18" />
+                  <MoreVertical :size="16" />
                 </button>
               </span>
             </div>
@@ -317,18 +318,19 @@ function goBack() {
 
 .filters-wrap {
   display: flex;
-  gap: 8px;
-  padding: 12px var(--spacing) 8px;
+  gap: 6px;
+  padding: 8px var(--spacing) 6px;
   flex-shrink: 0;
 }
 
 .filter-btn {
   flex: 1;
-  padding: 10px 12px;
-  font-size: 13px;
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 12px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-secondary);
@@ -343,17 +345,17 @@ function goBack() {
 }
 
 .search-wrap {
-  padding: 0 var(--spacing) 12px;
+  padding: 0 var(--spacing) 8px;
   flex-shrink: 0;
 }
 
 .search-input-wrap {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  min-height: 44px;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 0 10px;
+  min-height: 36px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
 }
@@ -366,11 +368,11 @@ function goBack() {
 .search-input {
   flex: 1;
   min-width: 0;
-  padding: 12px 0;
+  padding: 8px 0;
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-family: 'Cairo', sans-serif;
   outline: none;
 }
@@ -411,17 +413,17 @@ function goBack() {
 .conv-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding-bottom: 24px;
 }
 
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 10px 12px;
   cursor: pointer;
-  border-radius: 14px;
+  border-radius: 12px;
   position: relative;
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -442,15 +444,15 @@ function goBack() {
 .conv-item.unread .item-name { font-weight: 700; }
 
 .item-avatar {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 15px;
   color: white;
   flex-shrink: 0;
   position: relative;
@@ -469,7 +471,7 @@ function goBack() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .item-row {
@@ -484,7 +486,7 @@ function goBack() {
 }
 .item-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-primary);
   font-family: 'Cairo', sans-serif;
   white-space: nowrap;
@@ -497,11 +499,11 @@ function goBack() {
 .group-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   flex-shrink: 0;
   font-family: 'Cairo', sans-serif;
@@ -519,33 +521,33 @@ function goBack() {
 .item-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .item-time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
 }
 
 .unread-badge-inline {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   background: #25D366;
   color: white;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-family: 'Cairo', sans-serif;
-  border-radius: 11px;
+  border-radius: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .item-preview {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -559,9 +561,9 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-  padding: 4px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 2px;
   background: none;
   border: none;
   color: var(--text-tertiary);
@@ -581,9 +583,9 @@ function goBack() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
   flex-shrink: 0;
@@ -602,18 +604,40 @@ function goBack() {
 }
 
 @media (max-width: 360px) {
+  .filters-wrap {
+    padding: 6px var(--spacing) 4px;
+    gap: 4px;
+  }
+  .filter-btn {
+    min-height: 32px;
+    padding: 5px 6px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+  .search-wrap {
+    padding-bottom: 6px;
+  }
+  .search-input-wrap {
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 8px;
+  }
+  .search-input {
+    font-size: 12px;
+    padding: 6px 0;
+  }
   .conv-item {
-    padding: 12px var(--spacing);
-    gap: 12px;
+    padding: 8px 10px;
+    gap: 8px;
   }
   .item-avatar {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    font-size: 16px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 14px;
   }
-  .item-name { font-size: 14px; }
-  .item-time { font-size: 12px; }
-  .item-preview { font-size: 12px; }
+  .item-name { font-size: 13px; }
+  .item-time { font-size: 10px; }
+  .item-preview { font-size: 11px; }
 }
 </style>

@@ -39,6 +39,8 @@ export default {
     savedCodes: 'أكوادي المحفوظة',
     connectWithCodeTitle: 'تواصل مع أصدقائك',
     connectWithCodeDesc: 'استخدم كود الاتصال للتواصل مع من تعرف',
+    randomOffNoCodeTitle: 'تصفح محادثاتك',
+    randomOffNoCodeDesc: 'افتح قائمة المحادثات للتواصل مع جهاتك',
     goToConversations: 'المحادثات',
     addCode: 'إضافة كود',
     noSavedCodes: 'لا توجد أكواد محفوظة',
@@ -208,6 +210,9 @@ export default {
     cameraOff: 'إيقاف',
     cameraOn: 'تشغيل',
     endCallAria: 'إنهاء المكالمة',
+    voiceCallLive: 'مكالمة صوتية',
+    openChat: 'فتح الدردشة',
+    callInBackground: 'المكالمة مستمرة',
     filters: {
       none: 'عادي',
       grayscale: 'أبيض وأسود',
@@ -277,6 +282,8 @@ export default {
     groupNamePlaceholder: 'أدخل اسم المجموعة',
     groupPhoto: 'صورة المجموعة',
     selectMembers: 'اختر الأعضاء',
+    searchMembersPlaceholder: 'بحث في جهات الاتصال',
+    noMembersMatch: 'لا يوجد اسم يطابق البحث',
     create: 'إنشاء',
     creating: 'جاري الإنشاء...',
     infoTitle: 'معلومات المجموعة',
@@ -330,7 +337,14 @@ export default {
     voiceRecordingTooShort: 'التسجيل قصير جداً، جرّب التسجيل لأكثر من ثانية',
     sendVoice: 'إرسال',
     uploadingVoice: 'جاري رفع الرسالة الصوتية...',
-    reaction: 'رد فعل'
+    reaction: 'رد فعل',
+    incomingVideoCall: 'يطلب مكالمة فيديو',
+    incomingVoiceCall: 'يطلب مكالمة صوتية',
+    videoCallConfirm: 'طلب مكالمة فيديو مع {name}؟',
+    voiceCallConfirm: 'طلب مكالمة صوتية مع {name}؟',
+    connectingCall: 'جاري الاتصال...',
+    callDeclined: 'رفض {name} المكالمة',
+    requestCall: 'طلب'
   },
   phoneValidation: {
     invalidCountryCode: 'مفتاح الدولة غير صالح',

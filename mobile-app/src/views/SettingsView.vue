@@ -10,6 +10,7 @@ import { useThemeStore } from '../stores/theme'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import api from '../services/api'
+import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { optInNotifications, optOutNotifications, getNotificationsEnabled, requestPermissionAndRegister } from '../services/notifications'
@@ -52,6 +53,7 @@ const isNative = Capacitor.isNativePlatform()
 const updateInfo = ref(null)
 const updateChecking = ref(false)
 const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.3'
+const codeConnectFeaturesEnabled = ref(true)
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -296,6 +298,9 @@ onMounted(() => {
   loadNotificationsState()
   loadProfile()
   checkForUpdate()
+  getCodeConnectFeaturesEnabled(api).then((v) => {
+    codeConnectFeaturesEnabled.value = v
+  })
 })
 </script>
 
@@ -443,7 +448,7 @@ onMounted(() => {
           <span>{{ t('settings.notificationCenter') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
-        <RouterLink to="/connection-history" class="link-row">
+        <RouterLink v-if="codeConnectFeaturesEnabled" to="/connection-history" class="link-row">
           <Send :size="20" class="link-icon" />
           <span>{{ t('connectionHistory.title') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
@@ -453,7 +458,7 @@ onMounted(() => {
           <span>{{ t('blocked.title') }}</span>
           <ChevronRight :size="18" class="link-arrow" />
         </RouterLink>
-        <RouterLink to="/saved-codes" class="link-row">
+        <RouterLink v-if="codeConnectFeaturesEnabled" to="/saved-codes" class="link-row">
           <BookmarkPlus :size="20" class="link-icon" />
           <span>{{ t('home.savedCodes') }}</span>
           <ChevronRight :size="18" class="link-arrow" />

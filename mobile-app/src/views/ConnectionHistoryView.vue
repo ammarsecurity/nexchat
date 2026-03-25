@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { useLocaleStore } from '../stores/locale'
+import { formatGregorianDateTime } from '../utils/formatTime'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -46,7 +47,7 @@ function formatTime(ts) {
   if (diff < 60000) return t('connectionHistory.now')
   if (diff < 3600000) return t('connectionHistory.minutesAgo', { n: Math.floor(diff / 60000) })
   if (diff < 86400000) return t('connectionHistory.hoursAgo', { n: Math.floor(diff / 3600000) })
-  return d.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US') + ' ' + d.toLocaleTimeString(locale === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+  return formatGregorianDateTime(d, locale)
 }
 
 function getStatusLabel(status) {
@@ -75,7 +76,7 @@ function goBack() {
         <ChevronRight :size="22" />
       </button>
       <span class="top-title">{{ t('connectionHistory.title') }}</span>
-      <div style="width: 40px"></div>
+      <div class="top-bar-width-spacer" aria-hidden="true"></div>
     </header>
 
     <div class="tabs-wrap">

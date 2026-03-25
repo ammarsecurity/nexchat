@@ -92,6 +92,16 @@ public class OneSignalService
             new { type = "video_call", sessionId = sessionId.ToString() });
 
     /// <summary>
+    /// إشعار مكالمة صوت/فيديو واردة من محادثة دائمة (RoomName = conversationId)
+    /// </summary>
+    public Task<bool> SendConversationVideoCallAsync(Guid recipientId, string callerName, Guid conversationId, bool voiceOnly = false)
+        => SendToUserAsync(
+            recipientId,
+            voiceOnly ? "مكالمة صوتية" : "مكالمة فيديو",
+            voiceOnly ? $"{callerName} يطلب مكالمة صوتية" : $"{callerName} يطلب مكالمة فيديو",
+            new { type = "video_call", conversationId = conversationId.ToString() });
+
+    /// <summary>
     /// إرسال إشعار لأجهزة محددة عبر subscription_ids (أكثر موثوقية من external_id)
     /// </summary>
     public async Task<bool> SendToSubscriptionIdsAsync(

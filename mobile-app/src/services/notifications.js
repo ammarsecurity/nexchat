@@ -149,13 +149,15 @@ function handleNotificationClick(data) {
     return
   }
 
+  if (data?.type === 'video_call') {
+    const vid = data.conversationId || data.sessionId
+    if (vid) router.push(`/video/${vid}`)
+    return
+  }
+
   if (!data?.sessionId) return
 
-  if (data.type === 'video_call') {
-    router.push(`/video/${data.sessionId}`)
-  } else {
-    router.push(`/chat/${data.sessionId}`)
-  }
+  router.push(`/chat/${data.sessionId}`)
 }
 
 /**
