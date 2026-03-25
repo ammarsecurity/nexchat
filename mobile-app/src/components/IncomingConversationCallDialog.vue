@@ -56,14 +56,14 @@ onUnmounted(() => {
 })
 
 async function accept() {
+  clearExpireTimer()
+  stopIncomingCallSound()
   const id = store.conversationId
   const vo = store.voiceOnly
   const name = store.callerName
   const avatar = store.callerAvatar
-  if (!id) return
-  clearExpireTimer()
-  stopIncomingCallSound()
   store.clear()
+  if (!id) return
   try {
     await ensureConnected(conversationHub)
     await conversationHub.invoke('AcceptVideoCall', id)
@@ -84,11 +84,11 @@ async function accept() {
 }
 
 function decline() {
-  const id = store.conversationId
-  if (!id) return
   clearExpireTimer()
   stopIncomingCallSound()
+  const id = store.conversationId
   store.clear()
+  if (!id) return
   ensureConnected(conversationHub).then(() => {
     conversationHub.invoke('DeclineVideoCall', id).catch(() => {})
   })

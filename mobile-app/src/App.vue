@@ -20,6 +20,10 @@ import { useNetworkStore } from './stores/network'
 import { useIncomingConversationCallStore } from './stores/incomingConversationCall'
 import { useConversationsListStore } from './stores/conversationsList'
 import { useActiveCallStore } from './stores/activeCall'
+import {
+  parseIncomingConversationCallPayload,
+  parseVideoCallAcceptedPayload
+} from './utils/incomingSignalrPayload'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -119,26 +123,21 @@ function setupMatchingHubListeners() {
 function setupConversationHubGlobalListeners() {
   conversationHub.off('IncomingVideoCall')
   conversationHub.on('IncomingVideoCall', (cid, voiceOnly, callerName, callerAvatar) => {
-    // السيرفر القديم يرسل (voiceOnly) فقط — نتجاهل لأننا نحتاج معرف المحادثة
-    if (cid == null || typeof cid === 'boolean') return
-    if (typeof cid !== 'string') return
+    const parsed = parseIncomingConversationCallPayload(cid, voiceOnly, callerName, callerAvatar)
+    if (!parsed) return
     if (route.path.startsWith('/video/')) {
       const vid = route.params.sessionId
-      if (vid != null && String(vid) === String(cid)) return
+      if (vid != null && String(vid) === String(parsed.conversationId)) return
     }
-    incomingConvCall.setIncoming({
-      conversationId: String(cid),
-      voiceOnly: voiceOnly === true,
-      callerName: typeof callerName === 'string' ? callerName : '',
-      callerAvatar: callerAvatar || null
-    })
+    incomingConvCall.setIncoming(parsed)
   })
 
   conversationHub.off('VideoCallAccepted')
   conversationHub.on('VideoCallAccepted', (cidStr, voiceOnly) => {
-    if (!cidStr) return
-    const cid = String(cidStr)
-    const vo = voiceOnly === true
+    const parsed = parseVideoCallAcceptedPayload(cidStr, voiceOnly)
+    if (!parsed) return
+    const cid = parsed.conversationId
+    const vo = parsed.voiceOnly
     const list = conversationsList.list
     const item = list.find((c) => String(c.id ?? c.Id) === cid)
     const partnerName = item?.partnerName ?? item?.PartnerName ?? ''
@@ -184,6 +183,13 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('nexchat:unauthorized', handleUnauthorized)
+
+  conversationHub.onreconnected(() => {
+    if (auth.token) setupConversationHubGlobalListeners()
+  })
+  matchingHub.onreconnected(() => {
+    if (auth.token) setupMatchingHubListeners()
+  })
 
   if (Capacitor.isNativePlatform() && typeof App?.addListener === 'function') {
     App.addListener('appStateChange', ({ isActive }) => {
