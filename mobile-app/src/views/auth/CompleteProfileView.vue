@@ -172,7 +172,8 @@ async function handleSubmit() {
 
 .page-inner {
   width: 100%;
-  max-width: 432px;
+  max-width: var(--app-max-width);
+  width: 100%;
   margin: 0 auto;
   padding: 0 var(--spacing);
   padding-bottom: calc(24px + var(--safe-bottom));

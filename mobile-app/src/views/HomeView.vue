@@ -511,9 +511,12 @@ const homePrimaryCompact = computed(
 .home-bottom {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  width: 100%;
   padding-top: 8px;
   flex-shrink: 0;
   margin-top: auto;
+  box-sizing: border-box;
 }
 
 .profile-complete-modal .logout-dialog-icon { color: var(--primary); }

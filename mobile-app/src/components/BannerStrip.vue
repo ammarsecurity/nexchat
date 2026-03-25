@@ -127,10 +127,12 @@ watch(bannersDoubled, (val) => {
 <style scoped>
 .banner-strip {
   flex-shrink: 0;
-  margin: var(--spacing);
   overflow: hidden;
-  width: 100%;
-  max-width: 340px;
+  width: calc(100% - 2 * var(--spacing));
+  max-width: var(--app-max-width, 100%);
+  margin-block: var(--spacing);
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 .banner-strip.single-banner {
@@ -140,7 +142,7 @@ watch(bannersDoubled, (val) => {
 
 .banner-scroll {
   display: flex;
-  gap: 12px;
+  gap: clamp(8px, 2vw, 14px);
   overflow-x: auto;
   padding: 4px 0;
   direction: ltr;
@@ -169,15 +171,18 @@ watch(bannersDoubled, (val) => {
 
 .banner-item {
   flex-shrink: 0;
-  width: 280px;
-  height: 120px;
+  width: clamp(200px, 78vw, 280px);
+  aspect-ratio: 280 / 120;
+  height: auto;
+  max-height: 140px;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg-card);
 }
 
 .banner-strip.single-banner .banner-item {
-  width: min(100%, 312px);
+  width: min(100%, 320px);
+  max-width: 100%;
 }
 
 .banner-item img {
@@ -193,5 +198,30 @@ watch(bannersDoubled, (val) => {
 }
 .banner-item.clickable:active {
   opacity: 0.9;
+}
+
+@media (min-width: 480px) {
+  .banner-item {
+    width: clamp(240px, 42vw, 320px);
+  }
+  .banner-strip.single-banner .banner-item {
+    width: min(100%, 400px);
+  }
+}
+
+@media (min-width: 768px) {
+  .banner-item {
+    width: clamp(280px, 38vw, 400px);
+    max-height: 168px;
+  }
+  .banner-strip.single-banner .banner-item {
+    width: min(100%, 520px);
+  }
+}
+
+@media (min-width: 1024px) {
+  .banner-item {
+    width: clamp(300px, 32vw, 440px);
+  }
 }
 </style>

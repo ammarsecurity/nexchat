@@ -95,6 +95,18 @@ async function onRocketClick() {
   z-index: 100;
 }
 
+/* يتماشى مع عرض #app على التابلت والشاشات الأوسع */
+@media (min-width: 480px) {
+  .home-nav {
+    left: 50%;
+    right: auto;
+    width: var(--app-max-width);
+    max-width: 100%;
+    transform: translateX(-50%);
+    box-sizing: border-box;
+  }
+}
+
 .nav-item {
   display: flex;
   flex-direction: column;

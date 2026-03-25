@@ -160,6 +160,7 @@ function endCallFromBar() {
   top: calc(18px + var(--safe-top, 0px));
   bottom: auto;
   z-index: 10050;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -173,6 +174,16 @@ function endCallFromBar() {
   font-family: 'Cairo', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+@media (min-width: 480px) {
+  .active-call-bar:not(.active-call-bar--embedded) {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(var(--app-max-width), calc(100vw - 2 * var(--spacing, 16px)));
+    max-width: min(var(--app-max-width), calc(100vw - 2 * var(--spacing, 16px)));
+  }
 }
 
 .active-call-bar--embedded {
