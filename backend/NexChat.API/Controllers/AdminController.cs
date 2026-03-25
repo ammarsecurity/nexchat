@@ -18,7 +18,8 @@ public class AdminController(
     IHubContext<ChatHub> hubContext,
     OneSignalService oneSignal,
     IWebHostEnvironment env,
-    IConfiguration config) : ControllerBase
+    IConfiguration config,
+    IConversationMessageCrypto messageCrypto) : ControllerBase
 {
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats()
@@ -611,18 +612,21 @@ public class AdminController(
             .Where(m => m.ConversationId == id);
 
         var total = await query.CountAsync();
-        var messages = await query
+        var rows = await query
             .OrderBy(m => m.SentAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
+            .Select(m => new { m.Id, SenderName = m.Sender.Name, m.Content, m.Type, m.SentAt })
+            .ToListAsync();
+
+        var messages = rows
             .Select(m => new AdminConversationMessageDto(
                 m.Id,
-                m.Sender.Name,
-                m.Content,
+                m.SenderName,
+                messageCrypto.DecryptFromStorage(m.Content ?? ""),
                 m.Type,
-                m.SentAt
-            ))
-            .ToListAsync();
+                m.SentAt))
+            .ToList();
 
         return Ok(new PagedResult<AdminConversationMessageDto>(messages, total, page, pageSize));
     }

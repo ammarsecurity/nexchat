@@ -24,6 +24,14 @@ builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(
     builder.Configuration.GetSection("OneSignal"));
 builder.Services.AddHttpClient<NexChat.Infrastructure.Services.OneSignalService>();
 builder.Services.AddHostedService<InactiveSessionCleanupService>();
+builder.Services.AddSingleton<IConversationMessageCrypto>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<ConversationMessageCrypto>>();
+    var key = config["MessageContent:EncryptionKey"]
+        ?? Environment.GetEnvironmentVariable("NEXCHAT_MESSAGE_ENCRYPTION_KEY");
+    return new ConversationMessageCrypto(key, logger);
+});
 
 // JWT Auth
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "NexChatSuperSecretKeyForJWT2025!";

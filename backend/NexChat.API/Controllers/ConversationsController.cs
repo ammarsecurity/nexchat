@@ -14,7 +14,7 @@ namespace NexChat.API.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class ConversationsController(AppDbContext db, OneSignalService oneSignal) : ControllerBase
+public class ConversationsController(AppDbContext db, OneSignalService oneSignal, IConversationMessageCrypto messageCrypto) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -142,10 +142,17 @@ public class ConversationsController(AppDbContext db, OneSignalService oneSignal
                     !db.UserMessageDeletions.Any(d => d.UserId == CurrentUserId && d.MessageId == m.Id) &&
                     (lastRead == null || m.SentAt > lastRead));
 
-            var preview = lastMsg == null ? null :
-                lastMsg.Type == "image" ? "صورة" :
-                lastMsg.Type == "audio" ? "رسالة صوتية" :
-                lastMsg.Content.Length > 50 ? lastMsg.Content[..50] + "…" : lastMsg.Content;
+            string? preview = null;
+            if (lastMsg != null)
+            {
+                if (lastMsg.Type == "image") preview = "صورة";
+                else if (lastMsg.Type == "audio") preview = "رسالة صوتية";
+                else
+                {
+                    var plain = messageCrypto.DecryptFromStorage(lastMsg.Content ?? "");
+                    preview = plain.Length > 50 ? plain[..50] + "…" : plain;
+                }
+            }
 
             result.Add(new ConversationListItemDto(
                 c.Id,

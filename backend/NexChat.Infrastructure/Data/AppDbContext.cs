@@ -211,7 +211,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany()
                 .HasForeignKey(x => x.SenderId)
                 .OnDelete(DeleteBehavior.Restrict);
-            e.Property(x => x.Content).HasMaxLength(5000);
+            e.Property(x => x.Content).HasColumnType("longtext");
             e.Property(x => x.Type).HasMaxLength(20);
         });
 
