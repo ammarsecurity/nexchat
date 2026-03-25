@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2 } from 'lucide-vue-next'
+import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
@@ -820,6 +820,20 @@ function getSenderDisplay(msg) {
   }
 }
 
+/** Keep fixed popups inside the viewport (avoids negative top when opening above short space). */
+function clampPopupTop(anchorRect, estHeight, gap = 4, pad = 8) {
+  const H = window.innerHeight
+  let top = anchorRect.top - estHeight - gap
+  if (top < pad) {
+    top = anchorRect.bottom + gap
+  }
+  if (top + estHeight > H - pad) {
+    top = Math.max(pad, H - pad - estHeight)
+  }
+  if (top < pad) top = pad
+  return top
+}
+
 function toggleMessageMenu(msg, e) {
   const id = msg.id || msg.Id
   if (showMessageMenu.value === id) {
@@ -835,8 +849,10 @@ function toggleMessageMenu(msg, e) {
     let left = rect.right - popupWidth
     if (left < padding) left = padding
     if (left + popupWidth > window.innerWidth - padding) left = window.innerWidth - popupWidth - padding
+    const MSG_MENU_EST_HEIGHT = 220
+    const top = clampPopupTop(rect, MSG_MENU_EST_HEIGHT, 4, 8)
     msgMenuPosition.value = {
-      bottom: (window.innerHeight - rect.top + 4) + 'px',
+      top: top + 'px',
       left: left + 'px'
     }
   }
@@ -926,63 +942,27 @@ async function leaveChat() {
   router.replace('/conversations')
 }
 
-let longPressTimer = null
-let longPressMsg = null
-let longPressEvent = null
-let justOpenedReactionPicker = false
+function openReactionFromMenu(msg) {
+  showMessageMenu.value = null
+  showMessageMenuMsg.value = null
+  nextTick(() => openReactionPicker(msg, null))
+}
 
-function startLongPress(msg, e) {
+function onMessageContextMenu(msg, e) {
   if (msg.deletedForEveryone) return
-  longPressMsg = msg
-  longPressEvent = e
-  longPressTimer = setTimeout(() => {
-    longPressTimer = null
-    justOpenedReactionPicker = true
-    openReactionPicker(longPressMsg, longPressEvent)
-    longPressMsg = null
-    longPressEvent = null
-  }, 400)
-}
-function cancelLongPress() {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-  longPressMsg = null
-  longPressEvent = null
-}
-
-function onMessageTouchStart(msg, e) {
-  startLongPress(msg, e)
-}
-function onMessageTouchEnd() {
-  cancelLongPress()
-}
-function onMessageTouchCancel() {
-  cancelLongPress()
-}
-
-function onMessageMouseDown(msg, e) {
-  startLongPress(msg, e)
-}
-function onMessageMouseUp() {
-  cancelLongPress()
-}
-function onMessageMouseLeave() {
-  cancelLongPress()
-}
-function onBubbleClick(e) {
-  if (justOpenedReactionPicker) {
-    e.preventDefault()
-    e.stopPropagation()
-    justOpenedReactionPicker = false
-  }
+  e.preventDefault()
+  openReactionPicker(msg, e)
 }
 
 function openReactionPicker(msg, e) {
   if (!(msg?.id ?? msg?.Id) || msg.deletedForEveryone) return
   showReactionPickerMsg.value = msg
-  const btn = e?.currentTarget
+  let btn = e?.currentTarget
+  if (!btn && typeof document !== 'undefined') {
+    const id = String(getMsgKey(msg))
+    const wrap = document.querySelector(`[data-msg-id="${CSS.escape(id)}"]`)
+    btn = wrap?.querySelector('.bubble') || wrap
+  }
   if (btn) {
     const rect = btn.getBoundingClientRect()
     const padding = 16
@@ -990,8 +970,10 @@ function openReactionPicker(msg, e) {
     let left = rect.left + (rect.width / 2) - (maxPickerWidth / 2)
     if (left + maxPickerWidth > window.innerWidth - padding) left = window.innerWidth - maxPickerWidth - padding
     if (left < padding) left = padding
+    const PICKER_EST_HEIGHT = 56
+    const top = clampPopupTop(rect, PICKER_EST_HEIGHT, 8, padding)
     reactionPickerPosition.value = {
-      bottom: window.innerHeight - rect.top + 8 + 'px',
+      top: top + 'px',
       left: left + 'px',
       maxWidth: maxPickerWidth + 'px'
     }
@@ -1155,15 +1137,7 @@ function removeReaction(msg) {
         <div
           v-if="msg.type === 'image'"
           class="bubble image-bubble"
-          @touchstart.passive="onMessageTouchStart(msg, $event)"
-          @touchmove="cancelLongPress"
-          @touchend="onMessageTouchEnd"
-          @touchcancel="onMessageTouchCancel"
-          @mousedown="onMessageMouseDown(msg, $event)"
-          @mouseup="onMessageMouseUp"
-          @mouseleave="onMessageMouseUp"
-          @click="onBubbleClick"
-          @contextmenu.prevent
+          @contextmenu="onMessageContextMenu(msg, $event)"
         >
           <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
             <Reply :size="12" class="msg-reply-icon" />
@@ -1178,15 +1152,7 @@ function removeReaction(msg) {
         <div
           v-else-if="msg.type === 'audio'"
           class="bubble audio-bubble"
-          @touchstart.passive="onMessageTouchStart(msg, $event)"
-          @touchmove="cancelLongPress"
-          @touchend="onMessageTouchEnd"
-          @touchcancel="onMessageTouchCancel"
-          @mousedown="onMessageMouseDown(msg, $event)"
-          @mouseup="onMessageMouseUp"
-          @mouseleave="onMessageMouseUp"
-          @click="onBubbleClick"
-          @contextmenu.prevent
+          @contextmenu="onMessageContextMenu(msg, $event)"
         >
           <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
             <Reply :size="12" class="msg-reply-icon" />
@@ -1232,15 +1198,7 @@ function removeReaction(msg) {
         <div
           v-else
           class="bubble"
-          @touchstart.passive="onMessageTouchStart(msg, $event)"
-          @touchmove="cancelLongPress"
-          @touchend="onMessageTouchEnd"
-          @touchcancel="onMessageTouchCancel"
-          @mousedown="onMessageMouseDown(msg, $event)"
-          @mouseup="onMessageMouseUp"
-          @mouseleave="onMessageMouseUp"
-          @click="onBubbleClick"
-          @contextmenu.prevent
+          @contextmenu="onMessageContextMenu(msg, $event)"
         >
           <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
             <Reply :size="12" class="msg-reply-icon" />
@@ -1314,6 +1272,10 @@ function removeReaction(msg) {
     <Teleport to="body">
       <Transition name="fade">
         <div v-if="showMessageMenu && showMessageMenuMsg" class="msg-actions-popup glass-card msg-actions-popup-fixed" :style="msgMenuPosition">
+          <button class="msg-action-btn msg-action-react" @click="openReactionFromMenu(showMessageMenuMsg)">
+            <SmilePlus :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ t('conversationChat.reaction') }}</span>
+          </button>
           <button class="msg-action-btn msg-action-reply" @click="replyToMessage(showMessageMenuMsg)">
             <Reply :size="14" stroke-width="2" class="msg-action-icon" />
             <span class="msg-action-label">{{ t('conversationChat.reply') }}</span>
@@ -1448,8 +1410,12 @@ function removeReaction(msg) {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   font-family: 'Cairo', sans-serif;
+  box-sizing: border-box;
 }
 
 .conv-active-call-slot {
@@ -1461,10 +1427,14 @@ function removeReaction(msg) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   padding: calc(8px + var(--safe-top)) var(--spacing) 12px;
   flex-shrink: 0;
   border-radius: 0 0 var(--radius) var(--radius);
   border-top: none;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .back-btn {
@@ -1560,7 +1530,12 @@ function removeReaction(msg) {
   box-shadow: 0 0 0 1px var(--bg-primary);
 }
 
-.header-actions { display: flex; gap: 8px; }
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+}
 
 .chat-header .icon-btn {
   align-items: center;
@@ -1599,8 +1574,9 @@ function removeReaction(msg) {
 .message-wrap {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
+  max-width: min(80%, calc(100vw - 24px));
   position: relative;
+  min-width: 0;
 }
 .message-wrap.mine { align-self: flex-end; align-items: flex-end; }
 .message-wrap.theirs { align-self: flex-start; align-items: flex-start; }
@@ -1816,6 +1792,24 @@ function removeReaction(msg) {
 .msg-action-reply:hover, .msg-action-reply:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
 .msg-action-share { color: var(--primary); }
 .msg-action-share:hover, .msg-action-share:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
+
+/* رد فعل — وضع داكن: نص أوضح على glass-card */
+.msg-action-react {
+  color: #c9c6ff;
+}
+.msg-action-react:hover,
+.msg-action-react:active {
+  background: rgba(139, 132, 255, 0.22);
+  color: #ecebff;
+}
+html.light .msg-action-react {
+  color: var(--primary);
+}
+html.light .msg-action-react:hover,
+html.light .msg-action-react:active {
+  background: rgba(108, 99, 255, 0.12);
+  color: var(--primary);
+}
 
 .msg-reactions-row {
   display: flex;
@@ -2253,8 +2247,9 @@ function removeReaction(msg) {
 
 .audio-bubble {
   padding: 0;
-  min-width: 200px;
-  max-width: 260px;
+  min-width: 0;
+  width: 100%;
+  max-width: min(260px, calc(100vw - 48px));
   overflow: hidden;
   border-radius: 16px;
 }
@@ -2345,7 +2340,9 @@ function removeReaction(msg) {
 }
 
 .chat-image {
-  max-width: 220px;
+  max-width: min(220px, calc(100vw - 48px));
+  width: auto;
+  height: auto;
   max-height: 280px;
   border-radius: 12px;
   cursor: pointer;
@@ -2599,4 +2596,177 @@ function removeReaction(msg) {
 
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* شاشات ضيقة — رأس الدردشة أصغر قليلاً */
+@media (max-width: 420px) {
+  .chat-header {
+    padding: calc(6px + var(--safe-top)) 6px 8px;
+    gap: 2px;
+  }
+  .partner-info {
+    gap: 8px;
+  }
+  .partner-info-btn {
+    margin-inline-start: 4px !important;
+    margin-inline-end: 4px !important;
+  }
+  .header-actions {
+    gap: 3px;
+  }
+  .chat-header .icon-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+  }
+  .chat-header .icon-btn :deep(svg) {
+    width: 17px;
+    height: 17px;
+  }
+  .back-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+  }
+  .back-btn :deep(svg) {
+    width: 18px;
+    height: 18px;
+  }
+  .chat-header .avatar-sm {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+  .partner-name {
+    font-size: 14px;
+  }
+  .typing-status {
+    font-size: 11px;
+    margin-top: 0;
+  }
+  .partner-online-dot {
+    width: 5px;
+    height: 5px;
+  }
+  .messages-area {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .input-area {
+    padding: 6px 6px calc(10px + var(--safe-bottom));
+    gap: 6px;
+  }
+  .message-input-row {
+    gap: 5px;
+    min-height: 48px;
+    align-items: center;
+  }
+  .msg-input {
+    min-height: 46px;
+    padding: 10px 12px;
+    font-size: 15px;
+    border-radius: 20px;
+  }
+  .send-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+  .send-btn :deep(svg) {
+    width: 17px;
+    height: 17px;
+  }
+  .input-action-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 10px;
+  }
+  .input-action-btn :deep(svg) {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+@media (max-width: 360px) {
+  .chat-header {
+    padding: calc(4px + var(--safe-top)) 4px 6px;
+    gap: 0;
+  }
+  .partner-info {
+    gap: 6px;
+  }
+  .partner-info-btn {
+    margin-inline-start: 2px !important;
+    margin-inline-end: 2px !important;
+  }
+  .header-actions {
+    gap: 2px;
+  }
+  .chat-header .icon-btn {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+  .chat-header .icon-btn :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+  .back-btn {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+  .back-btn :deep(svg) {
+    width: 17px;
+    height: 17px;
+  }
+  .chat-header .avatar-sm {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+  .partner-name {
+    font-size: 13px;
+  }
+  .typing-status {
+    font-size: 10px;
+  }
+  .messages-area {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .input-area {
+    padding: 4px 4px calc(8px + var(--safe-bottom));
+    gap: 4px;
+  }
+  .message-input-row {
+    gap: 4px;
+    min-height: 44px;
+  }
+  .msg-input {
+    padding: 8px 10px;
+    font-size: 14px;
+    min-height: 44px;
+    border-radius: 18px;
+  }
+  .send-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+  .send-btn :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+  .input-action-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: 9px;
+  }
+  .input-action-btn :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+}
 </style>

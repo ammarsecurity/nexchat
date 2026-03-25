@@ -297,9 +297,13 @@ function goBack() {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   padding-bottom: var(--safe-bottom);
   font-family: 'Cairo', sans-serif;
+  box-sizing: border-box;
 }
 
 .top-bar {

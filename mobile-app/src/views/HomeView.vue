@@ -15,6 +15,7 @@ import { useConversationStore } from '../stores/conversation'
 import { matchingHub, conversationHub, startHub, ensureConnected, stopHub } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { publicUrl } from '../utils/publicUrl'
 import { requestPermissionAndRegister, scheduleRegistrationRetry } from '../services/notifications'
 import api from '../services/api'
 import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
@@ -366,7 +367,7 @@ const homePrimaryCompact = computed(
           <div class="main-cta-wrap">
             <button class="main-cta-circle" :disabled="loading" @click="startRandom">
               <Vue3Lottie
-                animation-link="/json/chat.json"
+                :animation-link="publicUrl('json/chat.json')"
                 :height="88"
                 :width="88"
                 :speed="0.85"
@@ -401,7 +402,7 @@ const homePrimaryCompact = computed(
         <div v-if="randomChatSettingLoaded && !randomChatEnabled && codeConnectLoaded" class="cta-replacement-card">
           <div class="cta-replacement-lottie">
             <Vue3Lottie
-              animation-link="/json/chat.json"
+              :animation-link="publicUrl('json/chat.json')"
               :height="80"
               :width="120"
               :speed="0.7"

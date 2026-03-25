@@ -5,6 +5,7 @@ import { Globe, Phone, AlertCircle, ChevronRight } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '../../stores/theme'
+import { publicUrl } from '../../utils/publicUrl'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
 import { countries } from '../../data/countries'
 import api from '../../services/api'
@@ -14,7 +15,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
 const { t } = useI18n()
-const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
+const logoImg = computed(() => publicUrl(theme.isLight ? 'logo-light.png' : 'logo.png'))
 
 const selectedCountry = ref(null)
 const phoneNumber = ref('')

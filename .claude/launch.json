@@ -10,8 +10,8 @@
     {
       "name": "mobile-app",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["mobile-app/node_modules/vite/bin/vite.js", "--port", "5173", "--host"],
-      "port": 5173
+      "runtimeArgs": ["mobile-app/node_modules/vite/bin/vite.js", "--port", "5175", "--host"],
+      "port": 5175
     },
     {
       "name": "admin-dashboard",

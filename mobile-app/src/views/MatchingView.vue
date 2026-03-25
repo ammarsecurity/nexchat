@@ -7,6 +7,7 @@ import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useMatchingStore } from '../stores/matching'
 import { useI18n } from 'vue-i18n'
 import { matchingHub, ensureConnected } from '../services/signalr'
+import { publicUrl } from '../utils/publicUrl'
 
 const router = useRouter()
 const matching = useMatchingStore()
@@ -76,7 +77,7 @@ async function cancel() {
       <section class="search-section">
         <div class="search-visual">
           <Vue3Lottie
-            animation-link="/json/world-map-searching.json"
+            :animation-link="publicUrl('json/world-map-searching.json')"
             width="100%"
             height="100%"
             :speed="0.8"

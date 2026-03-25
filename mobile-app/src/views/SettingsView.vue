@@ -7,6 +7,7 @@ import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
 import { i18n } from '../i18n'
 import { useThemeStore } from '../stores/theme'
+import { publicUrl } from '../utils/publicUrl'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import api from '../services/api'
@@ -24,7 +25,7 @@ const localeStore = useLocaleStore()
 const { t } = useI18n()
 const theme = useThemeStore()
 const user = computed(() => auth.user)
-const logoImg = computed(() => theme.isLight ? '/logo-light.png' : '/logo.png')
+const logoImg = computed(() => publicUrl(theme.isLight ? 'logo-light.png' : 'logo.png'))
 const supportLoading = ref(false)
 
 const showAvatarPicker = ref(false)

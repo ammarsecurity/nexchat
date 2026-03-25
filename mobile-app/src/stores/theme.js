@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { publicUrl } from '../utils/publicUrl'
 
 const STORAGE_KEY = 'nexchat_theme'
 
@@ -27,7 +28,7 @@ export const useThemeStore = defineStore('theme', () => {
     if (meta) meta.content = isLight.value ? '#F5F5FA' : '#0D0D1A'
     // favicon based on theme
     const favicon = document.querySelector('link[rel="icon"]')
-    if (favicon) favicon.href = isLight.value ? '/logo-light.png' : '/logo.png'
+    if (favicon) favicon.href = publicUrl(isLight.value ? 'logo-light.png' : 'logo.png')
   }
 
   // Apply on init

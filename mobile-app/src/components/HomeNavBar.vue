@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { Settings, MessageCircle } from 'lucide-vue-next'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useMessageRequestsStore } from '../stores/messageRequests'
+import { publicUrl } from '../utils/publicUrl'
 
 const listStore = useConversationsListStore()
 const msgReqStore = useMessageRequestsStore()
@@ -60,7 +61,7 @@ async function onRocketClick() {
       >
         <div class="rocket-wrap">
           <Vue3Lottie
-            animation-link="/json/Rocket%20Lunch.json"
+            :animation-link="publicUrl('json/Rocket%20Lunch.json')"
             :height="150"
             :width="150"
             :speed="0.9"
