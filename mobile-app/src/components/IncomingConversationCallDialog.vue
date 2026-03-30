@@ -6,6 +6,7 @@ import { Check, X } from 'lucide-vue-next'
 import CachedAvatar from './CachedAvatar.vue'
 import { useIncomingConversationCallStore } from '../stores/incomingConversationCall'
 import { useActiveCallStore } from '../stores/activeCall'
+import { useConversationsListStore } from '../stores/conversationsList'
 import { conversationHub, ensureConnected } from '../services/signalr'
 import { startIncomingCallSound, stopIncomingCallSound } from '../utils/sounds'
 
@@ -15,6 +16,7 @@ const { t } = useI18n()
 const router = useRouter()
 const store = useIncomingConversationCallStore()
 const activeCall = useActiveCallStore()
+const conversationsList = useConversationsListStore()
 
 const visible = computed(() => store.visible)
 const callerName = computed(() => store.callerName || '…')
@@ -70,12 +72,15 @@ async function accept() {
   } catch {
     return
   }
+  const convItem = conversationsList.list.find((c) => String(c.id ?? c.Id) === String(id))
+  const partnerUserId = convItem?.partnerId ?? convItem?.PartnerId ?? null
   activeCall.syncMeta({
     sessionId: id,
     voiceOnly: vo,
     isConversation: true,
     partnerName: name,
-    partnerAvatar: avatar
+    partnerAvatar: avatar,
+    partnerUserId
   })
   router.push({
     path: `/video/${id}`,

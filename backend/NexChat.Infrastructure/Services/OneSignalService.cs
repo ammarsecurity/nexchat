@@ -89,7 +89,12 @@ public class OneSignalService
             recipientId,
             "مكالمة فيديو",
             $"{callerName} يطلب مكالمة فيديو",
-            new { type = "video_call", sessionId = sessionId.ToString() });
+            new
+            {
+                type = "video_call",
+                sessionId = sessionId.ToString(),
+                callerName = callerName ?? ""
+            });
 
     /// <summary>
     /// إشعار مكالمة صوت/فيديو واردة من محادثة دائمة (RoomName = conversationId)
@@ -152,7 +157,10 @@ public class OneSignalService
         IEnumerable<string>? subscriptionIds,
         Guid? recipientId,
         string connectorName,
-        Guid requesterId)
+        Guid requesterId,
+        string? requesterGender = null,
+        string? requesterAvatar = null,
+        bool requesterIsFeatured = false)
     {
         if (!IsConfigured) return false;
 
@@ -161,7 +169,11 @@ public class OneSignalService
         var data = new Dictionary<string, string>
         {
             ["type"] = "code_connected",
-            ["requesterId"] = requesterId.ToString()
+            ["requesterId"] = requesterId.ToString(),
+            ["requesterName"] = connectorName ?? "",
+            ["requesterGender"] = requesterGender ?? "",
+            ["requesterAvatar"] = requesterAvatar ?? "",
+            ["requesterIsFeatured"] = requesterIsFeatured ? "true" : "false"
         };
 
         Dictionary<string, object> payload;

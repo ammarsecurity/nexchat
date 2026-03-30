@@ -4,11 +4,12 @@ using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using NexChat.Infrastructure.Services;
 
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalService oneSignal) : Hub
+public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalService oneSignal, IProfanityMasker profanity) : Hub
 {
     private bool TryGetUserId(out Guid userId)
     {
@@ -62,6 +63,12 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             return;
         }
 
+        if (session.Type == "random" && MatchingService.BlocksRandomJoinUntilAccepted(sid))
+        {
+            await Clients.Caller.SendAsync("Error", "Match not confirmed");
+            return;
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, sessionId);
 
         // Send recent messages
@@ -75,7 +82,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         await Clients.Caller.SendAsync("SessionJoined", new
         {
             session.Id,
-            Partner = new { partnerUser.Name, partnerUser.Gender, partnerUser.UniqueCode, partnerUser.Avatar, IsFeatured = partnerUser.IsFeatured },
+            Partner = new { partnerUser.Id, partnerUser.Name, partnerUser.Gender, partnerUser.UniqueCode, partnerUser.Avatar, IsFeatured = partnerUser.IsFeatured },
             Messages = messages
         });
     }
@@ -99,11 +106,15 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         if (session.EndedAt != null && session.Type == "support")
             session.EndedAt = null;
 
+        var textBody = type == "text" ? content.Trim() : content;
+        if (type == "text")
+            textBody = profanity.Mask(textBody);
+
         var message = new Message
         {
             SessionId = sid,
             SenderId = userId,
-            Content = type == "text" ? content.Trim() : content,
+            Content = textBody,
             Type = type
         };
         db.Messages.Add(message);
@@ -120,7 +131,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
 
         var recipientId = session.User1Id == userId ? session.User2Id : session.User1Id;
         var sender = await db.Users.FindAsync(userId);
-        var preview = type == "text" ? content.Trim() : "صورة";
+        var preview = type == "text" ? textBody : "صورة";
         if (preview.Length > 80) preview = preview[..80] + "…";
         _ = oneSignal.SendNewMessageAsync(recipientId, sender?.Name ?? "شخص", preview, sid);
     }
@@ -194,7 +205,7 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallDeclined");
     }
 
-    public async Task ReportUser(string sessionId, string reason)
+    public async Task ReportUser(string sessionId, string reason, string? reportedMessageContent = null)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
             return;
@@ -213,11 +224,23 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
             r.ReporterId == userId && r.ReportedId == reportedId);
         if (alreadyReported) return;
 
+        var r = reason.Trim();
+        if (!string.IsNullOrWhiteSpace(reportedMessageContent))
+        {
+            var snap = reportedMessageContent.Length > 350
+                ? reportedMessageContent[..350] + "…"
+                : reportedMessageContent;
+            r = $"[Content] {snap}\n{r}";
+        }
+
+        if (r.Length > 500)
+            r = r[..500];
+
         db.Reports.Add(new Report
         {
             ReporterId = userId,
             ReportedId = reportedId,
-            Reason = reason.Length > 500 ? reason[..500] : reason
+            Reason = r
         });
         await db.SaveChangesAsync();
         await Clients.Caller.SendAsync("ReportSent");

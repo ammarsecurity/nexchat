@@ -28,6 +28,7 @@ const routes = [
   { path: '/settings', component: () => import('../views/SettingsView.vue') },
   { path: '/notifications', component: () => import('../views/NotificationsView.vue') },
   { path: '/privacy', component: () => import('../views/PrivacyPolicyView.vue'), meta: { public: true } },
+  { path: '/terms', component: () => import('../views/TermsOfServiceView.vue'), meta: { public: true } },
 ]
 
 const router = createRouter({

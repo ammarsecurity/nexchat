@@ -28,18 +28,26 @@ const filterStyles = {
 let dotsInterval
 let onlineInterval
 
-onMounted(() => {
+onMounted(async () => {
   dotsInterval = setInterval(() => {
     dots.value = dots.value.length >= 3 ? '.' : dots.value + '.'
   }, 500)
   onlineInterval = setInterval(() => {
     onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
   }, 5000)
+
+  if (matching.consumeResumeSearchAfterNav()) {
+    try {
+      await ensureConnected(matchingHub)
+      await matchingHub.invoke('StartSearching', matching.genderFilter)
+    } catch {}
+  }
 })
 
 onUnmounted(() => {
   clearInterval(dotsInterval)
   clearInterval(onlineInterval)
+  if (matching.consumeSkipNextMatchingUnmountCancel()) return
   if (!cancelledProgrammatically) {
     ensureConnected(matchingHub).then(() => matchingHub.invoke('CancelSearching')).catch(() => {})
   }

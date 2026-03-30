@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle, MessageSquare } from 'lucide-vue-next'
+import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle, MessageSquare, Speaker, SpeakerOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { useConversationStore } from '../stores/conversation'
@@ -14,6 +14,7 @@ import {
 } from '../services/livekit'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { createFilteredVideoStream } from '../utils/videoFilterStream'
+import { applyRemoteSpeakerRouting } from '../utils/speakerOutput'
 import { Track } from 'livekit-client'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import CachedAvatar from '../components/CachedAvatar.vue'
@@ -30,6 +31,8 @@ const localVideo = ref(null)
 const remoteVideo = ref(null)
 const roomRef = ref(null)
 const muted = ref(false)
+/** مكبّر الصوت (سماعة الهاتف) مفعّل؛ عند false نحاول التوجيه لسماعة الأذن أو احتياطياً كتم العنصر */
+const speakerOn = ref(true)
 const cameraOff = ref(false)
 const callDuration = ref(0)
 const connected = ref(false)
@@ -90,8 +93,25 @@ function replaceWithFilteredTrack(originalTrack) {
 }
 
 let timerInterval
+/** يمنع الرجوع التلقائي عند قطع الاتصال اليدوي أو أثناء تنظيف المكوّن */
+let suppressDisconnectNavigate = false
+/** يمنع استدعاء الرجوع مرتين عند فشل متعدد الأحداث */
+let failureReturnStarted = false
 
 const activeCall = useActiveCallStore()
+
+function exitCallAfterFailure() {
+  if (failureReturnStarted) return
+  failureReturnStarted = true
+  suppressDisconnectNavigate = true
+  initializing.value = false
+  clearInterval(timerInterval)
+  filterPipelineRef.value?.stop()
+  filterPipelineRef.value = null
+  leaveLiveKitRoom()
+  roomRef.value = null
+  goBackAfterCall()
+}
 
 function isConversationRoom() {
   return String(convStore.conversationId) === String(sessionId)
@@ -119,6 +139,18 @@ const partner = computed(() => {
   }
   return chat.partner
 })
+
+const partnerUserIdForCall = computed(() => {
+  if (String(convStore.conversationId) === String(sessionId)) {
+    const p = convStore.partner
+    return p?.id ?? p?.userId ?? p?.UserId ?? null
+  }
+  if (String(chat.session) === String(sessionId)) {
+    const p = chat.partner
+    return p?.id ?? p?.userId ?? p?.UserId ?? null
+  }
+  return activeCall.partnerUserId ?? null
+})
 const partnerLetter = computed(() => partner.value?.name?.[0]?.toUpperCase() || '?')
 const partnerAvatarIsImage = computed(() => {
   const a = partner.value?.avatar
@@ -145,7 +177,8 @@ function openChatDuringCall() {
     voiceOnly: voiceOnly.value,
     isConversation: toConversation,
     partnerName: partner.value?.name || activeCall.partnerName,
-    partnerAvatar: partner.value?.avatar || activeCall.partnerAvatar
+    partnerAvatar: partner.value?.avatar || activeCall.partnerAvatar,
+    partnerUserId: partnerUserIdForCall.value
   })
   activeCall.minimize()
   if (toConversation) router.push(`/conversation/${sessionId}`)
@@ -158,7 +191,8 @@ onMounted(async () => {
     voiceOnly: voiceOnly.value,
     isConversation: isConversationCallContext(),
     partnerName: partner.value?.name || activeCall.partnerName,
-    partnerAvatar: partner.value?.avatar || activeCall.partnerAvatar
+    partnerAvatar: partner.value?.avatar || activeCall.partnerAvatar,
+    partnerUserId: partnerUserIdForCall.value
   })
 
   try {
@@ -176,6 +210,8 @@ onMounted(async () => {
         onConnected: () => {},
         onDisconnected: () => {
           connected.value = false
+          if (suppressDisconnectNavigate) return
+          exitCallAfterFailure()
         },
         onParticipantLeft: () => {
           goBackAfterCall()
@@ -193,6 +229,7 @@ onMounted(async () => {
         },
         onMediaError: (e) => {
           error.value = e?.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
+          exitCallAfterFailure()
         }
       },
       { voiceOnly: voiceOnly.value }
@@ -234,12 +271,14 @@ onMounted(async () => {
     } else {
       error.value = e.userMessage || e.response?.data?.message || e.message || 'لا يمكن الوصول للكاميرا أو الميكروفون'
     }
+    exitCallAfterFailure()
   } finally {
     initializing.value = false
   }
 })
 
 onUnmounted(() => {
+  suppressDisconnectNavigate = true
   clearInterval(timerInterval)
   filterPipelineRef.value?.stop()
   filterPipelineRef.value = null
@@ -270,6 +309,30 @@ function toggleMute() {
   muted.value = !muted.value
   roomRef.value?.localParticipant?.setMicrophoneEnabled(!muted.value)
 }
+
+function toggleSpeakerOutput() {
+  speakerOn.value = !speakerOn.value
+}
+
+watchEffect((onCleanup) => {
+  if (!connected.value) return
+  const el = remoteVideo.value
+  if (!el) return
+  const wantSpeaker = speakerOn.value
+  let cancelled = false
+  onCleanup(() => {
+    cancelled = true
+  })
+  ;(async () => {
+    const { ok } = await applyRemoteSpeakerRouting(el, wantSpeaker)
+    if (cancelled) return
+    if (ok) {
+      el.muted = false
+    } else {
+      el.muted = !wantSpeaker
+    }
+  })()
+})
 
 function toggleCamera() {
   if (voiceOnly.value) return
@@ -354,19 +417,16 @@ function formatTime(sec) {
       </div>
     </div>
 
-    <!-- Top Bar -->
+    <!-- Top Bar: (إنهاء من الأعلى في مكالمة الفيديو فقط) | معلومات | دردشة -->
     <div class="top-bar">
-      <button class="top-bar-back" @click="endCall" :aria-label="t('videoCall.endCallAria')">
-        <ChevronRight :size="22" />
-      </button>
       <button
+        v-if="!voiceOnly"
         type="button"
-        class="top-bar-chat"
-        :title="t('videoCall.openChat')"
-        :aria-label="t('videoCall.openChat')"
-        @click="openChatDuringCall"
+        class="top-bar-back"
+        @click="endCall"
+        :aria-label="t('videoCall.endCallAria')"
       >
-        <MessageSquare :size="20" />
+        <ChevronRight :size="22" />
       </button>
       <div class="top-bar-info">
         <div class="top-bar-name">{{ partner?.name }}</div>
@@ -378,6 +438,15 @@ function formatTime(sec) {
           <span v-else class="status-connecting">{{ error || t('videoCall.connecting') }}</span>
         </div>
       </div>
+      <button
+        type="button"
+        class="top-bar-chat"
+        :title="t('videoCall.openChat')"
+        :aria-label="t('videoCall.openChat')"
+        @click="openChatDuringCall"
+      >
+        <MessageSquare :size="20" />
+      </button>
     </div>
 
     <!-- Local Video (PiP) - الفلتر مُطبّق على الستريم المرسل فيراه الطرف الآخر -->
@@ -422,6 +491,19 @@ function formatTime(sec) {
         <MicOff v-if="muted" :size="24" />
         <Mic v-else :size="24" />
         <span class="ctrl-label">{{ muted ? t('videoCall.unmute') : t('videoCall.mute') }}</span>
+      </button>
+
+      <button
+        type="button"
+        class="ctrl-btn"
+        :class="{ active: !speakerOn }"
+        :title="speakerOn ? t('videoCall.speakerTurnOffHint') : t('videoCall.speakerTurnOnHint')"
+        :aria-label="speakerOn ? t('videoCall.speakerTurnOffHint') : t('videoCall.speakerTurnOnHint')"
+        @click="toggleSpeakerOutput"
+      >
+        <SpeakerOff v-if="!speakerOn" :size="24" />
+        <Speaker v-else :size="24" />
+        <span class="ctrl-label">{{ speakerOn ? t('videoCall.speakerTurnOff') : t('videoCall.speakerTurnOn') }}</span>
       </button>
 
       <button class="ctrl-btn end-btn" @click="endCall">
@@ -626,21 +708,23 @@ function formatTime(sec) {
   top: 0;
   left: 0;
   right: 0;
-  padding: calc(24px + var(--safe-top)) var(--spacing) 20px;
+  padding: calc(12px + var(--safe-top)) 10px 12px;
   background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.2) 60%, transparent 100%);
   display: flex;
+  flex-direction: row;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   z-index: 20;
+  box-sizing: border-box;
 }
 
 .top-bar-back {
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0;
   background: rgba(255,255,255,0.15);
   backdrop-filter: blur(12px);
@@ -658,10 +742,10 @@ function formatTime(sec) {
 .top-bar-chat {
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0;
   background: rgba(108, 99, 255, 0.35);
   backdrop-filter: blur(12px);
@@ -679,22 +763,24 @@ function formatTime(sec) {
 .top-bar-info {
   flex: 1;
   min-width: 0;
-  padding: 10px 16px;
+  min-height: 40px;
+  padding: 0 12px;
   background: rgba(255,255,255,0.08);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   flex-direction: row;
-  gap: 4px;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-sizing: border-box;
 }
 
 .top-bar-name {
   color: white;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.2px;
   text-shadow: 0 1px 2px rgba(0,0,0,0.3);
@@ -702,28 +788,38 @@ function formatTime(sec) {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.2;
 }
 
 .top-bar-status {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(46vw, 200px);
 }
 
 .live-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  flex-shrink: 0;
   background: linear-gradient(135deg, rgba(239,68,68,0.4) 0%, rgba(220,38,38,0.35) 100%);
   border: 1px solid rgba(255,255,255,0.3);
-  border-radius: 20px;
+  border-radius: 999px;
   color: white;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
-  letter-spacing: 0.5px;
+  padding: 5px 10px;
+  letter-spacing: 0.2px;
   box-shadow: 0 2px 8px rgba(239,68,68,0.25);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .live-dot {
@@ -742,6 +838,40 @@ function formatTime(sec) {
 .status-connecting {
   color: rgba(255,255,255,0.85);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 400px) {
+  .top-bar {
+    padding: calc(16px + var(--safe-top)) var(--spacing) 16px;
+    gap: 12px;
+  }
+  .top-bar-back,
+  .top-bar-chat {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .top-bar-info {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 14px;
+    gap: 12px;
+  }
+  .top-bar-name {
+    font-size: 17px;
+  }
+  .top-bar-status {
+    font-size: 13px;
+  }
+  .live-badge {
+    font-size: 12px;
+    padding: 6px 12px;
+    gap: 6px;
+  }
 }
 
 .pip-container {
@@ -839,31 +969,37 @@ function formatTime(sec) {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 24px var(--spacing) calc(48px + var(--safe-bottom));
+  padding: 16px 10px calc(40px + var(--safe-bottom));
   background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: stretch;
   justify-content: center;
-  gap: 24px;
+  gap: 8px;
   z-index: 20;
+  box-sizing: border-box;
 }
 
 .ctrl-btn {
   align-items: center;
+  justify-content: center;
   background: rgba(255,255,255,0.2);
   border: 1px solid rgba(255,255,255,0.25);
-  border-radius: var(--radius);
+  border-radius: 14px;
   color: white;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   font-family: 'Cairo', sans-serif;
   gap: 4px;
-  height: 64px;
-  justify-content: center;
-  min-width: 64px;
-  padding: 8px;
-  transition: opacity 0.2s;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 120px;
+  min-height: 72px;
+  height: auto;
+  padding: 8px 6px;
+  box-sizing: border-box;
+  transition: opacity 0.2s, background 0.2s;
 }
 .ctrl-btn:active { opacity: 0.9; }
 .ctrl-btn.active { background: rgba(255,255,255,0.3); }
@@ -871,15 +1007,67 @@ function formatTime(sec) {
 .ctrl-label {
   color: white;
   font-family: 'Cairo', sans-serif;
-  font-size: 10px;
-  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  width: 100%;
+  max-height: 2.6em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  word-break: break-word;
+  hyphens: auto;
 }
 
 .end-btn {
-  background: rgba(255, 60, 60, 0.85) !important;
-  border-color: rgba(255, 60, 60, 0.6) !important;
-  height: 72px;
-  min-width: 72px;
+  background: rgba(255, 60, 60, 0.88) !important;
+  border-color: rgba(255, 60, 60, 0.55) !important;
+  /* نفس أبعاد بقية الأزرار — لا height/min-width منفصلة */
 }
 .end-btn:active { opacity: 0.9; }
+
+/* ثلاثة أزرار متساوية في المكالمة الصوتية */
+.video-call.voice-only-mode .controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.video-call.voice-only-mode .ctrl-btn {
+  max-width: none;
+  width: 100%;
+}
+
+/* أربعة أزرار متساوية في مكالمة الفيديو */
+.video-call:not(.voice-only-mode) .controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.video-call:not(.voice-only-mode) .ctrl-btn {
+  max-width: none;
+  width: 100%;
+}
+
+@media (min-width: 400px) {
+  .controls {
+    padding: 24px var(--spacing) calc(48px + var(--safe-bottom));
+    gap: 12px;
+    flex-wrap: nowrap;
+  }
+  .ctrl-btn {
+    min-height: 76px;
+    max-width: 140px;
+    padding: 10px 8px;
+    border-radius: 16px;
+  }
+  .ctrl-label {
+    font-size: 10px;
+    max-height: 2.8em;
+  }
+}
 </style>

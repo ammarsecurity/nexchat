@@ -11,7 +11,7 @@ using System.Security.Claims;
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto) : Hub
+public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto, IProfanityMasker profanity) : Hub
 {
     private static readonly HashSet<string> AllowedReactionEmojis = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
 
@@ -312,6 +312,8 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             }
 
             var plainBody = type == "text" ? content.Trim() : content;
+            if (type == "text")
+                plainBody = profanity.Mask(plainBody);
             var msg = new ConversationMessage
             {
                 ConversationId = cid,

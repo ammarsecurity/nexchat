@@ -34,6 +34,7 @@ const routes = [
       { path: 'app-update', component: () => import('../views/AppUpdateView.vue') },
       { path: 'features', component: () => import('../views/AppFeaturesView.vue') },
       { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },
+      { path: 'terms', component: () => import('../views/TermsOfServiceView.vue') },
       { path: 'social', component: () => import('../views/SocialLinksView.vue') },
       { path: 'onboarding', component: () => import('../views/OnboardingView.vue') },
       { path: 'settings', component: () => import('../views/SettingsView.vue') },

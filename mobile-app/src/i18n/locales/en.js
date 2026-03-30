@@ -37,6 +37,7 @@ export default {
     enableNow: 'Enable now',
     enabling: 'Enabling...',
     savedCodes: 'Saved codes',
+    savedCodesTileHint: 'View codes & connection history',
     connectWithCodeTitle: 'Connect with friends',
     connectWithCodeDesc: 'Use your contact code to connect with people you know',
     randomOffNoCodeTitle: 'Browse your chats',
@@ -99,6 +100,7 @@ export default {
     showOnlineStatusOn: 'Show',
     showOnlineStatusOff: 'Hide',
     privacyPolicy: 'Privacy policy',
+    termsOfService: 'Terms of use',
     app: 'App',
     tagline: 'Connect with the world in one step',
     account: 'Account',
@@ -148,7 +150,8 @@ export default {
     loading: 'Signing in...',
     noAccount: "Don't have an account?",
     createAccount: 'Create account',
-    privacyPolicy: 'Privacy policy'
+    privacyPolicy: 'Privacy policy',
+    termsOfService: 'Terms of use'
   },
   completeProfile: {
     title: 'Complete your profile',
@@ -189,7 +192,42 @@ export default {
     loading: 'Creating account...',
     hasAccount: 'Already have an account?',
     login: 'Sign in',
-    privacyPolicy: 'Privacy policy'
+    privacyPolicy: 'Privacy policy',
+    termsOfService: 'Terms of use',
+    agreePrefix: 'I agree to the',
+    agreeMid: ' and ',
+    acceptLegalAria: 'Accept privacy policy and terms of use'
+  },
+  terms: {
+    title: 'Terms of use',
+    loading: 'Loading terms…',
+    empty: 'Terms of use have not been added yet.',
+    loadError: 'Could not load terms of use.'
+  },
+  randomMatch: {
+    hint: 'Before the chat starts: accept this person, or decline/skip to find someone else. Your precise location is not shared. Reporting and blocking are available in chat per our terms.',
+    publicId: 'Public ID',
+    waitingPeer: 'Waiting for the other person…',
+    accept: 'Accept',
+    decline: 'Decline',
+    skip: 'Skip',
+    legalHint: 'Abuse and harassment are prohibited. Violations can be reported and are reviewed within 24 hours.'
+  },
+  randomChat: {
+    moreMenu: 'More',
+    next: 'Next',
+    videoCall: 'Video call',
+    endChat: 'End chat',
+    reportMenu: 'Report & block',
+    report: 'Report',
+    reportContent: 'Report this content',
+    reportContentDefault: 'Report message content',
+    reportedSnippetLabel: 'Content',
+    block: 'Block',
+    blockConfirmTitle: 'Block this user?',
+    blockConfirmDesc: 'They will not be able to message you, and this chat session will end.',
+    blockConfirm: 'Block',
+    blockError: 'Could not block. Please try again.'
   },
   matching: {
     title: 'Finding a match',
@@ -228,6 +266,10 @@ export default {
     endCallAria: 'End call',
     voiceCallLive: 'Voice call',
     openChat: 'Open chat',
+    speakerTurnOff: 'Speaker off',
+    speakerTurnOn: 'Speaker on',
+    speakerTurnOffHint: 'Turn off loudspeaker (use earpiece)',
+    speakerTurnOnHint: 'Turn on loudspeaker',
     callInBackground: 'Call in progress',
     filters: {
       none: 'Normal',

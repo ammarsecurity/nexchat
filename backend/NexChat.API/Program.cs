@@ -32,6 +32,7 @@ builder.Services.AddSingleton<IConversationMessageCrypto>(sp =>
         ?? Environment.GetEnvironmentVariable("NEXCHAT_MESSAGE_ENCRYPTION_KEY");
     return new ConversationMessageCrypto(key, logger);
 });
+builder.Services.AddSingleton<IProfanityMasker, ProfanityMasker>();
 
 // JWT Auth
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "NexChatSuperSecretKeyForJWT2025!";

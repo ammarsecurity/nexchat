@@ -45,6 +45,7 @@ const navItems = [
   { title: 'تحديث التطبيق', icon: 'mdi-cellphone-arrow-down', to: '/app-update' },
   { title: 'ميزات التطبيق', icon: 'mdi-toggle-switch', to: '/features' },
   { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
+  { title: 'شروط الاستخدام', icon: 'mdi-file-document-outline', to: '/terms' },
   { title: 'التواصل الاجتماعي', icon: 'mdi-share-variant', to: '/social' },
   { title: 'الصفحات الاسترشادية', icon: 'mdi-book-open-page-variant', to: '/onboarding' },
   { title: 'الإعدادات', icon: 'mdi-cog', to: '/settings' },

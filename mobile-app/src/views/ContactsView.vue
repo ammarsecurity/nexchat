@@ -9,8 +9,10 @@ import { countries } from '../data/countries'
 import { validatePhone, getPhoneErrorMessage } from '../utils/phoneValidation'
 import { createPrivateConversationOrRequest, goToMessageRequestsOutgoingNotice } from '../utils/conversationOrMessageRequest'
 import { useMessageRequestsStore } from '../stores/messageRequests'
+import { useUserAvatarOverridesStore } from '../stores/userAvatarOverrides'
 
 const msgReqStore = useMessageRequestsStore()
+const avatarOverrides = useUserAvatarOverridesStore()
 
 const router = useRouter()
 const { t } = useI18n()
@@ -33,6 +35,10 @@ const countryCode = computed(() => {
 })
 
 const filteredContacts = computed(() => contacts.value)
+
+function contactAvatar(c) {
+  return avatarOverrides.avatarFor(c.contactUserId) ?? c.avatar
+}
 
 async function fetchContacts() {
   needPhone.value = false
@@ -173,8 +179,8 @@ function goBack() {
           >
             <Loader2 class="item-opening-spinner" :size="22" />
           </div>
-          <div class="item-avatar" :style="{ background: c.avatar && !isImageAvatar(c.avatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-            <img v-if="c.avatar && isImageAvatar(c.avatar)" :src="ensureAbsoluteUrl(c.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+          <div class="item-avatar" :style="{ background: contactAvatar(c) && !isImageAvatar(contactAvatar(c)) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+            <img v-if="contactAvatar(c) && isImageAvatar(contactAvatar(c))" :src="ensureAbsoluteUrl(contactAvatar(c))" class="avatar-img" referrerpolicy="no-referrer" />
             <span v-else>{{ c.name?.[0]?.toUpperCase() || '?' }}</span>
           </div>
           <div class="item-content">

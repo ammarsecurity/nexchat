@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye } from 'lucide-vue-next'
+import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, ScrollText, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -511,6 +511,11 @@ onMounted(() => {
         <RouterLink to="/privacy" class="link-row">
           <Shield :size="18" class="link-icon" />
           <span>{{ t('settings.privacyPolicy') }}</span>
+          <ChevronRight :size="16" class="link-arrow" />
+        </RouterLink>
+        <RouterLink to="/terms" class="link-row">
+          <ScrollText :size="18" class="link-icon" />
+          <span>{{ t('settings.termsOfService') }}</span>
           <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
       </div>

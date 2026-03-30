@@ -42,10 +42,23 @@ export const useConversationsListStore = defineStore('conversationsList', () => 
     list.value = list.value.filter(c => String(c.id || c.Id) !== id)
   }
 
+  /** تحديث صورة الطرف في المحادثات الثنائية عند تغيير صديقها (SignalR UserAvatarUpdated). */
+  function updatePartnerAvatarByUserId(userId, avatar) {
+    const id = String(userId)
+    list.value = list.value.map((c) => {
+      const isGroup = c.isGroup ?? c.IsGroup
+      if (isGroup) return c
+      const pid = String(c.partnerId ?? c.PartnerId ?? '')
+      if (pid !== id) return c
+      return { ...c, partnerAvatar: avatar, PartnerAvatar: avatar }
+    })
+  }
+
   return {
     list,
     setList,
     updateConversation,
-    removeConversation
+    removeConversation,
+    updatePartnerAvatarByUserId
   }
 })

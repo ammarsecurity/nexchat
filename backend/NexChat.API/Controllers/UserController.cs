@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using NexChat.API.Hubs;
 using NexChat.API.Services;
 using NexChat.Core;
 using NexChat.Core.DTOs;
+using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using System.Security.Claims;
 
@@ -14,7 +17,11 @@ namespace NexChat.API.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class UserController(AppDbContext db) : ControllerBase
+public class UserController(
+    AppDbContext db,
+    IHubContext<ConversationHub> conversationHub,
+    IHubContext<MatchingHub> matchingHub,
+    IHubContext<ChatHub> chatHub) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -120,7 +127,67 @@ public class UserController(AppDbContext db) : ControllerBase
             .Where(u => u.Id == CurrentUserId)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.Avatar, avatar));
 
+        var user = await db.Users.AsNoTracking()
+            .Select(u => new { u.Id, u.UniqueCode })
+            .FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+        if (user == null) return Ok();
+
+        var recipients = await GetAvatarNotifyRecipientIdsAsync(CurrentUserId);
+        var payload = new { userId = CurrentUserId, avatar, uniqueCode = user.UniqueCode };
+        foreach (var rid in recipients)
+        {
+            var ridStr = rid.ToString();
+            await conversationHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
+            await matchingHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
+            await chatHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
+        }
+
         return Ok();
+    }
+
+    /// <summary>جهات الاتصال، شركاء المحادثات، أعضاء المجموعات، وشريك الدردشة العشوائية النشطة.</summary>
+    private async Task<List<Guid>> GetAvatarNotifyRecipientIdsAsync(Guid userId)
+    {
+        var recipients = new HashSet<Guid>();
+
+        var contactPeers = await db.Contacts
+            .AsNoTracking()
+            .Where(c => c.UserId == userId || c.ContactUserId == userId)
+            .Select(c => c.UserId == userId ? c.ContactUserId : c.UserId)
+            .ToListAsync();
+        foreach (var id in contactPeers) recipients.Add(id);
+
+        var privatePeers = await db.Conversations
+            .AsNoTracking()
+            .Where(c => c.Type == ConversationType.Private && (c.User1Id == userId || c.User2Id == userId))
+            .Select(c => c.User1Id == userId ? c.User2Id!.Value : c.User1Id!.Value)
+            .ToListAsync();
+        foreach (var id in privatePeers) recipients.Add(id);
+
+        var myGroupConvIds = await db.ConversationMembers
+            .AsNoTracking()
+            .Where(m => m.UserId == userId)
+            .Select(m => m.ConversationId)
+            .ToListAsync();
+        if (myGroupConvIds.Count > 0)
+        {
+            var groupPeers = await db.ConversationMembers
+                .AsNoTracking()
+                .Where(m => myGroupConvIds.Contains(m.ConversationId) && m.UserId != userId)
+                .Select(m => m.UserId)
+                .ToListAsync();
+            foreach (var id in groupPeers) recipients.Add(id);
+        }
+
+        var randomPartners = await db.ChatSessions
+            .AsNoTracking()
+            .Where(s => s.EndedAt == null && (s.User1Id == userId || s.User2Id == userId))
+            .Select(s => s.User1Id == userId ? s.User2Id : s.User1Id)
+            .ToListAsync();
+        foreach (var id in randomPartners) recipients.Add(id);
+
+        recipients.Remove(userId);
+        return recipients.ToList();
     }
 
     [HttpGet("saved-codes")]

@@ -9,18 +9,77 @@ namespace NexChat.Infrastructure.Services;
 public class MatchingService(AppDbContext db)
 {
     private static readonly ConcurrentDictionary<Guid, string> UserConnectionMap = new();
+    private static readonly ConcurrentDictionary<Guid, string> UserLastGenderFilter = new();
+    private static readonly ConcurrentDictionary<Guid, (Guid U1, Guid U2, bool A1, bool A2)> RandomMatchPending = new();
+    private static readonly object RandomMatchStateLock = new();
     private static readonly ConcurrentDictionary<Guid, (Guid TargetId, DateTime CreatedAt, Guid AttemptId)> PendingRequests = new();
     private static readonly ConcurrentQueue<Guid> QueueAll = new();
     private static readonly ConcurrentQueue<Guid> QueueMale = new();
     private static readonly ConcurrentQueue<Guid> QueueFemale = new();
     private static readonly ConcurrentDictionary<Guid, byte> WaitingSet = new();
 
+    public static bool BlocksRandomJoinUntilAccepted(Guid sessionId)
+    {
+        lock (RandomMatchStateLock)
+            return RandomMatchPending.ContainsKey(sessionId);
+    }
+
+    /// <summary>
+    /// قبول المطابقة العشوائية قبل فتح الدردشة (متطلبات App Store للمحتوى المُنشأ من المستخدمين).
+    /// </summary>
+    public bool TryAcceptRandomMatch(Guid sessionId, Guid userId, out bool bothAccepted)
+    {
+        bothAccepted = false;
+        lock (RandomMatchStateLock)
+        {
+            if (!RandomMatchPending.TryGetValue(sessionId, out var p))
+                return false;
+            var (u1, u2, a1, a2) = p;
+            if (userId == u1) a1 = true;
+            else if (userId == u2) a2 = true;
+            else return false;
+
+            if (a1 && a2)
+            {
+                RandomMatchPending.TryRemove(sessionId, out _);
+                bothAccepted = true;
+                return true;
+            }
+
+            RandomMatchPending[sessionId] = (u1, u2, a1, a2);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// رفض/تخطي المطابقة العشوائية قبل بدء الدردشة — يحذف الجلسة ويُبلغ الطرف الآخر.
+    /// </summary>
+    public async Task<(bool Ok, Guid? PartnerId)> TryDeclineRandomMatchAsync(Guid sessionId, Guid userId)
+    {
+        Guid? partnerId;
+        lock (RandomMatchStateLock)
+        {
+            if (!RandomMatchPending.TryGetValue(sessionId, out var p))
+                return (false, null);
+            if (p.U1 != userId && p.U2 != userId)
+                return (false, null);
+            partnerId = p.U1 == userId ? p.U2 : p.U1;
+            RandomMatchPending.TryRemove(sessionId, out _);
+        }
+
+        await db.Messages.Where(m => m.SessionId == sessionId).ExecuteDeleteAsync();
+        await db.ChatSessions.Where(s => s.Id == sessionId && s.Type == "random").ExecuteDeleteAsync();
+        return (true, partnerId);
+    }
+
     public async Task<ChatSession?> TryMatchAsync(Guid userId, string genderFilter, string connectionId)
     {
+        var filter = string.IsNullOrWhiteSpace(genderFilter) ? "all" : genderFilter;
+        UserLastGenderFilter[userId] = filter;
         UserConnectionMap[userId] = connectionId;
         WaitingSet[userId] = 0;
 
-        var queues = GetQueues(genderFilter);
+        var queues = GetQueues(filter);
 
         foreach (var queue in queues)
         {
@@ -40,11 +99,15 @@ public class MatchingService(AppDbContext db)
                 };
                 db.ChatSessions.Add(session);
                 await db.SaveChangesAsync();
+                lock (RandomMatchStateLock)
+                {
+                    RandomMatchPending[session.Id] = (partnerId, userId, false, false);
+                }
                 return session;
             }
         }
 
-        GetPrimaryQueue(genderFilter).Enqueue(userId);
+        GetPrimaryQueue(filter).Enqueue(userId);
         return null;
     }
 

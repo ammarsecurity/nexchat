@@ -87,7 +87,11 @@ async function handleLogin() {
         <span class="text-secondary">{{ t('login.noAccount') }}</span>
         <RouterLink to="/register" class="link">{{ t('login.createAccount') }}</RouterLink>
       </div>
-      <RouterLink to="/privacy" class="privacy-link">{{ t('login.privacyPolicy') }}</RouterLink>
+      <div class="legal-links">
+        <RouterLink to="/privacy" class="privacy-link">{{ t('login.privacyPolicy') }}</RouterLink>
+        <span class="legal-sep" aria-hidden="true">·</span>
+        <RouterLink to="/terms" class="privacy-link">{{ t('login.termsOfService') }}</RouterLink>
+      </div>
     </div>
   </div>
 </template>
@@ -199,14 +203,23 @@ async function handleLogin() {
   font-size: 14px;
 }
 
-.privacy-link {
-  display: block;
-  text-align: center;
+.legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 10px;
   margin-top: 16px;
   font-size: 13px;
+}
+.legal-links .privacy-link {
   color: var(--primary);
   font-weight: 500;
   text-decoration: none;
+}
+.legal-sep {
+  opacity: 0.45;
+  user-select: none;
 }
 
 .link {

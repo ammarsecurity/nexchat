@@ -23,6 +23,8 @@ const gender = ref('')
 const loading = ref(false)
 const error = ref('')
 const showPass = ref(false)
+/** يجب الموافقة على سياسة الخصوصية وشروط الاستخدام قبل التسجيل */
+const acceptedLegal = ref(false)
 
 const birthDate = computed(() => {
   if (!birthDay.value || !birthMonth.value || !birthYear.value) return ''
@@ -63,6 +65,7 @@ const genders = computed(() => [
 
 async function handleRegister() {
   if (!name.value.trim() || !password.value || !birthDate.value || !gender.value) return
+  if (!acceptedLegal.value) return
   loading.value = true
   error.value = ''
   try {
@@ -165,10 +168,28 @@ async function handleRegister() {
             <span>{{ error }}</span>
           </div>
 
+          <div class="legal-accept-wrap">
+            <input
+              id="register-accept-legal"
+              v-model="acceptedLegal"
+              type="checkbox"
+              class="legal-checkbox"
+              :aria-label="t('register.acceptLegalAria')"
+            />
+            <label for="register-accept-legal" class="legal-accept-label">
+              <span class="legal-accept-text">
+                {{ t('register.agreePrefix') }}
+                <RouterLink to="/privacy" class="inline-legal-link" @click.stop>{{ t('register.privacyPolicy') }}</RouterLink>
+                {{ t('register.agreeMid') }}
+                <RouterLink to="/terms" class="inline-legal-link" @click.stop>{{ t('register.termsOfService') }}</RouterLink>
+              </span>
+            </label>
+          </div>
+
           <button
             type="submit"
             class="btn-gradient"
-            :disabled="loading || !name || !password || !birthDate || !gender || password.length < 4"
+            :disabled="loading || !name || !password || !birthDate || !gender || password.length < 4 || !acceptedLegal"
           >
             <span v-if="!loading">{{ t('register.submit') }}</span>
             <span v-else class="spinner"></span>
@@ -179,9 +200,6 @@ async function handleRegister() {
       <div class="login-link">
         <span class="text-secondary">{{ t('register.hasAccount') }}</span>
         <RouterLink to="/login" class="link">{{ t('register.login') }}</RouterLink>
-      </div>
-      <div class="privacy-link">
-        <RouterLink to="/privacy" class="link text-sm">{{ t('register.privacyPolicy') }}</RouterLink>
       </div>
     </div>
   </div>
@@ -302,7 +320,41 @@ label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 .gender-label { font-size: 13px; font-weight: 500; }
 
 .login-link { display: flex; gap: 6px; justify-content: center; font-size: 14px; }
-.privacy-link { margin-top: 8px; text-align: center; }
+
+.legal-accept-wrap {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 4px;
+  padding: 10px 0;
+}
+.legal-checkbox {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.legal-accept-label {
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.legal-accept-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.inline-legal-link {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.inline-legal-link:active { opacity: 0.85; }
+
 .link {
   color: var(--primary);
   font-weight: 600;

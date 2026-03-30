@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
-import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2, Share2, Copy, Crown } from 'lucide-vue-next'
+import { Video, Flag, X, Check, ChevronLeft, Smile, Image, Send, Loader2, Clock, AlertCircle, RotateCcw, CheckCircle2, Share2, Copy, Crown, Ban, MoreVertical } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { useMatchingStore } from '../stores/matching'
@@ -10,6 +10,7 @@ import LoaderOverlay from '../components/LoaderOverlay.vue'
 import ActiveCallBar from '../components/ActiveCallBar.vue'
 import { useActiveCallStore } from '../stores/activeCall'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import api from '../services/api'
 import { formatTime12 } from '../utils/formatTime'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -30,6 +31,10 @@ const timerSeconds = ref(0)
 const showReport = ref(false)
 const reportReason = ref('')
 const showReportSuccess = ref(false)
+const showBlockConfirm = ref(false)
+const blockError = ref('')
+/** بلاغ مرتبط برسالة محددة (معاينة للخادم) */
+const reportMessageContext = ref(null)
 const showShareModal = ref(false)
 const shareCodeCopied = ref(false)
 const incomingCall = ref(false)
@@ -43,6 +48,7 @@ const msgInputRef = ref(null)
 const uploadingImage = ref(false)
 const loading = ref(false)
 const imageModalUrl = ref(null)
+const showHeaderMoreMenu = ref(false)
 let timerInterval
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
@@ -115,6 +121,70 @@ const partnerAvatarIsEmoji = computed(() =>
 const isSupportChat = computed(() => partner.value?.name === 'دعم')
 const partnerIsFeatured = computed(() => partner.value?.isFeatured ?? partner.value?.IsFeatured ?? false)
 
+const partnerUserId = computed(() => {
+  const p = partner.value
+  if (!p) return null
+  const id = p.id ?? p.Id ?? p.userId ?? p.UserId
+  return id != null && id !== '' ? String(id) : null
+})
+
+function canReportMessage(msg) {
+  if (isSupportChat.value || partnerIsFeatured.value) return false
+  if (!msg || msg.type === 'system') return false
+  return String(msg.senderId ?? '') !== String(currentUserId.value ?? '')
+}
+
+function messageReportSnapshot(msg) {
+  if (!msg) return ''
+  const typ = msg.type || 'text'
+  if (typ === 'image') return '[image]'
+  return String(msg.content ?? '').trim().slice(0, 400)
+}
+
+function openReportGeneral() {
+  reportMessageContext.value = null
+  reportReason.value = ''
+  showReport.value = true
+}
+
+function closeReportSheet() {
+  showReport.value = false
+  reportMessageContext.value = null
+}
+
+function openReportFromMenu() {
+  showHeaderMoreMenu.value = false
+  openReportGeneral()
+}
+
+function openBlockFromMenu() {
+  showHeaderMoreMenu.value = false
+  openBlockConfirm()
+}
+
+function openVideoFromMenu() {
+  showHeaderMoreMenu.value = false
+  openVideoConfirm()
+}
+
+function leaveFromMenu() {
+  showHeaderMoreMenu.value = false
+  leaveSession()
+}
+
+function openReportForMessage(msg) {
+  if (!canReportMessage(msg)) return
+  reportMessageContext.value = { preview: messageReportSnapshot(msg) }
+  reportReason.value = ''
+  showReport.value = true
+}
+
+function reportedSnippetDisplay() {
+  const p = reportMessageContext.value?.preview ?? ''
+  if (!p) return ''
+  return p.length > 120 ? `${p.slice(0, 120)}…` : p
+}
+
 const activeCall = useActiveCallStore()
 const showEmbeddedActiveCallBar = computed(
   () =>
@@ -173,6 +243,44 @@ async function onVisibilityChange() {
 
 let chatMounted = true
 let leavingProgrammatically = false
+/** منع تكرار الانتقال التلقائي للمطابقة التالية */
+let goToNextInProgress = false
+let partnerWaitTimer = null
+
+function clearPartnerWaitTimer() {
+  if (partnerWaitTimer) {
+    clearTimeout(partnerWaitTimer)
+    partnerWaitTimer = null
+  }
+}
+
+/** دردشة عشوائية: الانتقال للبحث عن شخص آخر (مثل زر التالي) */
+async function goToNextMatchFromRandomSession() {
+  if (goToNextInProgress || !chatMounted) return
+  if (isSupportChat.value) return
+  goToNextInProgress = true
+  leavingProgrammatically = true
+  loading.value = true
+  clearInterval(timerInterval)
+  clearPartnerWaitTimer()
+  try {
+    await ensureConnected(chatHub)
+    try {
+      await chatHub.invoke('LeaveSession', sessionId)
+    } catch {}
+    chat.clearSession()
+    matching.setSearching()
+    matching.setResumeSearchAfterNav(true)
+    router.replace('/matching')
+  } catch {
+    chat.clearSession()
+    matching.setSearching()
+    matching.setResumeSearchAfterNav(true)
+    router.replace('/matching')
+  } finally {
+    loading.value = false
+  }
+}
 
 onMounted(async () => {
   chatMounted = true
@@ -194,15 +302,35 @@ onMounted(async () => {
   chatHub.on('UserStoppedTyping', () => { chat.partnerTyping = false })
 
   chatHub.on('SessionEnded', () => {
-    sessionEnded.value = true
     clearInterval(timerInterval)
+    if (!isSupportChat.value) {
+      goToNextMatchFromRandomSession()
+      return
+    }
+    sessionEnded.value = true
     chat.addMessage({ id: Date.now(), type: 'system', content: '🔴 انتهت المحادثة', sentAt: new Date() })
+  })
+
+  chatHub.on('Error', () => {
+    if (!chatMounted || sessionEnded.value) return
+    if (!isSupportChat.value) {
+      goToNextMatchFromRandomSession()
+    }
   })
 
   chatHub.on('SessionJoined', (data) => {
     const p = data.partner ?? data.Partner
     const msgs = data.messages ?? data.Messages ?? []
-    if (!chat.partner) chat.partner = p
+    if (p) {
+      const existing = chat.partner
+      const incomingId = p.id ?? p.Id
+      if (!existing) {
+        chat.partner = p
+      } else if (incomingId && !(existing.id ?? existing.Id ?? existing.userId ?? existing.UserId)) {
+        chat.partner = { ...existing, ...p }
+      }
+      if (p.name || p.Name) clearPartnerWaitTimer()
+    }
     if (!chat.session && (data.id ?? data.Id)) chat.$patch({ session: data.id ?? data.Id })
     // إضافة الرسائل فقط عند الانضمام الأول (لا يوجد رسائل بعد) لتجنب التكرار عند إعادة الاتصال
     if (msgs?.length && chat.messages.length === 0) {
@@ -235,8 +363,35 @@ onMounted(async () => {
 
   try {
     await chatHub.invoke('JoinSession', sessionId)
+  } catch {
+    if (isSupportChat.value) {
+      leavingProgrammatically = true
+      chat.clearSession()
+      router.replace('/settings')
+    } else {
+      await goToNextMatchFromRandomSession()
+    }
   } finally {
-    loading.value = false
+    if (!goToNextInProgress) loading.value = false
+  }
+
+  /** فتح من إشعار مكالمة فيديو (دردشة عشوائية): إظهار طبقة القبول */
+  if (
+    !goToNextInProgress &&
+    chatMounted &&
+    (route.query.incomingVideoCall === '1' || route.query.incomingVideoCall === 'true')
+  ) {
+    if (!isSupportChat.value) incomingCall.value = true
+    router.replace({ path: route.path })
+  }
+
+  if (!goToNextInProgress && chatMounted && !partner.value?.name) {
+    partnerWaitTimer = setTimeout(() => {
+      partnerWaitTimer = null
+      if (!chatMounted || goToNextInProgress || sessionEnded.value) return
+      if (isSupportChat.value || partner.value?.name) return
+      goToNextMatchFromRandomSession()
+    }, 20000)
   }
 
   chatHub.onreconnected(async () => {
@@ -244,7 +399,14 @@ onMounted(async () => {
     try {
       await ensureConnected(chatHub)
       await chatHub.invoke('JoinSession', sessionId)
-    } catch {}
+    } catch {
+      if (!isSupportChat.value) goToNextMatchFromRandomSession()
+      else {
+        leavingProgrammatically = true
+        chat.clearSession()
+        router.replace('/settings')
+      }
+    }
   })
 
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -277,6 +439,8 @@ onBeforeRouteLeave((to) => {
 
 onUnmounted(() => {
   chatMounted = false
+  showHeaderMoreMenu.value = false
+  clearPartnerWaitTimer()
   clearInterval(timerInterval)
   document.removeEventListener('visibilitychange', onVisibilityChange)
   chatHub.off('ReceiveMessage')
@@ -288,6 +452,7 @@ onUnmounted(() => {
   chatHub.off('IncomingVideoCall')
   chatHub.off('VideoCallAccepted')
   chatHub.off('VideoCallDeclined')
+  chatHub.off('Error')
 })
 
 watch(messages, () => nextTick(scrollToBottom))
@@ -389,32 +554,56 @@ async function leaveSession() {
 }
 
 async function nextPerson() {
-  leavingProgrammatically = true
+  await goToNextMatchFromRandomSession()
+}
+
+async function submitReport() {
+  let reason = reportReason.value.trim()
+  const snap = reportMessageContext.value?.preview?.trim() || null
+  if (!reason && snap) {
+    reason = t('randomChat.reportContentDefault')
+  }
+  if (!reason) return
   loading.value = true
-  clearInterval(timerInterval)
   try {
     await ensureConnected(chatHub)
-    await chatHub.invoke('LeaveSession', sessionId)
-    chat.clearSession()
-    matching.setIdle()
-    router.replace('/matching')
-    const { matchingHub: mHub, startHub: sHub } = await import('../services/signalr')
-    await sHub(mHub)
-    await ensureConnected(mHub)
-    await mHub.invoke('StartSearching', 'all')
+    await chatHub.invoke('ReportUser', sessionId, reason, snap || null)
+    reportReason.value = ''
+    reportMessageContext.value = null
+    showReport.value = false
   } finally {
     loading.value = false
   }
 }
 
-async function submitReport() {
-  if (!reportReason.value.trim()) return
+function openBlockConfirm() {
+  blockError.value = ''
+  showBlockConfirm.value = true
+}
+
+async function confirmBlockPartner() {
+  const pid = partnerUserId.value
+  if (!pid) return
+  blockError.value = ''
   loading.value = true
   try {
+    await api.post(`/blocks/${pid}`)
+  } catch (e) {
+    blockError.value = e.response?.data?.message ?? e.userMessage ?? t('randomChat.blockError')
+    loading.value = false
+    return
+  }
+  leavingProgrammatically = true
+  clearInterval(timerInterval)
+  try {
     await ensureConnected(chatHub)
-    await chatHub.invoke('ReportUser', sessionId, reportReason.value)
-    reportReason.value = ''
-    showReport.value = false
+    try {
+      await chatHub.invoke('LeaveSession', sessionId)
+    } catch {}
+    chat.clearSession()
+    matching.setIdle()
+    showBlockConfirm.value = false
+    router.replace('/home')
   } finally {
     loading.value = false
   }
@@ -503,8 +692,16 @@ async function shareCodeInChat() {
 <template>
   <div class="chat-view page">
     <LoaderOverlay :show="loading" text="جاري التحميل..." />
+    <Teleport to="body">
+      <div
+        v-if="showHeaderMoreMenu"
+        class="chat-header-menu-backdrop"
+        aria-hidden="true"
+        @click="showHeaderMoreMenu = false"
+      />
+    </Teleport>
     <!-- Header -->
-    <header class="chat-header glass-card">
+    <header class="chat-header glass-card" :class="{ 'chat-header--menu-open': showHeaderMoreMenu }">
       <div class="partner-info">
         <div class="avatar-wrap-chat" :class="{ 'avatar-featured': partnerIsFeatured }">
           <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: partnerColor }">
@@ -529,13 +726,71 @@ async function shareCodeInChat() {
 
       <div class="header-actions">
         <template v-if="!isSupportChat">
-          <button class="icon-btn" @click="openVideoConfirm" title="فيديو كول"><Video :size="20" /></button>
-          <button v-if="!partnerIsFeatured" class="icon-btn" @click="showReport = !showReport" title="بلاغ"><Flag :size="20" /></button>
-          <button class="icon-btn next-header-btn" @click="nextPerson" title="التالي"><ChevronLeft :size="20" /></button>
+          <div class="header-more-wrap">
+            <button
+              type="button"
+              class="icon-btn"
+              :class="{ active: showHeaderMoreMenu }"
+              :title="t('randomChat.moreMenu')"
+              :aria-expanded="showHeaderMoreMenu"
+              aria-haspopup="true"
+              @click.stop="showHeaderMoreMenu = !showHeaderMoreMenu"
+            >
+              <MoreVertical :size="20" stroke-width="2" />
+            </button>
+            <Transition name="fade">
+              <ul
+                v-if="showHeaderMoreMenu"
+                class="header-more-menu glass-card"
+                role="menu"
+                @click.stop
+              >
+                <li role="none">
+                  <button type="button" class="header-more-item" role="menuitem" @click="openVideoFromMenu">
+                    <Video :size="18" stroke-width="2" />
+                    <span>{{ t('randomChat.videoCall') }}</span>
+                  </button>
+                </li>
+                <li v-if="partnerIsFeatured && partnerUserId" role="none">
+                  <button type="button" class="header-more-item header-more-item--danger" role="menuitem" @click="openBlockFromMenu">
+                    <Ban :size="18" stroke-width="2" />
+                    <span>{{ t('randomChat.block') }}</span>
+                  </button>
+                </li>
+                <template v-else>
+                  <li v-if="!partnerIsFeatured" role="none">
+                    <button type="button" class="header-more-item" role="menuitem" @click="openReportFromMenu">
+                      <Flag :size="18" stroke-width="2" />
+                      <span>{{ t('randomChat.report') }}</span>
+                    </button>
+                  </li>
+                  <li v-if="partnerUserId" role="none">
+                    <button type="button" class="header-more-item header-more-item--danger" role="menuitem" @click="openBlockFromMenu">
+                      <Ban :size="18" stroke-width="2" />
+                      <span>{{ t('randomChat.block') }}</span>
+                    </button>
+                  </li>
+                </template>
+                <li class="header-more-menu-sep" role="separator" aria-hidden="true" />
+                <li role="none">
+                  <button type="button" class="header-more-item header-more-item--danger" role="menuitem" @click="leaveFromMenu">
+                    <X :size="18" stroke-width="2" />
+                    <span>{{ t('randomChat.endChat') }}</span>
+                  </button>
+                </li>
+              </ul>
+            </Transition>
+          </div>
+          <button type="button" class="icon-btn next-header-btn" @click="nextPerson" :title="t('randomChat.next')" :aria-label="t('randomChat.next')"><ChevronLeft :size="20" /></button>
         </template>
-        <button class="icon-btn" :class="{ danger: !isSupportChat }" @click="leaveSession" :title="isSupportChat ? 'رجوع' : 'إنهاء'">
-          <ChevronLeft v-if="isSupportChat" :size="20" />
-          <X v-else :size="20" />
+        <button
+          v-else
+          type="button"
+          class="icon-btn"
+          @click="leaveSession"
+          :title="t('common.back')"
+        >
+          <ChevronLeft :size="20" />
         </button>
       </div>
     </header>
@@ -656,11 +911,30 @@ async function shareCodeInChat() {
     <!-- Report Sheet -->
     <Transition name="slide-up">
       <div v-if="showReport" class="report-sheet glass-card">
+        <div v-if="reportMessageContext" class="report-snippet text-xs text-secondary" style="margin-bottom:10px">
+          <span class="report-snippet-label">{{ t('randomChat.reportedSnippetLabel') }}:</span>
+          <span class="report-snippet-text">{{ reportedSnippetDisplay() }}</span>
+        </div>
         <div class="text-sm text-secondary" style="margin-bottom:8px">سبب البلاغ:</div>
         <input v-model="reportReason" class="input-field" placeholder="اكتب السبب..." />
         <div class="flex gap-2" style="margin-top:8px">
           <button class="btn-gradient" style="padding:10px" @click="submitReport">إرسال</button>
-          <button class="btn-ghost" style="padding:10px;flex:1" @click="showReport=false">إلغاء</button>
+          <button class="btn-ghost" style="padding:10px;flex:1" @click="closeReportSheet">إلغاء</button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Block confirm -->
+    <Transition name="fade">
+      <div v-if="showBlockConfirm" class="block-confirm-overlay" @click.self="showBlockConfirm = false">
+        <div class="block-confirm-dialog glass-card">
+          <h3 class="block-confirm-title">{{ t('randomChat.blockConfirmTitle') }}</h3>
+          <p class="block-confirm-desc text-muted text-sm">{{ t('randomChat.blockConfirmDesc') }}</p>
+          <p v-if="blockError" class="block-confirm-error text-sm">{{ blockError }}</p>
+          <div class="block-confirm-actions">
+            <button type="button" class="btn-ghost" @click="showBlockConfirm = false">{{ t('common.cancel') }}</button>
+            <button type="button" class="btn-gradient btn-gradient--danger" @click="confirmBlockPartner">{{ t('randomChat.blockConfirm') }}</button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -677,10 +951,32 @@ async function shareCodeInChat() {
         :class="['message-wrap', msg.type === 'system' ? 'system' : msg.senderId === currentUserId ? 'mine' : 'theirs']"
       >
         <div v-if="msg.type === 'system'" class="system-msg">{{ msg.content }}</div>
-        <div v-else-if="msg.type === 'image'" class="bubble image-bubble">
+        <div
+          v-else-if="msg.type === 'image'"
+          class="bubble image-bubble"
+          :class="{ 'bubble--with-report': canReportMessage(msg) }"
+        >
+          <button
+            v-if="canReportMessage(msg)"
+            type="button"
+            class="msg-report-on-bubble"
+            :aria-label="t('randomChat.reportContent')"
+            @click.stop="openReportForMessage(msg)"
+          >
+            <Flag :size="14" stroke-width="2" />
+          </button>
           <img :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
         </div>
-        <div v-else class="bubble">
+        <div v-else class="bubble" :class="{ 'bubble--with-report': canReportMessage(msg) }">
+          <button
+            v-if="canReportMessage(msg)"
+            type="button"
+            class="msg-report-on-bubble"
+            :aria-label="t('randomChat.reportContent')"
+            @click.stop="openReportForMessage(msg)"
+          >
+            <Flag :size="14" stroke-width="2" />
+          </button>
           <span class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
         </div>
         <div v-if="msg.type !== 'system'" class="msg-meta">
@@ -705,10 +1001,10 @@ async function shareCodeInChat() {
       </div>
     </div>
 
-    <!-- Session Ended Banner -->
-    <div v-if="sessionEnded" class="ended-banner">
+    <!-- Session Ended Banner (دعم فقط — العشوائي ينتقل تلقائياً للبحث) -->
+    <div v-if="sessionEnded && isSupportChat" class="ended-banner">
       <span>انتهت المحادثة</span>
-      <button class="next-btn gradient-text" @click="nextPerson"><ChevronLeft :size="18" /> التالي</button>
+      <button type="button" class="next-btn gradient-text" @click="leaveSession"><ChevronLeft :size="18" /> رجوع</button>
     </div>
 
     <!-- Input -->
@@ -830,7 +1126,14 @@ async function shareCodeInChat() {
 }
 .typing-status { margin-top: 2px; min-height: 16px; }
 
-.header-actions { display: flex; gap: 8px; }
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
 .chat-header .icon-btn {
   align-items: center;
   background: var(--bg-elevated);
@@ -851,6 +1154,77 @@ async function shareCodeInChat() {
   background: rgba(255, 101, 132, 0.15);
   color: var(--danger);
   border-color: rgba(255, 101, 132, 0.25);
+}
+.chat-header .icon-btn.active {
+  background: rgba(108, 99, 255, 0.14);
+  border-color: rgba(108, 99, 255, 0.35);
+  color: var(--primary);
+}
+.chat-header--menu-open {
+  z-index: 300;
+}
+
+.chat-header-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 299;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.header-more-wrap {
+  position: relative;
+}
+.header-more-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  z-index: 301;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  min-width: 188px;
+  max-width: min(92vw, 280px);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
+}
+.header-more-menu li {
+  margin: 0;
+  padding: 0;
+}
+.header-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.header-more-item:active {
+  background: var(--bg-card-hover);
+}
+.header-more-item--danger {
+  color: var(--danger, #ef4444);
+}
+.header-more-item--danger:active {
+  background: rgba(239, 68, 68, 0.1);
+}
+.header-more-menu-sep {
+  height: 1px;
+  margin: 6px 12px;
+  background: var(--border);
+  list-style: none;
+  padding: 0;
+  pointer-events: none;
 }
 
 .report-sheet {
@@ -899,6 +1273,44 @@ async function shareCodeInChat() {
 }
 .theirs .bubble {
   border-bottom-left-radius: 4px;
+  position: relative;
+}
+.theirs .bubble.bubble--with-report {
+  padding-top: 30px;
+}
+.msg-report-on-bubble {
+  position: absolute;
+  top: 5px;
+  inset-inline-end: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+}
+.msg-report-on-bubble:active {
+  opacity: 0.88;
+  transform: scale(0.96);
+}
+.report-snippet-text {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .msg-text :deep(.msg-link) {
@@ -1336,6 +1748,63 @@ async function shareCodeInChat() {
   transition: all 0.2s;
 }
 .share-code-bar:active { background: rgba(108, 99, 255, 0.2); }
+
+.block-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing);
+  backdrop-filter: blur(4px);
+}
+.block-confirm-dialog {
+  width: 100%;
+  max-width: 340px;
+  padding: 20px;
+}
+.block-confirm-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Cairo', sans-serif;
+}
+.block-confirm-desc {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+.block-confirm-error {
+  color: var(--danger, #ef4444);
+  margin: 0 0 10px;
+}
+.block-confirm-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.block-confirm-actions .btn-ghost {
+  flex: 1;
+  min-height: 44px;
+}
+.block-confirm-actions .btn-gradient--danger {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  background: linear-gradient(145deg, #f87171, #dc2626);
+  -webkit-tap-highlight-color: transparent;
+}
+.block-confirm-actions .btn-gradient--danger:active {
+  opacity: 0.92;
+}
 
 /* Report Success Modal */
 .success-overlay {

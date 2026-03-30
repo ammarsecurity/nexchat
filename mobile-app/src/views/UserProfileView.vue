@@ -11,8 +11,10 @@ import {
   validate409AsSuccess
 } from '../utils/conversationOrMessageRequest'
 import { useMessageRequestsStore } from '../stores/messageRequests'
+import { useUserAvatarOverridesStore } from '../stores/userAvatarOverrides'
 
 const msgReqStore = useMessageRequestsStore()
+const avatarOverrides = useUserAvatarOverridesStore()
 
 // المسار الافتراضي من الحوار: إضافة كجهة اتصال ثم فتح المحادثة. البديل: طلب مراسلة فقط (يُعرض في صفحة طلبات المراسلة لدى المستقبل).
 const route = useRoute()
@@ -49,6 +51,14 @@ const genderLabel = computed(() => ({
 }))
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
+
+/** صورة فورية عند تحديثها من SignalR (صديقك غيّر صورته). */
+const profileAvatarDisplay = computed(() => {
+  const p = profile.value
+  if (!p) return null
+  const id = p.id ?? p.Id
+  return avatarOverrides.avatarFor(id) ?? (p.avatar ?? p.Avatar)
+})
 
 function goBack() {
   if (conversationIdFromState.value) router.replace(`/conversation/${conversationIdFromState.value}`)
@@ -229,11 +239,12 @@ onMounted(() => {
             :class="{ 'profile-avatar-featured': profile.isFeatured ?? profile.IsFeatured }"
           >
             <div
-              v-if="(profile.avatar ?? profile.Avatar) && isImageAvatar(profile.avatar ?? profile.Avatar)"
+              v-if="profileAvatarDisplay && isImageAvatar(profileAvatarDisplay)"
               class="profile-avatar profile-avatar-img"
             >
               <CachedAvatar
-                :url="profile.avatar ?? profile.Avatar"
+                :key="profileAvatarDisplay || 'av'"
+                :url="profileAvatarDisplay"
                 img-class="avatar-img"
               />
             </div>

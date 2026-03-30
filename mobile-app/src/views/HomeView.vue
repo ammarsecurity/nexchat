@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight, MessageCircle } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight, MessageCircle, Hash } from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -425,44 +425,67 @@ const homePrimaryCompact = computed(
         </div>
 
         <template v-if="codeConnectLoaded && codeConnectEnabled">
-          <!-- رابط الأكواد المحفوظة -->
-          <RouterLink to="/saved-codes" class="saved-codes-link">
-            <BookmarkPlus :size="18" stroke-width="2" class="saved-codes-link-icon" />
-            <span class="saved-codes-link-title">{{ t('home.savedCodes') }}</span>
-            <ChevronRight :size="18" class="saved-codes-link-arrow" />
-          </RouterLink>
+          <section class="code-connect-card" aria-labelledby="code-connect-heading">
+            <div class="code-connect-card__accent" aria-hidden="true" />
+            <div class="code-connect-card__body">
+              <h2 id="code-connect-heading" class="code-connect-card__heading">
+                {{ t('home.orConnectByCode') }}
+              </h2>
 
-          <!-- Divider -->
-          <div class="divider">
-            <span class="divider-txt">{{ t('home.orConnectByCode') }}</span>
-          </div>
+              <RouterLink to="/saved-codes" class="saved-codes-tile">
+                <div class="saved-codes-tile__icon-wrap" aria-hidden="true">
+                  <BookmarkPlus :size="22" stroke-width="2" />
+                </div>
+                <div class="saved-codes-tile__text">
+                  <span class="saved-codes-tile__title">{{ t('home.savedCodes') }}</span>
+                  <span class="saved-codes-tile__sub">{{ t('home.savedCodesTileHint') }}</span>
+                </div>
+                <ChevronRight :size="20" stroke-width="2" class="saved-codes-tile__chev" />
+              </RouterLink>
 
-          <!-- Code input - زر الاتصال داخل الـ input -->
-          <div class="code-section">
-            <div class="code-input-wrap">
-              <input
-                v-model="codeInput"
-                class="code-input"
-                :placeholder="t('home.enterUserCode')"
-                maxlength="7"
-                @input="codeInput = codeInput.toUpperCase()"
-                @keyup.enter="connectByCode"
-              />
-              <button
-                class="code-submit"
-                :class="{ disabled: !codeInput.trim() || loading }"
-                :disabled="!codeInput.trim() || loading"
-                :aria-label="t('home.connect')"
-                @click="connectByCode"
-              >
-                <PhoneCall :size="22" stroke-width="2" />
-              </button>
+              <div class="code-connect-divider" role="presentation">
+                <span class="code-connect-divider__line" />
+                <span class="code-connect-divider__dot" />
+                <span class="code-connect-divider__line" />
+              </div>
+
+              <div class="code-section">
+                <label class="code-field-label" for="home-user-code-input">{{ t('home.enterUserCode') }}</label>
+                <div class="code-input-wrap">
+                  <span class="code-input-prefix" aria-hidden="true">
+                    <Hash :size="20" stroke-width="2" />
+                  </span>
+                  <input
+                    id="home-user-code-input"
+                    v-model="codeInput"
+                    class="code-input"
+                    type="text"
+                    inputmode="text"
+                    autocomplete="off"
+                    autocapitalize="characters"
+                    :placeholder="t('home.enterUserCode')"
+                    maxlength="7"
+                    @input="codeInput = codeInput.toUpperCase()"
+                    @keyup.enter="connectByCode"
+                  />
+                  <button
+                    type="button"
+                    class="code-submit"
+                    :class="{ disabled: !codeInput.trim() || loading }"
+                    :disabled="!codeInput.trim() || loading"
+                    :aria-label="t('home.connect')"
+                    @click="connectByCode"
+                  >
+                    <PhoneCall :size="22" stroke-width="2" />
+                  </button>
+                </div>
+                <div v-if="codeError" class="error-toast code-error-toast">
+                  <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+                  <span>{{ codeError }}</span>
+                </div>
+              </div>
             </div>
-            <div v-if="codeError" class="error-toast">
-              <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
-              <span>{{ codeError }}</span>
-            </div>
-          </div>
+          </section>
         </template>
       </div>
 
@@ -659,7 +682,7 @@ html.light .avatar-crown-home {
 
 /* CTA + Filter - unified card */
 .cta-filter-card {
-  margin: 0 var(--spacing) 24px;
+  margin: 10px var(--spacing) 24px;
   padding: 24px var(--spacing);
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -878,133 +901,240 @@ html.light .avatar-crown-home {
 
 .segment-btn:active:not(.active) { opacity: 0.75; }
 
-/* رابط الأكواد المحفوظة - مدمج */
-.saved-codes-link {
+/* ——— بطاقة الاتصال بالكود (موحّدة مع أسلوب الصفحة) ——— */
+.code-connect-card {
+  position: relative;
+  margin: 8px var(--spacing) 20px;
+  border-radius: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  overflow: hidden;
+}
+
+[data-theme="light"] .code-connect-card {
+  box-shadow: 0 4px 20px rgba(108, 99, 255, 0.08);
+}
+
+.code-connect-card__accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #6C63FF 0%, #FF6584 50%, #00D4FF 100%);
+  opacity: 0.9;
+}
+
+.code-connect-card__body {
+  position: relative;
+  z-index: 1;
+  padding: 18px 16px 20px;
+  background: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(108, 99, 255, 0.09) 0%, transparent 55%);
+}
+
+.code-connect-card__heading {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.saved-codes-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px;
+  border-radius: 16px;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.08) 0%, rgba(255, 101, 132, 0.05) 100%);
+  border: 1px solid rgba(108, 99, 255, 0.18);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.saved-codes-tile:active {
+  transform: scale(0.99);
+  border-color: rgba(108, 99, 255, 0.35);
+}
+
+.saved-codes-tile__icon-wrap {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.2);
+}
+
+.saved-codes-tile__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+}
+
+.saved-codes-tile__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.saved-codes-tile__sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.saved-codes-tile__chev {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.code-connect-divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px var(--spacing);
-  margin: 0 0 12px;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-.saved-codes-link:active { opacity: 0.8; }
-.saved-codes-link-icon { color: var(--primary); flex-shrink: 0; }
-.saved-codes-link-title { flex: 1; font-weight: 500; color: var(--text-primary); }
-.saved-codes-link-arrow { color: var(--text-muted); flex-shrink: 0; }
-
-/* Divider */
-.divider {
-  padding: 0 var(--spacing) 16px;
-}
-.divider-txt {
-  font-size: 13px;
-  color: var(--text-muted);
-  display: block;
-  text-align: center;
+  margin: 16px 0 14px;
+  padding: 0 4px;
 }
 
-/* Code section - زر الاتصال داخل الـ input */
+.code-connect-divider__line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border) 20%,
+    var(--border) 80%,
+    transparent
+  );
+  opacity: 0.9;
+}
+
+.code-connect-divider__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), #FF6584);
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+/* حقل إدخال الكود */
 .code-section {
-  padding: 0 var(--spacing) 24px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  padding: 0;
+}
+
+.code-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding-inline-start: 4px;
+  margin: 0;
 }
 
 .code-input-wrap {
   position: relative;
   display: flex;
-  align-items: center;
-  min-height: 52px;
-  background: var(--bg-card);
+  align-items: stretch;
+  min-height: 54px;
+  background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .code-input-wrap:focus-within {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.18);
+}
+
+.code-input-prefix {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline-start: 14px;
+  padding-inline-end: 6px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .code-input {
   flex: 1;
-  min-height: 50px;
-  padding-inline-start: 20px;
-  padding-inline-end: 60px;
+  min-width: 0;
+  min-height: 52px;
+  padding-block: 0;
+  padding-inline-start: 0;
+  padding-inline-end: 58px;
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 16px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  letter-spacing: 2px;
-  text-align: center;
+  font-size: 17px;
+  font-weight: 700;
+  font-family: ui-monospace, 'Cairo', monospace;
+  letter-spacing: 0.12em;
+  text-align: start;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
 }
-.code-input::placeholder { color: var(--text-muted); }
+.code-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
 
 .code-submit {
   position: absolute;
-  top: 4px;
-  inset-inline-end: 4px;
+  top: 50%;
+  inset-inline-end: 6px;
+  transform: translateY(-50%);
   width: 44px;
   height: 44px;
   min-width: 44px;
   min-height: 44px;
   padding: 0;
   border-radius: 50%;
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 55%, #5B54E8 100%);
   border: none;
   color: white;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 2px 10px rgba(108, 99, 255, 0.4);
-  transition: transform 0.2s, opacity 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(108, 99, 255, 0.35);
+  transition: transform 0.15s ease, opacity 0.2s, box-shadow 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .code-submit.disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   background: var(--bg-card-hover);
   color: var(--text-muted);
   box-shadow: none;
   cursor: not-allowed;
-}
-.code-submit:not(.disabled) {
-  animation: call-btn-pulse 2.5s ease-in-out infinite;
-}
-.code-submit:not(.disabled) svg {
-  animation: call-icon-glow 2.5s ease-in-out infinite;
+  transform: translateY(-50%);
 }
 .code-submit:active:not(.disabled) {
-  transform: scale(0.95);
-  animation: none;
-}
-.code-submit:active:not(.disabled) svg {
-  animation: none;
+  transform: translateY(-50%) scale(0.94);
 }
 
-@keyframes call-btn-pulse {
-  0%, 100% {
-    box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow: 0 6px 20px rgba(108, 99, 255, 0.5), 0 0 24px rgba(255, 101, 132, 0.25);
-    transform: scale(1.03);
-  }
-}
-
-@keyframes call-icon-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
+.code-error-toast {
+  margin-top: 4px;
 }
 
 /* Logout confirm dialog */

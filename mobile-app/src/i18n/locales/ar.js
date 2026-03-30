@@ -37,6 +37,7 @@ export default {
     enableNow: 'تفعيل الآن',
     enabling: 'جاري...',
     savedCodes: 'أكوادي المحفوظة',
+    savedCodesTileHint: 'عرض الأكواد وسجل الاتصال',
     connectWithCodeTitle: 'تواصل مع أصدقائك',
     connectWithCodeDesc: 'استخدم كود الاتصال للتواصل مع من تعرف',
     randomOffNoCodeTitle: 'تصفح محادثاتك',
@@ -99,6 +100,7 @@ export default {
     showOnlineStatusOn: 'إظهار',
     showOnlineStatusOff: 'إخفاء',
     privacyPolicy: 'سياسة الخصوصية',
+    termsOfService: 'شروط الاستخدام',
     app: 'التطبيق',
     tagline: 'تواصل مع العالم بخطوة واحدة',
     account: 'الحساب',
@@ -148,7 +150,8 @@ export default {
     loading: 'جاري تسجيل الدخول...',
     noAccount: 'ليس لديك حساب؟',
     createAccount: 'إنشاء حساب',
-    privacyPolicy: 'سياسة الخصوصية'
+    privacyPolicy: 'سياسة الخصوصية',
+    termsOfService: 'شروط الاستخدام'
   },
   completeProfile: {
     title: 'أكمل بياناتك',
@@ -189,7 +192,42 @@ export default {
     loading: 'جاري إنشاء الحساب...',
     hasAccount: 'لديك حساب؟',
     login: 'تسجيل الدخول',
-    privacyPolicy: 'سياسة الخصوصية'
+    privacyPolicy: 'سياسة الخصوصية',
+    termsOfService: 'شروط الاستخدام',
+    agreePrefix: 'أوافق على',
+    agreeMid: ' و ',
+    acceptLegalAria: 'الموافقة على سياسة الخصوصية وشروط الاستخدام'
+  },
+  terms: {
+    title: 'شروط الاستخدام',
+    loading: 'جاري تحميل شروط الاستخدام...',
+    empty: 'لم يتم إضافة شروط الاستخدام بعد.',
+    loadError: 'حدث خطأ في تحميل شروط الاستخدام.'
+  },
+  randomMatch: {
+    hint: 'قبل بدء الدردشة: يمكنك قبول هذا الشخص أو رفضه/تخطيه والبحث عن مطابقة أخرى. لا يُشارك موقعك الدقيق، ويُسمح بالإبلاغ والحظر داخل الدردشة وفق سياسة الاستخدام.',
+    publicId: 'معرّف عام',
+    waitingPeer: 'بانتظار رد الطرف الآخر…',
+    accept: 'قبول',
+    decline: 'رفض',
+    skip: 'تخطٍ',
+    legalHint: 'يمنع إساءة الاستخدام والتحرش. المحتوى المخالف يُبلّغ ويُراجع خلال 24 ساعة.'
+  },
+  randomChat: {
+    moreMenu: 'المزيد',
+    next: 'التالي',
+    videoCall: 'فيديو كول',
+    endChat: 'إنهاء المحادثة',
+    reportMenu: 'إبلاغ وحظر',
+    report: 'إبلاغ',
+    reportContent: 'إبلاغ عن المحتوى',
+    reportContentDefault: 'إبلاغ عن محتوى رسالة',
+    reportedSnippetLabel: 'المحتوى',
+    block: 'حظر',
+    blockConfirmTitle: 'حظر هذا المستخدم؟',
+    blockConfirmDesc: 'لن يتمكن من مراسلتك بعد الحظر، وتُنهى جلسة الدردشة الحالية.',
+    blockConfirm: 'تأكيد الحظر',
+    blockError: 'تعذر تنفيذ الحظر. حاول مرة أخرى.'
   },
   matching: {
     title: 'البحث عن مطابقة',
@@ -228,6 +266,10 @@ export default {
     endCallAria: 'إنهاء المكالمة',
     voiceCallLive: 'مكالمة صوتية',
     openChat: 'فتح الدردشة',
+    speakerTurnOff: 'إيقاف السماعة',
+    speakerTurnOn: 'تشغيل السماعة',
+    speakerTurnOffHint: 'إيقاف مكبّر الصوت (السماعة العالية)',
+    speakerTurnOnHint: 'تشغيل مكبّر الصوت',
     callInBackground: 'المكالمة مستمرة',
     filters: {
       none: 'عادي',

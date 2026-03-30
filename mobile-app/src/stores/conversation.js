@@ -119,6 +119,19 @@ export const useConversationStore = defineStore('conversation', () => {
     partnerLastReadAt.value = null
   }
 
+  function patchPartnerAvatarFromBroadcast(userId, avatar, uniqueCode) {
+    const p = partner.value
+    if (!p || isGroup.value) return
+    if (String(p.id ?? p.userId ?? p.UserId ?? '') === String(userId)) {
+      partner.value = { ...p, avatar }
+      return
+    }
+    const uc = uniqueCode != null ? String(uniqueCode) : ''
+    if (uc && String(p.uniqueCode ?? p.UniqueCode ?? '') === uc) {
+      partner.value = { ...p, avatar }
+    }
+  }
+
   return {
     conversationId,
     partner,
@@ -137,6 +150,7 @@ export const useConversationStore = defineStore('conversation', () => {
     applyOptimisticReaction,
     updatePendingMessage,
     clearConversation,
-    setMessages
+    setMessages,
+    patchPartnerAvatarFromBroadcast
   }
 })

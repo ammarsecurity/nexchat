@@ -3,7 +3,11 @@
  * يعمل فقط على المنصة الأصلية (Capacitor)
  */
 import { Capacitor } from '@capacitor/core'
+import { getActivePinia } from 'pinia'
 import api from './api'
+import { useIncomingConversationCallStore } from '../stores/incomingConversationCall'
+import { useMatchingStore } from '../stores/matching'
+import { startIncomingCallSound } from '../utils/sounds'
 
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || ''
 const STORAGE_KEY = 'nexchat_notifications'
@@ -140,7 +144,23 @@ function handleNotificationClick(data) {
   const router = window.__nexchat_router__
   if (!router) return
 
+  const pinia = typeof getActivePinia === 'function' ? getActivePinia() : null
+
   if (data?.type === 'code_connected') {
+    if (pinia) {
+      const matching = useMatchingStore(pinia)
+      const rid = data.requesterId ?? data.RequesterId
+      if (rid) {
+        matching.setIncomingConnectionRequest({
+          requesterId: String(rid),
+          requesterName: data.requesterName ?? data.RequesterName ?? '…',
+          requesterGender: data.requesterGender ?? data.RequesterGender,
+          requesterAvatar: data.requesterAvatar ?? data.RequesterAvatar,
+          requesterIsFeatured: data.requesterIsFeatured === 'true' || data.requesterIsFeatured === true
+        })
+        startIncomingCallSound()
+      }
+    }
     router.push('/home')
     return
   }
@@ -156,9 +176,26 @@ function handleNotificationClick(data) {
   }
 
   if (data?.type === 'video_call') {
-    const vid = data.conversationId || data.sessionId
-    if (vid) router.push(`/video/${vid}`)
-    return
+    const convId = data.conversationId ?? data.ConversationId
+    const sessId = data.sessionId ?? data.SessionId
+    /** مكالمة من محادثة دائمة: إظهار نافذة القبول وليس شاشة الفيديو مباشرة */
+    if (convId && pinia) {
+      const incomingConv = useIncomingConversationCallStore(pinia)
+      incomingConv.setIncoming({
+        conversationId: String(convId),
+        voiceOnly: data.voiceOnly === 'true' || data.voiceOnly === true,
+        callerName: data.callerName ?? data.CallerName ?? '',
+        callerAvatar: data.callerAvatar ?? data.CallerAvatar ?? null
+      })
+      startIncomingCallSound()
+      router.push('/home')
+      return
+    }
+    /** مكالمة فيديو من دردشة عشوائية: فتح الدردشة مع طلب وارد */
+    if (sessId) {
+      router.push({ path: `/chat/${sessId}`, query: { incomingVideoCall: '1' } })
+      return
+    }
   }
 
   if (!data?.sessionId) return

@@ -59,5 +59,32 @@ export const useChatStore = defineStore('chat', () => {
     sessionTimer.value = 0
   }
 
-  return { session, partner, messages, partnerTyping, sessionTimer, setSession, addMessage, updateMessage, updatePendingMessage, clearSession }
+  /** دردشة عشوائية: تحديث صورة الشريك فوراً عند تغييرها من الطرف الآخر. */
+  function patchPartnerFromBroadcast(userId, avatar, uniqueCode) {
+    const p = partner.value
+    if (!p) return
+    const uid = String(userId)
+    if (String(p.id ?? p.userId ?? p.UserId ?? '') === uid) {
+      partner.value = { ...p, avatar }
+      return
+    }
+    const uc = uniqueCode != null ? String(uniqueCode) : ''
+    if (uc && String(p.uniqueCode ?? p.UniqueCode ?? '') === uc) {
+      partner.value = { ...p, avatar }
+    }
+  }
+
+  return {
+    session,
+    partner,
+    messages,
+    partnerTyping,
+    sessionTimer,
+    setSession,
+    addMessage,
+    updateMessage,
+    updatePendingMessage,
+    clearSession,
+    patchPartnerFromBroadcast
+  }
 })

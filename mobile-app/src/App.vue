@@ -6,6 +6,7 @@ import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import NoConnectionView from './views/NoConnectionView.vue'
 import IncomingConnectionRequestDialog from './components/IncomingConnectionRequestDialog.vue'
+import RandomMatchConsentDialog from './components/RandomMatchConsentDialog.vue'
 import IncomingConversationCallDialog from './components/IncomingConversationCallDialog.vue'
 import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
 import LoaderOverlay from './components/LoaderOverlay.vue'
@@ -14,12 +15,14 @@ import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
-import { matchingHub, conversationHub, startHub, stopHub } from './services/signalr'
+import { matchingHub, conversationHub, startHub, stopHub, ensureConnected } from './services/signalr'
 import { startIncomingCallSound, stopIncomingCallSound } from './utils/sounds'
 import { useNetworkStore } from './stores/network'
 import { useIncomingConversationCallStore } from './stores/incomingConversationCall'
 import { useConversationsListStore } from './stores/conversationsList'
 import { useActiveCallStore } from './stores/activeCall'
+import { useUserAvatarOverridesStore } from './stores/userAvatarOverrides'
+import { useConversationStore } from './stores/conversation'
 import {
   parseIncomingConversationCallPayload,
   parseVideoCallAcceptedPayload
@@ -66,6 +69,8 @@ const route = useRoute()
 const incomingConvCall = useIncomingConversationCallStore()
 const conversationsList = useConversationsListStore()
 const activeCall = useActiveCallStore()
+const userAvatarOverrides = useUserAvatarOverridesStore()
+const convStore = useConversationStore()
 
 function handleOnline() {
   network.setOnline(true)
@@ -86,9 +91,34 @@ function handleUnauthorized() {
   stopHub(matchingHub)
   stopHub(conversationHub)
   incomingConvCall.clear()
+  matching.clearPendingRandomMatch()
   stopIncomingCallSound()
   useAuthStore().logout()
   router.replace('/login')
+}
+
+async function restartRandomSearch() {
+  matching.setSearching()
+  try {
+    await ensureConnected(matchingHub)
+    await matchingHub.invoke('StartSearching', matching.genderFilter)
+  } catch {}
+}
+
+function applyUserAvatarUpdated(payload) {
+  const userId = payload?.userId ?? payload?.UserId
+  const avatar = payload?.avatar ?? payload?.Avatar
+  const uniqueCode = payload?.uniqueCode ?? payload?.UniqueCode
+  if (userId == null) return
+  userAvatarOverrides.setAvatar(userId, avatar)
+  conversationsList.updatePartnerAvatarByUserId(userId, avatar)
+  chat.patchPartnerFromBroadcast(userId, avatar, uniqueCode)
+  convStore.patchPartnerAvatarFromBroadcast(userId, avatar, uniqueCode)
+  matching.patchIncomingRequesterAvatar(userId, avatar)
+  matching.patchPendingRandomPartnerAvatar(userId, avatar, uniqueCode)
+  if (activeCall.partnerUserId && String(activeCall.partnerUserId) === String(userId)) {
+    activeCall.partnerAvatar = avatar
+  }
 }
 
 function setupMatchingHubListeners() {
@@ -114,10 +144,40 @@ function setupMatchingHubListeners() {
   matchingHub.on('MatchFound', (data) => {
     const sessionId = data.sessionId ?? data.SessionId
     const partner = data.partner ?? data.Partner
+    const requiresPairingAccept = data.requiresPairingAccept ?? data.RequiresPairingAccept ?? false
+    if (requiresPairingAccept) {
+      matching.setPendingRandomMatch({ sessionId, partner })
+      return
+    }
+    matching.armSkipNextMatchingUnmountCancel()
     chat.setSession(sessionId, partner)
     matching.setMatched()
     router.push(`/chat/${sessionId}`)
   })
+
+  matchingHub.off('RandomMatchReady')
+  matchingHub.on('RandomMatchReady', (data) => {
+    const sessionId = data.sessionId ?? data.SessionId
+    const partner = data.partner ?? data.Partner
+    matching.clearPendingRandomMatch()
+    matching.armSkipNextMatchingUnmountCancel()
+    chat.setSession(sessionId, partner)
+    matching.setMatched()
+    router.push(`/chat/${sessionId}`)
+  })
+
+  matchingHub.off('RandomMatchPartnerDeclined')
+  matchingHub.on('RandomMatchPartnerDeclined', () => {
+    matching.clearPendingRandomMatch()
+    restartRandomSearch()
+  })
+
+  matchingHub.off('RandomMatchDeclined')
+  matchingHub.on('RandomMatchDeclined', () => {
+    matching.clearPendingRandomMatch()
+    restartRandomSearch()
+  })
+
 }
 
 function setupConversationHubGlobalListeners() {
@@ -142,18 +202,23 @@ function setupConversationHubGlobalListeners() {
     const item = list.find((c) => String(c.id ?? c.Id) === cid)
     const partnerName = item?.partnerName ?? item?.PartnerName ?? ''
     const partnerAvatar = item?.partnerAvatar ?? item?.PartnerAvatar ?? null
+    const partnerUserId = item?.partnerId ?? item?.PartnerId ?? null
     activeCall.syncMeta({
       sessionId: cid,
       voiceOnly: vo,
       isConversation: true,
       partnerName,
-      partnerAvatar
+      partnerAvatar,
+      partnerUserId
     })
     router.push({
       path: `/video/${cid}`,
       state: { initiator: true, voiceOnly: vo, fromConversation: true }
     })
   })
+
+  conversationHub.off('UserAvatarUpdated')
+  conversationHub.on('UserAvatarUpdated', applyUserAvatarUpdated)
 }
 
 // إبقاء MatchingHub و ConversationHub متصلين عند المستخدم المسجّل — طلبات من أي صفحة
@@ -167,6 +232,7 @@ watch([() => network.isOnline, () => auth.token], ([online, token]) => {
     stopHub(matchingHub)
     stopHub(conversationHub)
     incomingConvCall.clear()
+    matching.clearPendingRandomMatch()
     stopIncomingCallSound()
   }
 }, { immediate: true })
@@ -237,6 +303,7 @@ onUnmounted(() => {
       </div>
     </template>
     <IncomingConnectionRequestDialog v-if="auth.token" />
+    <RandomMatchConsentDialog v-if="auth.token" />
     <IncomingConversationCallDialog v-if="auth.token" />
     <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
     <LoaderOverlay :show="apiLoading.showOverlay" />

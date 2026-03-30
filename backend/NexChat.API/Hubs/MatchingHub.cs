@@ -4,6 +4,7 @@ using NexChat.Infrastructure.Services;
 using NexChat.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using NexChat.Core.Entities;
 
 namespace NexChat.API.Hubs;
 
@@ -94,16 +95,73 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
             await Clients.Caller.SendAsync("MatchFound", new
             {
                 SessionId = session.Id.ToString(),
-                Partner = new { partner!.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsFeatured = partner.IsFeatured }
+                Partner = new { partner!.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsFeatured = partner.IsFeatured },
+                RequiresPairingAccept = true
             });
 
             if (partnerConnectionId != null)
                 await Clients.Client(partnerConnectionId).SendAsync("MatchFound", new
                 {
                     SessionId = session.Id.ToString(),
-                    Partner = new { user.Name, user.Gender, user.UniqueCode, user.Avatar, IsFeatured = user.IsFeatured }
+                    Partner = new { user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, IsFeatured = user.IsFeatured },
+                    RequiresPairingAccept = true
                 });
         }
+    }
+
+    public async Task AcceptRandomMatch(string sessionIdStr)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid request");
+            return;
+        }
+
+        if (!matching.TryAcceptRandomMatch(sessionId, userId, out var bothAccepted))
+        {
+            await Clients.Caller.SendAsync("Error", "Invalid match");
+            return;
+        }
+
+        if (!bothAccepted)
+            return;
+
+        var session = await db.ChatSessions
+            .Include(s => s.User1)
+            .Include(s => s.User2)
+            .FirstOrDefaultAsync(s => s.Id == sessionId && s.Type == "random");
+        if (session == null)
+            return;
+
+        async Task SendReadyAsync(Guid targetUserId, User partnerUser)
+        {
+            var conn = await matching.GetConnectionIdAsync(targetUserId);
+            if (conn == null) return;
+            await Clients.Client(conn).SendAsync("RandomMatchReady", new
+            {
+                SessionId = session.Id.ToString(),
+                Partner = new { partnerUser.Id, partnerUser.Name, partnerUser.Gender, partnerUser.UniqueCode, partnerUser.Avatar, IsFeatured = partnerUser.IsFeatured }
+            });
+        }
+
+        await SendReadyAsync(session.User1Id, session.User2);
+        await SendReadyAsync(session.User2Id, session.User1);
+    }
+
+    public async Task DeclineRandomMatch(string sessionIdStr)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            return;
+
+        var (ok, partnerId) = await matching.TryDeclineRandomMatchAsync(sessionId, userId);
+        if (!ok || !partnerId.HasValue)
+            return;
+
+        await Clients.Caller.SendAsync("RandomMatchDeclined");
+
+        var partnerConn = await matching.GetConnectionIdAsync(partnerId.Value);
+        if (partnerConn != null)
+            await Clients.Client(partnerConn).SendAsync("RandomMatchPartnerDeclined");
     }
 
     public async Task CancelSearching()
@@ -155,7 +213,10 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
                 subscriptionIds.Count > 0 ? subscriptionIds : null,
                 targetId,
                 user.Name,
-                userId);
+                userId,
+                user.Gender,
+                user.Avatar,
+                user.IsFeatured);
         }
     }
 
@@ -186,14 +247,14 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
         await Clients.Caller.SendAsync("MatchFound", new
         {
             SessionId = session.Id.ToString(),
-            Partner = new { partner!.Name, partner.Gender, partner.UniqueCode, partner.Avatar }
+            Partner = new { partner!.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsFeatured = partner.IsFeatured }
         });
 
         if (partnerConnectionId != null && user != null)
             await Clients.Client(partnerConnectionId).SendAsync("MatchFound", new
             {
                 SessionId = session.Id.ToString(),
-                Partner = new { user.Name, user.Gender, user.UniqueCode, user.Avatar }
+                Partner = new { user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, IsFeatured = user.IsFeatured }
             });
     }
 
