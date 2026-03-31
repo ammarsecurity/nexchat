@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle, MessageSquare, Speaker, SpeakerOff } from 'lucide-vue-next'
+import { ChevronRight, Mic, MicOff, Video, VideoOff, PhoneOff, AlertCircle, MessageSquare, Speaker, VolumeX } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { useConversationStore } from '../stores/conversation'
@@ -501,7 +501,7 @@ function formatTime(sec) {
         :aria-label="speakerOn ? t('videoCall.speakerTurnOffHint') : t('videoCall.speakerTurnOnHint')"
         @click="toggleSpeakerOutput"
       >
-        <SpeakerOff v-if="!speakerOn" :size="24" />
+        <VolumeX v-if="!speakerOn" :size="24" />
         <Speaker v-else :size="24" />
         <span class="ctrl-label">{{ speakerOn ? t('videoCall.speakerTurnOff') : t('videoCall.speakerTurnOn') }}</span>
       </button>
