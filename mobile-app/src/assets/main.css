@@ -28,6 +28,8 @@
   --header-btn-size: 36px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* مساحة فوق شريط التنقل الثابت في Home (صاروخ + تسميات + safe) — يُستخدم مع عنصر spacer في التدفق */
+  --home-nav-clearance: calc(200px + var(--safe-bottom));
   --spacing: 16px;
   --spacing-sm: 12px;
   --spacing-lg: 20px;

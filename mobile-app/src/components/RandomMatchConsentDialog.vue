@@ -127,6 +127,7 @@ async function declineOrSkip() {
   max-width: 380px;
   padding: calc(var(--spacing) + 4px);
   border-radius: var(--radius, 16px);
+  font-family: 'Cairo', system-ui, sans-serif;
 }
 
 .rm-hint {
@@ -231,6 +232,7 @@ async function declineOrSkip() {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  font-family: 'Cairo', system-ui, sans-serif;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;

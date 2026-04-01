@@ -1,7 +1,7 @@
 /**
- * محاولة توجيه صوت عنصر &lt;video&gt;/&lt;audio&gt; إلى مكبّر الصوت أو السماعة الافتراضية (أذن).
- * يعتمد على HTMLMediaElement.setSinkId حيث يُدعم (Chrome/Android WebView غالباً).
- * عند الفشل يعيد ok: false ليستخدم المتصل وسيلة احتياطية (مثل muted).
+ * محاولة توجيه صوت عنصر &lt;video&gt;/&lt;audio&gt; عبر setSinkId (Chrome/WebView).
+ * على Android أثناء المكالمات يُفضّل استدعاء nativeSetSpeakerOn من speakerAudioNative.js
+ * لأن AudioManager يوجّه سماعة الأذن؛ عند الفشل هنا يعيد ok: false دون كتم (المتصل لا يكتم الصوت).
  */
 export async function applyRemoteSpeakerRouting(mediaEl, speakerOn) {
   if (!mediaEl) return { ok: false, reason: 'no-element' }

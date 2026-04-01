@@ -15,6 +15,7 @@ import {
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { createFilteredVideoStream } from '../utils/videoFilterStream'
 import { applyRemoteSpeakerRouting } from '../utils/speakerOutput'
+import { nativeSetSpeakerOn, nativeResetAudioMode } from '../utils/speakerAudioNative'
 import { Track } from 'livekit-client'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import CachedAvatar from '../components/CachedAvatar.vue'
@@ -31,8 +32,8 @@ const localVideo = ref(null)
 const remoteVideo = ref(null)
 const roomRef = ref(null)
 const muted = ref(false)
-/** مكبّر الصوت (سماعة الهاتف) مفعّل؛ عند false نحاول التوجيه لسماعة الأذن أو احتياطياً كتم العنصر */
-const speakerOn = ref(true)
+/** مكبّر الصوت: في المكالمة الصوتية الافتراضي سماعة الأذن؛ في الفيديو افتراضياً السبيكر */
+const speakerOn = ref(!voiceOnly.value)
 const cameraOff = ref(false)
 const callDuration = ref(0)
 const connected = ref(false)
@@ -108,6 +109,7 @@ function exitCallAfterFailure() {
   clearInterval(timerInterval)
   filterPipelineRef.value?.stop()
   filterPipelineRef.value = null
+  nativeResetAudioMode()
   leaveLiveKitRoom()
   roomRef.value = null
   goBackAfterCall()
@@ -282,6 +284,7 @@ onUnmounted(() => {
   clearInterval(timerInterval)
   filterPipelineRef.value?.stop()
   filterPipelineRef.value = null
+  nativeResetAudioMode()
 
   if (activeCall.minimized && activeCall.sessionId === sessionId) {
     setLiveKitHandlers({
@@ -324,12 +327,17 @@ watchEffect((onCleanup) => {
     cancelled = true
   })
   ;(async () => {
+    await nativeSetSpeakerOn(wantSpeaker)
     const { ok } = await applyRemoteSpeakerRouting(el, wantSpeaker)
     if (cancelled) return
-    if (ok) {
-      el.muted = false
-    } else {
-      el.muted = !wantSpeaker
+    /* لا نكتم عند فشل setSinkId — على Android يكفي غالباً nativeSetSpeakerOn */
+    el.muted = false
+    if (!ok && !wantSpeaker) {
+      try {
+        el.play?.()
+      } catch {
+        /* ignore */
+      }
     }
   })()
 })

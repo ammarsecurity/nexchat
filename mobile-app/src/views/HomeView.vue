@@ -492,6 +492,8 @@ const homePrimaryCompact = computed(
       <div class="home-bottom">
         <BannerStrip placement="home" />
         <AppFooter />
+        <!-- مساحة في التدفق تحت الفوتر؛ padding على الأب وحده لا يكفي في بعض WebView مع margin-top:auto -->
+        <div class="home-nav-spacer" aria-hidden="true" />
       </div>
     </div>
 
@@ -505,7 +507,6 @@ const homePrimaryCompact = computed(
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  padding-bottom: calc(90px + var(--safe-bottom));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -517,6 +518,15 @@ const homePrimaryCompact = computed(
   flex-direction: column;
   width: 100%;
   min-height: 0;
+}
+
+/* عنصر بارتفاع ثابت داخل .home-bottom تحت AppFooter — يدفع «NexChat» فوق الناف الثابت */
+.home-nav-spacer {
+  flex-shrink: 0;
+  width: 100%;
+  height: var(--home-nav-clearance);
+  min-height: var(--home-nav-clearance);
+  pointer-events: none;
 }
 
 .home-primary {
