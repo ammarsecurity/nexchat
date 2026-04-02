@@ -1,0 +1,87 @@
+{
+  "name": "mobile-app-nexlevel",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "capacitor:sync:after": "node scripts/ios-speaker-plugin-classlist.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev:electron": "concurrently -k \"vite --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && cross-env ELECTRON_DEV=true ELECTRON_START_URL=http://127.0.0.1:5174 electron .\"",
+    "build:electron": "vite build --base ./",
+    "preview:electron": "npm run build:electron && electron .",
+    "dist:electron": "npm run build:electron && electron-builder",
+    "assets": "node scripts/sync-icon.js && capacitor-assets generate --iconBackgroundColor '#6C63FF' --iconBackgroundColorDark '#0D0D1A' --splashBackgroundColor '#6C63FF' --splashBackgroundColorDark '#0D0D1A' && node scripts/copy-icons.js",
+    "android": "npm run build && npx cap sync android && npx cap open android",
+    "ios": "npm run build && npx cap sync ios && node scripts/setup-ios-onesignal.js && npx cap open ios",
+    "sync:android": "npx cap sync android",
+    "sync:ios": "npx cap sync ios && node scripts/setup-ios-onesignal.js"
+  },
+  "build": {
+    "appId": "chat.nexlevel.desktop",
+    "productName": "NexLevel",
+    "icon": "assets/icon.png",
+    "directories": {
+      "output": "release-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.social-networking"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Network"
+    }
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/app": "^8.0.1",
+    "@capacitor/camera": "^8.0.1",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
+    "@capacitor/ios": "^8.1.0",
+    "@microsoft/signalr": "^10.0.0",
+    "axios": "^1.13.5",
+    "dexie": "^4.3.0",
+    "gsap": "^3.14.2",
+    "livekit-client": "^2.17.2",
+    "lucide-vue-next": "^0.575.0",
+    "onesignal-cordova-plugin": "^5.3.1",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.25",
+    "vue-i18n": "^11.2.8",
+    "vue-router": "^4.6.4",
+    "vue3-lottie": "^3.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "vite": "^7.3.1",
+    "wait-on": "^8.0.1"
+  }
+}

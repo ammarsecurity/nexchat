@@ -1,0 +1,308 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { Settings, MessageCircle } from 'lucide-vue-next'
+import { useConversationsListStore } from '../stores/conversationsList'
+import { useMessageRequestsStore } from '../stores/messageRequests'
+import { publicUrl } from '../utils/publicUrl'
+
+const listStore = useConversationsListStore()
+const msgReqStore = useMessageRequestsStore()
+const totalUnread = computed(() => {
+  return listStore.list.reduce((sum, c) => {
+    const n = c?.unreadCount ?? c?.UnreadCount ?? 0
+    return sum + (typeof n === 'number' ? n : parseInt(n, 10) || 0)
+  }, 0)
+})
+
+onMounted(() => {
+  msgReqStore.fetchPendingCount()
+})
+
+const props = defineProps({
+  loading: { type: Boolean, default: false },
+  randomChatEnabled: { type: Boolean, default: true }
+})
+
+const emit = defineEmits(['launch'])
+
+const router = useRouter()
+const { t } = useI18n()
+const isLaunching = ref(false)
+
+async function onRocketClick() {
+  if (!props.randomChatEnabled || props.loading || isLaunching.value) return
+  isLaunching.value = true
+  emit('launch')
+  // انتظار انتهاء الحركة قبل إعادة التفعيل
+  setTimeout(() => { isLaunching.value = false }, 800)
+}
+</script>
+
+<template>
+  <nav class="home-nav">
+    <RouterLink to="/conversations" class="nav-item" :aria-label="t('conversations.title')">
+      <span class="nav-icon-wrap">
+        <MessageCircle :size="24" stroke-width="2" />
+        <span v-if="totalUnread > 0" class="nav-badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+        <span v-if="msgReqStore.pendingCount > 0" class="nav-badge nav-badge-msg-req">{{ msgReqStore.pendingCount > 99 ? '99+' : msgReqStore.pendingCount }}</span>
+      </span>
+      <span class="nav-label">{{ t('conversations.title') }}</span>
+    </RouterLink>
+
+    <div v-if="randomChatEnabled" class="nav-center">
+      <button
+        class="rocket-btn"
+        :class="{ launching: isLaunching || loading }"
+        :disabled="loading"
+        :aria-label="t('home.startRandom')"
+        @click="onRocketClick"
+      >
+        <div class="rocket-wrap">
+          <Vue3Lottie
+            :animation-link="publicUrl('json/Rocket%20Lunch.json')"
+            :height="150"
+            :width="150"
+            :speed="0.9"
+            :loop="true"
+            :auto-play="true"
+            class="nav-rocket-lottie"
+          />
+          <div class="rocket-flame"></div>
+        </div>
+      </button>
+    </div>
+
+    <RouterLink to="/settings" class="nav-item" :aria-label="t('home.settings')">
+      <Settings :size="24" stroke-width="2" />
+      <span class="nav-label">{{ t('home.settings') }}</span>
+    </RouterLink>
+  </nav>
+</template>
+
+<style scoped>
+.home-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  padding: 8px var(--spacing) calc(8px + var(--safe-bottom));
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  z-index: 100;
+}
+
+/* يتماشى مع عرض #app على التابلت والشاشات الأوسع */
+@media (min-width: 480px) {
+  .home-nav {
+    left: 50%;
+    right: auto;
+    width: var(--app-max-width);
+    max-width: 100%;
+    transform: translateX(-50%);
+    box-sizing: border-box;
+  }
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 20px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-item.router-link-active,
+.nav-item:active {
+  color: var(--primary);
+}
+.nav-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: white;
+  background: var(--danger);
+  border-radius: 9px;
+  font-family: 'Cairo', sans-serif;
+}
+.nav-badge-msg-req {
+  top: auto;
+  bottom: -4px;
+  right: auto;
+  left: -6px;
+  background: #f97316;
+}
+.nav-label {
+  font-size: 11px;
+  font-family: 'Cairo', sans-serif;
+  font-weight: 500;
+}
+
+.nav-center {
+  flex: 0 0 auto;
+  margin-top: -28px;
+}
+
+.rocket-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 35%, #4F46E5 100%);
+  border: 3px solid var(--bg-card);
+  box-shadow:
+    0 0 0 2px rgba(108, 99, 255, 0.2),
+    0 6px 24px rgba(108, 99, 255, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  overflow: visible;
+}
+.rocket-btn:not(.launching):not(:disabled) {
+  animation: rocket-idle-pulse 3s ease-in-out infinite;
+}
+.rocket-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+  pointer-events: none;
+}
+.rocket-btn:active:not(:disabled):not(.launching) {
+  transform: scale(0.95);
+  animation: none;
+  box-shadow:
+    0 0 0 2px rgba(108, 99, 255, 0.15),
+    0 2px 12px rgba(108, 99, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.rocket-btn:disabled {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+.rocket-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.rocket-icon {
+  color: white;
+  transform: rotate(-45deg);
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.5s ease-out;
+}
+
+.rocket-flame {
+  position: absolute;
+  bottom: -12px;
+  width: 16px;
+  height: 20px;
+  background: linear-gradient(to top, #FF4500, #FF6B35, #FF8C42, #FFB347);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  opacity: 0.95;
+  transform: scaleY(0.7);
+  transition: transform 0.4s ease-out, opacity 0.3s;
+  animation: flame-flicker 0.12s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.5);
+}
+
+@keyframes flame-flicker {
+  from { transform: scaleY(0.7) scaleX(1); }
+  to { transform: scaleY(0.8) scaleX(1.08); }
+}
+
+@keyframes rocket-idle-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 2px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.45),
+      0 2px 8px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow:
+      0 0 0 3px rgba(108, 99, 255, 0.3),
+      0 8px 32px rgba(108, 99, 255, 0.55),
+      0 0 28px rgba(108, 99, 255, 0.25),
+      0 2px 8px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* حركة الانطلاق */
+.rocket-btn.launching .nav-rocket-lottie :deep(.lottie-animation-container),
+.rocket-btn.launching .nav-rocket-lottie :deep(svg) {
+  transform: translateY(-50px);
+  opacity: 0;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out;
+}
+.rocket-btn.launching .rocket-flame {
+  transform: scaleY(2) scaleX(1.5);
+  opacity: 1;
+  animation: flame-burst 0.5s ease-out;
+}
+.rocket-btn.launching {
+  animation: rocket-pulse 0.8s ease-out;
+}
+
+@keyframes flame-burst {
+  0% { transform: scaleY(0.7) scaleX(1); opacity: 0.9; }
+  50% { transform: scaleY(2.5) scaleX(1.8); opacity: 1; }
+  100% { transform: scaleY(2) scaleX(1.5); opacity: 0.3; }
+}
+
+@keyframes rocket-pulse {
+  0% {
+    box-shadow:
+      0 0 0 2px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  40% {
+    box-shadow:
+      0 0 0 4px rgba(108, 99, 255, 0.4),
+      0 0 40px rgba(108, 99, 255, 0.6),
+      0 0 60px rgba(255, 101, 132, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(108, 99, 255, 0.2),
+      0 6px 24px rgba(108, 99, 255, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+}
+</style>
