@@ -25,7 +25,8 @@ backend/NexChat.API/wwwroot/uploads/
 .env
 .env.local
 .env.*.local
-appsettings.Development.json
+backend/NexChat.API/appsettings.json
+backend/NexChat.API/appsettings.Development.json
 
 # OS
 .DS_Store
