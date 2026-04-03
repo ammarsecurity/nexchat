@@ -1,0 +1,486 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Legion\\nswan\\backend\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\appsettings.development.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\appsettings.development.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Legion\\AppData\\Local\\SourceServer\\e759b62f56b3057d502f4b1a43d4172d8ab6a9cb80427e4e0ad4063e6a9ea344\\backend\\NexChat.API\\Program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\hubs\\conversationhub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\hubs\\conversationhub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\mediacontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\mediacontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\hubs\\chathub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\hubs\\chathub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.infrastructure\\services\\onesignalservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|solutionrelative:nexchat.infrastructure\\services\\onesignalservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\broadcastnotificationhistory.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\broadcastnotificationhistory.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\supportcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\supportcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\notificationscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\notificationscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\admincontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\admincontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\conversationmessage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\conversationmessage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\usermessagedeletion.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\usermessagedeletion.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\userconversationstate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\userconversationstate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\userconversationdeletion.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\userconversationdeletion.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.infrastructure\\data\\appdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|solutionrelative:nexchat.infrastructure\\data\\appdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.infrastructure\\migrations\\20260306120714_addbirthdatetouser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|solutionrelative:nexchat.infrastructure\\migrations\\20260306120714_addbirthdatetouser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\nexchat.api.http||{5703B403-55E7-4C63-8C88-A8F52C7A45C5}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\nexchat.api.http||{5703B403-55E7-4C63-8C88-A8F52C7A45C5}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\hubs\\matchinghub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\hubs\\matchinghub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.infrastructure\\migrations\\20260227110836_initialcreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3C21DC8D-9664-4247-95C0-D12F8C1AD5E4}|NexChat.Infrastructure\\NexChat.Infrastructure.csproj|solutionrelative:nexchat.infrastructure\\migrations\\20260227110836_initialcreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\livekitcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\livekitcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.core\\entities\\message.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F83A2939-F6C1-498E-AF88-22BCED33DAC8}|NexChat.Core\\NexChat.Core.csproj|solutionrelative:nexchat.core\\entities\\message.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\amd64\\Microsoft.Common.CurrentVersion.targets||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|c:\\users\\legion\\nswan\\backend\\nexchat.api\\controllers\\usercontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{48C02AB5-5B54-4C76-B846-C84D16FE55EC}|NexChat.API\\NexChat.API.csproj|solutionrelative:nexchat.api\\controllers\\usercontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\wwwroot\\uploads\\e81e3906-4847-4030-bbc4-b29acc002cae.png||{58961B49-13E0-48C0-9258-13CBC4D40279}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:NexChat.API\\wwwroot\\uploads\\e81e3906-4847-4030-bbc4-b29acc002cae.png||{58961B49-13E0-48C0-9258-13CBC4D40279}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\wwwroot\\uploads\\e8eafb78-1a1c-406b-a904-1421f2f53260.png||{58961B49-13E0-48C0-9258-13CBC4D40279}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:NexChat.API\\wwwroot\\uploads\\e8eafb78-1a1c-406b-a904-1421f2f53260.png||{58961B49-13E0-48C0-9258-13CBC4D40279}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 7,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\AppData\\Local\\SourceServer\\e759b62f56b3057d502f4b1a43d4172d8ab6a9cb80427e4e0ad4063e6a9ea344\\backend\\NexChat.API\\Program.cs",
+              "RelativeDocumentMoniker": "..\\..\\AppData\\Local\\SourceServer\\e759b62f56b3057d502f4b1a43d4172d8ab6a9cb80427e4e0ad4063e6a9ea344\\backend\\NexChat.API\\Program.cs",
+              "ToolTip": "C:\\Users\\Legion\\AppData\\Local\\SourceServer\\e759b62f56b3057d502f4b1a43d4172d8ab6a9cb80427e4e0ad4063e6a9ea344\\backend\\NexChat.API\\Program.cs [Read Only]",
+              "RelativeToolTip": "..\\..\\AppData\\Local\\SourceServer\\e759b62f56b3057d502f4b1a43d4172d8ab6a9cb80427e4e0ad4063e6a9ea344\\backend\\NexChat.API\\Program.cs [Read Only]",
+              "ViewState": "AgIAACEAAAAAAAAAAAAAABAAAAAEAAAAAQAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-25T03:18:46.606Z",
+              "EditorCaption": " [Read Only]"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "ConversationHub.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Hubs\\ConversationHub.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Hubs\\ConversationHub.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Hubs\\ConversationHub.cs",
+              "RelativeToolTip": "NexChat.API\\Hubs\\ConversationHub.cs",
+              "ViewState": "AgIAAMsAAAAAAAAAAAAiwN4AAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T22:42:20.756Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "MediaController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\MediaController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\MediaController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\MediaController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\MediaController.cs",
+              "ViewState": "AgIAAEsAAAAAAAAAAAAgwA4AAAA6AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T17:41:09.885Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Program.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Program.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Program.cs",
+              "RelativeToolTip": "NexChat.API\\Program.cs",
+              "ViewState": "AgIAAGMAAAAAAAAAAAAewHYAAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T18:03:15.201Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "appsettings.Development.json",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\appsettings.Development.json",
+              "RelativeDocumentMoniker": "NexChat.API\\appsettings.Development.json",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\appsettings.Development.json",
+              "RelativeToolTip": "NexChat.API\\appsettings.Development.json",
+              "ViewState": "AgIAAAwAAAAAAAAAAAAAABMAAAALAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-02-27T23:09:42.027Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "AuthController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\AuthController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\AuthController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\AuthController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\AuthController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T16:57:41.839Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\appsettings.json",
+              "RelativeDocumentMoniker": "NexChat.API\\appsettings.json",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\appsettings.json",
+              "RelativeToolTip": "NexChat.API\\appsettings.json",
+              "ViewState": "AgIAALkAAAAAAAAAAAAIwMoAAAAjAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-02-26T17:08:26.164Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "ChatHub.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Hubs\\ChatHub.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Hubs\\ChatHub.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Hubs\\ChatHub.cs",
+              "RelativeToolTip": "NexChat.API\\Hubs\\ChatHub.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAFIAAAAVAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T16:57:05.949Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "UserMessageDeletion.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\UserMessageDeletion.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\UserMessageDeletion.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\UserMessageDeletion.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\UserMessageDeletion.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAeAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-13T17:13:01.428Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "UserConversationState.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\UserConversationState.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\UserConversationState.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\UserConversationState.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\UserConversationState.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-13T17:13:00.247Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "OneSignalService.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Services\\OneSignalService.cs",
+              "RelativeDocumentMoniker": "NexChat.Infrastructure\\Services\\OneSignalService.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Services\\OneSignalService.cs",
+              "RelativeToolTip": "NexChat.Infrastructure\\Services\\OneSignalService.cs",
+              "ViewState": "AgIAAOwAAAAAAAAAAAAuwPMAAAA7AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-15T21:10:24.338Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "SupportController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\SupportController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\SupportController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\SupportController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\SupportController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-15T21:10:00.841Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "BroadcastNotificationHistory.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\BroadcastNotificationHistory.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\BroadcastNotificationHistory.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\BroadcastNotificationHistory.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\BroadcastNotificationHistory.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-15T21:10:11.759Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "ConversationMessage.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\ConversationMessage.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\ConversationMessage.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\ConversationMessage.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\ConversationMessage.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAtAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-13T17:13:06.188Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "NotificationsController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\NotificationsController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\NotificationsController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\NotificationsController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\NotificationsController.cs",
+              "ViewState": "AgIAABsAAAAAAAAAAAAQwA8AAABTAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-02T20:26:37.676Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 16,
+              "Title": "AppDbContext.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Data\\AppDbContext.cs",
+              "RelativeDocumentMoniker": "NexChat.Infrastructure\\Data\\AppDbContext.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Data\\AppDbContext.cs",
+              "RelativeToolTip": "NexChat.Infrastructure\\Data\\AppDbContext.cs",
+              "ViewState": "AgIAAAkAAAAAAAAAAAA/wBQAAAApAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T18:03:03.403Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "AdminController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\AdminController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\AdminController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\AdminController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\AdminController.cs",
+              "ViewState": "AgIAAG0BAAAAAAAAAAAewH4BAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T16:57:35.365Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "UserConversationDeletion.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\UserConversationDeletion.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\UserConversationDeletion.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\UserConversationDeletion.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\UserConversationDeletion.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-13T17:12:57.928Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
+              "Title": "20260306120714_AddBirthDateToUser.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Migrations\\20260306120714_AddBirthDateToUser.cs",
+              "RelativeDocumentMoniker": "NexChat.Infrastructure\\Migrations\\20260306120714_AddBirthDateToUser.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Migrations\\20260306120714_AddBirthDateToUser.cs",
+              "RelativeToolTip": "NexChat.Infrastructure\\Migrations\\20260306120714_AddBirthDateToUser.cs",
+              "ViewState": "AgIAAAoAAAAAAAAAAAAowAsAAABBAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T14:12:15.995Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "MatchingHub.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Hubs\\MatchingHub.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Hubs\\MatchingHub.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Hubs\\MatchingHub.cs",
+              "RelativeToolTip": "NexChat.API\\Hubs\\MatchingHub.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T16:57:13.325Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "NexChat.API.http",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\NexChat.API.http",
+              "RelativeDocumentMoniker": "NexChat.API\\NexChat.API.http",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\NexChat.API.http",
+              "RelativeToolTip": "NexChat.API\\NexChat.API.http",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003502|",
+              "WhenOpened": "2026-02-26T17:08:25.34Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 22,
+              "Title": "LiveKitController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\LiveKitController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\LiveKitController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\LiveKitController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\LiveKitController.cs",
+              "ViewState": "AgIAAB4AAAAAAAAAAAAYwDcAAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T00:40:31.154Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 21,
+              "Title": "20260227110836_InitialCreate.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Migrations\\20260227110836_InitialCreate.cs",
+              "RelativeDocumentMoniker": "NexChat.Infrastructure\\Migrations\\20260227110836_InitialCreate.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Infrastructure\\Migrations\\20260227110836_InitialCreate.cs",
+              "RelativeToolTip": "NexChat.Infrastructure\\Migrations\\20260227110836_InitialCreate.cs",
+              "ViewState": "AgIAANYAAAAAAAAAAAAQwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T14:21:42.661Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 25,
+              "Title": "Microsoft.Common.CurrentVersion.targets",
+              "DocumentMoniker": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\amd64\\Microsoft.Common.CurrentVersion.targets",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\amd64\\Microsoft.Common.CurrentVersion.targets",
+              "ToolTip": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\amd64\\Microsoft.Common.CurrentVersion.targets",
+              "RelativeToolTip": "..\\..\\..\\..\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\amd64\\Microsoft.Common.CurrentVersion.targets",
+              "ViewState": "AgIAANITAAAAAAAAAADgv+QTAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003801|",
+              "WhenOpened": "2026-02-26T17:23:12.043Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 27,
+              "Title": "e81e3906-4847-4030-bbc4-b29acc002cae.png",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\wwwroot\\uploads\\e81e3906-4847-4030-bbc4-b29acc002cae.png",
+              "RelativeDocumentMoniker": "NexChat.API\\wwwroot\\uploads\\e81e3906-4847-4030-bbc4-b29acc002cae.png",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\wwwroot\\uploads\\e81e3906-4847-4030-bbc4-b29acc002cae.png",
+              "RelativeToolTip": "NexChat.API\\wwwroot\\uploads\\e81e3906-4847-4030-bbc4-b29acc002cae.png",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001533|",
+              "WhenOpened": "2026-02-26T19:13:24.577Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 28,
+              "Title": "e8eafb78-1a1c-406b-a904-1421f2f53260.png",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\wwwroot\\uploads\\e8eafb78-1a1c-406b-a904-1421f2f53260.png",
+              "RelativeDocumentMoniker": "NexChat.API\\wwwroot\\uploads\\e8eafb78-1a1c-406b-a904-1421f2f53260.png",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\wwwroot\\uploads\\e8eafb78-1a1c-406b-a904-1421f2f53260.png",
+              "RelativeToolTip": "NexChat.API\\wwwroot\\uploads\\e8eafb78-1a1c-406b-a904-1421f2f53260.png",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001533|",
+              "WhenOpened": "2026-02-26T19:13:22.087Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 26,
+              "Title": "UserController.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\UserController.cs",
+              "RelativeDocumentMoniker": "NexChat.API\\Controllers\\UserController.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.API\\Controllers\\UserController.cs",
+              "RelativeToolTip": "NexChat.API\\Controllers\\UserController.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T16:57:36.171Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 23,
+              "Title": "User.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\User.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\User.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\User.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\User.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T18:05:57.424Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 24,
+              "Title": "Message.cs",
+              "DocumentMoniker": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\Message.cs",
+              "RelativeDocumentMoniker": "NexChat.Core\\Entities\\Message.cs",
+              "ToolTip": "C:\\Users\\Legion\\nswan\\backend\\NexChat.Core\\Entities\\Message.cs",
+              "RelativeToolTip": "NexChat.Core\\Entities\\Message.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-26T17:38:32.579Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

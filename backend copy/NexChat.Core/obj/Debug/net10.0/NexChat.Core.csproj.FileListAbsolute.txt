@@ -1,0 +1,12 @@
+C:\Users\Legion\nswan\backend\NexChat.Core\bin\Debug\net10.0\NexChat.Core.deps.json
+C:\Users\Legion\nswan\backend\NexChat.Core\bin\Debug\net10.0\NexChat.Core.dll
+C:\Users\Legion\nswan\backend\NexChat.Core\bin\Debug\net10.0\NexChat.Core.pdb
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.AssemblyInfoInputs.cache
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.AssemblyInfo.cs
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.csproj.CoreCompileInputs.cache
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.dll
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\refint\NexChat.Core.dll
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.pdb
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\ref\NexChat.Core.dll
+C:\Users\Legion\nswan\backend\NexChat.Core\obj\Debug\net10.0\NexChat.Core.sourcelink.json
