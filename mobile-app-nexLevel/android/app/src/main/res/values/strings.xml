@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">NexLevel</string>
-    <string name="title_activity_main">NexLevel</string>
-    <string name="package_name">chat.nexlevel.app</string>
-    <string name="custom_url_scheme">chat.nexlevel.app</string>
-</resources>
