@@ -295,7 +295,10 @@ onMounted(async () => {
             </div>
             <div class="member-meta">
               <span class="member-name">{{ m.name ?? m.Name ?? '—' }}</span>
-              <span class="member-role">{{ (m.role ?? m.Role) === 'Admin' ? t('groups.admin') : t('groups.member') }}</span>
+              <span
+                class="member-role"
+                :class="{ 'member-role--admin': (m.role ?? m.Role) === 'Admin' }"
+              >{{ (m.role ?? m.Role) === 'Admin' ? t('groups.admin') : t('groups.member') }}</span>
             </div>
             <div v-if="currentUserId && String(m.userId ?? m.UserId) !== currentUserId" class="member-actions">
               <button
@@ -384,14 +387,26 @@ onMounted(async () => {
   min-height: 100%;
   padding-bottom: var(--safe-bottom);
   font-family: 'Cairo', sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.group-info.page.auth-pattern::before {
+  opacity: 0.05;
 }
 
 .top-bar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
+  padding: calc(var(--safe-top) + 10px) var(--spacing) 10px;
   position: relative;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .back-btn {
@@ -432,8 +447,18 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px var(--spacing);
-  gap: 12px;
+  margin: 12px var(--spacing) 16px;
+  padding: 22px var(--spacing);
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+html.light .group-header,
+[data-theme="light"] .group-header {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .group-avatar-wrap {
@@ -455,16 +480,21 @@ onMounted(async () => {
 }
 
 .group-avatar {
-  width: 80px;
-  height: 80px;
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   color: white;
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 600;
+  box-shadow: 0 0 0 1px var(--border), 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+html.light .group-avatar,
+[data-theme="light"] .group-avatar {
+  box-shadow: 0 0 0 1px var(--border), 0 2px 10px rgba(0, 0, 0, 0.06);
 }
 
 .group-avatar .avatar-img {
@@ -476,16 +506,17 @@ onMounted(async () => {
 .group-avatar-edit-badge {
   position: absolute;
   bottom: 0;
-  right: 0;
-  width: 28px;
-  height: 28px;
+  inset-inline-end: 0;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--primary);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--bg-primary);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
 .hidden-input {
@@ -505,15 +536,16 @@ onMounted(async () => {
 }
 
 .group-name {
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
   text-align: center;
-  max-width: min(280px, calc(100vw - 32px));
+  max-width: min(100%, calc(100vw - 120px));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.25;
 }
 
 .edit-name-btn {
@@ -591,20 +623,30 @@ onMounted(async () => {
 }
 
 .section {
-  padding: 0 var(--spacing) 24px;
+  padding: 0 var(--spacing) 16px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .section-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  min-width: 0;
 }
 
 .add-member-btn {
@@ -613,50 +655,69 @@ onMounted(async () => {
   justify-content: center;
   gap: 6px;
   padding: 8px 14px;
-  background: var(--primary);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: white;
-  font-size: 14px;
+  background: rgba(108, 99, 255, 0.12);
+  border: 1px solid rgba(108, 99, 255, 0.35);
+  border-radius: 999px;
+  color: var(--primary);
+  font-size: 13px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.2s;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
 }
 .add-member-btn:active {
-  opacity: 0.92;
+  background: rgba(108, 99, 255, 0.2);
+  border-color: var(--primary);
+}
+html.light .add-member-btn,
+[data-theme="light"] .add-member-btn {
+  background: rgba(108, 99, 255, 0.08);
+  border-color: rgba(108, 99, 255, 0.28);
 }
 
 .members-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--bg-card);
-  overflow: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: min(52vh, 420px);
 }
 
 .member-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s;
+}
+.member-row:last-child {
+  border-bottom: none;
+}
+.member-row:active {
+  background: var(--bg-card-hover);
 }
 
 .member-avatar {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 17px;
   color: white;
   overflow: hidden;
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 .member-avatar .avatar-img {
@@ -685,6 +746,22 @@ onMounted(async () => {
   color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
 }
+.member-role--admin {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(108, 99, 255, 0.14);
+}
+html.light .member-role--admin,
+[data-theme="light"] .member-role--admin {
+  background: rgba(108, 99, 255, 0.1);
+}
 
 .member-actions {
   flex-shrink: 0;
@@ -710,7 +787,9 @@ onMounted(async () => {
 }
 
 .leave-section {
-  padding-top: 8px;
+  padding: 12px var(--spacing) calc(16px + var(--safe-bottom));
+  margin-top: auto;
+  flex-shrink: 0;
 }
 
 .leave-btn {
@@ -720,16 +799,17 @@ onMounted(async () => {
   gap: 8px;
   width: 100%;
   min-height: var(--touch-min);
-  padding: 10px 18px;
-  border: 1px solid rgba(244, 67, 54, 0.5);
-  border-radius: 12px;
-  background: rgba(244, 67, 54, 0.08);
-  color: #f44336;
+  padding: 12px 18px;
+  border: 1px solid rgba(244, 67, 54, 0.45);
+  border-radius: var(--radius);
+  background: rgba(244, 67, 54, 0.07);
+  color: var(--danger, #f44336);
   font-size: 15px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
 }
 .leave-btn:active:not(:disabled) {
   opacity: 0.9;
@@ -890,19 +970,39 @@ onMounted(async () => {
 
 @media (max-width: 360px) {
   .group-header {
-    padding: 20px var(--spacing);
+    margin: 8px 12px 12px;
+    padding: 18px 14px;
   }
   .group-avatar {
-    width: 72px;
-    height: 72px;
-    font-size: 24px;
+    width: 76px;
+    height: 76px;
+    font-size: 26px;
   }
   .group-name {
     font-size: 18px;
   }
+  .section-header {
+    padding-bottom: 8px;
+  }
+  .add-member-btn span {
+    display: none;
+  }
+  .add-member-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    padding: 0;
+    border-radius: 12px;
+  }
   .member-row {
     padding: 10px 12px;
     gap: 10px;
+  }
+  .member-avatar {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    font-size: 15px;
   }
 }
 </style>
