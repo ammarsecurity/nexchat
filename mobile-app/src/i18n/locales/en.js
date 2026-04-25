@@ -390,6 +390,8 @@ export default {
     copy: 'Copy',
     copied: 'Copied!',
     attachOrVoice: 'Attach or voice',
+    inputMenuTitle: 'Emoji and image',
+    openEmoji: 'Emoji',
     attachImage: 'Attach image',
     voiceMessage: 'Voice message',
     replyPreviewImage: 'Image',

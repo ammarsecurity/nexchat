@@ -390,6 +390,8 @@ export default {
     copy: 'نسخ',
     copied: 'تم النسخ!',
     attachOrVoice: 'مرفقات أو رسالة صوتية',
+    inputMenuTitle: 'إيموجي وصورة',
+    openEmoji: 'رموز تعبيرية',
     attachImage: 'إرفاق صورة',
     voiceMessage: 'رسالة صوتية',
     replyPreviewImage: 'صورة',

@@ -42,6 +42,7 @@ const callDeclined = ref(false)
 const showVideoConfirm = ref(false)
 const callingOut = ref(false)
 const showEmojiPicker = ref(false)
+const showInputActionsMenu = ref(false)
 const activeEmojiTab = ref(0)
 const imageInput = ref(null)
 const msgInputRef = ref(null)
@@ -63,6 +64,11 @@ const emojiCategories = [
 
 function insertEmoji(emoji) {
   messageText.value += emoji
+  showEmojiPicker.value = false
+}
+
+function onMsgInputFocus() {
+  showInputActionsMenu.value = false
   showEmojiPicker.value = false
 }
 
@@ -130,6 +136,12 @@ const partnerUserId = computed(() => {
 
 function canReportMessage(msg) {
   if (isSupportChat.value || partnerIsFeatured.value) return false
+  if (!msg || msg.type === 'system') return false
+  return String(msg.senderId ?? '') !== String(currentUserId.value ?? '')
+}
+
+/** رسالة الطرف الآخر (ليست لي) — لترتيب فقاعة + زر إبلاغ بجانبها */
+function isIncomingMessage(msg) {
   if (!msg || msg.type === 'system') return false
   return String(msg.senderId ?? '') !== String(currentUserId.value ?? '')
 }
@@ -951,33 +963,43 @@ async function shareCodeInChat() {
         :class="['message-wrap', msg.type === 'system' ? 'system' : msg.senderId === currentUserId ? 'mine' : 'theirs']"
       >
         <div v-if="msg.type === 'system'" class="system-msg">{{ msg.content }}</div>
-        <div
-          v-else-if="msg.type === 'image'"
-          class="bubble image-bubble"
-          :class="{ 'bubble--with-report': canReportMessage(msg) }"
-        >
-          <button
-            v-if="canReportMessage(msg)"
-            type="button"
-            class="msg-report-on-bubble"
-            :aria-label="t('randomChat.reportContent')"
-            @click.stop="openReportForMessage(msg)"
-          >
-            <Flag :size="14" stroke-width="2" />
-          </button>
-          <img :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
+        <div v-else-if="msg.type === 'image'">
+          <div v-if="isIncomingMessage(msg)" class="theirs-bubble-line">
+            <div class="bubble image-bubble">
+              <img :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
+            </div>
+            <button
+              v-if="canReportMessage(msg)"
+              type="button"
+              class="msg-report-on-bubble"
+              :aria-label="t('randomChat.reportContent')"
+              @click.stop="openReportForMessage(msg)"
+            >
+              <Flag :size="12" stroke-width="2" />
+            </button>
+          </div>
+          <div v-else class="bubble image-bubble">
+            <img :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
+          </div>
         </div>
-        <div v-else class="bubble" :class="{ 'bubble--with-report': canReportMessage(msg) }">
-          <button
-            v-if="canReportMessage(msg)"
-            type="button"
-            class="msg-report-on-bubble"
-            :aria-label="t('randomChat.reportContent')"
-            @click.stop="openReportForMessage(msg)"
-          >
-            <Flag :size="14" stroke-width="2" />
-          </button>
-          <span class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
+        <div v-else>
+          <div v-if="isIncomingMessage(msg)" class="theirs-bubble-line">
+            <div class="bubble">
+              <span class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
+            </div>
+            <button
+              v-if="canReportMessage(msg)"
+              type="button"
+              class="msg-report-on-bubble"
+              :aria-label="t('randomChat.reportContent')"
+              @click.stop="openReportForMessage(msg)"
+            >
+              <Flag :size="12" stroke-width="2" />
+            </button>
+          </div>
+          <div v-else class="bubble">
+            <span class="msg-text" v-html="linkifyText(msg.content)" @click="handleMessageLinkClick"></span>
+          </div>
         </div>
         <div v-if="msg.type !== 'system'" class="msg-meta">
           <span class="msg-time text-muted">
@@ -1038,11 +1060,45 @@ async function shareCodeInChat() {
       </Transition>
 
       <div class="message-input-row">
-        <button class="input-action-btn" @click="showEmojiPicker = !showEmojiPicker" :class="{ active: showEmojiPicker }"><Smile :size="20" /></button>
-        <button class="input-action-btn" @click="imageInput.click()" :disabled="uploadingImage">
-          <Loader2 v-if="uploadingImage" :size="20" class="spin" />
-          <Image v-else :size="20" />
-        </button>
+        <div class="input-actions-wrap">
+          <button
+            type="button"
+            class="input-action-btn"
+            :class="{ active: showInputActionsMenu || showEmojiPicker }"
+            :disabled="uploadingImage"
+            :title="t('conversationChat.inputMenuTitle')"
+            @click="showInputActionsMenu = !showInputActionsMenu"
+          >
+            <MoreVertical :size="20" />
+          </button>
+          <div
+            v-if="showInputActionsMenu"
+            class="input-actions-backdrop"
+            @click="showInputActionsMenu = false"
+          />
+          <Transition name="fade">
+            <div v-if="showInputActionsMenu" class="input-actions-menu glass-card" @click.stop>
+              <button
+                type="button"
+                class="input-action-menu-item"
+                @click="showInputActionsMenu = false; showEmojiPicker = !showEmojiPicker"
+              >
+                <Smile :size="18" />
+                <span>{{ t('conversationChat.openEmoji') }}</span>
+              </button>
+              <button
+                type="button"
+                class="input-action-menu-item"
+                :disabled="uploadingImage"
+                @click="showInputActionsMenu = false; imageInput?.click()"
+              >
+                <Loader2 v-if="uploadingImage" :size="18" class="spin" />
+                <Image v-else :size="18" />
+                <span>{{ t('conversationChat.attachImage') }}</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
         <input
           ref="imageInput"
           type="file"
@@ -1058,11 +1114,12 @@ async function shareCodeInChat() {
           rows="1"
           @input="handleInput"
           @keydown.enter.exact.prevent="sendMessage"
-          @focus="showEmojiPicker = false"
+          @focus="onMsgInputFocus"
           :disabled="sessionEnded"
           maxlength="2000"
         />
         <button
+          type="button"
           class="send-btn"
           @click="sendMessage"
           :disabled="!messageText.trim() || sessionEnded"
@@ -1273,32 +1330,46 @@ async function shareCodeInChat() {
 }
 .theirs .bubble {
   border-bottom-left-radius: 4px;
-  position: relative;
 }
-.theirs .bubble.bubble--with-report {
-  padding-top: 30px;
+/* زر الإبلاغ بجانب الفقاعة (ليس داخلها) — بدون padding-top المشوّه */
+.theirs-bubble-line {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.theirs-bubble-line .bubble {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .msg-report-on-bubble {
-  position: absolute;
-  top: 5px;
-  inset-inline-end: 6px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
   padding: 0;
-  border: none;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
-  z-index: 2;
   -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+html.light .msg-report-on-bubble,
+[data-theme="light"] .msg-report-on-bubble {
+  background: var(--bg-secondary);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
 }
 .msg-report-on-bubble:active {
-  opacity: 0.88;
+  opacity: 0.9;
   transform: scale(0.96);
+  background: var(--bg-card-hover);
 }
 .report-snippet-text {
   display: block;
@@ -1409,15 +1480,15 @@ async function shareCodeInChat() {
   display: flex;
   gap: 10px;
   align-items: center;
-  min-height: 48px;
+  min-height: 56px;
 }
 
 .msg-input {
   flex: 1;
   min-width: 0;
-  min-height: 48px;
+  min-height: 52px;
   max-height: 120px;
-  padding: 14px 18px;
+  padding: 14px 16px;
   border-radius: 24px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1427,7 +1498,8 @@ async function shareCodeInChat() {
   outline: none;
   resize: none;
   overflow-y: auto;
-  line-height: 1.4;
+  line-height: 1.5;
+  box-sizing: border-box;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -1439,51 +1511,25 @@ async function shareCodeInChat() {
   border: none;
   border-radius: 50%;
   color: white;
-  cursor: pointer;
-  height: 48px;
   width: 48px;
+  height: 48px;
   min-width: 48px;
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+  flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.15s, opacity 0.2s;
-  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
-}
-.send-btn:not(:disabled) {
-  animation: send-btn-pulse 2.5s ease-in-out infinite;
-}
-.send-btn:not(:disabled) svg {
-  animation: send-icon-ready 2.5s ease-in-out infinite;
 }
 .send-btn:not(:disabled):active {
   transform: scale(0.95);
   opacity: 0.95;
-  animation: none;
-}
-.send-btn:not(:disabled):active svg {
-  animation: none;
 }
 .send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-@keyframes send-btn-pulse {
-  0%, 100% {
-    box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow: 0 6px 20px rgba(108, 99, 255, 0.5), 0 0 20px rgba(108, 99, 255, 0.25);
-    transform: scale(1.04);
-  }
-}
-
-@keyframes send-icon-ready {
-  0%, 100% { opacity: 1; transform: translateX(0); }
-  50% { opacity: 0.9; transform: translateX(2px); }
 }
 
 .next-btn {
@@ -1932,28 +1978,154 @@ async function shareCodeInChat() {
 .emoji-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.2); }
 .emoji-btn:active { transform: scale(0.95); }
 
-/* Input action buttons */
+.input-actions-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
 .input-action-btn {
-  align-items: center;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
-  height: 48px;
+  align-items: center;
   justify-content: center;
-  min-width: 48px;
   padding: 0;
-  transition: background 0.2s, color 0.2s;
-  flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
 .input-action-btn:active { background: var(--bg-card-hover); }
-.input-action-btn.active { background: rgba(108,99,255,0.2); color: var(--primary); }
+.input-action-btn.active { background: rgba(108, 99, 255, 0.2); color: var(--primary); }
 .input-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.input-actions-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.input-actions-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: auto;
+  min-width: 180px;
+  padding: 6px;
+  z-index: 101;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  direction: rtl;
+}
+[dir="rtl"] .input-actions-menu {
+  left: auto;
+  right: 0;
+}
+.input-action-menu-item {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  border-radius: 8px;
+  text-align: right;
+  -webkit-tap-highlight-color: transparent;
+}
+.input-action-menu-item svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+.input-action-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.input-action-menu-item:hover,
+.input-action-menu-item:active {
+  background: var(--bg-card-hover);
+}
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 400px) {
+  .input-area {
+    padding: 6px 6px calc(10px + var(--safe-bottom));
+    gap: 6px;
+  }
+  .message-input-row {
+    gap: 5px;
+    min-height: 48px;
+  }
+  .msg-input {
+    min-height: 46px;
+    padding: 10px 12px;
+    font-size: 15px;
+    border-radius: 20px;
+  }
+  .send-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+  .send-btn :deep(svg) {
+    width: 17px;
+    height: 17px;
+  }
+  .input-action-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 10px;
+  }
+  .input-action-btn :deep(svg) {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+@media (max-width: 360px) {
+  .input-area {
+    padding: 4px 4px calc(8px + var(--safe-bottom));
+  }
+  .message-input-row {
+    gap: 4px;
+    min-height: 44px;
+  }
+  .msg-input {
+    padding: 8px 10px;
+    font-size: 14px;
+    min-height: 44px;
+    border-radius: 18px;
+  }
+  .send-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+  .send-btn :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+  .input-action-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: 9px;
+  }
+  .input-action-btn :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+}
 
 /* Image in chat */
 .image-bubble { padding: 4px !important; overflow: hidden; }

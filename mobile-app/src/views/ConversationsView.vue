@@ -176,7 +176,7 @@ function goBack() {
 </script>
 
 <template>
-  <div class="conversations page auth-pattern">
+  <div class="conversations page auth-pattern conversations--wa">
     <header class="top-bar">
       <button class="back-btn" @click="goBack" :aria-label="t('common.cancel')">
         <ChevronRight :size="22" />
@@ -249,7 +249,10 @@ function goBack() {
             class="item-avatar"
             :class="{
               'avatar-group': c.isGroup ?? c.IsGroup,
-              'avatar-elevated-bg': !(c.isGroup ?? c.IsGroup) && !(c.partnerAvatar ?? c.PartnerAvatar)
+              'avatar-elevated-bg': !(c.isGroup ?? c.IsGroup) && !(c.partnerAvatar ?? c.PartnerAvatar),
+              'avatar-no-photo': !(c.isGroup ?? c.IsGroup) && !(
+                (c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)
+              )
             }"
             :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }"
           >
@@ -291,6 +294,39 @@ function goBack() {
 </template>
 
 <style scoped>
+/* مظهر القائمة بصفوف وفواصل (كواتساب) مع ألوان NexChat — دون أخضر */
+.conversations.conversations--wa {
+  --wa-header: var(--bg-secondary);
+  --wa-header-text: var(--text-primary);
+  --wa-icon-on-header: var(--text-secondary);
+  --wa-subbar: var(--bg-primary);
+  --wa-search-field: var(--bg-card);
+  --wa-search-icon: var(--text-muted);
+  --wa-list-bg: var(--bg-primary);
+  --wa-row-sep: var(--border);
+  --wa-tap: rgba(255, 255, 255, 0.05);
+  --wa-accent: var(--primary);
+  --wa-filter-active: var(--primary);
+  --wa-name: var(--text-primary);
+  --wa-preview: var(--text-secondary);
+}
+
+html.light .conversations.conversations--wa,
+[data-theme="light"] .conversations.conversations--wa {
+  --wa-header: var(--bg-card);
+  --wa-header-text: var(--text-primary);
+  --wa-icon-on-header: var(--text-secondary);
+  --wa-subbar: #fff;
+  --wa-search-field: var(--bg-card);
+  --wa-search-icon: var(--text-muted);
+  --wa-list-bg: var(--bg-primary);
+  --wa-row-sep: var(--border);
+  --wa-tap: rgba(0, 0, 0, 0.04);
+  --wa-filter-active: var(--primary);
+  --wa-name: var(--text-primary);
+  --wa-preview: var(--text-secondary);
+}
+
 .conversations {
   background: var(--bg-primary);
   display: flex;
@@ -306,29 +342,46 @@ function goBack() {
   box-sizing: border-box;
 }
 
+.conversations--wa {
+  background: var(--wa-list-bg);
+}
+.conversations--wa.page.auth-pattern::before {
+  opacity: 0.06;
+}
+
 .top-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
+  padding: calc(var(--safe-top) + 8px) 10px 10px;
   flex-shrink: 0;
-  gap: 12px;
+  gap: 10px;
+  background: var(--wa-header);
+  color: var(--wa-header-text);
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+}
+html.light .conversations--wa .top-bar,
+[data-theme="light"] .conversations--wa .top-bar {
+  box-shadow: none;
 }
 
 .top-title {
   flex: 1;
   min-width: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--wa-header-text);
   font-family: 'Cairo', sans-serif;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.back-btn, .new-chat-btn {
+.back-btn,
+.new-chat-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -337,19 +390,46 @@ function goBack() {
   min-width: 40px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   color: var(--text-secondary);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
 }
-.back-btn:active, .new-chat-btn:active { background: var(--bg-card-hover); }
+.conversations--wa .new-chat-btn {
+  color: var(--primary);
+}
+html.light .conversations--wa .back-btn,
+html.light .conversations--wa .new-chat-btn,
+[data-theme="light"] .conversations--wa .back-btn,
+[data-theme="light"] .conversations--wa .new-chat-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+}
+html.light .conversations--wa .back-btn,
+[data-theme="light"] .conversations--wa .back-btn {
+  color: var(--text-secondary);
+}
+html.light .conversations--wa .new-chat-btn,
+[data-theme="light"] .conversations--wa .new-chat-btn {
+  color: var(--primary);
+}
+.back-btn:active,
+.new-chat-btn:active {
+  background: var(--bg-card-hover);
+}
+html.light .conversations--wa .back-btn:active,
+html.light .conversations--wa .new-chat-btn:active,
+[data-theme="light"] .conversations--wa .back-btn:active,
+[data-theme="light"] .conversations--wa .new-chat-btn:active {
+  background: var(--bg-card-hover);
+}
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-shrink: 0;
 }
-.new-chat-btn { color: var(--primary); }
 .new-chat-btn-badge-wrap {
   position: relative;
 }
@@ -387,6 +467,8 @@ function goBack() {
   font-size: 14px;
   font-family: 'Cairo', sans-serif;
   color: var(--text-primary);
+  position: relative;
+  z-index: 2;
 }
 
 .link-btn {
@@ -400,66 +482,109 @@ function goBack() {
 
 .filters-wrap {
   display: flex;
-  gap: 6px;
-  padding: 8px var(--spacing) 6px;
+  gap: 8px;
+  padding: 8px 12px 6px;
   flex-shrink: 0;
+  background: var(--wa-subbar);
+}
+html.light .conversations--wa .filters-wrap,
+[data-theme="light"] .conversations--wa .filters-wrap {
+  background: #fff;
+  border-bottom: 1px solid var(--wa-row-sep);
 }
 
 .filter-btn {
   flex: 1;
-  min-height: 34px;
-  padding: 6px 8px;
+  min-height: 32px;
+  padding: 6px 10px;
   font-size: 12px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  border-radius: 999px;
+  border: none;
   background: var(--bg-card);
-  color: var(--text-secondary);
+  color: var(--wa-icon-on-header, var(--text-secondary));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, color 0.15s;
+}
+html.light .conversations--wa .filter-btn,
+[data-theme="light"] .conversations--wa .filter-btn {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
 }
 
 .filter-btn.active {
-  background: rgba(108, 99, 255, 0.15);
-  border-color: rgba(108, 99, 255, 0.4);
-  color: var(--primary);
+  background: rgba(108, 99, 255, 0.22);
+  color: var(--wa-filter-active);
+  box-shadow: 0 0 0 1px rgba(108, 99, 255, 0.4);
+}
+html.light .conversations--wa .filter-btn.active,
+[data-theme="light"] .conversations--wa .filter-btn.active {
+  background: rgba(108, 99, 255, 0.12);
+  color: var(--wa-filter-active);
+  box-shadow: none;
 }
 
-.search-wrap {
-  padding: 0 var(--spacing) 8px;
+.conversations--wa .search-wrap {
+  padding: 8px 10px 10px;
   flex-shrink: 0;
+  background: var(--wa-subbar);
+}
+html.light .conversations--wa .search-wrap,
+[data-theme="light"] .conversations--wa .search-wrap {
+  background: var(--bg-secondary);
 }
 
 .search-input-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  min-height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  gap: 10px;
+  padding: 0 14px;
+  min-height: 40px;
+  border-radius: 20px;
+  border: none;
+  background: var(--wa-search-field);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+}
+html.light .conversations--wa .search-input-wrap,
+[data-theme="light"] .conversations--wa .search-input-wrap {
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
 }
 
 .search-icon {
-  color: var(--text-tertiary);
+  color: var(--wa-search-icon, var(--text-muted));
   flex-shrink: 0;
 }
 
 .search-input {
   flex: 1;
   min-width: 0;
-  padding: 8px 0;
+  padding: 10px 0;
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-family: 'Cairo', sans-serif;
   outline: none;
 }
+.conversations--wa .search-input {
+  color: var(--wa-header-text, var(--text-primary));
+}
+html.light .conversations--wa .search-input,
+[data-theme="light"] .conversations--wa .search-input {
+  color: var(--text-primary);
+}
 
 .search-input::placeholder {
+  color: var(--text-muted);
+}
+.conversations--wa .search-input::placeholder {
+  color: var(--wa-search-icon);
+  opacity: 0.9;
+}
+html.light .conversations--wa .search-input::placeholder,
+[data-theme="light"] .conversations--wa .search-input::placeholder {
   color: var(--text-muted);
 }
 
@@ -468,7 +593,8 @@ function goBack() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 var(--spacing);
+  padding: 0;
+  background: var(--wa-list-bg, var(--bg-primary));
   -webkit-overflow-scrolling: touch;
 }
 
@@ -495,50 +621,83 @@ function goBack() {
 .conv-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-bottom: 20px;
+  gap: 0;
+  padding-bottom: 12px;
 }
 
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 10px 12px 10px 10px;
+  min-height: 64px;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: 0;
   position: relative;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  border: none;
+  background: transparent;
+  border-bottom: 1px solid var(--wa-row-sep, var(--border));
   -webkit-tap-highlight-color: transparent;
 }
-
-.conv-item:active { background: var(--bg-card-hover); }
-
-.conv-item.is-group {
-  border-inline-start: 3px solid var(--primary);
-  background: rgba(108, 99, 255, 0.06);
+.conv-item:last-child {
+  border-bottom: none;
+}
+.conversations--wa .conv-item:active {
+  background: var(--wa-tap, var(--bg-card-hover));
 }
 
-.conv-item.is-group:active {
-  background: rgba(108, 99, 255, 0.1);
+.conversations--wa .conv-item.is-group {
+  border-inline-start: 3px solid var(--wa-accent, var(--primary));
+  background: transparent;
+  padding-inline-start: 7px;
+}
+.conversations--wa .conv-item.is-group:active {
+  background: var(--wa-tap);
 }
 
 .conv-item.unread .item-name { font-weight: 700; }
 
+.conversations--wa .conv-item.unread .item-preview {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+html.light .conversations--wa .conv-item.unread .item-preview,
+[data-theme="light"] .conversations--wa .conv-item.unread .item-preview {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
 .item-avatar {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 50px;
+  height: 50px;
+  min-width: 50px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 16px;
   color: white;
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
+}
+.conversations--wa .item-avatar {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  font-size: 18px;
+}
+
+/* دون صورة: إطار ناعم حول الدائرة (box-shadow حتى لا يتغيّر حجم 52px) */
+.item-avatar.avatar-no-photo {
+  box-shadow:
+    0 0 0 1px var(--border),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+html.light .item-avatar.avatar-no-photo,
+[data-theme="light"] .item-avatar.avatar-no-photo {
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 /* حرف الاسم على خلفية فاتحة: في المود الفاتح لا يستخدم أبيض */
@@ -574,8 +733,9 @@ html.light .item-avatar.avatar-elevated-bg {
 }
 .item-name {
   font-weight: 600;
-  font-size: 13px;
-  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--wa-name, var(--text-primary));
   font-family: 'Cairo', sans-serif;
   white-space: nowrap;
   overflow: hidden;
@@ -596,6 +756,11 @@ html.light .item-avatar.avatar-elevated-bg {
   flex-shrink: 0;
   font-family: 'Cairo', sans-serif;
 }
+.conversations--wa .group-badge {
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  font-size: 9px;
+}
 
 .item-avatar.avatar-group {
   background: rgba(108, 99, 255, 0.2) !important;
@@ -614,16 +779,18 @@ html.light .item-avatar.avatar-elevated-bg {
 }
 
 .item-time {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--wa-preview, var(--text-muted));
   font-family: 'Cairo', sans-serif;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
 }
 
 .unread-badge-inline {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  background: #25D366;
+  background: var(--primary);
   color: white;
   font-size: 10px;
   font-weight: 700;
@@ -635,8 +802,9 @@ html.light .item-avatar.avatar-elevated-bg {
 }
 
 .item-preview {
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--wa-preview, var(--text-secondary));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -654,10 +822,18 @@ html.light .item-avatar.avatar-elevated-bg {
   padding: 2px;
   background: none;
   border: none;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary, var(--text-muted));
   cursor: pointer;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
+}
+.conversations--wa .context-btn {
+  color: var(--text-muted);
+  opacity: 0.9;
+}
+html.light .conversations--wa .context-btn,
+[data-theme="light"] .conversations--wa .context-btn {
+  color: var(--text-muted);
 }
 
 .item-actions {
@@ -677,6 +853,11 @@ html.light .item-avatar.avatar-elevated-bg {
   background: rgba(108, 99, 255, 0.15);
   color: var(--primary);
   flex-shrink: 0;
+}
+.conversations--wa .pin-badge {
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  border-radius: 50%;
 }
 
 .btn-gradient {
@@ -787,5 +968,19 @@ html.light .item-avatar.avatar-elevated-bg {
   .item-name { font-size: 12px; }
   .item-time { font-size: 9px; }
   .item-preview { font-size: 10px; }
+  /* وضع واتساب: لا نصغّر الصور إلى 34px — نبقى أقرب لتجربة WA */
+  .conversations--wa .conv-item {
+    padding: 9px 10px 9px 8px;
+    gap: 8px;
+  }
+  .conversations--wa .item-avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    font-size: 16px;
+  }
+  .conversations--wa .item-name { font-size: 14px; }
+  .conversations--wa .item-time { font-size: 10px; }
+  .conversations--wa .item-preview { font-size: 12px; }
 }
 </style>
