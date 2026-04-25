@@ -21,8 +21,17 @@ const historyPageSize = ref(15)
 const historySearch = ref('')
 const loadingHistory = ref(false)
 const resendingId = ref(null)
+const snackbar = ref(false)
+const snackbarText = ref('')
+const snackbarColor = ref('error')
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+
+function showSnackbar(text, color = 'error') {
+  snackbarText.value = text
+  snackbarColor.value = color
+  snackbar.value = true
+}
 
 async function fetchHistory() {
   loadingHistory.value = true
@@ -54,11 +63,11 @@ function onImageSelect(e) {
   if (!file) return
   const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
   if (!allowed.includes(file.type)) {
-    alert('الصور المسموحة: JPEG, PNG, GIF, WebP')
+    showSnackbar('الصور المسموحة: JPEG, PNG, GIF, WebP')
     return
   }
   if (file.size > 5 * 1024 * 1024) {
-    alert('الحد الأقصى 5 ميجابايت')
+    showSnackbar('الحد الأقصى 5 ميجابايت')
     return
   }
   imageFile.value = file
@@ -81,14 +90,14 @@ async function uploadImage() {
     })
     return res.data?.url || null
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل رفع الصورة')
+    showSnackbar(e.response?.data?.message || 'فشل رفع الصورة')
     return null
   }
 }
 
 async function sendBroadcast() {
   if (!form.value.title?.trim() || !form.value.body?.trim()) {
-    alert('العنوان والنص مطلوبان')
+    showSnackbar('العنوان والنص مطلوبان')
     return
   }
   sending.value = true
@@ -111,7 +120,7 @@ async function sendBroadcast() {
     fetchHistory()
   } catch (err) {
     recipientsCount.value = err.response?.data?.recipientsCount ?? 0
-    alert(err.response?.data?.message || 'فشل إرسال الإشعار')
+    showSnackbar(err.response?.data?.message || 'فشل إرسال الإشعار')
   } finally {
     sending.value = false
   }
@@ -121,10 +130,10 @@ async function resend(item) {
   resendingId.value = item.id
   try {
     const res = await api.post(`/admin/notifications/broadcast/${item.id}/resend`)
-    alert(`تم إعادة الإرسال بنجاح إلى ${res.data?.recipientsCount ?? 0} جهاز`)
+    showSnackbar(`تم إعادة الإرسال بنجاح إلى ${res.data?.recipientsCount ?? 0} جهاز`, 'success')
     fetchHistory()
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل إعادة الإرسال')
+    showSnackbar(e.response?.data?.message || 'فشل إعادة الإرسال')
   } finally {
     resendingId.value = null
   }
@@ -325,6 +334,17 @@ function formatDate(dt) {
         </div>
       </div>
     </v-card>
+
+    <v-snackbar
+      v-model="snackbar"
+      :color="snackbarColor"
+      :timeout="3500"
+      location="bottom"
+      rounded="lg"
+      elevation="8"
+    >
+      {{ snackbarText }}
+    </v-snackbar>
   </div>
 </template>
 
