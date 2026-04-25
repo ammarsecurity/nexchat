@@ -5,6 +5,7 @@ import { ChevronRight, Bell, Trash2 } from 'lucide-vue-next'
 import { useNotificationsStore } from '../stores/notifications'
 import { useLocaleStore } from '../stores/locale'
 import { formatGregorianDateTime } from '../utils/formatTime'
+import api from '../services/api'
 
 const router = useRouter()
 const notifications = useNotificationsStore()
@@ -30,24 +31,53 @@ function getTypeLabel(type) {
 }
 
 function handleClick(n) {
+  notifications.markRead(n.id)
+  if (n.serverId) api.put(`/user-notifications/${n.serverId}/read`).catch(() => {})
   if (n.conversationId) {
-    router.push(`/conversation/${n.conversationId}`)
+    router.push({ path: '/conversations', query: { open: n.conversationId } })
     return
   }
   if (n.sessionId) {
-    if (n.type === 'video_call') router.push(`/video/${n.sessionId}`)
+    if (n.type === 'video_call') router.push(`/chat/${n.sessionId}`)
     else router.push(`/chat/${n.sessionId}`)
   }
 }
 
 function clearAll() {
   notifications.clear()
+  api.put('/user-notifications/read-all').catch(() => {})
 }
 
 const handler = (e) => notifications.add(e.detail)
 
 onMounted(() => {
   notifications.load()
+  api.get('/user-notifications?take=40')
+    .then(({ data }) => {
+      const normalized = (data || []).map((x) => {
+        let parsed = {}
+        try { parsed = JSON.parse(x.dataJson || '{}') } catch {}
+        return {
+          id: `srv-${x.id}`,
+          serverId: x.id,
+          type: x.type,
+          title: x.title,
+          body: x.body,
+          timestamp: x.createdAt,
+          isRead: x.isRead,
+          sessionId: parsed.sessionId,
+          conversationId: parsed.conversationId,
+          messageRequestId: parsed.messageRequestId
+        }
+      })
+      if (normalized.length) {
+        const seen = new Set(notifications.list.map(x => String(x.serverId || x.id)))
+        normalized.forEach((n) => {
+          if (!seen.has(String(n.serverId))) notifications.add(n)
+        })
+      }
+    })
+    .catch(() => {})
   window.addEventListener('nexchat:notification', handler)
 })
 
@@ -77,6 +107,7 @@ onUnmounted(() => {
           v-for="n in notifications.list"
           :key="n.id"
           class="notif-row glass-card"
+          :class="{ unread: !n.isRead }"
           @click="handleClick(n)"
         >
           <div class="notif-icon" :class="n.type">
@@ -159,6 +190,10 @@ onUnmounted(() => {
 }
 
 .notif-row:active { background: var(--bg-card-hover); }
+.notif-row.unread {
+  border-color: rgba(108, 99, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(108, 99, 255, 0.15) inset;
+}
 
 .notif-icon {
   width: 40px;

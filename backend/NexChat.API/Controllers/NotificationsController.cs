@@ -43,6 +43,23 @@ public class NotificationsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
         return Ok();
     }
+
+    [HttpPost("unregister")]
+    public async Task<IActionResult> Unregister([FromBody] RegisterDeviceRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.PlayerId))
+            return BadRequest(new { message = "playerId مطلوب" });
+
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized();
+
+        var rows = await db.DeviceSubscriptions
+            .Where(d => d.UserId == userId && d.OneSignalPlayerId == req.PlayerId)
+            .ExecuteDeleteAsync();
+
+        return Ok(new { removed = rows });
+    }
 }
 
 public record RegisterDeviceRequest(string PlayerId, string? Platform);

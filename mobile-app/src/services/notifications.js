@@ -11,6 +11,8 @@ import { startIncomingCallSound } from '../utils/sounds'
 
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || ''
 const STORAGE_KEY = 'nexchat_notifications'
+let initializedUserId = null
+let listenersBound = false
 
 function isNative() {
   return Capacitor.isNativePlatform() && typeof window.cordova !== 'undefined'
@@ -33,8 +35,13 @@ export async function initNotifications(userId) {
   if (!OneSignal) return false
 
   try {
-    OneSignal.initialize(ONESIGNAL_APP_ID)
-    OneSignal.login(String(userId))
+    if (!initializedUserId) {
+      OneSignal.initialize(ONESIGNAL_APP_ID)
+    }
+    if (initializedUserId !== String(userId)) {
+      OneSignal.login(String(userId))
+      initializedUserId = String(userId)
+    }
 
     const granted = await OneSignal.Notifications.requestPermission()
     if (granted) {
@@ -43,22 +50,7 @@ export async function initNotifications(userId) {
       registerWithBackend()
     }
 
-    // عند الضغط على الإشعار
-    OneSignal.Notifications.addEventListener('click', (event) => {
-      const notif = event?.notification
-      const payload = notif?.rawPayload || {}
-      const data = notif?.additionalData || payload?.custom?.a || payload?.custom || {}
-      addToStore({
-        type: data.type || 'message',
-        title: notif?.title || 'إشعار',
-        body: notif?.body || '',
-        sessionId: data.sessionId,
-        conversationId: data.conversationId,
-        messageRequestId: data.messageRequestId,
-        timestamp: Date.now()
-      })
-      handleNotificationClick(data)
-    })
+    bindOneSignalListeners(OneSignal)
 
     return granted
   } catch (e) {
@@ -94,6 +86,18 @@ async function registerWithBackend() {
     }
   } catch (e) {
     console.warn('Register push error:', e)
+  }
+}
+
+async function unregisterWithBackend() {
+  if (!isNative()) return
+  const OneSignal = getOneSignal()
+  if (!OneSignal) return
+  try {
+    const id = await waitForSubscriptionId(OneSignal, 3000)
+    if (id) await api.post('/notifications/unregister', { playerId: id, platform: Capacitor.getPlatform() })
+  } catch (e) {
+    console.warn('Unregister push error:', e)
   }
 }
 
@@ -135,9 +139,11 @@ export function clearUser() {
   const OneSignal = getOneSignal()
   if (OneSignal) {
     try {
+      unregisterWithBackend()
       OneSignal.logout()
     } catch {}
   }
+  initializedUserId = null
 }
 
 function handleNotificationClick(data) {
@@ -209,10 +215,14 @@ function handleNotificationClick(data) {
 export function addToStore(notification) {
   try {
     const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    list.unshift({ ...notification, id: Date.now().toString() })
+    list.unshift({
+      ...notification,
+      id: notification.id || Date.now().toString(),
+      isRead: notification.isRead === true ? true : false
+    })
     if (list.length > 100) list.length = 100
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-    window.dispatchEvent(new CustomEvent('nexchat:notification', { detail: notification }))
+    window.dispatchEvent(new CustomEvent('nexchat:notification', { detail: list[0] }))
   } catch {}
 }
 
@@ -232,6 +242,24 @@ export function getStoredNotifications() {
  */
 export function clearStoredNotifications() {
   localStorage.removeItem(STORAGE_KEY)
+}
+
+export function markNotificationRead(id) {
+  try {
+    const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    const idx = list.findIndex(x => String(x.id) === String(id))
+    if (idx >= 0 && !list[idx].isRead) {
+      list[idx].isRead = true
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+    }
+  } catch {}
+}
+
+export function markAllNotificationsRead() {
+  try {
+    const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').map(x => ({ ...x, isRead: true }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+  } catch {}
 }
 
 const NOTIFICATIONS_ENABLED_KEY = 'nexchat_notifications_enabled'
@@ -276,4 +304,43 @@ export async function getNotificationsEnabled() {
   } catch {
     return localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) !== '0'
   }
+}
+
+function bindOneSignalListeners(OneSignal) {
+  if (listenersBound) return
+  listenersBound = true
+
+  OneSignal.Notifications.addEventListener('click', (event) => {
+    const notif = event?.notification
+    const payload = notif?.rawPayload || {}
+    const data = notif?.additionalData || payload?.custom?.a || payload?.custom || {}
+    addToStore({
+      type: data.type || 'message',
+      title: notif?.title || 'إشعار',
+      body: notif?.body || '',
+      sessionId: data.sessionId,
+      conversationId: data.conversationId,
+      messageRequestId: data.messageRequestId,
+      timestamp: Date.now(),
+      isRead: true
+    })
+    handleNotificationClick(data)
+  })
+
+  OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+    const notif = event?.notification
+    const payload = notif?.rawPayload || {}
+    const data = notif?.additionalData || payload?.custom?.a || payload?.custom || {}
+    addToStore({
+      type: data.type || 'message',
+      title: notif?.title || 'إشعار',
+      body: notif?.body || '',
+      sessionId: data.sessionId,
+      conversationId: data.conversationId,
+      messageRequestId: data.messageRequestId,
+      timestamp: Date.now(),
+      isRead: false
+    })
+    try { event?.preventDefault?.() } catch {}
+  })
 }

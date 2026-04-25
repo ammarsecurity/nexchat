@@ -6,6 +6,7 @@ using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
+using NexChat.API.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Controllers;
@@ -14,7 +15,7 @@ namespace NexChat.API.Controllers;
 [Route("api/message-requests")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class MessageRequestsController(AppDbContext db, OneSignalService oneSignal) : ControllerBase
+public class MessageRequestsController(AppDbContext db, NotificationOutboxService notificationOutbox) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -109,7 +110,12 @@ public class MessageRequestsController(AppDbContext db, OneSignalService oneSign
     {
         var requester = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == CurrentUserId);
         var name = requester?.Name ?? "";
-        await oneSignal.SendMessageRequestAsync(targetId, name, messageRequestId);
+        await notificationOutbox.EnqueueAsync(
+            targetId,
+            "message_request",
+            "طلب مراسلة",
+            $"{name} يريد مراسلتك",
+            new Dictionary<string, string> { ["messageRequestId"] = messageRequestId.ToString() });
     }
 
     /// <summary>قبول الطلب: إنشاء جهات اتصال متبادلة حتى يعمل CreateOrGetConversation لكلا الطرفين.</summary>

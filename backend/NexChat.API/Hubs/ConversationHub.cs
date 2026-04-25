@@ -6,12 +6,13 @@ using NexChat.Core;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
+using NexChat.API.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto, IProfanityMasker profanity) : Hub
+public class ConversationHub(AppDbContext db, NotificationOutboxService notificationOutbox, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto, IProfanityMasker profanity) : Hub
 {
     private static readonly HashSet<string> AllowedReactionEmojis = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
 
@@ -406,7 +407,12 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
             var preview = type == "text" ? plainBody : (type == "audio" ? "رسالة صوتية" : "صورة");
             if (preview.Length > 80) preview = preview[..80] + "…";
             if (recipientId.HasValue)
-                _ = oneSignal.SendNewConversationMessageAsync(recipientId.Value, sender?.Name ?? "شخص", preview, cid);
+                _ = notificationOutbox.EnqueueAsync(
+                    recipientId.Value,
+                    "conversation_message",
+                    sender?.Name ?? "شخص",
+                    preview,
+                    new Dictionary<string, string> { ["conversationId"] = cid.ToString() });
 
             var listUpdate = new
             {
@@ -571,7 +577,18 @@ public class ConversationHub(AppDbContext db, OneSignalService oneSignal, ILogge
         var caller = conv.User1Id == userId ? conv.User1 : conv.User2;
         // إرسال للمستخدم مباشرة — لا يعتمد على JoinConversation (أي صفحة في التطبيق)
         await Clients.User(recipientId.ToString()).SendAsync("IncomingVideoCall", cid.ToString(), voiceOnly, caller?.Name ?? "", caller?.Avatar ?? "");
-        _ = oneSignal.SendConversationVideoCallAsync(recipientId, caller?.Name ?? "شخص", cid, voiceOnly);
+        _ = notificationOutbox.EnqueueAsync(
+            recipientId,
+            "video_call",
+            voiceOnly ? "مكالمة صوتية" : "مكالمة فيديو",
+            voiceOnly ? $"{caller?.Name ?? "شخص"} يطلب مكالمة صوتية" : $"{caller?.Name ?? "شخص"} يطلب مكالمة فيديو",
+            new Dictionary<string, string>
+            {
+                ["conversationId"] = cid.ToString(),
+                ["voiceOnly"] = voiceOnly ? "true" : "false",
+                ["callerName"] = caller?.Name ?? "",
+                ["callerAvatar"] = caller?.Avatar ?? ""
+            });
     }
 
     public async Task AcceptVideoCall(string conversationId)

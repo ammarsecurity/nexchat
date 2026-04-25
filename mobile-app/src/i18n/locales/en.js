@@ -333,6 +333,7 @@ export default {
     unarchive: 'Unarchive',
     delete: 'Delete conversation',
     markRead: 'Mark as read',
+    markAllRead: 'Mark all read',
     needPhone: 'Add your phone number from settings to use conversations',
     optionsTitle: 'Conversation options',
     notFound: 'Conversation not found',

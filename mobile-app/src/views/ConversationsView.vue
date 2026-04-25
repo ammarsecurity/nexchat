@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound, Mail } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound, Mail, CheckCheck } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -32,6 +32,7 @@ const conversations = computed(() => listStore.list)
 const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
+const markingAllRead = ref(false)
 
 /** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
 const pendingMessageRequestsCount = computed(() => msgReqStore.pendingCount)
@@ -45,6 +46,9 @@ const messageRequestsButtonLabel = computed(() => {
   const n = pendingMessageRequestsCount.value
   return n > 0 ? `${base} (${n})` : base
 })
+const totalUnread = computed(() =>
+  conversations.value.reduce((sum, c) => sum + getUnreadCount(c), 0)
+)
 
 const filteredList = computed(() => {
   let list = conversations.value
@@ -173,6 +177,17 @@ function goToMessageRequests() {
 function goBack() {
   router.replace('/home')
 }
+
+async function markAllRead() {
+  if (markingAllRead.value || totalUnread.value <= 0) return
+  markingAllRead.value = true
+  try {
+    await api.put('/conversations/read-all')
+    await fetchConversations()
+  } finally {
+    markingAllRead.value = false
+  }
+}
 </script>
 
 <template>
@@ -207,6 +222,15 @@ function goBack() {
     </div>
 
     <div class="filters-wrap">
+      <button
+        class="mark-all-read-btn"
+        :disabled="markingAllRead || totalUnread <= 0"
+        :title="t('conversations.markAllRead')"
+        @click="markAllRead"
+      >
+        <CheckCheck :size="15" />
+        <span>{{ t('conversations.markAllRead') }}</span>
+      </button>
       <button
         v-for="f in ['all', 'unread', 'archived']"
         :key="f"
@@ -486,6 +510,26 @@ html.light .conversations--wa .new-chat-btn:active,
   padding: 8px 12px 6px;
   flex-shrink: 0;
   background: var(--wa-subbar);
+}
+.mark-all-read-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(108, 99, 255, 0.35);
+  background: rgba(108, 99, 255, 0.1);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mark-all-read-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 html.light .conversations--wa .filters-wrap,
 [data-theme="light"] .conversations--wa .filters-wrap {

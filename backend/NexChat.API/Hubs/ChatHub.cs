@@ -5,11 +5,12 @@ using NexChat.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using NexChat.Infrastructure.Services;
+using NexChat.API.Services;
 
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalService oneSignal, IProfanityMasker profanity) : Hub
+public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutbox, IProfanityMasker profanity) : Hub
 {
     private bool TryGetUserId(out Guid userId)
     {
@@ -133,7 +134,12 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         var sender = await db.Users.FindAsync(userId);
         var preview = type == "text" ? textBody : "صورة";
         if (preview.Length > 80) preview = preview[..80] + "…";
-        _ = oneSignal.SendNewMessageAsync(recipientId, sender?.Name ?? "شخص", preview, sid);
+        _ = notificationOutbox.EnqueueAsync(
+            recipientId,
+            "message",
+            sender?.Name ?? "شخص",
+            preview,
+            new Dictionary<string, string> { ["sessionId"] = sid.ToString() });
     }
 
     public async Task StartTyping(string sessionId)
@@ -178,7 +184,16 @@ public class ChatHub(AppDbContext db, NexChat.Infrastructure.Services.OneSignalS
         await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall");
         var recipientId = session.User1Id == userId ? session.User2Id : session.User1Id;
         var caller = session.User1Id == userId ? session.User1 : session.User2;
-        _ = oneSignal.SendVideoCallAsync(recipientId, caller?.Name ?? "شخص", sid);
+        _ = notificationOutbox.EnqueueAsync(
+            recipientId,
+            "video_call",
+            "مكالمة فيديو",
+            $"{caller?.Name ?? "شخص"} يطلب مكالمة فيديو",
+            new Dictionary<string, string>
+            {
+                ["sessionId"] = sid.ToString(),
+                ["callerName"] = caller?.Name ?? ""
+            });
     }
 
     public async Task AcceptVideoCall(string sessionId)

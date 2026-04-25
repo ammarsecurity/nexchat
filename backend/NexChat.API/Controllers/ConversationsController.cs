@@ -6,6 +6,7 @@ using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
+using NexChat.API.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Controllers;
@@ -14,7 +15,7 @@ namespace NexChat.API.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class ConversationsController(AppDbContext db, OneSignalService oneSignal, IConversationMessageCrypto messageCrypto) : ControllerBase
+public class ConversationsController(AppDbContext db, NotificationOutboxService notificationOutbox, IConversationMessageCrypto messageCrypto) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -401,7 +402,12 @@ public class ConversationsController(AppDbContext db, OneSignalService oneSignal
     {
         var requester = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == CurrentUserId);
         var name = requester?.Name ?? "";
-        await oneSignal.SendMessageRequestAsync(targetId, name, messageRequestId);
+        await notificationOutbox.EnqueueAsync(
+            targetId,
+            "message_request",
+            "طلب مراسلة",
+            $"{name} يريد مراسلتك",
+            new Dictionary<string, string> { ["messageRequestId"] = messageRequestId.ToString() });
     }
 
     [HttpPut("{id:guid}/pin")]
@@ -450,6 +456,52 @@ public class ConversationsController(AppDbContext db, OneSignalService oneSignal
 
         await db.SaveChangesAsync();
         return Ok();
+    }
+
+    [HttpPut("read-all")]
+    public async Task<IActionResult> MarkAllAsRead()
+    {
+        var convIds = await db.Conversations
+            .Where(c => (c.Type == ConversationType.Private && (c.User1Id == CurrentUserId || c.User2Id == CurrentUserId))
+                || (c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == c.Id && m.UserId == CurrentUserId)))
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        if (convIds.Count == 0) return Ok(new { updated = 0 });
+
+        var now = DateTime.UtcNow;
+        var states = await db.UserConversationStates
+            .Where(s => s.UserId == CurrentUserId && convIds.Contains(s.ConversationId))
+            .ToListAsync();
+
+        var statesByConv = states.ToDictionary(s => s.ConversationId, s => s);
+        var added = 0;
+        foreach (var convId in convIds)
+        {
+            if (statesByConv.TryGetValue(convId, out var st))
+            {
+                st.LastReadAt = now;
+                st.UpdatedAt = now;
+            }
+            else
+            {
+                db.UserConversationStates.Add(new UserConversationState
+                {
+                    UserId = CurrentUserId,
+                    ConversationId = convId,
+                    LastReadAt = now,
+                    UpdatedAt = now
+                });
+                added += 1;
+            }
+        }
+
+        await db.ConversationMessages
+            .Where(m => convIds.Contains(m.ConversationId) && m.SenderId != CurrentUserId && !m.IsRead)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+
+        await db.SaveChangesAsync();
+        return Ok(new { updated = convIds.Count, statesAdded = added });
     }
 
     [HttpPost("group")]

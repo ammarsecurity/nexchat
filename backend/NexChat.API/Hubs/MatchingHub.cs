@@ -4,12 +4,13 @@ using NexChat.Infrastructure.Services;
 using NexChat.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using NexChat.API.Services;
 using NexChat.Core.Entities;
 
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infrastructure.Services.OneSignalService oneSignal) : Hub
+public class MatchingHub(MatchingService matching, AppDbContext db, NotificationOutboxService notificationOutbox) : Hub
 {
     private bool TryGetUserId(out Guid userId)
     {
@@ -204,19 +205,19 @@ public class MatchingHub(MatchingService matching, AppDbContext db, NexChat.Infr
 
         if (user != null)
         {
-            var subscriptionIds = await db.DeviceSubscriptions
-                .Where(d => d.UserId == targetId.Value)
-                .Select(d => d.OneSignalPlayerId)
-                .ToListAsync();
-
-            _ = oneSignal.SendCodeConnectedAsync(
-                subscriptionIds.Count > 0 ? subscriptionIds : null,
-                targetId,
-                user.Name,
-                userId,
-                user.Gender,
-                user.Avatar,
-                user.IsFeatured);
+            _ = notificationOutbox.EnqueueAsync(
+                targetId!.Value,
+                "code_connected",
+                "اتصال جديد",
+                $"{user.Name} اتصل بك عبر الكود",
+                new Dictionary<string, string>
+                {
+                    ["requesterId"] = userId.ToString(),
+                    ["requesterName"] = user.Name,
+                    ["requesterGender"] = user.Gender ?? "",
+                    ["requesterAvatar"] = user.Avatar ?? "",
+                    ["requesterIsFeatured"] = user.IsFeatured ? "true" : "false"
+                });
         }
     }
 

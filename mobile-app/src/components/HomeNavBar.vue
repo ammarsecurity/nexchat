@@ -1,14 +1,16 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Settings, MessageCircle } from 'lucide-vue-next'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useMessageRequestsStore } from '../stores/messageRequests'
+import { useNotificationsStore } from '../stores/notifications'
 import { publicUrl } from '../utils/publicUrl'
 
 const listStore = useConversationsListStore()
 const msgReqStore = useMessageRequestsStore()
+const notificationsStore = useNotificationsStore()
 const totalUnread = computed(() => {
   return listStore.list.reduce((sum, c) => {
     const n = c?.unreadCount ?? c?.UnreadCount ?? 0
@@ -18,6 +20,11 @@ const totalUnread = computed(() => {
 
 onMounted(() => {
   msgReqStore.fetchPendingCount()
+  notificationsStore.load()
+  window.addEventListener('nexchat:notification', onNotifEvent)
+})
+onUnmounted(() => {
+  window.removeEventListener('nexchat:notification', onNotifEvent)
 })
 
 const props = defineProps({
@@ -37,6 +44,10 @@ async function onRocketClick() {
   emit('launch')
   // انتظار انتهاء الحركة قبل إعادة التفعيل
   setTimeout(() => { isLaunching.value = false }, 800)
+}
+
+function onNotifEvent(e) {
+  if (e?.detail) notificationsStore.add(e.detail)
 }
 </script>
 
@@ -75,7 +86,10 @@ async function onRocketClick() {
     </div>
 
     <RouterLink to="/settings" class="nav-item" :aria-label="t('home.settings')">
-      <Settings :size="24" stroke-width="2" />
+      <span class="nav-icon-wrap">
+        <Settings :size="24" stroke-width="2" />
+        <span v-if="notificationsStore.unreadCount > 0" class="nav-badge nav-badge-notifs">{{ notificationsStore.unreadCount > 99 ? '99+' : notificationsStore.unreadCount }}</span>
+      </span>
       <span class="nav-label">{{ t('home.settings') }}</span>
     </RouterLink>
   </nav>
@@ -152,6 +166,9 @@ async function onRocketClick() {
   right: auto;
   left: -6px;
   background: #f97316;
+}
+.nav-badge-notifs {
+  background: var(--primary);
 }
 .nav-label {
   font-size: 11px;

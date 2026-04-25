@@ -25,6 +25,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
     public DbSet<MessageRequest> MessageRequests => Set<MessageRequest>();
     public DbSet<BroadcastNotificationHistory> BroadcastNotificationHistory => Set<BroadcastNotificationHistory>();
+    public DbSet<NotificationOutboxItem> NotificationOutboxItems => Set<NotificationOutboxItem>();
+    public DbSet<NotificationDeliveryLog> NotificationDeliveryLogs => Set<NotificationDeliveryLog>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -292,6 +295,46 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Body).HasMaxLength(500);
             e.Property(x => x.ImageUrl).HasMaxLength(500);
             e.HasIndex(x => x.SentAt);
+        });
+
+        modelBuilder.Entity<NotificationOutboxItem>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Type).HasMaxLength(50);
+            e.Property(x => x.Status).HasMaxLength(20);
+            e.Property(x => x.PayloadJson).HasColumnType("longtext");
+            e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.LastProviderMessageId).HasMaxLength(100);
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });
+            e.HasIndex(x => x.CreatedAt);
+        });
+
+        modelBuilder.Entity<NotificationDeliveryLog>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Channel).HasMaxLength(20);
+            e.Property(x => x.Type).HasMaxLength(50);
+            e.Property(x => x.RecipientSubscriptionId).HasMaxLength(128);
+            e.Property(x => x.ProviderMessageId).HasMaxLength(100);
+            e.Property(x => x.Error).HasMaxLength(1000);
+            e.Property(x => x.PayloadPreview).HasMaxLength(2000);
+            e.HasIndex(x => x.CreatedAt);
+            e.HasIndex(x => new { x.RecipientUserId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<UserNotification>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Type).HasMaxLength(50);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Body).HasMaxLength(1000);
+            e.Property(x => x.DataJson).HasColumnType("longtext");
+            e.HasIndex(x => new { x.UserId, x.IsRead, x.CreatedAt });
+            e.HasIndex(x => x.CreatedAt);
         });
     }
 }

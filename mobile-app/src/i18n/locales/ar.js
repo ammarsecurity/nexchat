@@ -333,6 +333,7 @@ export default {
     unarchive: 'إلغاء الأرشفة',
     delete: 'حذف المحادثة',
     markRead: 'وضع كمقروء',
+    markAllRead: 'تحديد الكل كمقروء',
     needPhone: 'يجب إضافة رقم الهاتف من الإعدادات لاستخدام المحادثات',
     optionsTitle: 'خيارات المحادثة',
     notFound: 'المحادثة غير موجودة',
