@@ -211,6 +211,7 @@ export default {
     accept: 'Accept',
     decline: 'Decline',
     skip: 'Skip',
+    exitRandom: 'Leave random chat',
     legalHint: 'Abuse and harassment are prohibited. Violations can be reported and are reviewed within 24 hours.'
   },
   randomChat: {

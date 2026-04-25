@@ -175,6 +175,11 @@ function setupMatchingHubListeners() {
   matchingHub.off('RandomMatchDeclined')
   matchingHub.on('RandomMatchDeclined', () => {
     matching.clearPendingRandomMatch()
+    if (matching.consumeSkipRestartAfterRandomDecline()) {
+      matching.setIdle()
+      router.push('/home')
+      return
+    }
     restartRandomSearch()
   })
 

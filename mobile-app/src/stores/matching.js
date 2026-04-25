@@ -11,6 +11,8 @@ export const useMatchingStore = defineStore('matching', () => {
   const skipNextMatchingUnmountCancel = ref(false)
   /** مطابقة عشوائية بانتظار قبول/تخطي الطرفين */
   const pendingRandomMatch = ref(null) // { sessionId, partner }
+  /** عند الضغط «الخروج من الدردشة العشوائية» يُعاد الرفض دون StartSearching تلقائياً */
+  const skipRestartAfterNextRandomDecline = ref(false)
 
   function setSearching() { status.value = 'searching' }
   function setMatched() { status.value = 'matched' }
@@ -34,6 +36,15 @@ export const useMatchingStore = defineStore('matching', () => {
 
   function setPendingRandomMatch(payload) { pendingRandomMatch.value = payload }
   function clearPendingRandomMatch() { pendingRandomMatch.value = null }
+
+  function armSkipRestartAfterRandomDecline() {
+    skipRestartAfterNextRandomDecline.value = true
+  }
+  function consumeSkipRestartAfterRandomDecline() {
+    const v = skipRestartAfterNextRandomDecline.value
+    skipRestartAfterNextRandomDecline.value = false
+    return v
+  }
 
   function patchIncomingRequesterAvatar(userId, avatar) {
     const req = incomingConnectionRequest.value
@@ -80,6 +91,8 @@ export const useMatchingStore = defineStore('matching', () => {
     consumeSkipNextMatchingUnmountCancel,
     setPendingRandomMatch,
     clearPendingRandomMatch,
+    armSkipRestartAfterRandomDecline,
+    consumeSkipRestartAfterRandomDecline,
     patchIncomingRequesterAvatar,
     patchPendingRandomPartnerAvatar
   }

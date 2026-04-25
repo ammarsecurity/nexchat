@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, X, SkipForward, Crown, Loader2 } from 'lucide-vue-next'
+import { Check, X, SkipForward, Crown, Loader2, LogOut } from 'lucide-vue-next'
 import { useMatchingStore } from '../stores/matching'
 import { matchingHub, ensureConnected } from '../services/signalr'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -58,6 +58,21 @@ async function declineOrSkip() {
     acting.value = false
   }
 }
+
+/** رفض المطابقة والخروج من وضع البحث العشوائي (بدون إعادة StartSearching) */
+async function exitRandomChat() {
+  if (!sessionId.value || acting.value) return
+  acting.value = true
+  matching.armSkipRestartAfterRandomDecline()
+  try {
+    await ensureConnected(matchingHub)
+    await matchingHub.invoke('DeclineRandomMatch', sessionId.value)
+  } catch {
+    matching.consumeSkipRestartAfterRandomDecline()
+  } finally {
+    acting.value = false
+  }
+}
 </script>
 
 <template>
@@ -104,6 +119,15 @@ async function declineOrSkip() {
             <span>{{ t('randomMatch.accept') }}</span>
           </button>
         </div>
+        <button
+          type="button"
+          class="btn-exit-random"
+          :disabled="acting"
+          @click="exitRandomChat"
+        >
+          <LogOut :size="18" />
+          <span>{{ t('randomMatch.exitRandom') }}</span>
+        </button>
         <p class="rm-legal text-muted text-sm">{{ t('randomMatch.legalHint') }}</p>
       </div>
     </div>
@@ -254,6 +278,52 @@ async function declineOrSkip() {
 .btn-skip {
   background: rgba(108, 99, 255, 0.12);
   color: var(--primary);
+}
+
+.btn-exit-random {
+  width: 100%;
+  margin-top: 10px;
+  min-height: var(--touch-min, 44px);
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: 'Cairo', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(108, 99, 255, 0.4);
+  background: linear-gradient(
+    180deg,
+    rgba(108, 99, 255, 0.22) 0%,
+    rgba(108, 99, 255, 0.12) 100%
+  );
+  color: var(--primary);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 12px rgba(108, 99, 255, 0.2);
+  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-exit-random:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn-exit-random:not(:disabled):hover {
+  border-color: rgba(108, 99, 255, 0.55);
+  background: linear-gradient(
+    180deg,
+    rgba(108, 99, 255, 0.3) 0%,
+    rgba(108, 99, 255, 0.16) 100%
+  );
+}
+.btn-exit-random:not(:disabled):active {
+  background: linear-gradient(
+    180deg,
+    rgba(108, 99, 255, 0.2) 0%,
+    rgba(108, 99, 255, 0.1) 100%
+  );
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2) inset;
 }
 
 .rm-actions button:disabled {
