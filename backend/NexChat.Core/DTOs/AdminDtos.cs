@@ -104,3 +104,21 @@ public record AdminContactDto(Guid Id, string UserName, string ContactUserName, 
 public record DeleteConversationsRequest(IEnumerable<Guid> Ids);
 public record DeleteMessagesRequest(IEnumerable<Guid> Ids);
 public record DeleteSessionsRequest(IEnumerable<Guid> Ids);
+
+public record AdminStorySlideDto(
+    Guid Id,
+    Guid UserId,
+    string UserName,
+    string? UserAvatar,
+    string? MediaUrl,
+    string MediaType,
+    string? Caption,
+    string? BackgroundColor,
+    string? FilterId,
+    int? VideoDurationSeconds,
+    int SortOrder,
+    DateTime CreatedAt,
+    DateTime ExpiresAt,
+    bool IsActive,
+    int ViewCount
+);

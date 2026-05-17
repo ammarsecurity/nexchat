@@ -41,6 +41,7 @@ const navItems = [
   { title: 'دردشة الدعم', icon: 'mdi-headset', to: '/support' },
   { title: 'البلاغات', icon: 'mdi-flag', to: '/reports' },
   { title: 'الإعلانات', icon: 'mdi-image-multiple', to: '/ads' },
+  { title: 'الستوريات', icon: 'mdi-circle-multiple', to: '/stories' },
   { title: 'الإشعارات العامة', icon: 'mdi-bell-ring', to: '/notifications' },
   { title: 'تحديث التطبيق', icon: 'mdi-cellphone-arrow-down', to: '/app-update' },
   { title: 'ميزات التطبيق', icon: 'mdi-toggle-switch', to: '/features' },

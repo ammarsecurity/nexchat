@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NexChat.API.Hubs;
+using NexChat.API.Services;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -16,6 +17,8 @@ namespace NexChat.API.Controllers;
 public class AdminController(
     AppDbContext db,
     IHubContext<ChatHub> hubContext,
+    IHubContext<StoryHub> storyHub,
+    StoryAudienceService storyAudience,
     OneSignalService oneSignal,
     IWebHostEnvironment env,
     IConfiguration config,
@@ -1022,5 +1025,77 @@ public class AdminController(
         }
         await db.SaveChangesAsync();
         return Ok();
+    }
+
+    [HttpGet("stories")]
+    public async Task<ActionResult<PagedResult<AdminStorySlideDto>>> GetStories(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = "all")
+    {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        page = Math.Max(1, page);
+        var now = DateTime.UtcNow;
+
+        var query = db.StorySlides.AsQueryable();
+        if (string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(s => s.ExpiresAt > now);
+        else if (string.Equals(status, "expired", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(s => s.ExpiresAt <= now);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(s =>
+                s.User.Name.Contains(term) ||
+                (s.Caption != null && s.Caption.Contains(term)) ||
+                s.MediaType.Contains(term));
+        }
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new AdminStorySlideDto(
+                s.Id,
+                s.UserId,
+                s.User.Name,
+                s.User.Avatar,
+                s.MediaUrl,
+                s.MediaType,
+                s.Caption,
+                s.BackgroundColor,
+                s.FilterId,
+                s.VideoDurationSeconds,
+                s.SortOrder,
+                s.CreatedAt,
+                s.ExpiresAt,
+                s.ExpiresAt > now,
+                s.Views.Count))
+            .ToListAsync();
+
+        return Ok(new PagedResult<AdminStorySlideDto>(items, total, page, pageSize));
+    }
+
+    [HttpDelete("stories/{id:guid}")]
+    public async Task<IActionResult> DeleteStory(Guid id)
+    {
+        var slide = await db.StorySlides.FirstOrDefaultAsync(s => s.Id == id);
+        if (slide == null) return NotFound();
+
+        var userId = slide.UserId;
+        db.StorySlides.Remove(slide);
+        await db.SaveChangesAsync();
+
+        var audienceIds = await storyAudience.GetAudienceUserIdsAsync(userId);
+        if (audienceIds.Count > 0)
+        {
+            await storyHub.Clients.Users(audienceIds.Select(x => x.ToString()).ToList())
+                .SendAsync("StoryDeleted", new { userId, slideId = id });
+        }
+
+        return NoContent();
     }
 }

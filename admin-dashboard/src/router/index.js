@@ -31,6 +31,7 @@ const routes = [
       { path: 'reports', component: () => import('../views/ReportsView.vue') },
       { path: 'ads', component: () => import('../views/AdsView.vue') },
       { path: 'notifications', component: () => import('../views/NotificationsView.vue') },
+      { path: 'stories', component: () => import('../views/StoriesView.vue') },
       { path: 'app-update', component: () => import('../views/AppUpdateView.vue') },
       { path: 'features', component: () => import('../views/AppFeaturesView.vue') },
       { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },
