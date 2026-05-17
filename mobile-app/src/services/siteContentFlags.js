@@ -2,6 +2,8 @@
 
 let codeConnectInflight = null
 let codeConnectResolved = null
+let storiesInflight = null
+let storiesResolved = null
 
 function parseEnabled(content) {
   if (content === undefined || content === null || String(content).trim() === '') return true
@@ -38,4 +40,34 @@ export async function getCodeConnectFeaturesEnabled(api) {
 export function resetCodeConnectFeaturesCache() {
   codeConnectResolved = null
   codeConnectInflight = null
+}
+
+/**
+ * @param {import('axios').AxiosInstance} api
+ * @returns {Promise<boolean>}
+ */
+export async function getStoriesEnabled(api) {
+  if (storiesResolved !== null) return storiesResolved
+  if (!storiesInflight) {
+    storiesInflight = api
+      .get('SiteContent/stories_enabled', { skipGlobalLoader: true })
+      .then(({ data }) => {
+        const enabled = parseEnabled(data?.content)
+        storiesResolved = enabled
+        return enabled
+      })
+      .catch(() => {
+        storiesResolved = true
+        return true
+      })
+      .finally(() => {
+        storiesInflight = null
+      })
+  }
+  return storiesInflight
+}
+
+export function resetStoriesCache() {
+  storiesResolved = null
+  storiesInflight = null
 }

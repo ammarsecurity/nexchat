@@ -15,7 +15,8 @@ import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
-import { matchingHub, conversationHub, startHub, stopHub, ensureConnected } from './services/signalr'
+import { matchingHub, conversationHub, storyHub, startHub, stopHub, ensureConnected } from './services/signalr'
+import { useStoriesStore } from './stores/stories'
 import { startIncomingCallSound, stopIncomingCallSound } from './utils/sounds'
 import { useNetworkStore } from './stores/network'
 import { useIncomingConversationCallStore } from './stores/incomingConversationCall'
@@ -71,6 +72,7 @@ const conversationsList = useConversationsListStore()
 const activeCall = useActiveCallStore()
 const userAvatarOverrides = useUserAvatarOverridesStore()
 const convStore = useConversationStore()
+const storiesStore = useStoriesStore()
 
 function handleOnline() {
   network.setOnline(true)
@@ -90,6 +92,7 @@ function retryConnection() {
 function handleUnauthorized() {
   stopHub(matchingHub)
   stopHub(conversationHub)
+  stopHub(storyHub)
   incomingConvCall.clear()
   matching.clearPendingRandomMatch()
   stopIncomingCallSound()
@@ -226,16 +229,31 @@ function setupConversationHubGlobalListeners() {
   conversationHub.on('UserAvatarUpdated', applyUserAvatarUpdated)
 }
 
+function setupStoryHubListeners() {
+  storyHub.off('StoryPublished')
+  storyHub.on('StoryPublished', (payload) => {
+    storiesStore.applyStoryPublished(payload)
+  })
+  storyHub.off('StoryDeleted')
+  storyHub.on('StoryDeleted', (payload) => {
+    storiesStore.applyStoryDeleted(payload)
+  })
+}
+
 // إبقاء MatchingHub و ConversationHub متصلين عند المستخدم المسجّل — طلبات من أي صفحة
 watch([() => network.isOnline, () => auth.token], ([online, token]) => {
   if (online && token) {
     setupMatchingHubListeners()
     setupConversationHubGlobalListeners()
+    setupStoryHubListeners()
     startHub(matchingHub).catch(() => {})
     startHub(conversationHub).catch(() => {})
+    startHub(storyHub).catch(() => {})
+    storiesStore.fetchFeed(true)
   } else {
     stopHub(matchingHub)
     stopHub(conversationHub)
+    stopHub(storyHub)
     incomingConvCall.clear()
     matching.clearPendingRandomMatch()
     stopIncomingCallSound()

@@ -390,7 +390,7 @@ const homePrimaryCompact = computed(
                 @click="matching.genderFilter = f.value"
               >
                 <span class="segment-icon" :class="{ active: matching.genderFilter === f.value }">
-                  <component :is="f.Icon" :size="20" stroke-width="2" />
+                  <component :is="f.Icon" :size="18" stroke-width="2" />
                 </span>
                 <span class="segment-text">{{ f.label }}</span>
               </button>
@@ -699,7 +699,8 @@ html.light .avatar-crown-home {
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   position: relative;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   flex-shrink: 0;
   min-height: 280px;
 }
@@ -837,7 +838,10 @@ html.light .avatar-crown-home {
 
 /* Segmented control */
 .segment-wrap {
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  box-sizing: border-box;
 }
 
 .segment-label {
@@ -851,42 +855,52 @@ html.light .avatar-crown-home {
 
 .segment-control {
   display: flex;
-  background: var(--bg-card);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 6px;
-  gap: 6px;
+  padding: 4px;
+  gap: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .segment-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 4px;
+  gap: 4px;
+  min-height: 50px;
+  padding: 6px 4px;
   background: transparent;
   border: none;
   border-radius: 10px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 12px;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.25s ease;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .segment-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   color: var(--text-muted);
-  transition: all 0.25s ease;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.segment-icon :deep(svg) {
+  flex-shrink: 0;
 }
 
 .segment-btn.active .segment-icon {
@@ -896,6 +910,12 @@ html.light .avatar-crown-home {
 
 .segment-text {
   font-weight: 500;
+  max-width: 100%;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .segment-btn.active {
@@ -910,6 +930,32 @@ html.light .avatar-crown-home {
 }
 
 .segment-btn:active:not(.active) { opacity: 0.75; }
+
+@media (max-width: 380px) {
+  .cta-filter-card {
+    padding: 20px 12px;
+  }
+  .segment-control {
+    padding: 3px;
+    gap: 3px;
+    border-radius: 12px;
+  }
+  .segment-btn {
+    min-height: 46px;
+    padding: 5px 2px;
+    gap: 3px;
+    font-size: 11px;
+  }
+  .segment-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+  }
+  .segment-icon :deep(svg) {
+    width: 16px !important;
+    height: 16px !important;
+  }
+}
 
 /* ——— بطاقة الاتصال بالكود (موحّدة مع أسلوب الصفحة) ——— */
 .code-connect-card {

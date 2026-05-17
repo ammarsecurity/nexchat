@@ -12,6 +12,11 @@ using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 35 * 1024 * 1024;
+});
+
 // Database - MySQL
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(opt =>
@@ -26,8 +31,10 @@ builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(
     builder.Configuration.GetSection("OneSignal"));
 builder.Services.AddHttpClient<NexChat.Infrastructure.Services.OneSignalService>();
 builder.Services.AddScoped<NotificationOutboxService>();
+builder.Services.AddScoped<StoryAudienceService>();
 builder.Services.AddHostedService<NotificationOutboxDispatcherService>();
 builder.Services.AddHostedService<InactiveSessionCleanupService>();
+builder.Services.AddHostedService<StoryExpiryBackgroundService>();
 builder.Services.AddSingleton<IConversationMessageCrypto>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -177,5 +184,6 @@ app.MapControllers();
 app.MapHub<MatchingHub>("/hubs/matching");
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<ConversationHub>("/hubs/conversation");
+app.MapHub<StoryHub>("/hubs/story");
 
 app.Run();

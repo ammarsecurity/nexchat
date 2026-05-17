@@ -26,6 +26,8 @@
   --touch-min: 44px;
   /* أزرار شريط العنوان / الدردشة — أصغر من الحد الأدنى للمسّ مع بقاء منطقة لمس معقولة */
   --header-btn-size: 36px;
+  --top-title-size: 15px;
+  --top-title-weight: 600;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   /* مساحة فوق شريط التنقل الثابت في Home (صاروخ + تسميات + safe) — يُستخدم مع عنصر spacer في التدفق */
@@ -393,6 +395,42 @@ header.top-bar .top-bar-width-spacer {
   flex-shrink: 0;
   display: inline-block;
   box-sizing: border-box;
+}
+
+/* عناوين شريط الرجوع — حجم موحّد عبر الصفحات الثانوية */
+header.top-bar span.top-title,
+header.top-bar .top-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--top-title-size) !important;
+  font-weight: var(--top-title-weight) !important;
+  line-height: 1.25;
+  font-family: 'Cairo', sans-serif;
+  color: var(--text-primary);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+header.top-bar {
+  gap: 10px;
+  padding-top: calc(var(--safe-top) + 8px) !important;
+  padding-bottom: 8px !important;
+}
+
+.conversations.conversations--wa header.top-bar .top-title {
+  font-size: 16px !important;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 360px) {
+  :root {
+    --top-title-size: 14px;
+  }
+  .conversations.conversations--wa header.top-bar .top-title {
+    font-size: 15px !important;
+  }
 }
 
 /* Auth pages background pattern */

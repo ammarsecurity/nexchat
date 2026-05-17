@@ -171,6 +171,11 @@ function handleNotificationClick(data) {
     return
   }
 
+  if (data?.type === 'story_published' && (data?.userId ?? data?.UserId)) {
+    router.push(`/stories/view/${data.userId ?? data.UserId}`)
+    return
+  }
+
   if (data?.type === 'conversation_message' && data?.conversationId) {
     router.push({ path: '/conversations', query: { open: data.conversationId } })
     return

@@ -16,6 +16,8 @@ import { conversationHub, startHub } from '../services/signalr'
 import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
 import { formatGregorianDateTime } from '../utils/formatTime'
 import { useMessageRequestsStore } from '../stores/messageRequests'
+import StoriesStrip from '../components/StoriesStrip.vue'
+import { getStoriesEnabled } from '../services/siteContentFlags'
 
 const router = useRouter()
 const msgReqStore = useMessageRequestsStore()
@@ -33,6 +35,7 @@ const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
 const markingAllRead = ref(false)
+const storiesEnabled = ref(true)
 
 /** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
 const pendingMessageRequestsCount = computed(() => msgReqStore.pendingCount)
@@ -149,6 +152,7 @@ async function handleListUpdated(payload) {
 }
 
 onMounted(async () => {
+  storiesEnabled.value = await getStoriesEnabled(api)
   msgReqStore.fetchPendingCount()
   convStore.clearConversation()
   try {
@@ -216,33 +220,31 @@ async function markAllRead() {
       </div>
     </header>
 
+    <StoriesStrip v-if="storiesEnabled && ready" />
+
     <div v-if="needPhone" class="need-phone-banner">
       <span>{{ t('conversations.needPhone') }}</span>
       <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
     </div>
 
     <div class="filters-wrap">
-      <button
-        class="mark-all-read-btn"
-        :disabled="markingAllRead || totalUnread <= 0"
-        :title="t('conversations.markAllRead')"
-        @click="markAllRead"
-      >
-        <CheckCheck :size="15" />
-        <span>{{ t('conversations.markAllRead') }}</span>
-      </button>
-      <button
-        v-for="f in ['all', 'unread', 'archived']"
-        :key="f"
-        class="filter-btn"
-        :class="{ active: filter === f }"
-        @click="filter = f"
-      >
-        {{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}
-      </button>
+      <div class="filter-tabs" role="tablist" :dir="localeStore.htmlDir">
+        <button
+          v-for="f in ['all', 'unread', 'archived']"
+          :key="f"
+          type="button"
+          class="filter-btn"
+          :class="{ active: filter === f }"
+          role="tab"
+          :aria-selected="filter === f"
+          @click="filter = f"
+        >
+          {{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}
+        </button>
+      </div>
     </div>
 
-    <div class="search-wrap">
+    <div class="search-wrap" :dir="localeStore.htmlDir">
       <div class="search-input-wrap">
         <Search :size="16" class="search-icon" />
         <input
@@ -251,6 +253,19 @@ async function markAllRead() {
           class="search-input"
           :placeholder="t('conversations.searchPlaceholder')"
         />
+      </div>
+      <div class="mark-all-read-row">
+        <button
+          type="button"
+          class="mark-all-read-btn"
+          :disabled="markingAllRead || totalUnread <= 0"
+          :title="t('conversations.markAllRead')"
+          :aria-label="t('conversations.markAllRead')"
+          @click="markAllRead"
+        >
+          <CheckCheck :size="15" aria-hidden="true" />
+          <span class="mark-all-read-text">{{ t('conversations.markAllRead') }}</span>
+        </button>
       </div>
     </div>
 
@@ -393,15 +408,11 @@ html.light .conversations--wa .top-bar,
 .top-title {
   flex: 1;
   min-width: 0;
-  font-size: 19px;
-  font-weight: 600;
   color: var(--wa-header-text);
-  font-family: 'Cairo', sans-serif;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: 0.02em;
 }
 
 .back-btn,
@@ -506,17 +517,40 @@ html.light .conversations--wa .new-chat-btn:active,
 
 .filters-wrap {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px 6px;
+  flex-direction: column;
+  padding: 8px 12px 4px;
   flex-shrink: 0;
   background: var(--wa-subbar);
 }
+
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-sizing: border-box;
+}
+html.light .conversations--wa .filter-tabs,
+[data-theme="light"] .conversations--wa .filter-tabs {
+  background: var(--bg-secondary);
+}
+
+.mark-all-read-row {
+  display: flex;
+  width: 100%;
+}
+
 .mark-all-read-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  min-height: 32px;
-  padding: 6px 10px;
+  margin-inline-start: auto;
+  min-height: 30px;
+  padding: 5px 10px;
   border-radius: 999px;
   border: 1px solid rgba(108, 99, 255, 0.35);
   background: rgba(108, 99, 255, 0.1);
@@ -526,6 +560,12 @@ html.light .conversations--wa .new-chat-btn:active,
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   flex-shrink: 0;
+  max-width: 100%;
+}
+.mark-all-read-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mark-all-read-btn:disabled {
   opacity: 0.45;
@@ -539,23 +579,22 @@ html.light .conversations--wa .filters-wrap,
 
 .filter-btn {
   flex: 1;
+  min-width: 0;
   min-height: 32px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   font-size: 12px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
-  border-radius: 999px;
+  border-radius: 8px;
   border: none;
-  background: var(--bg-card);
+  background: transparent;
   color: var(--wa-icon-on-header, var(--text-secondary));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.15s, color 0.15s;
-}
-html.light .conversations--wa .filter-btn,
-[data-theme="light"] .conversations--wa .filter-btn {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .filter-btn.active {
@@ -571,13 +610,17 @@ html.light .conversations--wa .filter-btn.active,
 }
 
 .conversations--wa .search-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px 10px 10px;
   flex-shrink: 0;
   background: var(--wa-subbar);
 }
 html.light .conversations--wa .search-wrap,
 [data-theme="light"] .conversations--wa .search-wrap {
-  background: var(--bg-secondary);
+  background: var(--wa-subbar);
+  border-bottom: 1px solid var(--wa-row-sep);
 }
 
 .search-input-wrap {
@@ -922,9 +965,6 @@ html.light .conversations--wa .context-btn,
     padding: calc(var(--safe-top) + 8px) 8px 8px;
     gap: 6px;
   }
-  .top-title {
-    font-size: 15px;
-  }
   .header-actions {
     gap: 4px;
   }
@@ -956,9 +996,6 @@ html.light .conversations--wa .context-btn,
     padding: calc(var(--safe-top) + 6px) 6px 6px;
     gap: 4px;
   }
-  .top-title {
-    font-size: 14px;
-  }
   .header-actions {
     gap: 2px;
   }
@@ -979,13 +1016,24 @@ html.light .conversations--wa .context-btn,
 @media (max-width: 360px) {
   .filters-wrap {
     padding: 6px var(--spacing) 4px;
-    gap: 4px;
+    gap: 6px;
+  }
+  .filter-tabs {
+    gap: 3px;
+    padding: 2px;
   }
   .filter-btn {
-    min-height: 32px;
-    padding: 5px 6px;
+    min-height: 30px;
+    padding: 5px 4px;
     font-size: 11px;
-    border-radius: 8px;
+  }
+  .mark-all-read-btn {
+    min-height: 28px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .mark-all-read-text {
+    display: none;
   }
   .search-wrap {
     padding-bottom: 6px;

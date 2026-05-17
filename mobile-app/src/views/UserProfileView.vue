@@ -320,7 +320,7 @@ onMounted(() => {
             :disabled="addingContact"
             @click="addAsContact"
           >
-            <UserPlus v-if="!addingContact" :size="20" />
+            <UserPlus v-if="!addingContact" :size="18" />
             <span v-else class="profile-btn-dot">...</span>
             <span>{{ addingContact ? t('common.loading') : t('profile.addAsContact') }}</span>
           </button>
@@ -339,7 +339,7 @@ onMounted(() => {
             :disabled="startingChat"
             @click="openChat"
           >
-            <MessageCircle :size="20" />
+            <MessageCircle :size="18" />
             <span>{{ startingChat ? t('common.loading') : (conversationIdFromState ? t('profile.openChat') : t('profile.startChat')) }}</span>
           </button>
         </section>
@@ -601,8 +601,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 8px 12px;
+  min-height: 44px;
   border-radius: 12px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -614,8 +615,9 @@ onMounted(() => {
 }
 
 .profile-code-value {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.25;
   color: var(--text-primary);
   font-family: 'Cairo', sans-serif;
   letter-spacing: 0.04em;
@@ -625,8 +627,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -660,7 +663,8 @@ onMounted(() => {
 }
 
 .profile-phone-placeholder {
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 1.25;
   color: var(--text-tertiary);
   font-weight: 500;
 }
@@ -674,14 +678,16 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 15px 20px;
+  padding: 10px 16px;
+  min-height: 44px;
   border: none;
   border-radius: 12px;
   background: var(--primary);
   color: white;
-  font-size: 16px;
+  font-size: 15px;
+  line-height: 1.25;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
@@ -703,14 +709,16 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 14px 20px;
+  padding: 10px 16px;
+  min-height: 44px;
   border: 1px solid var(--primary);
   border-radius: 12px;
   background: rgba(108, 99, 255, 0.08);
   color: var(--primary);
   font-size: 15px;
+  line-height: 1.25;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;

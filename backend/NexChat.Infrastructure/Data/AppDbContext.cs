@@ -28,6 +28,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<NotificationOutboxItem> NotificationOutboxItems => Set<NotificationOutboxItem>();
     public DbSet<NotificationDeliveryLog> NotificationDeliveryLogs => Set<NotificationDeliveryLog>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
+    public DbSet<StorySlide> StorySlides => Set<StorySlide>();
+    public DbSet<StoryView> StoryViews => Set<StoryView>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -335,6 +337,37 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.DataJson).HasColumnType("longtext");
             e.HasIndex(x => new { x.UserId, x.IsRead, x.CreatedAt });
             e.HasIndex(x => x.CreatedAt);
+        });
+
+        modelBuilder.Entity<StorySlide>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.MediaUrl).HasMaxLength(500);
+            e.Property(x => x.MediaType).HasMaxLength(20);
+            e.Property(x => x.Caption).HasMaxLength(500);
+            e.Property(x => x.OverlayJson).HasColumnType("longtext");
+            e.Property(x => x.BackgroundColor).HasMaxLength(32);
+            e.Property(x => x.FilterId).HasMaxLength(50);
+            e.HasIndex(x => new { x.UserId, x.ExpiresAt });
+            e.HasIndex(x => x.ExpiresAt);
+        });
+
+        modelBuilder.Entity<StoryView>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.StorySlide)
+                .WithMany(s => s.Views)
+                .HasForeignKey(x => x.StorySlideId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Viewer)
+                .WithMany()
+                .HasForeignKey(x => x.ViewerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.StorySlideId, x.ViewerUserId }).IsUnique();
         });
     }
 }

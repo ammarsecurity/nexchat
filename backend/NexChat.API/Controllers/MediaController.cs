@@ -71,6 +71,65 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
 
     private static readonly string[] AllowedAudioTypes = ["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-m4a"];
 
+    [HttpPost("upload-story-image")]
+    public async Task<IActionResult> UploadStoryImage(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided" });
+
+        if (!AllowedTypes.Contains(file.ContentType.ToLower()))
+            return BadRequest(new { message = "Only images are allowed (JPEG, PNG, GIF, WebP)" });
+
+        if (file.Length > 10 * 1024 * 1024)
+            return BadRequest(new { message = "Max file size is 10MB" });
+
+        await using var stream = file.OpenReadStream();
+        if (!IsValidImageContent(stream))
+            return BadRequest(new { message = "File content does not match image format" });
+
+        return Ok(new { url = await SaveUploadAsync(stream, file.FileName, [".jpg", ".jpeg", ".png", ".gif", ".webp"], ".jpg") });
+    }
+
+    private static readonly string[] AllowedStoryVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
+
+    [HttpPost("upload-story-video")]
+    public async Task<IActionResult> UploadStoryVideo(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided" });
+
+        var contentType = file.ContentType?.ToLower() ?? "";
+        if (!AllowedStoryVideoTypes.Contains(contentType) && !contentType.StartsWith("video/"))
+            return BadRequest(new { message = "Only video files are allowed (MP4, WebM)" });
+
+        if (file.Length > 30 * 1024 * 1024)
+            return BadRequest(new { message = "Max file size is 30MB" });
+
+        await using var stream = file.OpenReadStream();
+        return Ok(new { url = await SaveUploadAsync(stream, file.FileName, [".mp4", ".webm", ".mov"], ".mp4") });
+    }
+
+    private async Task<string> SaveUploadAsync(Stream stream, string originalFileName, string[] allowedExts, string defaultExt)
+    {
+        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
+        Directory.CreateDirectory(uploadsPath);
+
+        var ext = Path.GetExtension(originalFileName).ToLower();
+        if (string.IsNullOrEmpty(ext) || !allowedExts.Contains(ext))
+            ext = defaultExt;
+        var fileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploadsPath, fileName);
+
+        stream.Position = 0;
+        await using (var dest = new FileStream(filePath, FileMode.Create))
+            await stream.CopyToAsync(dest);
+
+        var baseUrl = config["Media:BaseUrl"];
+        return !string.IsNullOrEmpty(baseUrl)
+            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
+            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+    }
+
     [HttpPost("upload-audio")]
     public async Task<IActionResult> UploadAudio(IFormFile file)
     {

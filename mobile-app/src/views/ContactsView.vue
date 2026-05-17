@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban, Loader2 } from 'lucide-vue-next'
+import { ChevronRight, UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban, Loader2, Search } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -18,6 +18,7 @@ const router = useRouter()
 const { t } = useI18n()
 
 const contacts = ref([])
+const searchQuery = ref('')
 const showAddModal = ref(false)
 const addCountry = ref(null)
 const addPhone = ref('')
@@ -34,7 +35,24 @@ const countryCode = computed(() => {
   return c?.dialCode ?? ''
 })
 
-const filteredContacts = computed(() => contacts.value)
+const filteredContacts = computed(() => {
+  const q = searchQuery.value.trim()
+  if (!q) return contacts.value
+  const lower = q.toLowerCase()
+  return contacts.value.filter((c) => {
+    const name = (c.name ?? c.Name ?? '').toLowerCase()
+    const phone = String(c.phoneNumber ?? c.PhoneNumber ?? '')
+    return name.includes(lower) || phone.includes(q)
+  })
+})
+
+function contactPhone(c) {
+  const phone = c.phoneNumber ?? c.PhoneNumber
+  if (!phone || typeof phone !== 'string') return t('profile.phoneNotSet')
+  const trimmed = phone.trim()
+  if (!trimmed) return t('profile.phoneNotSet')
+  return trimmed.startsWith('+') ? trimmed : `+${trimmed.replace(/\D/g, '')}`
+}
 
 function contactAvatar(c) {
   return avatarOverrides.avatarFor(c.contactUserId) ?? c.avatar
@@ -156,12 +174,29 @@ function goBack() {
       <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
     </div>
 
+    <div v-if="contacts.length" class="search-wrap">
+      <div class="search-input-wrap">
+        <Search :size="16" class="search-icon" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="search-input"
+          :placeholder="t('contacts.searchPlaceholder')"
+          inputmode="search"
+          autocomplete="off"
+        />
+      </div>
+    </div>
+
     <div class="scroll-area">
       <div v-if="!contacts.length && !needPhone" class="empty-state">
         <UserPlus :size="48" class="empty-icon" />
         <p>{{ t('contacts.empty') }}</p>
         <p class="empty-hint">{{ t('contacts.addFirst') }}</p>
         <button class="btn-gradient" @click="openAddModal">{{ t('contacts.addContact') }}</button>
+      </div>
+      <div v-else-if="!filteredContacts.length" class="empty-state">
+        <p>{{ t('contacts.noSearchResults') }}</p>
       </div>
       <div v-else class="contacts-list">
         <div
@@ -185,7 +220,7 @@ function goBack() {
           </div>
           <div class="item-content">
             <span class="item-name">{{ c.name }}</span>
-            <span class="item-meta">{{ c.uniqueCode }}</span>
+            <span class="item-meta" dir="ltr">{{ contactPhone(c) }}</span>
           </div>
           <button
             class="context-btn"
@@ -213,11 +248,11 @@ function goBack() {
               </div>
               <div class="context-sheet-actions">
                 <button class="context-sheet-btn" @click="removeContact(contextContact.contactUserId)">
-                  <UserMinus :size="20" />
+                  <UserMinus :size="18" />
                   <span>{{ t('contacts.removeFriend') }}</span>
                 </button>
                 <button class="context-sheet-btn danger" @click="blockContact(contextContact)">
-                  <Ban :size="20" />
+                  <Ban :size="18" />
                   <span>{{ t('contacts.block') }}</span>
                 </button>
               </div>
@@ -318,6 +353,46 @@ function goBack() {
   cursor: pointer;
 }
 
+.search-wrap {
+  flex-shrink: 0;
+  padding: 0 var(--spacing) 10px;
+}
+
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  min-height: 40px;
+  border-radius: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Cairo', sans-serif;
+}
+
+.search-input:focus {
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
 .scroll-area {
   flex: 1;
   overflow-y: auto;
@@ -412,7 +487,11 @@ function goBack() {
 }
 
 .item-name { font-weight: 600; }
-.item-meta { font-size: 13px; color: var(--text-secondary); }
+.item-meta {
+  font-size: 13px;
+  color: var(--text-secondary);
+  unicode-bidi: plaintext;
+}
 .item-arrow { color: var(--text-tertiary); flex-shrink: 0; }
 
 .context-btn {
@@ -437,7 +516,7 @@ function goBack() {
 .context-sheet {
   width: 100%;
   max-width: 400px;
-  padding: 12px var(--spacing) calc(var(--spacing) + var(--safe-bottom));
+  padding: 8px var(--spacing) calc(var(--spacing) + var(--safe-bottom));
   background: var(--bg-card);
   border-radius: 20px 20px 0 0;
   box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
@@ -446,7 +525,7 @@ function goBack() {
 .context-sheet-handle {
   width: 36px;
   height: 4px;
-  margin: 0 auto 16px;
+  margin: 0 auto 10px;
   background: var(--text-tertiary);
   border-radius: 2px;
   opacity: 0.5;
@@ -455,21 +534,21 @@ function goBack() {
 .context-sheet-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 0 20px;
+  gap: 10px;
+  padding: 4px 0 10px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .context-sheet-avatar {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 18px;
+  font-size: 16px;
   color: white;
   flex-shrink: 0;
 }
@@ -482,28 +561,31 @@ function goBack() {
 }
 
 .context-sheet-name {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.25;
   color: var(--text-primary);
 }
 
 .context-sheet-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .context-sheet-btn {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
-  padding: 14px 16px;
+  padding: 10px 14px;
+  min-height: 44px;
   border: none;
   border-radius: 12px;
   background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 15px;
+  line-height: 1.25;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   text-align: start;
@@ -525,13 +607,15 @@ function goBack() {
 
 .context-sheet-cancel {
   width: 100%;
-  margin-top: 12px;
-  padding: 14px;
+  margin-top: 8px;
+  padding: 10px 14px;
+  min-height: 44px;
   border: none;
   border-radius: 12px;
   background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: 15px;
+  line-height: 1.25;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
 }

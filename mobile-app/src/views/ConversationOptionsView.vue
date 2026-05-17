@@ -116,23 +116,23 @@ async function deleteConversation() {
 
       <div class="options-list">
         <button class="option-btn" @click="openProfile">
-          <component :is="(conv.isGroup ?? conv.IsGroup) ? Users : User" :size="20" />
+          <component :is="(conv.isGroup ?? conv.IsGroup) ? Users : User" :size="18" />
           <span>{{ (conv.isGroup ?? conv.IsGroup) ? t('groups.infoTitle') : t('profile.viewProfile') }}</span>
         </button>
         <button class="option-btn" @click="togglePin">
-          <Pin :size="20" />
+          <Pin :size="18" />
           <span>{{ (conv.isPinned ?? conv.IsPinned) ? t('conversations.unpin') : t('conversations.pin') }}</span>
         </button>
         <button class="option-btn" @click="toggleArchive">
-          <Archive :size="20" />
+          <Archive :size="18" />
           <span>{{ (conv.isArchived ?? conv.IsArchived) ? t('conversations.unarchive') : t('conversations.archive') }}</span>
         </button>
         <button v-if="getUnreadCount(conv) > 0" class="option-btn" @click="markRead">
-          <Check :size="20" />
+          <Check :size="18" />
           <span>{{ t('conversations.markRead') }}</span>
         </button>
         <button class="option-btn danger" @click="deleteConversation">
-          <Trash2 :size="20" />
+          <Trash2 :size="18" />
           <span>{{ t('conversations.delete') }}</span>
         </button>
       </div>
@@ -155,8 +155,8 @@ async function deleteConversation() {
 .top-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 8px) var(--spacing) 8px;
 }
 
 .back-btn {
@@ -171,14 +171,6 @@ async function deleteConversation() {
   color: var(--text-secondary);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-}
-
-.top-title {
-  flex: 1;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-align: center;
 }
 
 .conv-header {
@@ -219,24 +211,30 @@ async function deleteConversation() {
   padding: 0 var(--spacing);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .option-btn {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
-  padding: 16px 20px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 500;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
   text-align: start;
   -webkit-tap-highlight-color: transparent;
+}
+
+.option-btn :deep(svg) {
+  flex-shrink: 0;
 }
 
 .option-btn:active {
@@ -245,7 +243,7 @@ async function deleteConversation() {
 
 .option-btn.danger {
   color: #f44336;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .empty-state {

@@ -1,7 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../services/api'
-import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
+import { getCodeConnectFeaturesEnabled, getStoriesEnabled } from '../services/siteContentFlags'
 
 const routes = [
   { path: '/', component: () => import('../views/SplashScreen.vue'), meta: { public: true } },
@@ -17,6 +17,8 @@ const routes = [
   { path: '/chat/:sessionId', component: () => import('../views/ChatView.vue') },
   { path: '/video/:sessionId', component: () => import('../views/VideoCallView.vue') },
   { path: '/conversations', component: () => import('../views/ConversationsView.vue') },
+  { path: '/stories/create', component: () => import('../views/StoryCreateView.vue'), meta: { requiresStories: true } },
+  { path: '/stories/view/:userId', component: () => import('../views/StoryViewerView.vue'), meta: { requiresStories: true } },
   { path: '/message-requests', component: () => import('../views/MessageRequestsView.vue') },
   { path: '/conversations/create-group', component: () => import('../views/CreateGroupView.vue') },
   { path: '/conversation/:conversationId/group-info', component: () => import('../views/GroupInfoView.vue') },
@@ -44,6 +46,10 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresCodeConnectFeatures && auth.token) {
     const ok = await getCodeConnectFeaturesEnabled(api)
     if (!ok) return '/home'
+  }
+  if (to.meta.requiresStories && auth.token) {
+    const ok = await getStoriesEnabled(api)
+    if (!ok) return '/conversations'
   }
 })
 
