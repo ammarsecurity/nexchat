@@ -339,7 +339,9 @@ export default {
     optionsTitle: 'Conversation options',
     notFound: 'Conversation not found',
     newGroup: 'New group',
-    messageRequests: 'Message requests'
+    composeMessage: 'New message',
+    messageRequests: 'Message requests',
+    messageRequestsShort: 'Requests'
   },
   stories: {
     yourStory: 'Your story',

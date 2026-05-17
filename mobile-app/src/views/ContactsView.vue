@@ -260,44 +260,69 @@ function goBack() {
             </div>
         </div>
       </Transition>
-      <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-        <div class="modal-card glass-card">
-          <h3 class="modal-title">{{ t('contacts.addByPhone') }}</h3>
+      <Transition name="sheet">
+        <div v-if="showAddModal" class="add-phone-overlay" @click.self="showAddModal = false">
+          <div class="add-phone-sheet" @click.stop>
+            <div class="context-sheet-handle" aria-hidden="true"></div>
+            <h3 class="add-sheet-title">{{ t('contacts.addByPhone') }}</h3>
+            <div class="add-sheet-body">
           <div class="field">
-            <label class="field-label">
+            <label class="field-label" for="add-country-select">
               <Globe :size="16" />
               {{ t('completeProfile.country') }}
             </label>
-            <select v-model="addCountry" class="input-field">
-              <option v-for="c in countries" :key="c.code" :value="c.code">{{ c.name }} (+{{ c.dialCode }})</option>
+            <select
+              id="add-country-select"
+              v-model="addCountry"
+              class="input-field select-field"
+              :aria-label="t('completeProfile.country')"
+            >
+              <option v-for="c in countries" :key="c.code" :value="c.code">
+                {{ c.name }} (+{{ c.dialCode }})
+              </option>
             </select>
           </div>
           <div class="field">
-            <label class="field-label">
+            <label class="field-label" for="add-phone-input">
               <Phone :size="16" />
               {{ t('completeProfile.phone') }}
             </label>
             <div class="phone-input-wrap">
-              <span class="dial-prefix">+{{ countryCode || '964' }}</span>
+              <span class="dial-prefix" dir="ltr">+{{ countryCode || '964' }}</span>
               <input
+                id="add-phone-input"
                 v-model="addPhone"
                 type="tel"
                 class="input-field phone-input"
                 :placeholder="t('contacts.phonePlaceholder')"
                 inputmode="numeric"
                 maxlength="15"
+                autocomplete="tel"
+                enterkeyhint="done"
               />
             </div>
           </div>
-          <div v-if="addError" class="error-toast">{{ addError }}</div>
-          <div class="modal-actions">
-            <button class="btn-outline" @click="showAddModal = false">{{ t('common.cancel') }}</button>
-            <button class="btn-gradient" :disabled="addLoading" @click="addContact">
-              {{ addLoading ? t('common.loading') : t('contacts.addContact') }}
-            </button>
+              <div v-if="addError" class="error-toast">
+                <AlertCircle :size="16" stroke-width="2" />
+                <span>{{ addError }}</span>
+              </div>
+            </div>
+            <div class="add-sheet-footer">
+              <button
+                type="button"
+                class="btn-gradient add-submit-btn"
+                :disabled="addLoading"
+                @click="addContact"
+              >
+                {{ addLoading ? t('common.loading') : t('contacts.addContact') }}
+              </button>
+              <button type="button" class="add-cancel-btn" @click="showAddModal = false">
+                {{ t('common.cancel') }}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -625,102 +650,166 @@ function goBack() {
 }
 
 .sheet-enter-active, .sheet-leave-active { transition: opacity 0.25s ease; }
-.sheet-enter-active .context-sheet, .sheet-leave-active .context-sheet { transition: transform 0.25s ease; }
+.sheet-enter-active .context-sheet,
+.sheet-leave-active .context-sheet,
+.sheet-enter-active .add-phone-sheet,
+.sheet-leave-active .add-phone-sheet {
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
 .sheet-enter-from, .sheet-leave-to { opacity: 0; }
-.sheet-enter-from .context-sheet, .sheet-leave-to .context-sheet { transform: translateY(100%); }
+.sheet-enter-from .context-sheet,
+.sheet-leave-to .context-sheet,
+.sheet-enter-from .add-phone-sheet,
+.sheet-leave-to .add-phone-sheet {
+  transform: translateY(100%);
+}
 
-.modal-overlay {
+.add-phone-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
   z-index: 1000;
-  padding: var(--spacing);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 
-.modal-card {
+.add-phone-sheet {
   width: 100%;
-  max-width: 360px;
-  padding: 24px;
+  max-width: 480px;
+  max-height: min(88vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
   font-family: 'Cairo', sans-serif;
+  padding: 8px var(--spacing) calc(var(--spacing) + var(--safe-bottom));
 }
 
-.modal-title {
-  margin: 0 0 20px;
-  font-size: 18px;
+.add-sheet-title {
+  margin: 0 0 12px;
+  padding: 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.add-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 2px 8px;
+}
+
+.add-sheet-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.add-submit-btn {
+  width: 100%;
+  min-height: var(--touch-min, 48px);
+}
+
+.add-cancel-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: 'Cairo', sans-serif;
+  font-size: 15px;
   font-weight: 600;
+  cursor: pointer;
 }
 
-.field { margin-bottom: 16px; }
+.add-cancel-btn:active {
+  background: var(--bg-card-hover);
+}
+
+.field { margin-bottom: 14px; }
+.field:last-of-type { margin-bottom: 0; }
+
 .field-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
-  font-size: 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.select-field {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23A0A0B8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 14px center;
+  padding-left: 44px;
+  padding-right: 16px;
+  text-overflow: ellipsis;
+}
+
+[dir='rtl'] .select-field {
+  background-position: right 14px center;
+  padding-left: 16px;
+  padding-right: 44px;
 }
 
 .phone-input-wrap {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-sm, 12px);
+  background: var(--bg-elevated);
   overflow: hidden;
 }
 
 .dial-prefix {
-  padding: 12px 12px;
-  background: var(--bg-elevated);
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  background: rgba(108, 99, 255, 0.1);
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .phone-input {
   flex: 1;
-  border: none;
-  padding: 12px;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent;
 }
 
 .error-toast {
-  padding: 10px;
-  background: rgba(244,67,54,0.15);
-  border-radius: 8px;
-  font-size: 13px;
-  margin-bottom: 16px;
-}
-
-.modal-actions {
   display: flex;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.btn-outline {
-  flex: 1;
-  padding: 10px 14px;
-  background: transparent;
-  border: 1px solid var(--border);
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(244, 67, 54, 0.12);
   border-radius: 10px;
-  color: var(--text-primary);
-  font-family: 'Cairo', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #f44336;
 }
 
-.btn-gradient {
-  flex: 1;
-  padding: 10px 14px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark, var(--primary)));
-  border: none;
-  border-radius: 10px;
-  color: white;
-  font-family: 'Cairo', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
+.error-toast svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
-
-.btn-gradient:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

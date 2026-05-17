@@ -45,7 +45,7 @@ const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
             />
             <span v-else class="ring-letter">{{ auth.user?.name?.[0]?.toUpperCase() || '+' }}</span>
           </span>
-          <span class="ring-add-badge" aria-hidden="true"><Plus :size="14" stroke-width="2.5" /></span>
+          <span class="ring-add-badge" aria-hidden="true"><Plus :size="12" stroke-width="2.5" /></span>
         </span>
         <span class="ring-label">{{ t('stories.yourStory') }}</span>
       </button>
@@ -82,7 +82,7 @@ const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 <style scoped>
 .stories-strip {
   flex-shrink: 0;
-  padding: 10px 0 4px;
+  padding: 4px 0 2px;
   background: var(--wa-subbar, var(--bg-primary));
   border-bottom: 1px solid var(--border);
 }
@@ -93,9 +93,9 @@ html.light .conversations--wa .stories-strip,
 
 .stories-scroll {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   overflow-x: auto;
-  padding: 0 12px 6px;
+  padding: 0 10px 4px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -107,9 +107,9 @@ html.light .conversations--wa .stories-strip,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  min-width: 64px;
-  max-width: 72px;
+  gap: 3px;
+  min-width: 52px;
+  max-width: 58px;
   background: none;
   border: none;
   padding: 0;
@@ -139,8 +139,8 @@ html.light .conversations--wa .stories-strip,
 }
 
 .ring-inner {
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--bg-elevated);
@@ -170,7 +170,7 @@ html.light .ring-inner {
 }
 
 .ring-letter {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--primary);
 }
@@ -180,8 +180,8 @@ html.light .ring-inner {
   bottom: 0;
   inset-inline-end: 0;
   z-index: 3;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--primary);
   color: #fff;
@@ -197,9 +197,9 @@ html.light .ring-add-badge {
 }
 
 .ring-label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-secondary);
-  max-width: 72px;
+  max-width: 58px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, X, Eye, Send } from 'lucide-vue-next'
+import { X, Eye, Send } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -14,7 +14,6 @@ const router = useRouter()
 const { t } = useI18n()
 const storiesStore = useStoriesStore()
 const auth = useAuthStore()
-
 const userId = computed(() => route.params.userId)
 const slides = ref([])
 const loading = ref(true)
@@ -26,13 +25,48 @@ const replyText = ref('')
 const sending = ref(false)
 const showViewers = ref(false)
 const viewers = ref([])
+const slideDir = ref(null)
+const dragX = ref(0)
+const isDragging = ref(false)
+const transitioning = ref(false)
+const videoEl = ref(null)
+const skipNextRouteLoad = ref(false)
 
+const mediaCache = new Set()
 let timer = null
+let touchStartX = 0
+let touchStartY = 0
+let touchStartTime = 0
+let didSwipe = false
+
 const SLIDE_MS = 5000
+const SWIPE_RATIO = 0.18
 
 const current = computed(() => slides.value[index.value])
 const isOwner = computed(() => String(userId.value) === String(auth.user?.id))
 const publisherName = computed(() => storiesStore.feed.find(r => String(r.userId) === String(userId.value))?.name ?? '—')
+
+const feedRings = computed(() => {
+  const withSlides = storiesStore.feed.filter(r => (r.slideCount ?? 0) > 0)
+  const mine = withSlides.filter(r => r.isMine)
+  const others = withSlides.filter(r => !r.isMine)
+  return [...mine, ...others]
+})
+
+const slideTransitionName = computed(() => {
+  if (slideDir.value === 'next') return 'story-slide-next'
+  if (slideDir.value === 'prev') return 'story-slide-prev'
+  return 'story-fade'
+})
+
+const mediaDragStyle = computed(() => {
+  if (!isDragging.value || !dragX.value) return {}
+  const damp = 0.55
+  return {
+    transform: `translateX(${dragX.value * damp}px)`,
+    transition: 'none'
+  }
+})
 
 const filterStyle = computed(() => {
   const f = current.value?.filterId
@@ -72,48 +106,121 @@ function preloadMedia(slide) {
   })
 }
 
+function cacheSlide(slide) {
+  if (slide?.id) mediaCache.add(slide.id)
+}
+
 function prefetchAdjacent() {
+  const prev = slides.value[index.value - 1]
   const next = slides.value[index.value + 1]
-  if (next) void preloadMedia(next)
+  if (prev) void preloadMedia(prev).then(() => cacheSlide(prev))
+  if (next) void preloadMedia(next).then(() => cacheSlide(next))
+}
+
+async function playCurrentVideo() {
+  await nextTick()
+  const el = videoEl.value
+  if (!el || current.value?.mediaType !== 'video') return
+  try {
+    el.currentTime = 0
+    await el.play()
+  } catch {}
 }
 
 async function onSlideChange() {
   clearTimer()
   progress.value = 0
-  mediaReady.value = false
   const slide = current.value
   if (!slide) return
-  await preloadMedia(slide)
+  const cached = mediaCache.has(slide.id)
+  if (!cached) {
+    mediaReady.value = false
+    await preloadMedia(slide)
+    cacheSlide(slide)
+  }
   mediaReady.value = true
-  startProgress()
+  await playCurrentVideo()
+  if (!paused.value) startProgress()
   void recordView()
   prefetchAdjacent()
 }
 
-async function loadSlides() {
+async function loadSlidesForUser(uid, opts = {}) {
+  const { startSlideId = null, startIndex = null, direction = null } = opts
   loading.value = true
   mediaReady.value = false
   try {
-    const { data } = await api.get(`/stories/user/${userId.value}`, { skipGlobalLoader: true })
-    slides.value = (data ?? []).map(normalizeSlide)
-    if (!slides.value.length) {
+    const { data } = await api.get(`/stories/user/${uid}`, { skipGlobalLoader: true })
+    const list = (data ?? []).map(normalizeSlide)
+    if (!list.length) {
+      if (direction === 'prev') return false
       router.replace('/conversations')
-      return
+      return false
     }
-    const startId = route.query.slideId
-    if (startId) {
-      const idx = slides.value.findIndex(s => String(s.id) === String(startId))
+    slides.value = list
+    if (startIndex != null) {
+      index.value = Math.max(0, Math.min(startIndex, list.length - 1))
+    } else if (startSlideId) {
+      const idx = list.findIndex(s => String(s.id) === String(startSlideId))
       index.value = idx >= 0 ? idx : 0
     } else {
-      index.value = 0
+      index.value = direction === 'prev' ? list.length - 1 : 0
     }
     loading.value = false
     await onSlideChange()
+    return true
   } catch {
     router.replace('/conversations')
+    return false
   } finally {
     loading.value = false
   }
+}
+
+async function loadSlides() {
+  mediaCache.clear()
+  await loadSlidesForUser(userId.value, { startSlideId: route.query.slideId })
+}
+
+async function switchToFeedUser(targetUid, direction) {
+  if (transitioning.value || String(targetUid) === String(userId.value)) return
+  transitioning.value = true
+  slideDir.value = direction
+  clearTimer()
+  paused.value = false
+  try {
+    const ok = await loadSlidesForUser(targetUid, {
+      direction,
+      startIndex: direction === 'prev' ? undefined : 0
+    })
+    if (!ok) return
+    if (String(route.params.userId) !== String(targetUid)) {
+      skipNextRouteLoad.value = true
+      const q = route.query.from ? { from: route.query.from } : {}
+      await router.replace({ path: `/stories/view/${targetUid}`, query: q })
+    }
+  } finally {
+    transitioning.value = false
+    setTimeout(() => { slideDir.value = null }, 320)
+  }
+}
+
+function feedUserIndex(uid) {
+  return feedRings.value.findIndex(r => String(r.userId) === String(uid))
+}
+
+async function goToAdjacentUser(delta) {
+  const i = feedUserIndex(userId.value)
+  if (i < 0) {
+    goBack()
+    return
+  }
+  const target = feedRings.value[i + delta]
+  if (!target) {
+    if (delta > 0) goBack()
+    return
+  }
+  await switchToFeedUser(target.userId, delta > 0 ? 'next' : 'prev')
 }
 
 function normalizeSlide(s) {
@@ -161,20 +268,37 @@ function startProgress() {
   }, step)
 }
 
-async function nextSlide() {
-  if (index.value < slides.value.length - 1) {
-    index.value++
-    await onSlideChange()
-  } else {
-    goBack()
+async function navigateSlide(direction) {
+  if (transitioning.value || loading.value) return
+  transitioning.value = true
+  slideDir.value = direction
+  clearTimer()
+  try {
+    if (direction === 'next') {
+      if (index.value < slides.value.length - 1) {
+        index.value++
+        await onSlideChange()
+      } else {
+        await goToAdjacentUser(1)
+      }
+    } else if (index.value > 0) {
+      index.value--
+      await onSlideChange()
+    } else {
+      await goToAdjacentUser(-1)
+    }
+  } finally {
+    transitioning.value = false
+    setTimeout(() => { slideDir.value = null }, 320)
   }
 }
 
+async function nextSlide() {
+  await navigateSlide('next')
+}
+
 async function prevSlide() {
-  if (index.value > 0) {
-    index.value--
-    await onSlideChange()
-  }
+  await navigateSlide('prev')
 }
 
 function goBack() {
@@ -185,11 +309,70 @@ function goBack() {
   router.replace('/conversations')
 }
 
-function onTap(e) {
+function onTapZone(clientX) {
   const w = window.innerWidth
-  const x = e.clientX ?? e.changedTouches?.[0]?.clientX ?? w / 2
-  if (x < w * 0.35) prevSlide()
-  else if (x > w * 0.65) nextSlide()
+  if (clientX < w * 0.32) void prevSlide()
+  else if (clientX > w * 0.68) void nextSlide()
+}
+
+function onPointerDown(e) {
+  if (showViewers.value || transitioning.value) return
+  const t = e.touches?.[0] ?? e
+  touchStartX = t.clientX
+  touchStartY = t.clientY
+  touchStartTime = Date.now()
+  isDragging.value = true
+  didSwipe = false
+  dragX.value = 0
+  clearTimer()
+}
+
+function onPointerMove(e) {
+  if (!isDragging.value) return
+  const t = e.touches?.[0] ?? e
+  const dx = t.clientX - touchStartX
+  const dy = t.clientY - touchStartY
+  if (Math.abs(dy) > Math.abs(dx) * 1.2 && Math.abs(dy) > 24) return
+  if (e.cancelable) e.preventDefault()
+  dragX.value = dx
+}
+
+async function onPointerUp(e) {
+  if (!isDragging.value) return
+  isDragging.value = false
+  const t = e.changedTouches?.[0] ?? e
+  const dx = dragX.value
+  const dy = (t.clientY ?? touchStartY) - touchStartY
+  const dt = Date.now() - touchStartTime
+  dragX.value = 0
+
+  const threshold = window.innerWidth * SWIPE_RATIO
+  const swipeLeft = dx < -threshold || (dx < -40 && dt < 280)
+  const swipeRight = dx > threshold || (dx > 40 && dt < 280)
+
+  if (Math.abs(dx) > Math.abs(dy) && swipeLeft) {
+    didSwipe = true
+    await navigateSlide('next')
+    return
+  }
+  if (Math.abs(dx) > Math.abs(dy) && swipeRight) {
+    didSwipe = true
+    await navigateSlide('prev')
+    return
+  }
+
+  if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 320 && !didSwipe) {
+    onTapZone(t.clientX ?? touchStartX)
+    return
+  }
+
+  if (!paused.value && mediaReady.value) startProgress()
+}
+
+function onMediaClick(e) {
+  if (didSwipe || isDragging.value) return
+  e.stopPropagation()
+  togglePause()
 }
 
 function togglePause() {
@@ -227,16 +410,31 @@ async function openViewers() {
   }
 }
 
-onMounted(loadSlides)
+watch(
+  () => route.params.userId,
+  (id, prev) => {
+    if (!id || id === prev) return
+    if (skipNextRouteLoad.value) {
+      skipNextRouteLoad.value = false
+      return
+    }
+    mediaCache.clear()
+    void loadSlides()
+  }
+)
+
+onMounted(async () => {
+  if (!storiesStore.loaded) await storiesStore.fetchFeed()
+  await loadSlides()
+})
 onUnmounted(clearTimer)
 </script>
 
 <template>
-  <div class="story-viewer page" @click="onTap">
+  <div class="story-viewer page">
     <div v-if="loading" class="viewer-loading">{{ t('common.loading') }}</div>
 
     <template v-else-if="current">
-      <div v-if="!mediaReady" class="media-loading">{{ t('common.loading') }}</div>
       <div class="progress-row">
         <div
           v-for="(s, i) in slides"
@@ -259,34 +457,53 @@ onUnmounted(clearTimer)
 
       <div
         class="viewer-media"
-        :style="current.mediaType === 'text' ? { background: current.backgroundColor || 'linear-gradient(135deg,#6c63ff,#ff6584)' } : {}"
-        @click.stop="togglePause"
+        :class="{ 'is-dragging': isDragging }"
+        :style="[
+          current.mediaType === 'text'
+            ? { background: current.backgroundColor || 'linear-gradient(135deg,#6c63ff,#ff6584)' }
+            : {},
+          mediaDragStyle
+        ]"
+        @touchstart="onPointerDown"
+        @touchmove.prevent="onPointerMove"
+        @touchend="onPointerUp"
+        @touchcancel="onPointerUp"
+        @mousedown="onPointerDown"
+        @mousemove="onPointerMove"
+        @mouseup="onPointerUp"
+        @mouseleave="isDragging && onPointerUp($event)"
       >
-        <video
-          v-if="current.mediaType === 'video' && current.mediaUrl"
-          v-show="mediaReady"
-          :key="`v-${current.id}`"
-          :src="ensureAbsoluteUrl(current.mediaUrl)"
-          class="media-el"
-          :style="filterStyle"
-          autoplay
-          playsinline
-          muted
-          preload="auto"
-        />
-        <img
-          v-else-if="current.mediaUrl"
-          v-show="mediaReady"
-          :key="`i-${current.id}`"
-          :src="ensureAbsoluteUrl(current.mediaUrl)"
-          class="media-el"
-          :style="filterStyle"
-          alt=""
-          decoding="async"
-          fetchpriority="high"
-        />
-        <p v-else-if="current.caption" class="text-story">{{ current.caption }}</p>
-        <p v-if="current.caption && current.mediaType !== 'text'" class="caption">{{ current.caption }}</p>
+        <Transition :name="slideTransitionName" mode="out-in">
+          <div :key="`${userId}-${current.id}`" class="media-slide" @click="onMediaClick">
+            <video
+              v-if="current.mediaType === 'video' && current.mediaUrl"
+              v-show="mediaReady"
+              ref="videoEl"
+              :src="ensureAbsoluteUrl(current.mediaUrl)"
+              class="media-el"
+              :style="filterStyle"
+              autoplay
+              playsinline
+              muted
+              preload="auto"
+            />
+            <img
+              v-else-if="current.mediaUrl"
+              v-show="mediaReady"
+              :src="ensureAbsoluteUrl(current.mediaUrl)"
+              class="media-el"
+              :style="filterStyle"
+              alt=""
+              decoding="async"
+              fetchpriority="high"
+            />
+            <p v-else-if="current.caption" class="text-story">{{ current.caption }}</p>
+            <p v-if="current.caption && current.mediaType !== 'text'" class="caption">{{ current.caption }}</p>
+          </div>
+        </Transition>
+        <div v-if="!mediaReady && !isDragging" class="media-loading media-loading--overlay">
+          {{ t('common.loading') }}
+        </div>
       </div>
 
       <footer v-if="!isOwner" class="viewer-reply" @click.stop>
@@ -414,6 +631,72 @@ onUnmounted(clearTimer)
   justify-content: center;
   min-height: 0;
   position: relative;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+  transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.viewer-media.is-dragging {
+  transition: none;
+}
+
+.media-slide {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.media-loading--overlay {
+  z-index: 2;
+}
+
+/* انتقالات بين الشرائح */
+.story-slide-next-enter-active,
+.story-slide-next-leave-active,
+.story-slide-prev-enter-active,
+.story-slide-prev-leave-active,
+.story-fade-enter-active,
+.story-fade-leave-active {
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.28s ease;
+}
+
+.story-slide-next-enter-from {
+  transform: translateX(100%);
+  opacity: 0.35;
+}
+.story-slide-next-leave-to {
+  transform: translateX(-28%);
+  opacity: 0;
+}
+
+.story-slide-prev-enter-from {
+  transform: translateX(-100%);
+  opacity: 0.35;
+}
+.story-slide-prev-leave-to {
+  transform: translateX(28%);
+  opacity: 0;
+}
+
+.story-fade-enter-from,
+.story-fade-leave-to {
+  opacity: 0;
+}
+
+[dir='rtl'] .story-slide-next-enter-from {
+  transform: translateX(-100%);
+}
+[dir='rtl'] .story-slide-next-leave-to {
+  transform: translateX(28%);
+}
+[dir='rtl'] .story-slide-prev-enter-from {
+  transform: translateX(100%);
+}
+[dir='rtl'] .story-slide-prev-leave-to {
+  transform: translateX(-28%);
 }
 
 .media-el {

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, Search, Pin, MoreVertical, Users, UsersRound, Mail, CheckCheck } from 'lucide-vue-next'
+import { ChevronRight, MessageCircle, MessageSquarePlus, Search, Pin, MoreVertical, Users, UsersRound, Inbox, CheckCheck, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -36,6 +36,7 @@ const searchQuery = ref('')
 const needPhone = ref(false)
 const markingAllRead = ref(false)
 const storiesEnabled = ref(true)
+const fabOpen = ref(false)
 
 /** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
 const pendingMessageRequestsCount = computed(() => msgReqStore.pendingCount)
@@ -171,7 +172,17 @@ function goToConversation(c) {
 }
 
 function goToContacts() {
+  fabOpen.value = false
   router.push('/contacts')
+}
+
+function toggleFabMenu() {
+  fabOpen.value = !fabOpen.value
+}
+
+function goToCreateGroupFromFab() {
+  fabOpen.value = false
+  goToCreateGroup()
 }
 
 function goToMessageRequests() {
@@ -203,19 +214,17 @@ async function markAllRead() {
       <span class="top-title">{{ t('conversations.title') }}</span>
       <div class="header-actions">
         <button
-          class="new-chat-btn new-chat-btn-badge-wrap"
+          type="button"
+          class="msg-req-btn"
+          :class="{ 'has-badge': !!messageRequestsBadgeText }"
           @click="goToMessageRequests"
           :aria-label="messageRequestsButtonLabel"
-          :title="messageRequestsButtonLabel"
         >
-          <Mail :size="18" />
-          <span v-if="messageRequestsBadgeText" class="header-btn-badge">{{ messageRequestsBadgeText }}</span>
-        </button>
-        <button class="new-chat-btn" @click="goToCreateGroup" :aria-label="t('conversations.newGroup')" :title="t('conversations.newGroup')">
-          <UsersRound :size="18" />
-        </button>
-        <button class="new-chat-btn" @click="goToContacts" :aria-label="t('conversations.newChat')" :title="t('conversations.newChat')">
-          <Users :size="18" />
+          <span class="msg-req-btn-icon" aria-hidden="true">
+            <Inbox :size="17" stroke-width="2" />
+          </span>
+          <span class="msg-req-btn-label">{{ t('conversations.messageRequestsShort') }}</span>
+          <span v-if="messageRequestsBadgeText" class="msg-req-badge">{{ messageRequestsBadgeText }}</span>
         </button>
       </div>
     </header>
@@ -227,8 +236,8 @@ async function markAllRead() {
       <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
     </div>
 
-    <div class="filters-wrap">
-      <div class="filter-tabs" role="tablist" :dir="localeStore.htmlDir">
+    <div class="list-toolbar" :dir="localeStore.htmlDir">
+      <div class="filter-tabs" role="tablist">
         <button
           v-for="f in ['all', 'unread', 'archived']"
           :key="f"
@@ -242,19 +251,16 @@ async function markAllRead() {
           {{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}
         </button>
       </div>
-    </div>
-
-    <div class="search-wrap" :dir="localeStore.htmlDir">
-      <div class="search-input-wrap">
-        <Search :size="16" class="search-icon" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          class="search-input"
-          :placeholder="t('conversations.searchPlaceholder')"
-        />
-      </div>
-      <div class="mark-all-read-row">
+      <div class="search-toolbar">
+        <div class="search-input-wrap">
+          <Search :size="15" class="search-icon" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="search-input"
+            :placeholder="t('conversations.searchPlaceholder')"
+          />
+        </div>
         <button
           type="button"
           class="mark-all-read-btn"
@@ -263,8 +269,7 @@ async function markAllRead() {
           :aria-label="t('conversations.markAllRead')"
           @click="markAllRead"
         >
-          <CheckCheck :size="15" aria-hidden="true" />
-          <span class="mark-all-read-text">{{ t('conversations.markAllRead') }}</span>
+          <CheckCheck :size="16" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -329,6 +334,54 @@ async function markAllRead() {
       </div>
     </div>
 
+    <div class="conv-fab-wrap" :class="{ 'is-open': fabOpen }">
+      <Transition name="fab-fade">
+        <button
+          v-if="fabOpen"
+          type="button"
+          class="conv-fab-backdrop"
+          :aria-label="t('common.cancel')"
+          @click="fabOpen = false"
+        />
+      </Transition>
+      <Transition name="fab-menu">
+        <div v-if="fabOpen" class="conv-fab-menu" role="menu">
+          <button
+            type="button"
+            class="conv-fab-menu-item"
+            role="menuitem"
+            @click="goToCreateGroupFromFab"
+          >
+            <span class="conv-fab-menu-icon conv-fab-menu-icon--group">
+              <UsersRound :size="20" />
+            </span>
+            <span class="conv-fab-menu-label">{{ t('conversations.newGroup') }}</span>
+          </button>
+          <button
+            type="button"
+            class="conv-fab-menu-item"
+            role="menuitem"
+            @click="goToContacts"
+          >
+            <span class="conv-fab-menu-icon conv-fab-menu-icon--chat">
+              <MessageCircle :size="20" />
+            </span>
+            <span class="conv-fab-menu-label">{{ t('conversations.newChat') }}</span>
+          </button>
+        </div>
+      </Transition>
+      <button
+        type="button"
+        class="conv-fab-main"
+        :class="{ 'is-open': fabOpen }"
+        :aria-label="fabOpen ? t('common.cancel') : t('conversations.composeMessage')"
+        :aria-expanded="fabOpen"
+        @click="toggleFabMenu"
+      >
+        <X v-if="fabOpen" :size="24" stroke-width="2.25" />
+        <MessageSquarePlus v-else :size="24" stroke-width="2.25" />
+      </button>
+    </div>
   </div>
 </template>
 
@@ -465,31 +518,96 @@ html.light .conversations--wa .new-chat-btn:active,
   gap: 4px;
   flex-shrink: 0;
 }
-.new-chat-btn-badge-wrap {
+/* زر طلبات المراسلة — واضح مع تسمية وشارة */
+.msg-req-btn {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 11px 0 9px;
+  border: 1px solid rgba(108, 99, 255, 0.32);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(108, 99, 255, 0.16), rgba(108, 99, 255, 0.06));
+  color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: min(46vw, 148px);
+  font-family: 'Cairo', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 4px rgba(108, 99, 255, 0.12);
 }
-.header-btn-badge {
-  position: absolute;
-  top: -5px;
-  inset-inline-end: -5px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  font-size: 10px;
+
+.msg-req-btn.has-badge {
+  padding-inline-end: 13px;
+}
+
+.msg-req-btn:active {
+  transform: scale(0.97);
+  background: linear-gradient(145deg, rgba(108, 99, 255, 0.22), rgba(108, 99, 255, 0.1));
+}
+
+.msg-req-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(108, 99, 255, 0.14);
+  flex-shrink: 0;
+}
+
+.msg-req-btn-label {
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-req-badge {
+  position: absolute;
+  top: -7px;
+  inset-inline-end: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-weight: 800;
   line-height: 1;
-  text-align: center;
-  color: white;
-  background: #f97316;
-  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(135deg, #ff6b4a, #f97316);
+  border-radius: 10px;
+  border: 2px solid var(--wa-header, var(--bg-secondary));
   font-family: 'Cairo', sans-serif;
   font-variant-numeric: tabular-nums;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.45);
   pointer-events: none;
+}
+
+html.light .msg-req-btn,
+[data-theme='light'] .msg-req-btn {
+  background: linear-gradient(145deg, rgba(108, 99, 255, 0.12), rgba(108, 99, 255, 0.04));
+  border-color: rgba(108, 99, 255, 0.28);
+  box-shadow: 0 1px 3px rgba(108, 99, 255, 0.1);
+}
+
+html.light .msg-req-btn-icon,
+[data-theme='light'] .msg-req-btn-icon {
+  background: rgba(108, 99, 255, 0.1);
+}
+
+html.light .msg-req-badge,
+[data-theme='light'] .msg-req-badge {
+  border-color: var(--bg-secondary);
 }
 
 .need-phone-banner {
@@ -515,21 +633,22 @@ html.light .conversations--wa .new-chat-btn:active,
   font-family: 'Cairo', sans-serif;
 }
 
-.filters-wrap {
+.list-toolbar {
   display: flex;
   flex-direction: column;
-  padding: 8px 12px 4px;
+  gap: 6px;
+  padding: 6px 10px 8px;
   flex-shrink: 0;
   background: var(--wa-subbar);
 }
 
 .filter-tabs {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
   min-width: 0;
-  padding: 3px;
-  border-radius: 10px;
+  padding: 2px;
+  border-radius: 8px;
   background: var(--bg-card);
   box-sizing: border-box;
 }
@@ -538,41 +657,40 @@ html.light .conversations--wa .filter-tabs,
   background: var(--bg-secondary);
 }
 
-.mark-all-read-row {
+.search-toolbar {
   display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
+  min-width: 0;
+}
+
+.search-toolbar .search-input-wrap {
+  flex: 1;
+  min-width: 0;
 }
 
 .mark-all-read-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-inline-start: auto;
-  min-height: 30px;
-  padding: 5px 10px;
-  border-radius: 999px;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
   border: 1px solid rgba(108, 99, 255, 0.35);
   background: rgba(108, 99, 255, 0.1);
   color: var(--primary);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
   cursor: pointer;
-  flex-shrink: 0;
-  max-width: 100%;
-}
-.mark-all-read-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
 .mark-all-read-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-html.light .conversations--wa .filters-wrap,
-[data-theme="light"] .conversations--wa .filters-wrap {
+html.light .conversations--wa .list-toolbar,
+[data-theme="light"] .conversations--wa .list-toolbar {
   background: #fff;
   border-bottom: 1px solid var(--wa-row-sep);
 }
@@ -580,9 +698,9 @@ html.light .conversations--wa .filters-wrap,
 .filter-btn {
   flex: 1;
   min-width: 0;
-  min-height: 32px;
-  padding: 6px 8px;
-  font-size: 12px;
+  min-height: 28px;
+  padding: 4px 6px;
+  font-size: 11px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
   border-radius: 8px;
@@ -609,27 +727,13 @@ html.light .conversations--wa .filter-btn.active,
   box-shadow: none;
 }
 
-.conversations--wa .search-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 10px 10px;
-  flex-shrink: 0;
-  background: var(--wa-subbar);
-}
-html.light .conversations--wa .search-wrap,
-[data-theme="light"] .conversations--wa .search-wrap {
-  background: var(--wa-subbar);
-  border-bottom: 1px solid var(--wa-row-sep);
-}
-
 .search-input-wrap {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  min-height: 40px;
-  border-radius: 20px;
+  gap: 8px;
+  padding: 0 12px;
+  min-height: 34px;
+  border-radius: 17px;
   border: none;
   background: var(--wa-search-field);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
@@ -647,11 +751,11 @@ html.light .conversations--wa .search-input-wrap,
 .search-input {
   flex: 1;
   min-width: 0;
-  padding: 10px 0;
+  padding: 7px 0;
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-family: 'Cairo', sans-serif;
   outline: none;
 }
@@ -689,7 +793,7 @@ html.light .conversations--wa .search-input::placeholder,
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 24px;
+  padding: 48px 24px calc(88px + var(--safe-bottom));
   color: var(--text-muted);
   text-align: center;
   font-family: 'Cairo', sans-serif;
@@ -709,7 +813,7 @@ html.light .conversations--wa .search-input::placeholder,
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding-bottom: 12px;
+  padding-bottom: calc(88px + var(--safe-bottom));
 }
 
 .conv-item {
@@ -960,6 +1064,173 @@ html.light .conversations--wa .context-btn,
 }
 
 /* شريط العنوان: شاشات ضيقة (مثلاً ~240–360px) */
+/* زر عائم — رسالة جديدة */
+.conv-fab-wrap {
+  position: fixed;
+  inset-inline-end: max(16px, var(--spacing));
+  bottom: calc(20px + var(--safe-bottom));
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.conv-fab-wrap > * {
+  pointer-events: auto;
+}
+
+.conv-fab-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.conv-fab-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.conv-fab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'Cairo', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.conv-fab-menu-item:active .conv-fab-menu-label {
+  opacity: 0.85;
+}
+
+.conv-fab-menu-label {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+}
+
+.conv-fab-menu-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.conv-fab-menu-icon--chat {
+  background: var(--primary);
+}
+
+.conv-fab-menu-icon--group {
+  background: #5c6bc0;
+}
+
+.conv-fab-main {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    0 4px 12px rgba(108, 99, 255, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.conv-fab-main.is-open {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  transform: rotate(0deg);
+}
+
+.conv-fab-main:active {
+  transform: scale(0.96);
+}
+
+.conv-fab-main.is-open:active {
+  transform: scale(0.96);
+}
+
+.fab-fade-enter-active,
+.fab-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fab-fade-enter-from,
+.fab-fade-leave-to {
+  opacity: 0;
+}
+
+.fab-menu-enter-active,
+.fab-menu-leave-active {
+  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.fab-menu-enter-from,
+.fab-menu-leave-to {
+  opacity: 0;
+  transform: translateY(12px) scale(0.92);
+  transform-origin: bottom right;
+}
+
+[dir='rtl'] .fab-menu-enter-from,
+[dir='rtl'] .fab-menu-leave-to {
+  transform-origin: bottom left;
+}
+
+html.light .conv-fab-menu-label,
+[data-theme='light'] .conv-fab-menu-label {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 420px) {
+  .conv-fab-wrap {
+    inset-inline-end: 14px;
+    bottom: calc(16px + var(--safe-bottom));
+  }
+  .conv-fab-main {
+    width: 52px;
+    height: 52px;
+  }
+  .conv-fab-menu-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .conv-fab-menu-label {
+    font-size: 13px;
+    padding: 7px 10px;
+  }
+}
+
 @media (max-width: 420px) {
   .top-bar {
     padding: calc(var(--safe-top) + 8px) 8px 8px;
@@ -968,26 +1239,41 @@ html.light .conversations--wa .context-btn,
   .header-actions {
     gap: 4px;
   }
-  .top-bar .back-btn,
-  .top-bar .new-chat-btn {
+  .top-bar .back-btn {
     width: 32px !important;
     height: 32px !important;
     min-width: 32px !important;
     min-height: 32px !important;
     border-radius: 8px;
   }
-  .top-bar .back-btn :deep(svg),
-  .top-bar .new-chat-btn :deep(svg) {
+  .top-bar .back-btn :deep(svg) {
     width: 16px !important;
     height: 16px !important;
   }
-  .header-btn-badge {
-    min-width: 16px;
-    height: 16px;
-    font-size: 9px;
-    padding: 0 4px;
-    top: -4px;
-    inset-inline-end: -4px;
+  .msg-req-btn {
+    min-height: 32px;
+    padding: 0 9px 0 7px;
+    gap: 5px;
+    border-radius: 16px;
+  }
+  .msg-req-btn-icon {
+    width: 22px;
+    height: 22px;
+  }
+  .msg-req-btn-icon :deep(svg) {
+    width: 15px !important;
+    height: 15px !important;
+  }
+  .msg-req-btn-label {
+    font-size: 11px;
+  }
+  .msg-req-badge {
+    min-width: 18px;
+    height: 18px;
+    font-size: 10px;
+    padding: 0 5px;
+    top: -6px;
+    inset-inline-end: -5px;
   }
 }
 
@@ -999,47 +1285,41 @@ html.light .conversations--wa .context-btn,
   .header-actions {
     gap: 2px;
   }
-  .top-bar .back-btn,
-  .top-bar .new-chat-btn {
+  .top-bar .back-btn {
     width: 30px !important;
     height: 30px !important;
     min-width: 30px !important;
     min-height: 30px !important;
   }
-  .top-bar .back-btn :deep(svg),
-  .top-bar .new-chat-btn :deep(svg) {
+  .top-bar .back-btn :deep(svg) {
     width: 15px !important;
     height: 15px !important;
+  }
+  .msg-req-btn-label {
+    font-size: 10px;
   }
 }
 
 @media (max-width: 360px) {
-  .filters-wrap {
-    padding: 6px var(--spacing) 4px;
-    gap: 6px;
+  .list-toolbar {
+    padding: 5px 8px 6px;
+    gap: 5px;
   }
   .filter-tabs {
     gap: 3px;
     padding: 2px;
   }
   .filter-btn {
-    min-height: 30px;
-    padding: 5px 4px;
-    font-size: 11px;
+    min-height: 26px;
+    padding: 4px 3px;
+    font-size: 10px;
   }
   .mark-all-read-btn {
-    min-height: 28px;
-    padding: 4px 8px;
-    font-size: 11px;
-  }
-  .mark-all-read-text {
-    display: none;
-  }
-  .search-wrap {
-    padding-bottom: 6px;
+    width: 30px;
+    height: 30px;
   }
   .search-input-wrap {
-    min-height: 34px;
+    min-height: 32px;
     padding: 0 8px;
     border-radius: 8px;
   }

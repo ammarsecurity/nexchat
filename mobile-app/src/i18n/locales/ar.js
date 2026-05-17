@@ -339,7 +339,9 @@ export default {
     optionsTitle: 'خيارات المحادثة',
     notFound: 'المحادثة غير موجودة',
     newGroup: 'مجموعة جديدة',
-    messageRequests: 'طلبات المراسلة'
+    composeMessage: 'رسالة جديدة',
+    messageRequests: 'طلبات المراسلة',
+    messageRequestsShort: 'طلبات'
   },
   stories: {
     yourStory: 'ستورتك',
