@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const conversations = ref([])
 const totalConvos = ref(0)
@@ -191,7 +192,7 @@ async function confirmDeleteSessions() {
     }
     await fetchConversations()
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل الحذف')
+    notify.error(e.response?.data?.message || 'فشل الحذف')
   } finally {
     deleting.value = false
   }
@@ -218,7 +219,7 @@ async function confirmDeleteMsgs() {
     await fetchMessages(sessionId)
     totalMessages.value = Math.max(0, totalMessages.value - ids.length)
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل الحذف')
+    notify.error(e.response?.data?.message || 'فشل الحذف')
   } finally {
     deleting.value = false
   }

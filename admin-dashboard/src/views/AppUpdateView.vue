@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const minVersion = ref('1.0')
 const latestVersion = ref('1.0')
@@ -39,7 +40,7 @@ async function fetchConfig() {
 
 async function save() {
   if (!downloadUrl.value?.trim() && !iosDownloadUrl.value?.trim()) {
-    alert('يجب إدخال رابط تحميل واحد على الأقل (Android أو iOS)')
+    notify.warning('يجب إدخال رابط تحميل واحد على الأقل (Android أو iOS)')
     return
   }
   saving.value = true
@@ -56,7 +57,7 @@ async function save() {
     saved.value = true
     setTimeout(() => { saved.value = false }, 3000)
   } catch (err) {
-    alert(err.response?.data?.message || 'فشل الحفظ')
+    notify.error(err.response?.data?.message || 'فشل الحفظ')
   } finally {
     saving.value = false
   }

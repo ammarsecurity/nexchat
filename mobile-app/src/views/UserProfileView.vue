@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Copy, MessageCircle, Crown, UserPlus, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import {
   createPrivateConversationOrRequest,
@@ -128,7 +129,7 @@ async function openChat() {
         goToMessageRequestsOutgoingNotice(router)
       }
     } catch (e) {
-      window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
+      notify.error(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
     } finally {
       startingChat.value = false
     }

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const banners = ref([])
 const loading = ref(false)
@@ -71,7 +72,7 @@ async function onFileChange(e) {
     })
     form.value.imageUrl = res.data.url
   } catch (err) {
-    alert(err.response?.data || 'فشل رفع الصورة')
+    notify.error(err.response?.data || 'فشل رفع الصورة')
   } finally {
     uploading.value = false
     e.target.value = ''
@@ -80,7 +81,7 @@ async function onFileChange(e) {
 
 async function save() {
   if (!form.value.imageUrl) {
-    alert('يرجى رفع صورة')
+    notify.warning('يرجى رفع صورة')
     return
   }
   try {
@@ -98,7 +99,7 @@ async function save() {
     dialog.value = false
     fetchBanners()
   } catch (err) {
-    alert(err.response?.data?.message || 'حدث خطأ')
+    notify.error(err.response?.data?.message || 'حدث خطأ')
   }
 }
 

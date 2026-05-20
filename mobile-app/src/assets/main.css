@@ -337,6 +337,7 @@ body {
 /* RTL: عكس اتجاه الأسهم (ChevronRight → ChevronLeft) */
 [dir="rtl"] .link-arrow,
 [dir="rtl"] .saved-codes-link-arrow,
+[dir="rtl"] .saved-codes-tile__chev,
 [dir="rtl"] .item-arrow,
 [dir="rtl"] .notif-arrow {
   transform: scaleX(-1);

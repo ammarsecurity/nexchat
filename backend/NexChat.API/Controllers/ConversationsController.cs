@@ -146,13 +146,10 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             string? preview = null;
             if (lastMsg != null)
             {
-                if (lastMsg.Type == "image") preview = "صورة";
-                else if (lastMsg.Type == "audio") preview = "رسالة صوتية";
-                else
-                {
-                    var plain = messageCrypto.DecryptFromStorage(lastMsg.Content ?? "");
-                    preview = plain.Length > 50 ? plain[..50] + "…" : plain;
-                }
+                preview = ConversationPreviewHelper.BuildListPreview(
+                    lastMsg.Type,
+                    lastMsg.Content,
+                    messageCrypto.DecryptFromStorage);
             }
 
             result.Add(new ConversationListItemDto(

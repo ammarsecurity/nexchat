@@ -8,6 +8,7 @@ import { useConversationsListStore } from '../stores/conversationsList'
 import { useNetworkStore } from '../stores/network'
 import { conversationHub, startHub, ensureConnected } from '../services/signalr'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 import { loadMessagesFromCache, saveMessagesForConversation, clearMessagesForConversation } from '../services/cache'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -17,6 +18,8 @@ import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
 import { useActiveCallStore } from '../stores/activeCall'
 import ActiveCallBar from '../components/ActiveCallBar.vue'
+import ShortFilmMessageBubble from '../components/ShortFilmMessageBubble.vue'
+import { parseShortFilmMessage, buildShortFilmShareMessage, formatConversationListPreview } from '../utils/shortFilmShare'
 
 const route = useRoute()
 const router = useRouter()
@@ -366,7 +369,8 @@ onMounted(async () => {
 
   conversationHub.on('ConversationListUpdated', (payload) => {
     const convId = payload?.conversationId ?? payload?.ConversationId
-    const preview = payload?.lastMessagePreview ?? payload?.LastMessagePreview
+    const rawPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview
+    const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'))
     const at = payload?.lastMessageAt ?? payload?.LastMessageAt
     if (String(convId) === String(conversationId)) {
       listStore.updateConversation(convId, {
@@ -551,7 +555,7 @@ async function handleImageUpload(e) {
       console.warn('SendMessage failed after image upload:', err?.message ?? err)
     }
   } catch (err) {
-    alert(err?.response?.data?.message || err?.userMessage || t('conversationChat.imageUploadFailed'))
+    notify.error(err?.response?.data?.message || err?.userMessage || t('conversationChat.imageUploadFailed'))
   } finally {
     uploadingImage.value = false
   }
@@ -559,7 +563,7 @@ async function handleImageUpload(e) {
 
 async function startVoiceRecording() {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-    alert(t('conversationChat.voiceNotSupported'))
+    notify.error(t('conversationChat.voiceNotSupported'))
     return
   }
   try {
@@ -586,7 +590,7 @@ async function startVoiceRecording() {
       recordingSeconds.value++
     }, 1000)
   } catch (err) {
-    alert(t('conversationChat.voicePermissionDenied'))
+    notify.error(t('conversationChat.voicePermissionDenied'))
   }
 }
 
@@ -631,7 +635,7 @@ function stopAndSendVoice() {
     audioChunks = []
 
     if (blob.size < 100) {
-      alert(t('conversationChat.voiceRecordingTooShort'))
+      notify.error(t('conversationChat.voiceRecordingTooShort'))
       return
     }
 
@@ -677,7 +681,7 @@ function stopAndSendVoice() {
       }
     } catch (err) {
       convStore.updateMessage(tempId, { status: 'failed' })
-      alert(err?.response?.data?.message || err?.userMessage || t('conversationChat.voiceUploadFailed'))
+      notify.error(err?.response?.data?.message || err?.userMessage || t('conversationChat.voiceUploadFailed'))
     } finally {
       uploadingVoice.value = false
     }
@@ -697,7 +701,14 @@ function replyToMessage(msg) {
   showMessageMenu.value = null
   showMessageMenuMsg.value = null
   const isMine = String(msg.senderId) === String(currentUserId.value)
-  const preview = msg.type === 'text' ? (msg.content || '').slice(0, 50) : (msg.type === 'audio' ? '🎤' : '🖼')
+  const sf = parseShortFilmMessage(msg)
+  const preview = sf
+    ? `🎬 ${(sf.title || t('shortFilms.title')).slice(0, 48)}`
+    : msg.type === 'text'
+      ? (msg.content || '').slice(0, 50)
+      : msg.type === 'audio'
+        ? '🎤'
+        : '🖼'
   replyingTo.value = {
     id: msg.id || msg.Id,
     content: preview,
@@ -721,13 +732,26 @@ function scrollToRepliedMessage(replyToMessageId) {
   }
 }
 
+function getShortFilmPayload(msg) {
+  return parseShortFilmMessage(msg)
+}
+
+function openSharedShortFilm(payload) {
+  if (!payload?.id) return
+  router.push({ path: '/short-films/watch', query: { start: payload.id } })
+}
+
 function openShareToConvModal(msg) {
   showMessageMenu.value = null
   showMessageMenuMsg.value = null
+  const sf = parseShortFilmMessage(msg)
+  const shareMessage = sf
+    ? buildShortFilmShareMessage(sf)
+    : { content: msg.content, type: msg.type || 'text' }
   router.push({
     path: '/share-message',
     state: {
-      shareMessage: { content: msg.content, type: msg.type || 'text' },
+      shareMessage,
       sourceConversationId: conversationId
     }
   })
@@ -1147,6 +1171,25 @@ function removeReaction(msg) {
             </div>
           </div>
           <img v-if="!msg.deletedForEveryone" :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
+          <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
+        </div>
+        <div
+          v-else-if="getShortFilmPayload(msg)"
+          class="bubble short-film-bubble"
+          @contextmenu="onMessageContextMenu(msg, $event)"
+        >
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+            </div>
+          </div>
+          <ShortFilmMessageBubble
+            v-if="!msg.deletedForEveryone"
+            :payload="getShortFilmPayload(msg)"
+            @open="openSharedShortFilm"
+          />
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
         <div
@@ -2244,6 +2287,13 @@ html.light .msg-action-react:active {
 }
 
 .image-bubble { padding: 4px !important; overflow: hidden; }
+
+.short-film-bubble {
+  padding: 4px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 
 .audio-bubble {
   padding: 0;

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const blocks = ref([])
 const total = ref(0)
@@ -48,7 +49,7 @@ async function executeUnblock() {
     selectedBlock.value = null
     fetchBlocks()
   } catch (e) {
-    alert(e.response?.data?.message || 'حدث خطأ')
+    notify.error(e.response?.data?.message || 'حدث خطأ')
   } finally {
     deleteLoading.value = false
   }

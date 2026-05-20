@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronRight, MessageCircle, Hash } from 'lucide-vue-next'
+import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronLeft, ChevronRight, MessageCircle, Hash } from 'lucide-vue-next'
+import { useLocaleStore } from '../stores/locale'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
 import HomeNavBar from '../components/HomeNavBar.vue'
@@ -12,13 +13,15 @@ import { useMatchingStore } from '../stores/matching'
 import { useChatStore } from '../stores/chat'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useConversationStore } from '../stores/conversation'
+import { useNotificationsStore } from '../stores/notifications'
 import { matchingHub, conversationHub, startHub, ensureConnected, stopHub } from '../services/signalr'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { publicUrl } from '../utils/publicUrl'
 import { requestPermissionAndRegister, scheduleRegistrationRetry } from '../services/notifications'
 import api from '../services/api'
-import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
+import { getCodeConnectFeaturesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
+import { formatConversationListPreview } from '../utils/shortFilmShare'
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
@@ -28,7 +31,9 @@ const matching = useMatchingStore()
 const chat = useChatStore()
 const listStore = useConversationsListStore()
 const convStore = useConversationStore()
+const notificationsStore = useNotificationsStore()
 const { t } = useI18n()
+const localeStore = useLocaleStore()
 
 const codeInput = ref('')
 const codeError = ref('')
@@ -42,6 +47,8 @@ const randomChatEnabled = ref(true)
 const randomChatSettingLoaded = ref(false)
 const codeConnectEnabled = ref(true)
 const codeConnectLoaded = ref(false)
+const shortFilmsEnabled = ref(true)
+const shortFilmsLoaded = ref(false)
 let connectionTimeoutId = null
 
 const user = computed(() => auth.user)
@@ -54,7 +61,13 @@ function matchFoundHandler() {
   loading.value = false
 }
 
+function onNotifEvent(e) {
+  if (e?.detail) notificationsStore.add(e.detail)
+}
+
 onMounted(async () => {
+  notificationsStore.load()
+  window.addEventListener('nexchat:notification', onNotifEvent)
   requestMediaPermissions()
   scheduleRegistrationRetry()
 
@@ -100,7 +113,13 @@ onMounted(async () => {
   try {
     await startHub(conversationHub)
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data }) => {
-      listStore.setList(data ?? [])
+      const list = (data ?? []).map((c) => {
+        const raw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
+        const formatted = formatConversationListPreview(raw, t('shortFilms.title'))
+        if (formatted === raw) return c
+        return { ...c, lastMessagePreview: formatted, LastMessagePreview: formatted }
+      })
+      listStore.setList(list)
     }).catch(() => {})
     conversationHub.on('ConversationListUpdated', handleConversationListUpdated)
   } catch {}
@@ -113,17 +132,22 @@ onMounted(async () => {
       .catch(() => {}),
     getCodeConnectFeaturesEnabled(api).then((enabled) => {
       codeConnectEnabled.value = enabled
+    }),
+    getShortFilmsEnabled(api).then((enabled) => {
+      shortFilmsEnabled.value = enabled
     })
   ]).finally(() => {
     randomChatSettingLoaded.value = true
     codeConnectLoaded.value = true
+    shortFilmsLoaded.value = true
   })
 })
 
 async function handleConversationListUpdated(payload) {
   const convId = payload?.conversationId ?? payload?.ConversationId
   if (!convId) return
-  const preview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
+  const rawPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
+  const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'))
   const at = payload?.lastMessageAt ?? payload?.LastMessageAt
   const senderId = String(payload?.senderId ?? payload?.SenderId ?? '')
   const currentId = String(auth.user?.id ?? '')
@@ -138,7 +162,13 @@ async function handleConversationListUpdated(payload) {
   }, shouldIncrementUnread)
   if (!updated) {
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data: res }) => {
-      listStore.setList(res ?? [])
+      const list = (res ?? []).map((c) => {
+        const raw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
+        const formatted = formatConversationListPreview(raw, t('shortFilms.title'))
+        if (formatted === raw) return c
+        return { ...c, lastMessagePreview: formatted, LastMessagePreview: formatted }
+      })
+      listStore.setList(list)
     }).catch(() => {})
   }
 }
@@ -215,6 +245,7 @@ function copyCode() {
 }
 
 onUnmounted(() => {
+  window.removeEventListener('nexchat:notification', onNotifEvent)
   clearConnectionTimeout()
   matchingHub.off('MatchFound', matchFoundHandler)
   matchingHub.off('SearchCancelled')
@@ -286,28 +317,50 @@ const homePrimaryCompact = computed(
         </div>
       </div>
     </Transition>
-    <!-- Header مميز -->
     <header class="header">
       <div class="header-inner">
-        <div class="user-row">
-          <div class="avatar-wrap" :class="{ 'avatar-wrap-featured': isFeatured }">
+        <RouterLink
+          v-if="user?.id"
+          :to="`/profile/${user.id}`"
+          class="user-row"
+        >
+          <div class="avatar-wrap" :class="{ 'avatar-wrap--featured': isFeatured }">
             <div class="avatar" :style="{ background: auth.avatarColor }">
               <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
               <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
               <span v-else>{{ avatarLetter }}</span>
             </div>
-            <Crown v-if="isFeatured" class="avatar-crown-home" :size="20" fill="currentColor" stroke-width="1" />
+            <Crown v-if="isFeatured" class="avatar-crown" :size="16" fill="currentColor" stroke-width="1.5" />
           </div>
           <div class="user-meta">
+            <span class="user-greeting">{{ t('home.greeting') }}</span>
+            <span class="user-name">{{ user?.name }}</span>
+          </div>
+        </RouterLink>
+        <div v-else class="user-row user-row--static">
+          <div class="avatar-wrap" :class="{ 'avatar-wrap--featured': isFeatured }">
+            <div class="avatar" :style="{ background: auth.avatarColor }">
+              <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+              <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
+              <span v-else>{{ avatarLetter }}</span>
+            </div>
+            <Crown v-if="isFeatured" class="avatar-crown" :size="16" fill="currentColor" stroke-width="1.5" />
+          </div>
+          <div class="user-meta">
+            <span class="user-greeting">{{ t('home.greeting') }}</span>
             <span class="user-name">{{ user?.name }}</span>
           </div>
         </div>
         <div class="header-actions">
-          <RouterLink to="/settings" class="nav-btn" :aria-label="t('home.settings')">
-            <Settings :size="20" stroke-width="2" />
+          <RouterLink to="/settings" class="header-icon-btn header-icon-btn--with-badge" :aria-label="t('home.settings')">
+            <Settings :size="18" stroke-width="2" />
+            <span
+              v-if="notificationsStore.unreadCount > 0"
+              class="header-notif-badge"
+            >{{ notificationsStore.unreadCount > 99 ? '99+' : notificationsStore.unreadCount }}</span>
           </RouterLink>
-          <button class="nav-btn" @click="openLogoutConfirm" :aria-label="t('home.logout')">
-            <LogOut :size="20" stroke-width="2" />
+          <button type="button" class="header-icon-btn header-icon-btn--danger" @click="openLogoutConfirm" :aria-label="t('home.logout')">
+            <LogOut :size="18" stroke-width="2" />
           </button>
         </div>
       </div>
@@ -358,6 +411,30 @@ const homePrimaryCompact = computed(
     </Transition>
 
     <div class="home-scroll-body">
+      <RouterLink
+        v-if="shortFilmsLoaded && shortFilmsEnabled"
+        to="/short-films"
+        class="saved-codes-tile short-films-home-tile"
+      >
+        <div class="saved-codes-tile__icon-wrap short-films-home-tile__icon" aria-hidden="true">
+          <Vue3Lottie
+            :animation-link="publicUrl('json/shortFilm.json')"
+            :height="42"
+            :width="42"
+            :speed="1"
+            :loop="true"
+            :auto-play="true"
+            class="short-films-home-lottie"
+          />
+        </div>
+        <div class="saved-codes-tile__text">
+          <span class="saved-codes-tile__title">{{ t('shortFilms.title') }}</span>
+          <span class="saved-codes-tile__sub">{{ t('shortFilms.watchAll') }}</span>
+        </div>
+        <ChevronLeft v-if="localeStore.isRtl" :size="20" stroke-width="2" class="saved-codes-tile__chev" />
+        <ChevronRight v-else :size="20" stroke-width="2" class="saved-codes-tile__chev" />
+      </RouterLink>
+
       <!-- CTA + Filter - unified section (hidden until API loaded, then by setting) -->
       <div
         class="home-primary"
@@ -440,7 +517,8 @@ const homePrimaryCompact = computed(
                   <span class="saved-codes-tile__title">{{ t('home.savedCodes') }}</span>
                   <span class="saved-codes-tile__sub">{{ t('home.savedCodesTileHint') }}</span>
                 </div>
-                <ChevronRight :size="20" stroke-width="2" class="saved-codes-tile__chev" />
+                <ChevronLeft v-if="localeStore.isRtl" :size="20" stroke-width="2" class="saved-codes-tile__chev" />
+                <ChevronRight v-else :size="20" stroke-width="2" class="saved-codes-tile__chev" />
               </RouterLink>
 
               <div class="code-connect-divider" role="presentation">
@@ -497,7 +575,12 @@ const homePrimaryCompact = computed(
       </div>
     </div>
 
-    <HomeNavBar :loading="loading" :random-chat-enabled="randomChatSettingLoaded && randomChatEnabled" @launch="startRandom" />
+    <HomeNavBar
+      :loading="loading"
+      :random-chat-enabled="randomChatSettingLoaded && randomChatEnabled"
+      :short-films-enabled="shortFilmsLoaded && shortFilmsEnabled"
+      @launch="startRandom"
+    />
   </div>
 </template>
 
@@ -563,12 +646,11 @@ const homePrimaryCompact = computed(
   color: white;
 }
 
-/* Header مميز - تصميم بارز */
 .header {
   flex-shrink: 0;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 16px;
-  background: linear-gradient(180deg, rgba(108, 99, 255, 0.12) 0%, rgba(108, 99, 255, 0.04) 50%, transparent 100%);
-  border-bottom: 1px solid rgba(108, 99, 255, 0.15);
+  padding: calc(var(--safe-top) + 10px) var(--spacing) 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-inner {
@@ -576,92 +658,89 @@ const homePrimaryCompact = computed(
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  margin-top: 5px;
-  background: var(--bg-card);
-  border: 1px solid rgba(108, 99, 255, 0.2);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(108, 99, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
 }
 
 .user-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex: 1;
   min-width: 0;
-  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
   -webkit-tap-highlight-color: transparent;
+  border-radius: var(--radius);
+  padding: 4px 4px 4px 0;
+  transition: opacity 0.15s;
 }
-.user-row:active { opacity: 0.9; }
+
+.user-row:active,
+.user-row--static:active {
+  opacity: 0.88;
+}
+
+.user-row--static {
+  cursor: default;
+}
 
 .avatar-wrap {
   position: relative;
   flex-shrink: 0;
 }
-.avatar-wrap::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  border: 2px solid rgba(108, 99, 255, 0.35);
-  opacity: 0.5;
-  pointer-events: none;
+
+.avatar-wrap--featured .avatar {
+  box-shadow: 0 0 0 2px rgba(255, 115, 0, 0.45);
 }
-.avatar-wrap.avatar-wrap-featured::after {
-  border: 2px solid rgba(255, 215, 0, 0.6);
-  opacity: 1;
-  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
-}
-.avatar-crown-home {
+
+.avatar-crown {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  color: rgba(255, 115, 0, 1);
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  top: -3px;
+  inset-inline-end: -3px;
+  color: #ff7300;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
   z-index: 1;
 }
 
-/* Light mode - تاج وإطار بلون #FF7300 */
-[data-theme="light"] .avatar-wrap.avatar-wrap-featured::after,
-html.light .avatar-wrap.avatar-wrap-featured::after {
-  border-color: rgba(255, 115, 0, 0.6);
-  box-shadow: 0 0 12px rgba(255, 115, 0, 0.3);
-}
-[data-theme="light"] .avatar-crown-home,
-html.light .avatar-crown-home {
-  color: #FF7300;
-  filter: drop-shadow(0 1px 2px rgba(255, 115, 0, 0.2));
-}
-
 .avatar {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
   overflow: hidden;
-  border: 2px solid rgba(108, 99, 255, 0.3);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
 }
-.avatar-img { width: 100%; height: 100%; object-fit: cover; }
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 .user-meta {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
-  overflow: hidden;
 }
+
+.user-greeting {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
 .user-name {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.3px;
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -669,26 +748,57 @@ html.light .avatar-crown-home {
 
 .header-actions {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.nav-btn {
-  width: 42px;
-  height: 42px;
+.header-icon-btn {
+  position: relative;
+  width: var(--header-btn-size);
+  height: var(--header-btn-size);
+  min-width: var(--header-btn-size);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(108, 99, 255, 0.08);
-  border: 1px solid rgba(108, 99, 255, 0.2);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 12px;
+  text-decoration: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.nav-btn:active { background: rgba(108, 99, 255, 0.2); color: var(--primary); border-color: rgba(108, 99, 255, 0.4); }
-.nav-btn:hover { color: var(--primary); }
+
+.header-icon-btn:active {
+  background: var(--bg-card-hover);
+  color: var(--primary);
+  border-color: rgba(108, 99, 255, 0.25);
+}
+
+.header-icon-btn--danger:active {
+  color: var(--danger);
+  border-color: rgba(255, 101, 132, 0.35);
+}
+
+.header-notif-badge {
+  position: absolute;
+  top: -4px;
+  inset-inline-end: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 8px;
+  font-family: 'Cairo', system-ui, sans-serif;
+  pointer-events: none;
+}
 
 /* CTA + Filter - unified card */
 .cta-filter-card {
@@ -1055,6 +1165,22 @@ html.light .avatar-crown-home {
   flex-shrink: 0;
   color: var(--text-muted);
   opacity: 0.85;
+}
+
+.short-films-home-tile {
+  margin: 12px 16px 16px;
+}
+
+.short-films-home-tile__icon {
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.2);
+  overflow: hidden;
+}
+
+.short-films-home-lottie {
+  display: block;
+  pointer-events: none;
 }
 
 .code-connect-divider {

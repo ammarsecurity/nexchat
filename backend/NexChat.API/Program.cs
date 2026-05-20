@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.SignalR;
 using NexChat.API.Hubs;
 using NexChat.API.Middleware;
 using NexChat.API.Services;
+using NexChat.API.Services.StockVideo;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
 var builder = WebApplication.CreateBuilder(args);
@@ -44,6 +45,17 @@ builder.Services.AddSingleton<IConversationMessageCrypto>(sp =>
     return new ConversationMessageCrypto(key, logger);
 });
 builder.Services.AddSingleton<IProfanityMasker, ProfanityMasker>();
+builder.Services.Configure<StockVideoOptions>(builder.Configuration.GetSection(StockVideoOptions.SectionName));
+builder.Services.AddHttpClient<StockVideoCatalogService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(45);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("NexChat-Admin/1.0");
+});
+builder.Services.AddHttpClient<StockVideoImportService>(c =>
+{
+    c.Timeout = TimeSpan.FromMinutes(4);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("NexChat-Admin/1.0");
+});
 
 // JWT Auth
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "NexChatSuperSecretKeyForJWT2025!";

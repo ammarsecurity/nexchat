@@ -4,6 +4,8 @@ let codeConnectInflight = null
 let codeConnectResolved = null
 let storiesInflight = null
 let storiesResolved = null
+let shortFilmsInflight = null
+let shortFilmsResolved = null
 
 function parseEnabled(content) {
   if (content === undefined || content === null || String(content).trim() === '') return true
@@ -70,4 +72,30 @@ export async function getStoriesEnabled(api) {
 export function resetStoriesCache() {
   storiesResolved = null
   storiesInflight = null
+}
+
+export async function getShortFilmsEnabled(api) {
+  if (shortFilmsResolved !== null) return shortFilmsResolved
+  if (!shortFilmsInflight) {
+    shortFilmsInflight = api
+      .get('SiteContent/short_films_enabled', { skipGlobalLoader: true })
+      .then(({ data }) => {
+        const enabled = parseEnabled(data?.content)
+        shortFilmsResolved = enabled
+        return enabled
+      })
+      .catch(() => {
+        shortFilmsResolved = true
+        return true
+      })
+      .finally(() => {
+        shortFilmsInflight = null
+      })
+  }
+  return shortFilmsInflight
+}
+
+export function resetShortFilmsCache() {
+  shortFilmsResolved = null
+  shortFilmsInflight = null
 }

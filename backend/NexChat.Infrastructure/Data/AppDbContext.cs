@@ -30,6 +30,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
     public DbSet<StorySlide> StorySlides => Set<StorySlide>();
     public DbSet<StoryView> StoryViews => Set<StoryView>();
+    public DbSet<ShortFilm> ShortFilms => Set<ShortFilm>();
+    public DbSet<ShortFilmSection> ShortFilmSections => Set<ShortFilmSection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -368,6 +370,37 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(x => x.ViewerUserId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.StorySlideId, x.ViewerUserId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ShortFilmSection>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.ImageUrl).HasMaxLength(500);
+            e.HasIndex(x => new { x.IsActive, x.SortOrder });
+        });
+
+        modelBuilder.Entity<ShortFilm>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Section)
+                .WithMany(x => x.Films)
+                .HasForeignKey(x => x.SectionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CreatedByAdmin)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByAdminId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.VideoUrl).HasMaxLength(500);
+            e.Property(x => x.ThumbnailUrl).HasMaxLength(500);
+            e.Property(x => x.StockProvider).HasMaxLength(20);
+            e.Property(x => x.StockExternalId).HasMaxLength(64);
+            e.HasIndex(x => new { x.StockProvider, x.StockExternalId });
+            e.HasIndex(x => new { x.IsActive, x.SortOrder });
+            e.HasIndex(x => new { x.IsFeatured, x.IsActive });
+            e.HasIndex(x => new { x.SectionId, x.IsActive, x.SortOrder });
         });
     }
 }

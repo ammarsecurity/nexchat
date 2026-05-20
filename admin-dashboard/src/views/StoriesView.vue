@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const stories = ref([])
 const total = ref(0)
@@ -101,7 +102,7 @@ async function executeDelete() {
     deleteTarget.value = null
     fetchStories()
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل الحذف')
+    notify.error(e.response?.data?.message || 'فشل الحذف')
   } finally {
     deleteLoading.value = false
   }

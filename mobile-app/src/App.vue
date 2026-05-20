@@ -10,6 +10,7 @@ import RandomMatchConsentDialog from './components/RandomMatchConsentDialog.vue'
 import IncomingConversationCallDialog from './components/IncomingConversationCallDialog.vue'
 import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
 import LoaderOverlay from './components/LoaderOverlay.vue'
+import AppToast from './components/AppToast.vue'
 import { useApiLoadingStore } from './stores/apiLoading'
 import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
@@ -330,6 +331,7 @@ onUnmounted(() => {
     <IncomingConversationCallDialog v-if="auth.token" />
     <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
     <LoaderOverlay :show="apiLoading.showOverlay" />
+    <AppToast />
   </div>
 </template>
 

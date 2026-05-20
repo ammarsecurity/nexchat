@@ -1,14 +1,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const sessions = ref([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
 const closingInactive = ref(false)
-const snackbar = ref(false)
-const snackbarText = ref('')
 
 const headers = [
   { title: 'المستخدم 1', key: 'user1Name' },
@@ -53,12 +52,10 @@ async function closeInactiveSessions(closeAll = false) {
   try {
     const params = closeAll ? { closeAll: true } : { minutes: 15 }
     const res = await api.post('/admin/close-inactive-sessions', null, { params })
-    snackbarText.value = res.data?.message ?? `تم إغلاق ${res.data?.closedCount ?? 0} جلسة`
-    snackbar.value = true
+    notify.success(res.data?.message ?? `تم إغلاق ${res.data?.closedCount ?? 0} جلسة`)
     await fetchSessions()
   } catch (e) {
-    snackbarText.value = e.response?.data?.message ?? 'حدث خطأ'
-    snackbar.value = true
+    notify.error(e.response?.data?.message ?? 'حدث خطأ')
   } finally {
     closingInactive.value = false
   }
@@ -172,13 +169,5 @@ onMounted(fetchSessions)
       </v-data-table>
     </v-card>
 
-    <v-snackbar
-      v-model="snackbar"
-      :timeout="4000"
-      color="primary"
-      location="bottom"
-    >
-      {{ snackbarText }}
-    </v-snackbar>
   </div>
 </template>

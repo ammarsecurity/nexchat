@@ -156,7 +156,11 @@ onUnmounted(() => {
 
 .back-btn:active, .clear-btn:active { background: var(--bg-card-hover); }
 
-.top-title { font-size: 17px; font-weight: 600; }
+.top-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
 
 .scroll-area {
   flex: 1;
@@ -187,6 +191,8 @@ onUnmounted(() => {
   cursor: pointer;
   border: 1px solid var(--border);
   width: 100%;
+  color: var(--text-primary);
+  font-family: 'Cairo', sans-serif;
 }
 
 .notif-row:active { background: var(--bg-card-hover); }
@@ -221,7 +227,16 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.notif-title { font-weight: 600; font-size: 15px; font-family: 'Cairo', sans-serif; }
+.notif-title {
+  font-weight: 600;
+  font-size: 15px;
+  font-family: 'Cairo', sans-serif;
+  color: var(--text-primary);
+}
+
+.notif-row.unread .notif-title {
+  font-weight: 700;
+}
 
 .notif-body {
   font-size: 13px;

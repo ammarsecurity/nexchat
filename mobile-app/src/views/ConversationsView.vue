@@ -17,7 +17,9 @@ import { loadConversationsListFromCache, saveConversationsList } from '../servic
 import { formatGregorianDateTime } from '../utils/formatTime'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import StoriesStrip from '../components/StoriesStrip.vue'
-import { getStoriesEnabled } from '../services/siteContentFlags'
+import ShortFilmsStrip from '../components/ShortFilmsStrip.vue'
+import { getStoriesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
+import { formatConversationListPreview } from '../utils/shortFilmShare'
 
 const router = useRouter()
 const msgReqStore = useMessageRequestsStore()
@@ -36,6 +38,7 @@ const searchQuery = ref('')
 const needPhone = ref(false)
 const markingAllRead = ref(false)
 const storiesEnabled = ref(true)
+const shortFilmsEnabled = ref(true)
 const fabOpen = ref(false)
 
 /** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
@@ -73,7 +76,7 @@ function goToCreateGroup() {
 
 async function fetchConversations() {
   const cached = await loadConversationsListFromCache()
-  if (cached?.length) listStore.setList(cached)
+  if (cached?.length) listStore.setList(normalizeConversationsList(cached))
   ready.value = true
 
   needPhone.value = false
@@ -83,7 +86,7 @@ async function fetchConversations() {
       params: { filter: filter.value, search: searchQuery.value || undefined },
       skipGlobalLoader: true
     })
-    const list = data ?? []
+    const list = normalizeConversationsList(data ?? [])
     listStore.setList(list)
     await saveConversationsList(list)
   } catch (e) {
@@ -118,6 +121,26 @@ function getUnreadCount(c) {
   return typeof n === 'number' ? n : parseInt(n, 10) || 0
 }
 
+function normalizeListPreview(conv) {
+  const raw = conv?.lastMessagePreview ?? conv?.LastMessagePreview ?? ''
+  const formatted = formatConversationListPreview(raw, t('shortFilms.title'))
+  if (formatted === raw) return conv
+  return {
+    ...conv,
+    lastMessagePreview: formatted,
+    LastMessagePreview: formatted
+  }
+}
+
+function normalizeConversationsList(list) {
+  return (list ?? []).map(normalizeListPreview)
+}
+
+function getListPreview(conv) {
+  const raw = conv?.lastMessagePreview ?? conv?.LastMessagePreview ?? ''
+  return formatConversationListPreview(raw, t('shortFilms.title')) || '—'
+}
+
 watch(filter, fetchConversations, { immediate: true })
 
 watch(
@@ -135,7 +158,8 @@ watch([() => route.query.open, ready], ([openId, isReady]) => {
 async function handleListUpdated(payload) {
   const convId = payload?.conversationId ?? payload?.ConversationId
   if (!convId) return
-  const preview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
+  const rawPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
+  const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'))
   const at = payload?.lastMessageAt ?? payload?.LastMessageAt
   const senderId = String(payload?.senderId ?? payload?.SenderId ?? '')
   const currentId = String(auth.user?.id ?? '')
@@ -153,7 +177,12 @@ async function handleListUpdated(payload) {
 }
 
 onMounted(async () => {
-  storiesEnabled.value = await getStoriesEnabled(api)
+  const [storiesOk, shortFilmsOk] = await Promise.all([
+    getStoriesEnabled(api),
+    getShortFilmsEnabled(api)
+  ])
+  storiesEnabled.value = storiesOk
+  shortFilmsEnabled.value = shortFilmsOk
   msgReqStore.fetchPendingCount()
   convStore.clearConversation()
   try {
@@ -230,6 +259,7 @@ async function markAllRead() {
     </header>
 
     <StoriesStrip v-if="storiesEnabled && ready" />
+    <ShortFilmsStrip v-if="shortFilmsEnabled && ready" />
 
     <div v-if="needPhone" class="need-phone-banner">
       <span>{{ t('conversations.needPhone') }}</span>
@@ -314,7 +344,7 @@ async function markAllRead() {
               </span>
             </div>
             <div class="item-row">
-              <span class="item-preview">{{ (c.lastMessagePreview ?? c.LastMessagePreview) || '—' }}</span>
+              <span class="item-preview">{{ getListPreview(c) }}</span>
               <span class="item-actions">
                 <span v-if="c.isPinned ?? c.IsPinned" class="pin-badge" :title="t('conversations.pin')">
                   <Pin :size="10" />

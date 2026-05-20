@@ -1,12 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const loading = ref(false)
 const saving = ref(false)
-const snackbar = ref(false)
-const snackbarText = ref('')
-const snackbarColor = ref('success')
 const links = ref([])
 
 const platforms = [
@@ -19,12 +17,6 @@ const platforms = [
   { id: 'whatsapp', label: 'واتساب', icon: 'mdi-whatsapp' },
   { id: 'telegram', label: 'تيليجرام', icon: 'mdi-send' }
 ]
-
-function showSnackbar(text, color = 'success') {
-  snackbarText.value = text
-  snackbarColor.value = color
-  snackbar.value = true
-}
 
 async function fetchLinks() {
   loading.value = true
@@ -53,7 +45,7 @@ async function fetchLinks() {
     })
   } catch (err) {
     links.value = platforms.map(p => ({ platform: p.id, url: '' }))
-    showSnackbar(err.response?.data?.message || 'فشل تحميل البيانات', 'error')
+    notify.error(err.response?.data?.message || 'فشل تحميل البيانات')
   } finally {
     loading.value = false
   }
@@ -68,10 +60,10 @@ async function save() {
     await api.put('/admin/site-content/social_links', {
       content: JSON.stringify(toSave)
     })
-    showSnackbar('تم الحفظ بنجاح')
+    notify.success('تم الحفظ بنجاح')
   } catch (err) {
     const msg = err.response?.data?.message || err.response?.data?.title || err.message || 'حدث خطأ'
-    showSnackbar(msg, 'error')
+    notify.error(msg)
   } finally {
     saving.value = false
   }
@@ -141,14 +133,6 @@ onMounted(fetchLinks)
       </div>
     </v-card>
 
-    <v-snackbar
-      v-model="snackbar"
-      :color="snackbarColor"
-      :timeout="4000"
-      location="bottom"
-    >
-      {{ snackbarText }}
-    </v-snackbar>
   </div>
 </template>
 

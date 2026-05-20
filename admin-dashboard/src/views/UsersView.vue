@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const users = ref([])
 const total = ref(0)
@@ -80,7 +81,7 @@ async function executeDelete() {
     deleteTarget.value = null
     fetchUsers()
   } catch (e) {
-    alert(e.response?.data?.message || 'حدث خطأ')
+    notify.error(e.response?.data?.message || 'حدث خطأ')
   } finally {
     deleteLoading.value = false
   }
@@ -97,7 +98,7 @@ async function toggleFeatured(user) {
     await api.put(`/admin/users/${user.id}/featured`, { featured: !user.isFeatured })
     fetchUsers()
   } catch (e) {
-    if (e.response?.data?.message) alert(e.response.data.message)
+    if (e.response?.data?.message) notify.error(e.response.data.message)
   } finally {
     featuredLoading.value = null
   }

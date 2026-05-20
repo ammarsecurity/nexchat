@@ -1,20 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const loading = ref(false)
 const saving = ref(false)
-const snackbar = ref(false)
-const snackbarText = ref('')
-const snackbarColor = ref('success')
 const enabled = ref(true)
 const slides = ref([])
-
-function showSnackbar(text, color = 'success') {
-  snackbarText.value = text
-  snackbarColor.value = color
-  snackbar.value = true
-}
 
 const defaultSlides = [
   { title: 'مرحباً بك في NexChat', description: 'تواصل مع أشخاص جدد من حول العالم', imageUrl: '' },
@@ -62,10 +54,10 @@ async function save() {
     await api.put('/admin/site-content/onboarding', {
       content: JSON.stringify(toSave)
     })
-    showSnackbar('تم الحفظ بنجاح')
+    notify.success('تم الحفظ بنجاح')
   } catch (err) {
     const msg = err.response?.data?.message || err.response?.data?.title || err.message || 'حدث خطأ'
-    showSnackbar(msg, 'error')
+    notify.error(msg)
   } finally {
     saving.value = false
   }
@@ -174,13 +166,5 @@ onMounted(fetchOnboarding)
       </div>
     </v-card>
 
-    <v-snackbar
-      v-model="snackbar"
-      :color="snackbarColor"
-      :timeout="4000"
-      location="bottom"
-    >
-      {{ snackbarText }}
-    </v-snackbar>
   </div>
 </template>

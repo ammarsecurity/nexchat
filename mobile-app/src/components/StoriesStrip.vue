@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -7,15 +7,45 @@ import { useStoriesStore } from '../stores/stories'
 import { useAuthStore } from '../stores/auth'
 import CachedAvatar from './CachedAvatar.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { captureVideoPoster, isVideoUrl } from '../utils/videoPoster'
 
 const router = useRouter()
 const { t } = useI18n()
 const storiesStore = useStoriesStore()
 const auth = useAuthStore()
+const ringPosters = ref({})
 
-onMounted(() => {
-  storiesStore.fetchFeed()
+function ringThumbSrc(ring) {
+  if (!ring.latestThumbUrl) return null
+  const abs = ensureAbsoluteUrl(ring.latestThumbUrl)
+  if (isVideoUrl(ring.latestThumbUrl)) {
+    return ringPosters.value[ring.userId] || null
+  }
+  return abs
+}
+
+async function loadRingPosters() {
+  const rings = storiesStore.feed.filter(r => r.latestThumbUrl && isVideoUrl(r.latestThumbUrl))
+  await Promise.all(
+    rings.map(async (ring) => {
+      if (ringPosters.value[ring.userId]) return
+      const poster = await captureVideoPoster(ensureAbsoluteUrl(ring.latestThumbUrl))
+      if (poster) {
+        ringPosters.value = { ...ringPosters.value, [ring.userId]: poster }
+      }
+    })
+  )
+}
+
+onMounted(async () => {
+  await storiesStore.fetchFeed()
+  void loadRingPosters()
 })
+
+watch(
+  () => storiesStore.feed.map(r => `${r.userId}:${r.latestThumbUrl}`).join('|'),
+  () => { void loadRingPosters() }
+)
 
 function openCreate() {
   router.push('/stories/create')
@@ -60,10 +90,19 @@ const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
         <span class="ring-outer" :class="{ unseen: ring.hasUnseen }">
           <span class="ring-inner">
             <img
-              v-if="ring.latestThumbUrl"
-              :src="ensureAbsoluteUrl(ring.latestThumbUrl)"
+              v-if="ringThumbSrc(ring)"
+              :src="ringThumbSrc(ring)"
               class="ring-thumb"
               alt=""
+            />
+            <video
+              v-else-if="ring.latestThumbUrl && isVideoUrl(ring.latestThumbUrl)"
+              :src="ensureAbsoluteUrl(ring.latestThumbUrl)"
+              class="ring-thumb ring-thumb-video"
+              muted
+              playsinline
+              preload="metadata"
+              @loadeddata="(e) => { try { e.target.currentTime = 0.1 } catch {} }"
             />
             <CachedAvatar
               v-else-if="ring.avatar && isImageAvatar(ring.avatar)"
@@ -108,8 +147,8 @@ html.light .conversations--wa .stories-strip,
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  min-width: 52px;
-  max-width: 58px;
+  min-width: 60px;
+  max-width: 66px;
   background: none;
   border: none;
   padding: 0;
@@ -120,6 +159,11 @@ html.light .conversations--wa .stories-strip,
 .story-ring--mine {
   position: relative;
   z-index: 2;
+}
+
+.story-ring--mine .ring-add-badge {
+  width: 18px;
+  height: 18px;
 }
 
 .ring-outer {
@@ -139,8 +183,8 @@ html.light .conversations--wa .stories-strip,
 }
 
 .ring-inner {
-  width: 44px;
-  height: 44px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--bg-elevated);
@@ -161,6 +205,11 @@ html.light .ring-inner {
   object-fit: cover;
 }
 
+.ring-thumb-video {
+  pointer-events: none;
+  background: #111;
+}
+
 .ring-inner .ring-letter {
   position: absolute;
   inset: 0;
@@ -170,7 +219,7 @@ html.light .ring-inner {
 }
 
 .ring-letter {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--primary);
 }
@@ -197,9 +246,10 @@ html.light .ring-add-badge {
 }
 
 .ring-label {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.2;
   color: var(--text-secondary);
-  max-width: 58px;
+  max-width: 68px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

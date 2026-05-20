@@ -1,7 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../services/api'
-import { getCodeConnectFeaturesEnabled, getStoriesEnabled } from '../services/siteContentFlags'
+import { getCodeConnectFeaturesEnabled, getStoriesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
 
 const routes = [
   { path: '/', component: () => import('../views/SplashScreen.vue'), meta: { public: true } },
@@ -19,6 +19,8 @@ const routes = [
   { path: '/conversations', component: () => import('../views/ConversationsView.vue') },
   { path: '/stories/create', component: () => import('../views/StoryCreateView.vue'), meta: { requiresStories: true } },
   { path: '/stories/view/:userId', component: () => import('../views/StoryViewerView.vue'), meta: { requiresStories: true } },
+  { path: '/short-films', component: () => import('../views/ShortFilmsHubView.vue'), meta: { requiresShortFilms: true } },
+  { path: '/short-films/watch', component: () => import('../views/ShortFilmsFeedView.vue'), meta: { requiresShortFilms: true } },
   { path: '/message-requests', component: () => import('../views/MessageRequestsView.vue') },
   { path: '/conversations/create-group', component: () => import('../views/CreateGroupView.vue') },
   { path: '/conversation/:conversationId/group-info', component: () => import('../views/GroupInfoView.vue') },
@@ -50,6 +52,10 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresStories && auth.token) {
     const ok = await getStoriesEnabled(api)
     if (!ok) return '/conversations'
+  }
+  if (to.meta.requiresShortFilms && auth.token) {
+    const ok = await getShortFilmsEnabled(api)
+    if (!ok) return '/home'
   }
 })
 

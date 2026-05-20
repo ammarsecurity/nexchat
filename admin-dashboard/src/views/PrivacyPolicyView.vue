@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const content = ref('')
 const loading = ref(false)
@@ -27,7 +28,7 @@ async function save() {
     saved.value = true
     setTimeout(() => { saved.value = false }, 3000)
   } catch (err) {
-    alert(err.response?.data?.message || 'فشل الحفظ')
+    notify.error(err.response?.data?.message || 'فشل الحفظ')
   } finally {
     saving.value = false
   }

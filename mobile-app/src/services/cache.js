@@ -12,13 +12,20 @@ const MESSAGES_PER_CONVERSATION = 50
 
 let db = null
 
-function getDb() {
+export function getDb() {
   if (!db) {
     db = new Dexie(DB_NAME)
     db.version(3).stores({
       conversations: '++id, userId, updatedAt',
       messages: '++id, [conversationId+userId], conversationId, userId, sentAt',
       avatarBlobs: 'url, cachedAt'
+    })
+    db.version(4).stores({
+      conversations: '++id, userId, updatedAt',
+      messages: '++id, [conversationId+userId], conversationId, userId, sentAt',
+      avatarBlobs: 'url, cachedAt',
+      shortFilmsMeta: 'filmId, lastAccessAt',
+      shortFilmBlobs: '[filmId+kind], filmId, kind, lastAccessAt'
     })
   }
   return db
@@ -188,6 +195,8 @@ export async function clearUserCache() {
   if (!userId) return
   try {
     const db = getDb()
+    const { clearShortFilmCache } = await import('./shortFilmCache')
+    await clearShortFilmCache()
     await db.transaction('rw', [db.conversations, db.messages, db.avatarBlobs], async () => {
       await db.conversations.where('userId').equals(userId).delete()
       await db.messages.where('userId').equals(userId).delete()

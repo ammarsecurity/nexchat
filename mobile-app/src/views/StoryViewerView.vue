@@ -1,19 +1,22 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { X, Eye, Send } from 'lucide-vue-next'
+import { X, Eye, Send, Pause } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useLocaleStore } from '../stores/locale'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { useStoriesStore } from '../stores/stories'
 import { useAuthStore } from '../stores/auth'
 import CachedAvatar from '../components/CachedAvatar.vue'
+import StoryDialog from '../components/stories/StoryDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const storiesStore = useStoriesStore()
 const auth = useAuthStore()
+const localeStore = useLocaleStore()
 const userId = computed(() => route.params.userId)
 const slides = ref([])
 const loading = ref(true)
@@ -31,6 +34,20 @@ const isDragging = ref(false)
 const transitioning = ref(false)
 const videoEl = ref(null)
 const skipNextRouteLoad = ref(false)
+const userSwitching = ref(false)
+
+const dialogOpen = ref(false)
+const dialogMessage = ref('')
+
+function showStoryAlert(message) {
+  dialogMessage.value = message
+  dialogOpen.value = true
+}
+
+function closeStoryDialog() {
+  dialogOpen.value = false
+  dialogMessage.value = ''
+}
 
 const mediaCache = new Set()
 let timer = null
@@ -41,6 +58,7 @@ let didSwipe = false
 
 const SLIDE_MS = 5000
 const SWIPE_RATIO = 0.18
+const SWIPE_DOWN_MIN = 72
 
 const current = computed(() => slides.value[index.value])
 const isOwner = computed(() => String(userId.value) === String(auth.user?.id))
@@ -146,9 +164,10 @@ async function onSlideChange() {
 }
 
 async function loadSlidesForUser(uid, opts = {}) {
-  const { startSlideId = null, startIndex = null, direction = null } = opts
-  loading.value = true
-  mediaReady.value = false
+  const { startSlideId = null, startIndex = null, direction = null, initial = false } = opts
+  if (initial) loading.value = true
+  else userSwitching.value = true
+  if (!mediaCache.size) mediaReady.value = false
   try {
     const { data } = await api.get(`/stories/user/${uid}`, { skipGlobalLoader: true })
     const list = (data ?? []).map(normalizeSlide)
@@ -166,7 +185,7 @@ async function loadSlidesForUser(uid, opts = {}) {
     } else {
       index.value = direction === 'prev' ? list.length - 1 : 0
     }
-    loading.value = false
+    if (initial) loading.value = false
     await onSlideChange()
     return true
   } catch {
@@ -174,12 +193,14 @@ async function loadSlidesForUser(uid, opts = {}) {
     return false
   } finally {
     loading.value = false
+    userSwitching.value = false
   }
 }
 
-async function loadSlides() {
-  mediaCache.clear()
-  await loadSlidesForUser(userId.value, { startSlideId: route.query.slideId })
+async function loadSlides(opts = {}) {
+  const { initial = true, clearCache = true } = opts
+  if (clearCache) mediaCache.clear()
+  await loadSlidesForUser(userId.value, { startSlideId: route.query.slideId, initial })
 }
 
 async function switchToFeedUser(targetUid, direction) {
@@ -269,7 +290,7 @@ function startProgress() {
 }
 
 async function navigateSlide(direction) {
-  if (transitioning.value || loading.value) return
+  if (transitioning.value || loading.value || userSwitching.value) return
   transitioning.value = true
   slideDir.value = direction
   clearTimer()
@@ -311,12 +332,22 @@ function goBack() {
 
 function onTapZone(clientX) {
   const w = window.innerWidth
-  if (clientX < w * 0.32) void prevSlide()
-  else if (clientX > w * 0.68) void nextSlide()
+  const isRtl = localeStore.htmlDir === 'rtl'
+  const inStart = clientX < w * 0.34
+  const inEnd = clientX > w * 0.66
+  if (isRtl) {
+    if (inStart) void nextSlide()
+    else if (inEnd) void prevSlide()
+    else togglePause()
+  } else {
+    if (inStart) void prevSlide()
+    else if (inEnd) void nextSlide()
+    else togglePause()
+  }
 }
 
 function onPointerDown(e) {
-  if (showViewers.value || transitioning.value) return
+  if (showViewers.value || transitioning.value || userSwitching.value) return
   const t = e.touches?.[0] ?? e
   touchStartX = t.clientX
   touchStartY = t.clientY
@@ -350,6 +381,12 @@ async function onPointerUp(e) {
   const swipeLeft = dx < -threshold || (dx < -40 && dt < 280)
   const swipeRight = dx > threshold || (dx > 40 && dt < 280)
 
+  if (Math.abs(dy) > Math.abs(dx) && dy > SWIPE_DOWN_MIN && dy > threshold) {
+    didSwipe = true
+    goBack()
+    return
+  }
+
   if (Math.abs(dx) > Math.abs(dy) && swipeLeft) {
     didSwipe = true
     await navigateSlide('next')
@@ -369,12 +406,6 @@ async function onPointerUp(e) {
   if (!paused.value && mediaReady.value) startProgress()
 }
 
-function onMediaClick(e) {
-  if (didSwipe || isDragging.value) return
-  e.stopPropagation()
-  togglePause()
-}
-
 function togglePause() {
   paused.value = !paused.value
   if (!paused.value) startProgress()
@@ -392,7 +423,7 @@ async function sendReply() {
     const convId = data?.conversationId ?? data?.ConversationId
     if (convId) router.push(`/conversation/${convId}`)
   } catch (e) {
-    window.alert(e.response?.data?.message ?? e.userMessage ?? t('common.error'))
+    showStoryAlert(e.response?.data?.message ?? e.userMessage ?? t('common.error'))
   } finally {
     sending.value = false
   }
@@ -419,7 +450,7 @@ watch(
       return
     }
     mediaCache.clear()
-    void loadSlides()
+    void loadSlides({ initial: false })
   }
 )
 
@@ -473,8 +504,9 @@ onUnmounted(clearTimer)
         @mouseup="onPointerUp"
         @mouseleave="isDragging && onPointerUp($event)"
       >
-        <Transition :name="slideTransitionName" mode="out-in">
-          <div :key="`${userId}-${current.id}`" class="media-slide" @click="onMediaClick">
+        <div class="viewer-media-stage">
+          <Transition :name="slideTransitionName">
+            <div :key="`${userId}-${current.id}`" class="media-slide">
             <video
               v-if="current.mediaType === 'video' && current.mediaUrl"
               v-show="mediaReady"
@@ -499,10 +531,20 @@ onUnmounted(clearTimer)
             />
             <p v-else-if="current.caption" class="text-story">{{ current.caption }}</p>
             <p v-if="current.caption && current.mediaType !== 'text'" class="caption">{{ current.caption }}</p>
-          </div>
-        </Transition>
-        <div v-if="!mediaReady && !isDragging" class="media-loading media-loading--overlay">
+            </div>
+          </Transition>
+        </div>
+        <div v-if="userSwitching" class="media-loading media-loading--overlay">
           {{ t('common.loading') }}
+        </div>
+        <div
+          v-else-if="!mediaReady && !isDragging && current.mediaType !== 'text'"
+          class="media-loading media-loading--overlay"
+        >
+          {{ t('common.loading') }}
+        </div>
+        <div v-if="paused && mediaReady" class="pause-indicator" aria-hidden="true">
+          <Pause :size="44" stroke-width="1.5" />
         </div>
       </div>
 
@@ -535,6 +577,15 @@ onUnmounted(clearTimer)
         </div>
       </div>
     </Teleport>
+
+    <StoryDialog
+      v-model:open="dialogOpen"
+      mode="alert"
+      variant="error"
+      :message="dialogMessage"
+      @confirm="closeStoryDialog"
+      @cancel="closeStoryDialog"
+    />
   </div>
 </template>
 
@@ -627,11 +678,13 @@ onUnmounted(clearTimer)
 .viewer-media {
   flex: 1;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
   min-height: 0;
   position: relative;
   overflow: hidden;
+  background: #000;
   touch-action: pan-y pinch-zoom;
   transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
@@ -640,13 +693,35 @@ onUnmounted(clearTimer)
   transition: none;
 }
 
+.viewer-media-stage {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  align-self: stretch;
+  overflow: hidden;
+}
+
 .media-slide {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
+  position: absolute;
+  inset: 0;
+}
+
+.pause-indicator {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .media-loading--overlay {
@@ -661,6 +736,15 @@ onUnmounted(clearTimer)
 .story-fade-enter-active,
 .story-fade-leave-active {
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.28s ease;
+}
+
+.story-slide-next-leave-active,
+.story-slide-prev-leave-active,
+.story-fade-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .story-slide-next-enter-from {
@@ -700,9 +784,18 @@ onUnmounted(clearTimer)
 }
 
 .media-el {
+  display: block;
   max-width: 100%;
   max-height: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
+  object-position: center;
+}
+
+video.media-el {
+  width: 100%;
+  height: 100%;
 }
 
 .text-story {

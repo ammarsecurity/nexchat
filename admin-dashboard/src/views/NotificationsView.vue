@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const form = ref({
   title: '',
@@ -21,17 +22,7 @@ const historyPageSize = ref(15)
 const historySearch = ref('')
 const loadingHistory = ref(false)
 const resendingId = ref(null)
-const snackbar = ref(false)
-const snackbarText = ref('')
-const snackbarColor = ref('error')
-
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-
-function showSnackbar(text, color = 'error') {
-  snackbarText.value = text
-  snackbarColor.value = color
-  snackbar.value = true
-}
 
 async function fetchHistory() {
   loadingHistory.value = true
@@ -63,11 +54,11 @@ function onImageSelect(e) {
   if (!file) return
   const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
   if (!allowed.includes(file.type)) {
-    showSnackbar('الصور المسموحة: JPEG, PNG, GIF, WebP')
+    notify.warning('الصور المسموحة: JPEG, PNG, GIF, WebP')
     return
   }
   if (file.size > 5 * 1024 * 1024) {
-    showSnackbar('الحد الأقصى 5 ميجابايت')
+    notify.warning('الحد الأقصى 5 ميجابايت')
     return
   }
   imageFile.value = file
@@ -90,14 +81,14 @@ async function uploadImage() {
     })
     return res.data?.url || null
   } catch (e) {
-    showSnackbar(e.response?.data?.message || 'فشل رفع الصورة')
+    notify.error(e.response?.data?.message || 'فشل رفع الصورة')
     return null
   }
 }
 
 async function sendBroadcast() {
   if (!form.value.title?.trim() || !form.value.body?.trim()) {
-    showSnackbar('العنوان والنص مطلوبان')
+    notify.warning('العنوان والنص مطلوبان')
     return
   }
   sending.value = true
@@ -120,7 +111,7 @@ async function sendBroadcast() {
     fetchHistory()
   } catch (err) {
     recipientsCount.value = err.response?.data?.recipientsCount ?? 0
-    showSnackbar(err.response?.data?.message || 'فشل إرسال الإشعار')
+    notify.error(err.response?.data?.message || 'فشل إرسال الإشعار')
   } finally {
     sending.value = false
   }
@@ -130,10 +121,10 @@ async function resend(item) {
   resendingId.value = item.id
   try {
     const res = await api.post(`/admin/notifications/broadcast/${item.id}/resend`)
-    showSnackbar(`تم إعادة الإرسال بنجاح إلى ${res.data?.recipientsCount ?? 0} جهاز`, 'success')
+    notify.success(`تم إعادة الإرسال بنجاح إلى ${res.data?.recipientsCount ?? 0} جهاز`)
     fetchHistory()
   } catch (e) {
-    showSnackbar(e.response?.data?.message || 'فشل إعادة الإرسال')
+    notify.error(e.response?.data?.message || 'فشل إعادة الإرسال')
   } finally {
     resendingId.value = null
   }
@@ -335,16 +326,6 @@ function formatDate(dt) {
       </div>
     </v-card>
 
-    <v-snackbar
-      v-model="snackbar"
-      :color="snackbarColor"
-      :timeout="3500"
-      location="bottom"
-      rounded="lg"
-      elevation="8"
-    >
-      {{ snackbarText }}
-    </v-snackbar>
   </div>
 </template>
 

@@ -42,6 +42,7 @@ const navItems = [
   { title: 'البلاغات', icon: 'mdi-flag', to: '/reports' },
   { title: 'الإعلانات', icon: 'mdi-image-multiple', to: '/ads' },
   { title: 'الستوريات', icon: 'mdi-circle-multiple', to: '/stories' },
+  { title: 'الأفلام القصيرة', icon: 'mdi-movie-roll', to: '/short-films' },
   { title: 'الإشعارات العامة', icon: 'mdi-bell-ring', to: '/notifications' },
   { title: 'تحديث التطبيق', icon: 'mdi-cellphone-arrow-down', to: '/app-update' },
   { title: 'ميزات التطبيق', icon: 'mdi-toggle-switch', to: '/features' },

@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const route = useRoute()
 /** private = محادثات ثنائية، group = مجموعات */
@@ -216,7 +217,7 @@ async function confirmDeleteConvos() {
     }
     await fetchConversations()
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل الحذف')
+    notify.error(e.response?.data?.message || 'فشل الحذف')
   } finally {
     deleting.value = false
   }
@@ -243,7 +244,7 @@ async function confirmDeleteMsgs() {
     await fetchMessages(convId)
     totalMessages.value = Math.max(0, totalMessages.value - ids.length)
   } catch (e) {
-    alert(e.response?.data?.message || 'فشل الحذف')
+    notify.error(e.response?.data?.message || 'فشل الحذف')
   } finally {
     deleting.value = false
   }

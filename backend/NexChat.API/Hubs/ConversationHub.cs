@@ -101,6 +101,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         {
             if (type == "audio") return "رسالة صوتية";
             if (type == "image") return "صورة";
+            if (type == "short_film") return "فيلم قصير";
             if (string.IsNullOrEmpty(content)) return "";
             return content.Length > 80 ? content[..80] + "…" : content;
         }
@@ -278,7 +279,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         {
             logger.LogInformation("SendMessage entered: convId={ConvId}, type={Type}, contentLen={Len}", conversationId, type, content?.Length ?? 0);
             if (string.IsNullOrWhiteSpace(content) || content.Length > 5000) return;
-            if (type != "text" && type != "image" && type != "audio") type = "text";
+            if (type != "text" && type != "image" && type != "audio" && type != "short_film") type = "text";
 
             if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
                 return;
@@ -306,7 +307,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     replyToId = rid;
                     var rt = replyTo.Type ?? "text";
                     var replyPlain = messageCrypto.DecryptFromStorage(replyTo.Content ?? "");
-                    replyToContent = rt == "audio" ? "رسالة صوتية" : rt == "image" ? "صورة" : (replyPlain.Length > 80 ? replyPlain[..80] + "…" : replyPlain);
+                    replyToContent = rt == "audio" ? "رسالة صوتية" : rt == "image" ? "صورة" : rt == "short_film" ? ConversationPreviewHelper.BuildShortFilmPreview(replyPlain) : (replyPlain.Length > 80 ? replyPlain[..80] + "…" : replyPlain);
                     var replySender = await db.Users.FindAsync(replyTo.SenderId);
                     replyToSenderName = replySender?.Name ?? (replyTo.SenderId == userId ? "أنت" : "طرف آخر");
                 }
@@ -404,7 +405,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             logger.LogInformation("SendMessage ReceiveMessage sent");
 
             var sender = senderUser ?? await db.Users.FindAsync(userId);
-            var preview = type == "text" ? plainBody : (type == "audio" ? "رسالة صوتية" : "صورة");
+            var preview = type == "text" ? plainBody : type == "audio" ? "رسالة صوتية" : type == "short_film" ? ConversationPreviewHelper.BuildShortFilmPreview(plainBody) : "صورة";
             if (preview.Length > 80) preview = preview[..80] + "…";
             if (recipientId.HasValue)
                 _ = notificationOutbox.EnqueueAsync(
@@ -725,15 +726,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             .OrderByDescending(m => m.SentAt)
             .FirstOrDefaultAsync();
         if (lastMsg == null) return (null, null, null);
-        return (BuildListPreview(lastMsg), lastMsg.SentAt, lastMsg.SenderId.ToString());
-    }
-
-    private string BuildListPreview(ConversationMessage m)
-    {
-        if (m.Type == "image") return "صورة";
-        if (m.Type == "audio") return "رسالة صوتية";
-        var c = messageCrypto.DecryptFromStorage(m.Content ?? "");
-        return c.Length > 50 ? c[..50] + "…" : c;
+        return (ConversationPreviewHelper.BuildListPreview(lastMsg, messageCrypto.DecryptFromStorage), lastMsg.SentAt, lastMsg.SenderId.ToString());
     }
 
     /// <summary>بعد حذف للجميع: تحديث معاينة القائمة لكل مشارك حسب آخر رسالة مرئية لديه.</summary>

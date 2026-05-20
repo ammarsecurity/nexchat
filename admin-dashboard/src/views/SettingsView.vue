@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 
 const supportAvatar = ref(null)
 const avatarUploading = ref(false)
@@ -32,7 +33,7 @@ async function onAvatarFileChange(e) {
     await api.put('/admin/support/avatar', { avatar: res.data.url })
     supportAvatar.value = res.data.url
   } catch (err) {
-    alert(err.response?.data?.message || 'فشل رفع الصورة')
+    notify.error(err.response?.data?.message || 'فشل رفع الصورة')
   } finally {
     avatarUploading.value = false
     e.target.value = ''

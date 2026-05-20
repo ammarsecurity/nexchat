@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ChevronRight, Search, Forward } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import { conversationHub, ensureConnected } from '../services/signalr'
 import { createPrivateConversationOrRequest, goToMessageRequestsOutgoingNotice } from '../utils/conversationOrMessageRequest'
@@ -15,6 +16,7 @@ const { t } = useI18n()
 
 const shareMessage = ref(null)
 const sourceConversationId = ref(null)
+const returnPath = ref(null)
 const searchQuery = ref('')
 const conversations = ref([])
 const contacts = ref([])
@@ -54,7 +56,8 @@ const hasContacts = computed(() => filteredContacts.value.length > 0)
 const hasAny = computed(() => hasConversations.value || hasContacts.value)
 
 function goBack() {
-  if (sourceConversationId.value) router.replace(`/conversation/${sourceConversationId.value}`)
+  if (returnPath.value) router.replace(returnPath.value)
+  else if (sourceConversationId.value) router.replace(`/conversation/${sourceConversationId.value}`)
   else router.replace('/conversations')
 }
 
@@ -107,7 +110,7 @@ async function shareToContact(contact) {
     await conversationHub.invoke('SendMessage', convId, msg.content, msg.type || 'text', null)
     router.replace(`/conversation/${convId}`)
   } catch (e) {
-    window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
+    notify.error(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
     sending.value = false
   }
 }
@@ -116,6 +119,7 @@ onMounted(() => {
   const state = window.history.state || {}
   shareMessage.value = state.shareMessage || null
   sourceConversationId.value = state.sourceConversationId || null
+  returnPath.value = state.returnPath || null
   if (!shareMessage.value) {
     goBack()
     return

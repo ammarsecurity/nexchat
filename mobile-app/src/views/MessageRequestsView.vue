@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Check, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 
@@ -53,7 +54,7 @@ async function accept(id) {
     await msgReqStore.fetchPendingCount()
   } catch (e) {
     const m = e.response?.data?.message ?? e.userMessage ?? t('common.error')
-    window.alert(m)
+    notify.error(m)
   } finally {
     actionId.value = null
   }
@@ -68,7 +69,7 @@ async function decline(id) {
     await msgReqStore.fetchPendingCount()
   } catch (e) {
     const m = e.response?.data?.message ?? e.userMessage ?? t('common.error')
-    window.alert(m)
+    notify.error(m)
   } finally {
     actionId.value = null
   }

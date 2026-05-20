@@ -1,13 +1,15 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, ChevronLeft, Image, Send, Pencil, Trash2, Eye, Play } from 'lucide-vue-next'
+import { ChevronRight, ChevronLeft, Image, Send, Pencil, Trash2, Eye, Play, Loader2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api, { MEDIA_UPLOAD_TIMEOUT_MS, STORY_PUBLISH_TIMEOUT_MS } from '../services/api'
 import StoryEditorCanvas from '../components/stories/StoryEditorCanvas.vue'
+import StoryDialog from '../components/stories/StoryDialog.vue'
 import { useStoriesStore } from '../stores/stories'
 import { useAuthStore } from '../stores/auth'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { captureVideoPoster } from '../utils/videoPoster'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -18,6 +20,7 @@ const step = ref('pick')
 const imageSrc = ref('')
 const videoSrc = ref('')
 const videoFile = ref(null)
+const originalImageFile = ref(null)
 const textOnly = ref(false)
 const backgroundColor = ref('linear-gradient(135deg,#6c63ff 0%,#ff6584 100%)')
 const caption = ref('')
@@ -27,8 +30,61 @@ const editingSlideId = ref(null)
 const editingFilterId = ref('none')
 const mySlides = ref([])
 const mySlidesLoading = ref(false)
+const videoPosters = ref({})
+let posterLoadGen = 0
 
 const fileInput = ref(null)
+
+const dialogOpen = ref(false)
+const dialogMode = ref('alert')
+const dialogVariant = ref('error')
+const dialogTitle = ref('')
+const dialogMessage = ref('')
+const dialogLoading = ref(false)
+let dialogConfirmHandler = null
+const pendingDeleteSlide = ref(null)
+
+async function showStoryAlert(message) {
+  dialogMode.value = 'alert'
+  dialogVariant.value = 'error'
+  dialogTitle.value = ''
+  dialogMessage.value = message
+  dialogConfirmHandler = null
+  dialogOpen.value = true
+  await nextTick()
+}
+
+async function showStoryConfirm(message, onConfirm) {
+  dialogMode.value = 'confirm'
+  dialogVariant.value = 'danger'
+  dialogTitle.value = ''
+  dialogMessage.value = message
+  dialogConfirmHandler = onConfirm
+  dialogOpen.value = true
+  await nextTick()
+}
+
+function closeStoryDialog() {
+  dialogOpen.value = false
+  dialogConfirmHandler = null
+  dialogLoading.value = false
+  pendingDeleteSlide.value = null
+}
+
+async function onStoryDialogConfirm() {
+  if (dialogMode.value === 'confirm' && dialogConfirmHandler) {
+    dialogLoading.value = true
+    try {
+      await dialogConfirmHandler()
+      closeStoryDialog()
+    } catch (err) {
+      dialogLoading.value = false
+      showStoryAlert(err.response?.data?.message ?? err.userMessage ?? t('common.error'))
+    }
+    return
+  }
+  closeStoryDialog()
+}
 
 function normalizeSlide(s) {
   return {
@@ -49,6 +105,31 @@ function thumbBgStyle(slide) {
   return { background: 'var(--bg-elevated)' }
 }
 
+function slideThumbSrc(slide) {
+  if (!slide.mediaUrl || slide.mediaType === 'text') return null
+  if (slide.mediaType === 'video') {
+    return videoPosters.value[slide.id] || null
+  }
+  return ensureAbsoluteUrl(slide.mediaUrl)
+}
+
+async function loadVideoPosters(slides) {
+  const gen = ++posterLoadGen
+  const videos = slides.filter(s => s.mediaType === 'video' && s.mediaUrl)
+  if (!videos.length) return
+
+  await Promise.all(
+    videos.map(async (slide) => {
+      const url = ensureAbsoluteUrl(slide.mediaUrl)
+      const poster = await captureVideoPoster(url)
+      if (gen !== posterLoadGen) return
+      if (poster) {
+        videoPosters.value = { ...videoPosters.value, [slide.id]: poster }
+      }
+    })
+  )
+}
+
 function viewMyStory(slide) {
   const uid = auth.user?.id
   if (!uid) return
@@ -64,6 +145,7 @@ function resetEditorState() {
   imageSrc.value = ''
   videoSrc.value = ''
   videoFile.value = null
+  originalImageFile.value = null
   textOnly.value = false
   caption.value = ''
   backgroundColor.value = 'linear-gradient(135deg,#6c63ff 0%,#ff6584 100%)'
@@ -71,9 +153,11 @@ function resetEditorState() {
 
 async function loadMySlides() {
   mySlidesLoading.value = true
+  videoPosters.value = {}
   try {
     const { data } = await api.get('/stories/mine', { skipGlobalLoader: true })
     mySlides.value = (data ?? []).map(normalizeSlide)
+    void loadVideoPosters(mySlides.value)
   } catch {
     mySlides.value = []
   } finally {
@@ -106,6 +190,7 @@ function onFile(e) {
     textOnly.value = false
   } else {
     imageSrc.value = URL.createObjectURL(file)
+    originalImageFile.value = file
     videoSrc.value = ''
     videoFile.value = null
     textOnly.value = false
@@ -141,17 +226,19 @@ function startEdit(slide) {
   step.value = 'edit'
 }
 
-async function deleteSlide(slide, e) {
-  e?.stopPropagation?.()
-  if (!window.confirm(t('stories.confirmDeleteSlide'))) return
-  try {
-    await api.delete(`/stories/${slide.id}`, { skipGlobalLoader: true })
-    mySlides.value = mySlides.value.filter(s => s.id !== slide.id)
-    storiesStore.invalidate()
-    await storiesStore.fetchFeed(true)
-  } catch (err) {
-    window.alert(err.response?.data?.message ?? err.userMessage ?? t('common.error'))
-  }
+function requestDeleteSlide(slide) {
+  pendingDeleteSlide.value = slide
+  void showStoryConfirm(t('stories.confirmDeleteSlide'), confirmDeleteSlide)
+}
+
+async function confirmDeleteSlide() {
+  const slide = pendingDeleteSlide.value
+  if (!slide?.id) return
+  await api.delete(`/stories/${slide.id}`, { skipGlobalLoader: true })
+  mySlides.value = mySlides.value.filter(s => s.id !== slide.id)
+  storiesStore.invalidate()
+  await storiesStore.fetchFeed(true)
+  pendingDeleteSlide.value = null
 }
 
 async function publish() {
@@ -190,15 +277,26 @@ async function publish() {
       })
       mediaUrl = data.url
     } else if (imageSrc.value) {
-      const blob = await editorRef.value?.exportImage()
-      if (!blob) throw new Error('export failed')
-      const fd = new FormData()
-      fd.append('file', blob, 'story.jpg')
-      const { data } = await api.post('/media/upload-story-image', fd, {
-        timeout: MEDIA_UPLOAD_TIMEOUT_MS,
-        skipGlobalLoader: true
-      })
-      mediaUrl = data.url
+      const useOriginal = originalImageFile.value && !editorRef.value?.hasEditorChanges?.()
+      if (useOriginal) {
+        const fd = new FormData()
+        fd.append('file', originalImageFile.value)
+        const { data } = await api.post('/media/upload-story-image', fd, {
+          timeout: MEDIA_UPLOAD_TIMEOUT_MS,
+          skipGlobalLoader: true
+        })
+        mediaUrl = data.url
+      } else {
+        const blob = await editorRef.value?.exportImage()
+        if (!blob) throw new Error('export failed')
+        const fd = new FormData()
+        fd.append('file', blob, 'story.jpg')
+        const { data } = await api.post('/media/upload-story-image', fd, {
+          timeout: MEDIA_UPLOAD_TIMEOUT_MS,
+          skipGlobalLoader: true
+        })
+        mediaUrl = data.url
+      }
       mediaType = 'image'
     }
 
@@ -222,7 +320,7 @@ async function publish() {
     await storiesStore.fetchFeed(true)
     router.replace('/conversations')
   } catch (e) {
-    window.alert(e.response?.data?.message ?? e.userMessage ?? t('common.error'))
+    showStoryAlert(e.response?.data?.message ?? e.userMessage ?? t('common.error'))
   } finally {
     publishing.value = false
   }
@@ -287,10 +385,14 @@ onMounted(() => {
 watch(step, (s) => {
   if (s === 'pick') loadMySlides()
 })
+
+onUnmounted(() => {
+  posterLoadGen++
+})
 </script>
 
 <template>
-  <div class="story-create page auth-pattern">
+  <div class="story-create page auth-pattern" :class="{ 'story-create--edit': step === 'edit' }">
     <header class="top-bar">
       <button type="button" class="back-btn" @click="goBack"><ChevronRight :size="22" /></button>
       <span class="top-title">{{ editingSlideId ? t('stories.editStory') : t('stories.createTitle') }}</span>
@@ -298,10 +400,13 @@ watch(step, (s) => {
         v-if="step === 'edit'"
         type="button"
         class="publish-btn"
+        :class="{ 'is-publishing': publishing }"
         :disabled="publishing"
+        :aria-label="publishing ? t('common.loading') : t('stories.publish')"
         @click="publish"
       >
-        <Send :size="18" />
+        <Loader2 v-if="publishing" :size="18" class="publish-spin" />
+        <Send v-else :size="18" />
       </button>
       <span v-else class="top-spacer" />
     </header>
@@ -330,20 +435,30 @@ watch(step, (s) => {
               :key="slide.id"
               class="my-story-card"
             >
-              <button
-                type="button"
-                class="my-story-ring"
-                :aria-label="t('stories.viewMyStory')"
-                @click="viewMyStory(slide)"
-              >
-                <div class="my-story-thumb" :style="thumbBgStyle(slide)">
+              <div class="my-story-shell">
+                <button
+                  type="button"
+                  class="my-story-ring"
+                  :aria-label="t('stories.viewMyStory')"
+                  @click="viewMyStory(slide)"
+                >
+                  <div class="my-story-thumb" :style="thumbBgStyle(slide)">
                   <img
-                    v-if="slide.mediaUrl && slide.mediaType !== 'text'"
-                    :src="ensureAbsoluteUrl(slide.mediaUrl)"
+                    v-if="slideThumbSrc(slide)"
+                    :src="slideThumbSrc(slide)"
                     class="my-story-img"
                     alt=""
                     loading="lazy"
                     referrerpolicy="no-referrer"
+                  />
+                  <video
+                    v-else-if="slide.mediaType === 'video' && slide.mediaUrl"
+                    :src="ensureAbsoluteUrl(slide.mediaUrl)"
+                    class="my-story-img my-story-video-fallback"
+                    muted
+                    playsinline
+                    preload="metadata"
+                    @loadeddata="(e) => { try { e.target.currentTime = 0.1 } catch {} }"
                   />
                   <span v-else-if="slide.caption" class="my-story-caption-preview">{{ slide.caption }}</span>
                   <span v-else class="my-story-aa">Aa</span>
@@ -354,16 +469,23 @@ watch(step, (s) => {
                     <Eye :size="11" />
                     {{ slide.viewCount }}
                   </span>
-                  <div class="my-story-overlay" @click.stop>
-                    <button type="button" class="my-story-action" :title="t('stories.editStory')" @click.stop="startEdit(slide)">
-                      <Pencil :size="13" stroke-width="2.5" />
-                    </button>
-                    <button type="button" class="my-story-action my-story-action--danger" :title="t('common.delete')" @click.stop="deleteSlide(slide, $event)">
-                      <Trash2 :size="13" stroke-width="2.5" />
-                    </button>
-                  </div>
                 </div>
-              </button>
+                </button>
+                <div class="my-story-overlay">
+                  <button type="button" class="my-story-action" :title="t('stories.editStory')" @click.stop="startEdit(slide)">
+                    <Pencil :size="13" stroke-width="2.5" />
+                  </button>
+                  <button
+                    type="button"
+                    class="my-story-action my-story-action--danger"
+                    :title="t('common.delete')"
+                    :aria-label="t('common.delete')"
+                    @click.stop.prevent="requestDeleteSlide(slide)"
+                  >
+                    <Trash2 :size="13" stroke-width="2.5" />
+                  </button>
+                </div>
+              </div>
               <span class="my-story-index">{{ i + 1 }}</span>
             </article>
           </div>
@@ -395,9 +517,10 @@ watch(step, (s) => {
       </div>
     </div>
 
-    <template v-else>
+    <div v-else class="editor-shell">
       <StoryEditorCanvas
         ref="editorRef"
+        class="story-editor"
         :image-src="imageSrc"
         :video-src="videoSrc"
         :text-only="textOnly"
@@ -408,7 +531,18 @@ watch(step, (s) => {
       <div class="caption-wrap">
         <input v-model="caption" type="text" class="caption-input" :placeholder="t('stories.captionPlaceholder')" />
       </div>
-    </template>
+    </div>
+
+    <StoryDialog
+      v-model:open="dialogOpen"
+      :mode="dialogMode"
+      :variant="dialogVariant"
+      :title="dialogTitle"
+      :message="dialogMessage"
+      :loading="dialogLoading"
+      @confirm="onStoryDialogConfirm"
+      @cancel="closeStoryDialog"
+    />
   </div>
 </template>
 
@@ -419,6 +553,36 @@ watch(step, (s) => {
   min-height: 100%;
   background: var(--bg-primary);
   font-family: 'Cairo', sans-serif;
+}
+
+.story-create--edit {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.editor-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-shell :deep(.editor-root) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.editor-shell :deep(.editor-stage) {
+  flex: 0 1 auto;
+  max-height: min(40vh, 300px);
+  min-height: 200px;
+}
+
+.editor-shell :deep(.tools-panel) {
+  flex-shrink: 0;
 }
 
 .top-bar {
@@ -461,6 +625,29 @@ watch(step, (s) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, transform 0.12s ease;
+}
+
+.publish-btn:disabled,
+.publish-btn.is-publishing {
+  opacity: 0.9;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.publish-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.publish-spin {
+  animation: publish-spin 0.75s linear infinite;
+}
+
+@keyframes publish-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .top-spacer {
@@ -662,11 +849,19 @@ html.light .my-stories-panel,
   width: 100px;
 }
 
-.my-story-ring {
+.my-story-shell {
+  position: relative;
   padding: 2px;
   border-radius: 16px;
   background: linear-gradient(135deg, #6c63ff, #ff6584, #00d4ff);
+}
+
+.my-story-ring {
+  display: block;
+  padding: 0;
   border: none;
+  border-radius: 14px;
+  background: none;
   cursor: pointer;
   font: inherit;
   -webkit-tap-highlight-color: transparent;
@@ -698,6 +893,11 @@ html.light .my-stories-panel,
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.my-story-video-fallback {
+  pointer-events: none;
+  background: #111;
 }
 
 .my-story-aa {
@@ -759,9 +959,10 @@ html.light .my-stories-panel,
 
 .my-story-overlay {
   position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 3;
+  inset-inline: 2px;
+  bottom: 2px;
+  z-index: 4;
+  pointer-events: auto;
   display: flex;
   justify-content: center;
   gap: 6px;
@@ -802,8 +1003,12 @@ html.light .my-stories-panel,
 }
 
 .caption-wrap {
-  padding: 8px 12px calc(12px + var(--safe-bottom));
   flex-shrink: 0;
+  padding: 10px 12px calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+  position: relative;
+  z-index: 3;
 }
 
 .caption-input {
@@ -811,10 +1016,19 @@ html.light .my-stories-panel,
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: var(--bg-elevated);
   font-family: 'Cairo', sans-serif;
   font-size: 14px;
   color: var(--text-primary);
+}
+
+.caption-input::placeholder {
+  color: var(--text-muted);
+}
+
+.caption-input:focus {
+  outline: none;
+  border-color: var(--primary);
 }
 </style>
 

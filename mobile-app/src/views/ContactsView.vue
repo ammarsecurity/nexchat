@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ChevronRight, UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban, Loader2, Search } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { countries } from '../data/countries'
 import { validatePhone, getPhoneErrorMessage } from '../utils/phoneValidation'
@@ -130,7 +131,7 @@ async function startConversation(contact) {
       goToMessageRequestsOutgoingNotice(router)
     }
   } catch (e) {
-    window.alert(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
+    notify.error(e.userMessage ?? e.response?.data?.message ?? t('common.error'))
   } finally {
     openingContactId.value = null
   }

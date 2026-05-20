@@ -11,6 +11,7 @@ import { publicUrl } from '../utils/publicUrl'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import api from '../services/api'
+import { notify } from '../utils/notify'
 import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
@@ -257,7 +258,7 @@ async function setShowOnlineStatusToOthers(value) {
     showOnlineToOthers.value = value
     if (profileData.value) profileData.value = { ...profileData.value, showOnlineStatusToOthers: value }
   } catch (e) {
-    window.alert(e.response?.data?.message ?? t('common.error'))
+    notify.error(e.response?.data?.message ?? t('common.error'))
   } finally {
     showOnlineSaving.value = false
   }
