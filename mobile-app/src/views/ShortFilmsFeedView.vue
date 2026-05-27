@@ -36,6 +36,7 @@ const dragY = ref(0)
 const isDragging = ref(false)
 const snapAnimating = ref(false)
 const userPaused = ref(false)
+const currentVideoPlaying = ref(false)
 
 const films = computed(() => store.allFilmsForFeed())
 const current = computed(() => films.value[index.value] ?? null)
@@ -289,6 +290,18 @@ function onVideoLoadedData(film) {
   }
 }
 
+function onVideoPlaying(film) {
+  if (current.value && String(film.id) === String(current.value.id)) {
+    currentVideoPlaying.value = true
+  }
+}
+
+function onVideoPause(film) {
+  if (current.value && String(film.id) === String(current.value.id) && !userPaused.value) {
+    currentVideoPlaying.value = false
+  }
+}
+
 async function toggleMute() {
   const v = currentVideoEl()
   if (muted.value) {
@@ -356,6 +369,7 @@ watch(current, (film) => {
 
 watch(index, () => {
   userPaused.value = false
+  currentVideoPlaying.value = false
   descExpanded.value = false
   schedulePrefetchAround()
 })
@@ -422,19 +436,23 @@ onUnmounted(() => {
           <video
             :ref="(el) => setVideoRef(slot.film.id, el)"
             class="feed-video"
+            :class="{ 'feed-video--playing': slot.role === 'current' && currentVideoPlaying }"
             :src="videoSrc(slot.film)"
             playsinline
             webkit-playsinline
             x5-playsinline
             loop
             :muted="muted"
+            :autoplay="slot.role === 'current' && !userPaused"
             :preload="slot.role === 'current' ? 'auto' : 'metadata'"
             disablepictureinpicture
             controlslist="nodownload nofullscreen noremoteplayback"
             @loadeddata="onVideoLoadedData(slot.film)"
+            @playing="onVideoPlaying(slot.film)"
+            @pause="onVideoPause(slot.film)"
           />
           <div
-            v-if="userPaused && slot.role === 'current'"
+            v-if="userPaused && currentVideoPlaying && slot.role === 'current'"
             class="feed-pause-indicator"
             aria-hidden="true"
           >
@@ -559,8 +577,14 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: #111;
   pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.feed-video--playing {
+  opacity: 1;
 }
 
 .feed-slide:not(.feed-slide--current) .feed-video {
@@ -787,6 +811,12 @@ onUnmounted(() => {
   pointer-events: none;
   color: rgba(255, 255, 255, 0.92);
   background: rgba(0, 0, 0, 0.18);
+}
+
+.feed-pause-indicator :deep(svg) {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
 }
 
 .feed-nav-hint {

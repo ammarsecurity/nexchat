@@ -372,7 +372,10 @@ function formatTime(sec) {
     <video
       ref="remoteVideo"
       class="remote-video"
-      :class="{ 'remote-video--voice-audio-only': voiceOnly }"
+      :class="{
+        'remote-video--voice-audio-only': voiceOnly,
+        'remote-video--visible': connected && !voiceOnly
+      }"
       autoplay
       playsinline
       webkit-playsinline
@@ -555,6 +558,15 @@ function formatTime(sec) {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.remote-video--visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 /* إبقاء تشغيل الصوت البعيد دون عرض مساحة سوداء كاملة الشاشة */

@@ -22,6 +22,7 @@ const userId = computed(() => route.params.userId)
 const slides = ref([])
 const loading = ref(true)
 const mediaReady = ref(false)
+const videoPlaying = ref(false)
 const index = ref(0)
 const progress = ref(0)
 const paused = ref(false)
@@ -152,6 +153,10 @@ async function playCurrentVideo() {
   }
 }
 
+function onStoryVideoPause() {
+  if (!paused.value) videoPlaying.value = false
+}
+
 async function toggleStoryMute() {
   const el = videoEl.value
   if (muted.value) {
@@ -174,6 +179,7 @@ async function toggleStoryMute() {
 async function onSlideChange() {
   clearTimer()
   progress.value = 0
+  videoPlaying.value = false
   const slide = current.value
   if (!slide) return
   const cached = mediaCache.has(slide.id)
@@ -549,6 +555,7 @@ onUnmounted(clearTimer)
               ref="videoEl"
               :src="ensureAbsoluteUrl(current.mediaUrl)"
               class="media-el"
+              :class="{ 'media-el--playing': videoPlaying }"
               :style="filterStyle"
               playsinline
               webkit-playsinline
@@ -557,6 +564,8 @@ onUnmounted(clearTimer)
               preload="auto"
               disablepictureinpicture
               controlslist="nodownload nofullscreen noremoteplayback"
+              @playing="videoPlaying = true"
+              @pause="onStoryVideoPause"
             />
             <img
               v-else-if="current.mediaUrl"
@@ -582,7 +591,7 @@ onUnmounted(clearTimer)
         >
           {{ t('common.loading') }}
         </div>
-        <div v-if="paused && mediaReady" class="pause-indicator" aria-hidden="true">
+        <div v-if="paused && mediaReady && videoPlaying" class="pause-indicator" aria-hidden="true">
           <Pause :size="44" stroke-width="1.5" />
         </div>
       </div>
@@ -771,6 +780,12 @@ onUnmounted(clearTimer)
   background: rgba(0, 0, 0, 0.15);
 }
 
+.pause-indicator :deep(svg) {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
 .media-loading--overlay {
   z-index: 2;
 }
@@ -843,6 +858,12 @@ onUnmounted(clearTimer)
 video.media-el {
   width: 100%;
   height: 100%;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+video.media-el.media-el--playing {
+  opacity: 1;
 }
 
 .text-story {
