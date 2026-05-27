@@ -123,10 +123,10 @@ function onConfirm() {
   width: 100%;
   max-width: 320px;
   padding: 22px 20px 18px;
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   text-align: center;
   font-family: 'Cairo', sans-serif;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-md);
 }
 
 .story-dialog-icon-wrap {
@@ -152,9 +152,9 @@ function onConfirm() {
 }
 
 .story-dialog-icon-wrap--info {
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.18), rgba(0, 212, 255, 0.1));
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(96, 165, 250, 0.1));
   color: var(--primary);
-  border: 1px solid rgba(108, 99, 255, 0.22);
+  border: 1px solid rgba(37, 99, 235, 0.22);
 }
 
 .story-dialog-title {
@@ -186,7 +186,7 @@ function onConfirm() {
   flex: 1;
   min-height: 44px;
   padding: 0 16px;
-  border-radius: 12px;
+  border-radius: 999px;
   border: none;
   font-family: 'Cairo', sans-serif;
   font-size: 15px;

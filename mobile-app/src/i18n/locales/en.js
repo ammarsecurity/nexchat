@@ -8,7 +8,20 @@ export default {
     delete: 'Delete',
     copiedShort: 'Done',
     loading: 'Loading...',
-    error: 'Something went wrong, please try again'
+    error: 'Something went wrong, please try again',
+    close: 'Close'
+  },
+  nav: {
+    main: 'Main navigation',
+    conversations: 'Chats',
+    contacts: 'Contacts',
+    discover: 'Discover',
+    connect: 'Connect',
+    profile: 'Profile'
+  },
+  splash: {
+    tagline: 'Connect with the world',
+    loading: 'Loading...'
   },
   home: {
     title: 'Home',
@@ -128,6 +141,8 @@ export default {
     chooseAvatar: 'Choose avatar',
     preset: 'Preset',
     uploadImage: 'Upload image',
+    changeCover: 'Change cover',
+    uploadingCover: 'Uploading cover...',
     noImage: 'No image',
     chooseImage: 'Choose image',
     uploading: 'Uploading...',
@@ -174,6 +189,8 @@ export default {
   register: {
     title: 'Create new account',
     subtitle: 'Quick and easy, create your account in simple steps',
+    sectionAccount: 'Account',
+    sectionAbout: 'About you',
     name: 'Name',
     namePlaceholder: 'Your display name',
     password: 'Password',
@@ -231,7 +248,8 @@ export default {
     blockConfirmTitle: 'Block this user?',
     blockConfirmDesc: 'They will not be able to message you, and this chat session will end.',
     blockConfirm: 'Block',
-    blockError: 'Could not block. Please try again.'
+    blockError: 'Could not block. Please try again.',
+    reportPlaceholder: 'Describe the reason...'
   },
   matching: {
     title: 'Finding a match',
@@ -247,7 +265,8 @@ export default {
     tip1: 'Share your code with friends',
     tip2: 'Use gender filter for faster matching',
     tip3: 'Peak hours: evening and weekends',
-    cancelSearch: 'Cancel search'
+    cancelSearch: 'Cancel search',
+    secureSearch: 'Secure encrypted search'
   },
   incomingRequest: {
     title: 'Connection request',
@@ -331,6 +350,7 @@ export default {
     filterArchived: 'Archived',
     searchPlaceholder: 'Search by name or number',
     empty: 'No conversations',
+    pullRefresh: 'Pull to refresh',
     pin: 'Pin',
     unpin: 'Unpin',
     archive: 'Archive',
@@ -344,10 +364,22 @@ export default {
     newGroup: 'New group',
     composeMessage: 'New message',
     messageRequests: 'Message requests',
-    messageRequestsShort: 'Requests'
+    messageRequestsShort: 'Requests',
+    pinnedChats: 'Pinned chats',
+    allChats: 'All chats',
+    searchRecent: 'Search or select a recent chat...'
+  },
+  notifications: {
+    empty: 'No notifications',
+    clearAll: 'Clear all',
+    typeVideoCall: 'Video call',
+    typeCode: 'Code connection',
+    typeMessage: 'Chat message',
+    typeDefault: 'Notification'
   },
   stories: {
     yourStory: 'Your story',
+    allStory: 'All story',
     createTitle: 'New story',
     pickSubtitle: 'Share a moment that disappears in 24 hours',
     pickPhotoVideo: 'Photo or video',

@@ -8,7 +8,20 @@ export default {
     delete: 'حذف',
     copiedShort: 'تم',
     loading: 'جاري التحميل...',
-    error: 'حدث خطأ، حاول مجدداً'
+    error: 'حدث خطأ، حاول مجدداً',
+    close: 'إغلاق'
+  },
+  nav: {
+    main: 'التنقل الرئيسي',
+    conversations: 'المحادثات',
+    contacts: 'الأصدقاء',
+    discover: 'اكتشف',
+    connect: 'العالم',
+    profile: 'حسابي'
+  },
+  splash: {
+    tagline: 'تواصل مع العالم',
+    loading: 'جاري التحميل...'
   },
   home: {
     title: 'الرئيسية',
@@ -128,6 +141,8 @@ export default {
     chooseAvatar: 'اختر أفاتار',
     preset: 'جاهزة',
     uploadImage: 'رفع صورة',
+    changeCover: 'تغيير الغلاف',
+    uploadingCover: 'جاري رفع الغلاف...',
     noImage: 'لا توجد صورة',
     chooseImage: 'اختر صورة',
     uploading: 'جارٍ الرفع...',
@@ -174,6 +189,8 @@ export default {
   register: {
     title: 'إنشاء حساب جديد',
     subtitle: 'سريع وسهل، أنشئ حسابك في خطوات بسيطة',
+    sectionAccount: 'بيانات الحساب',
+    sectionAbout: 'معلوماتك',
     name: 'الاسم',
     namePlaceholder: 'اسمك في التطبيق',
     password: 'كلمة المرور',
@@ -231,7 +248,8 @@ export default {
     blockConfirmTitle: 'حظر هذا المستخدم؟',
     blockConfirmDesc: 'لن يتمكن من مراسلتك بعد الحظر، وتُنهى جلسة الدردشة الحالية.',
     blockConfirm: 'تأكيد الحظر',
-    blockError: 'تعذر تنفيذ الحظر. حاول مرة أخرى.'
+    blockError: 'تعذر تنفيذ الحظر. حاول مرة أخرى.',
+    reportPlaceholder: 'اكتب السبب...'
   },
   matching: {
     title: 'البحث عن مطابقة',
@@ -247,7 +265,8 @@ export default {
     tip1: 'يمكنك مشاركة كودك مع أصدقائك',
     tip2: 'استخدم فلتر الجنس للمطابقة الأسرع',
     tip3: 'أوقات الذروة: الليل وعطل نهاية الأسبوع',
-    cancelSearch: 'إلغاء البحث'
+    cancelSearch: 'إلغاء البحث',
+    secureSearch: 'بحث آمن ومشفّر'
   },
   incomingRequest: {
     title: 'طلب اتصال',
@@ -331,6 +350,7 @@ export default {
     filterArchived: 'أرشيف',
     searchPlaceholder: 'بحث بالاسم أو الرقم',
     empty: 'لا توجد محادثات',
+    pullRefresh: 'اسحب للتحديث',
     pin: 'تثبيت',
     unpin: 'إلغاء التثبيت',
     archive: 'أرشفة',
@@ -344,10 +364,22 @@ export default {
     newGroup: 'مجموعة جديدة',
     composeMessage: 'رسالة جديدة',
     messageRequests: 'طلبات المراسلة',
-    messageRequestsShort: 'طلبات'
+    messageRequestsShort: 'طلبات',
+    pinnedChats: 'محادثات مثبتة',
+    allChats: 'كل المحادثات',
+    searchRecent: 'ابحث أو اختر محادثة حديثة...'
+  },
+  notifications: {
+    empty: 'لا توجد إشعارات',
+    clearAll: 'مسح الكل',
+    typeVideoCall: 'مكالمة فيديو',
+    typeCode: 'اتصال بالكود',
+    typeMessage: 'رسالة محادثة',
+    typeDefault: 'إشعار'
   },
   stories: {
     yourStory: 'ستورتك',
+    allStory: 'كل الستوريات',
     createTitle: 'ستوري جديد',
     pickSubtitle: 'شارك لحظة تختفي بعد 24 ساعة',
     pickPhotoVideo: 'صورة أو فيديو',

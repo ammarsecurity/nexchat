@@ -48,8 +48,8 @@ let pinchText = null
 
 const TEXT_COLORS = ['#ffffff', '#000000', '#ff6584', '#6c63ff', '#22c55e', '#fbbf24']
 const BG_PRESETS = [
-  'linear-gradient(135deg,#6c63ff 0%,#ff6584 100%)',
-  'linear-gradient(135deg,#0ea5e9 0%,#6c63ff 100%)',
+  'linear-gradient(135deg,#2563eb 0%,#60a5fa 100%)',
+  'linear-gradient(135deg,#0ea5e9 0%,#3b82f6 100%)',
   'linear-gradient(135deg,#f97316 0%,#ec4899 100%)',
   'linear-gradient(135deg,#22c55e 0%,#14b8a6 100%)',
   '#1a1a2e',
@@ -695,14 +695,15 @@ watch(filterId, () => {})
   flex: 1;
   min-height: 280px;
   max-height: 55vh;
-  margin: 0 auto;
-  width: 100%;
+  margin: 12px auto 0;
+  width: calc(100% - 24px);
   max-width: 320px;
   aspect-ratio: 9/16;
-  border-radius: 16px;
+  border-radius: 24px;
   overflow: hidden;
   background: #111;
   touch-action: none;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .stage-media {
@@ -843,28 +844,29 @@ watch(filterId, () => {})
 
 .tools-panel {
   flex-shrink: 0;
-  padding: 10px 12px calc(10px + var(--safe-bottom));
+  padding: 12px 14px calc(12px + var(--safe-bottom));
   background: var(--bg-card);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.04);
 }
 
 .tool-tabs {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   padding: 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 999px;
 }
 
 .tool-tab {
   flex: 1;
   min-width: 0;
-  padding: 10px 4px;
+  padding: 10px 6px;
   font-size: 12px;
   font-weight: 600;
   border: none;
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
@@ -873,15 +875,15 @@ watch(filterId, () => {})
 }
 
 .tool-tab.active {
-  background: var(--bg-card);
-  color: var(--primary);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
 
 .options-card {
-  margin-top: 10px;
-  padding: 12px;
-  border-radius: 14px;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
 }
@@ -1007,8 +1009,8 @@ watch(filterId, () => {})
 
 .sticker-btn:active {
   transform: scale(0.94);
-  background: rgba(108, 99, 255, 0.12);
-  border-color: rgba(108, 99, 255, 0.45);
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
 }
 
 .sticker-adjust {
@@ -1052,7 +1054,7 @@ watch(filterId, () => {})
 }
 
 .filter-chip.active {
-  background: rgba(108, 99, 255, 0.18);
+  background: rgba(37, 99, 235, 0.14);
   border-color: var(--primary);
   color: var(--primary);
 }

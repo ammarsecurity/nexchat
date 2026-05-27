@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, Users, Image, UserPlus, Search } from 'lucide-vue-next'
+import { Users, Image, UserPlus, Search } from 'lucide-vue-next'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -121,15 +122,8 @@ onMounted(fetchContacts)
 </script>
 
 <template>
-  <div class="create-group page auth-pattern">
+  <ModernPageShell :title="t('groups.createTitle')" back-to="/conversations">
     <LoaderOverlay :show="creating" :text="t('groups.creating')" />
-
-    <header class="top-bar">
-      <button class="back-btn" @click="goBack" :aria-label="t('common.cancel')">
-        <ChevronRight :size="22" />
-      </button>
-      <span class="top-title">{{ t('groups.createTitle') }}</span>
-    </header>
 
     <div v-if="needPhone" class="need-phone-banner">
       <span>{{ t('conversations.needPhone') }}</span>
@@ -183,7 +177,7 @@ onMounted(fetchContacts)
           </div>
           <p class="empty-contacts-text">{{ t('contacts.empty') }}</p>
           <p class="empty-contacts-hint">{{ t('contacts.addFirst') }}</p>
-          <button type="button" class="btn-add-contact" @click="router.push('/contacts')">
+          <button type="button" class="btn-add-contact" @click="router.push({ path: '/conversations', query: { tab: 'contacts' } })">
             <UserPlus :size="20" />
             <span>{{ t('contacts.addContact') }}</span>
           </button>
@@ -237,52 +231,10 @@ onMounted(fetchContacts)
         </button>
       </div>
     </div>
-  </div>
+  </ModernPageShell>
 </template>
 
 <style scoped>
-.create-group {
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  padding-bottom: var(--safe-bottom);
-  font-family: 'Cairo', sans-serif;
-}
-
-.top-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
-  flex-shrink: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.top-title {
-  flex: 1;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-align: center;
-}
-
 .need-phone-banner {
   display: flex;
   flex-wrap: wrap;
@@ -636,12 +588,13 @@ onMounted(fetchContacts)
   padding: 14px 24px;
   background: var(--primary);
   border: none;
-  border-radius: 12px;
+  border-radius: 999px;
   color: white;
   font-weight: 600;
   font-size: 16px;
   font-family: 'Cairo', sans-serif;
   cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
   -webkit-tap-highlight-color: transparent;
 }
 

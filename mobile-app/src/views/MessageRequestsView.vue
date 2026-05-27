@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Check, X } from 'lucide-vue-next'
+import { Check, X } from 'lucide-vue-next'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { notify } from '../utils/notify'
@@ -92,263 +93,96 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="message-requests page auth-pattern">
-    <header class="top-bar">
-      <button class="back-btn" @click="goBack" :aria-label="t('common.back')">
-        <ChevronRight :size="22" />
-      </button>
-      <span class="top-title">{{ t('messageRequests.title') }}</span>
-      <span class="top-placeholder" aria-hidden="true"></span>
-    </header>
-
-    <div class="scroll-area">
-      <div v-if="outgoingBannerText" class="outgoing-banner glass-card" role="status">
-        <p class="outgoing-banner-text">{{ outgoingBannerText }}</p>
-        <button type="button" class="outgoing-banner-dismiss" :aria-label="t('common.cancel')" @click="dismissOutgoingBanner">
-          ×
-        </button>
-      </div>
-      <div v-if="loading" class="loading-msg">{{ t('common.loading') }}</div>
-      <div v-else-if="!list.length" class="empty-state">
-        <p>{{ t('messageRequests.empty') }}</p>
-      </div>
-      <ul v-else class="req-list">
-        <li v-for="r in list" :key="r.id ?? r.Id" class="req-card glass-card">
-          <div class="req-avatar">
-            <div
-              v-if="(r.requesterAvatar ?? r.RequesterAvatar) && isImageAvatar(r.requesterAvatar ?? r.RequesterAvatar)"
-              class="avatar-img-wrap"
-            >
-              <CachedAvatar :url="r.requesterAvatar ?? r.RequesterAvatar" img-class="avatar-img" />
-            </div>
-            <div v-else class="avatar-letter">
-              {{ (r.requesterName ?? r.RequesterName ?? '?')[0]?.toUpperCase() }}
-            </div>
-          </div>
-          <div class="req-body">
-            <div class="req-name">{{ r.requesterName ?? r.RequesterName }}</div>
-            <div v-if="r.requesterUniqueCode ?? r.RequesterUniqueCode" class="req-code">
-              {{ r.requesterUniqueCode ?? r.RequesterUniqueCode }}
-            </div>
-          </div>
-          <div class="req-actions">
-            <button
-              type="button"
-              class="btn-accept"
-              :disabled="actionId === (r.id ?? r.Id)"
-              :aria-label="t('messageRequests.accept')"
-              @click="accept(r.id ?? r.Id)"
-            >
-              <Check :size="16" stroke-width="2.5" />
-            </button>
-            <button
-              type="button"
-              class="btn-decline"
-              :disabled="actionId === (r.id ?? r.Id)"
-              :aria-label="t('messageRequests.decline')"
-              @click="decline(r.id ?? r.Id)"
-            >
-              <X :size="16" stroke-width="2.5" />
-            </button>
-          </div>
-        </li>
-      </ul>
+  <ModernPageShell :title="t('messageRequests.title')" back-to="/conversations">
+    <div v-if="outgoingBannerText" class="outgoing-banner" role="status">
+      <p>{{ outgoingBannerText }}</p>
+      <button type="button" class="outgoing-dismiss" :aria-label="t('common.cancel')" @click="dismissOutgoingBanner">×</button>
     </div>
-  </div>
+
+    <div v-if="loading" class="modern-empty">{{ t('common.loading') }}</div>
+    <div v-else-if="!list.length" class="modern-empty">
+      <p>{{ t('messageRequests.empty') }}</p>
+    </div>
+
+    <div v-else class="modern-list">
+      <div v-for="r in list" :key="r.id ?? r.Id" class="modern-list-row">
+        <div class="modern-list-row__avatar">
+          <CachedAvatar
+            v-if="(r.requesterAvatar ?? r.RequesterAvatar) && isImageAvatar(r.requesterAvatar ?? r.RequesterAvatar)"
+            :url="r.requesterAvatar ?? r.RequesterAvatar"
+            img-class="avatar-img"
+          />
+          <span v-else>{{ (r.requesterName ?? r.RequesterName ?? '?')[0]?.toUpperCase() }}</span>
+        </div>
+        <div class="modern-list-row__body">
+          <span class="modern-list-row__title">{{ r.requesterName ?? r.RequesterName }}</span>
+          <span v-if="r.requesterUniqueCode ?? r.RequesterUniqueCode" class="modern-list-row__sub">
+            {{ r.requesterUniqueCode ?? r.RequesterUniqueCode }}
+          </span>
+        </div>
+        <div class="req-actions">
+          <button type="button" class="req-btn req-btn--accept" :disabled="actionId === (r.id ?? r.Id)" @click="accept(r.id ?? r.Id)">
+            <Check :size="16" stroke-width="2.5" />
+          </button>
+          <button type="button" class="req-btn req-btn--decline" :disabled="actionId === (r.id ?? r.Id)" @click="decline(r.id ?? r.Id)">
+            <X :size="16" stroke-width="2.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  </ModernPageShell>
 </template>
 
 <style scoped>
-.message-requests {
-  background: var(--bg-primary);
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Cairo', sans-serif;
-}
-
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
-  flex-shrink: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.top-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.top-placeholder {
-  width: 40px;
-}
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 20px 32px;
-  max-width: 400px;
-  margin: 0 auto;
-  width: 100%;
-}
-
 .outgoing-banner {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: 14px 16px;
-  margin-bottom: 16px;
-  border-radius: 14px;
-  background: rgba(108, 99, 255, 0.1);
-  border: 1px solid rgba(108, 99, 255, 0.28);
-}
-
-.outgoing-banner-text {
-  margin: 0;
-  flex: 1;
-  font-size: 14px;
-  line-height: 1.55;
+  margin-bottom: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--primary-soft);
   color: var(--text-primary);
-  text-align: start;
+  font-size: 14px;
 }
 
-.outgoing-banner-dismiss {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+.outgoing-dismiss {
   border: none;
-  border-radius: 8px;
   background: transparent;
-  color: var(--text-tertiary);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.outgoing-banner-dismiss:active {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.loading-msg,
-.empty-state {
-  padding: 48px 16px;
-  text-align: center;
   color: var(--text-muted);
-}
-
-.req-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.req-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
-}
-
-.req-avatar {
-  flex-shrink: 0;
-}
-
-.avatar-img-wrap {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  overflow: hidden;
-}
-
-.avatar-img-wrap :deep(.avatar-img) {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.avatar-letter {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.req-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.req-name {
-  font-weight: 600;
-  color: var(--text-primary);
-  font-size: 14px;
-  line-height: 1.25;
-}
-
-.req-code {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin-top: 1px;
-  letter-spacing: 0.02em;
 }
 
 .req-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.btn-accept,
-.btn-decline {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
+.req-btn {
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  border-radius: 50%;
   cursor: pointer;
 }
 
-.btn-accept {
+.req-btn--accept {
   background: rgba(34, 197, 94, 0.15);
-  color: #16a34a;
+  color: var(--success);
 }
 
-.btn-decline {
+.req-btn--decline {
   background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
 }
 
-.btn-accept:disabled,
-.btn-decline:disabled {
+.req-btn:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
 }
 </style>

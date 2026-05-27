@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban, Loader2, Search } from 'lucide-vue-next'
+import { UserPlus, Phone, Globe, AlertCircle, MoreVertical, UserMinus, Ban, Loader2, Search } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { notify } from '../utils/notify'
@@ -28,7 +28,6 @@ const addError = ref('')
 const needPhone = ref(false)
 const contextContact = ref(null)
 const showContextMenu = ref(false)
-/** جهة الاتصال التي تُفتح محادثتها حالياً (لودر على البطاقة) */
 const openingContactId = ref(null)
 
 const countryCode = computed(() => {
@@ -148,90 +147,69 @@ const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
 onMounted(fetchContacts)
 
-function goBack() {
-  if (window.history.length > 2) {
-    router.back()
-  } else {
-    router.replace('/conversations')
-  }
-}
+defineExpose({ openAddModal, fetchContacts })
 </script>
 
 <template>
-  <div class="contacts page auth-pattern">
-    <header class="top-bar">
-      <button class="back-btn" @click="goBack" :aria-label="t('common.cancel')">
-        <ChevronRight :size="22" />
-      </button>
-      <span class="top-title">{{ t('contacts.title') }}</span>
-      <button class="add-btn" @click="openAddModal" :aria-label="t('contacts.addContact')">
-        <UserPlus :size="22" />
-      </button>
-    </header>
-
+  <div class="contacts-panel">
     <div v-if="needPhone" class="need-phone-banner">
       <AlertCircle :size="20" />
       <span>{{ t('contacts.needPhone') }}</span>
       <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
     </div>
 
-    <div v-if="contacts.length" class="search-wrap">
-      <div class="search-input-wrap">
-        <Search :size="16" class="search-icon" />
-        <input
-          v-model="searchQuery"
-          type="search"
-          class="search-input"
-          :placeholder="t('contacts.searchPlaceholder')"
-          inputmode="search"
-          autocomplete="off"
-        />
-      </div>
+    <div v-if="contacts.length" class="modern-search-bar contacts-search">
+      <Search :size="18" class="search-icon" />
+      <input
+        v-model="searchQuery"
+        type="search"
+        :placeholder="t('contacts.searchPlaceholder')"
+        inputmode="search"
+        autocomplete="off"
+      />
     </div>
 
-    <div class="scroll-area">
-      <div v-if="!contacts.length && !needPhone" class="empty-state">
-        <UserPlus :size="48" class="empty-icon" />
-        <p>{{ t('contacts.empty') }}</p>
-        <p class="empty-hint">{{ t('contacts.addFirst') }}</p>
-        <button class="btn-gradient" @click="openAddModal">{{ t('contacts.addContact') }}</button>
-      </div>
-      <div v-else-if="!filteredContacts.length" class="empty-state">
-        <p>{{ t('contacts.noSearchResults') }}</p>
-      </div>
-      <div v-else class="contacts-list">
+    <div v-if="!contacts.length && !needPhone" class="modern-empty">
+      <UserPlus :size="48" />
+      <p>{{ t('contacts.empty') }}</p>
+      <p class="empty-hint">{{ t('contacts.addFirst') }}</p>
+      <button class="btn-gradient" style="max-width: 240px" @click="openAddModal">{{ t('contacts.addContact') }}</button>
+    </div>
+    <div v-else-if="!filteredContacts.length" class="modern-empty">
+      <p>{{ t('contacts.noSearchResults') }}</p>
+    </div>
+    <div v-else class="modern-list">
+      <div
+        v-for="c in filteredContacts"
+        :key="c.id"
+        class="modern-list-row modern-list-row--clickable contact-row"
+        :class="{ 'is-opening': openingContactId === c.contactUserId }"
+        @click="startConversation(c)"
+        @contextmenu.prevent="openContextMenu(c, $event)"
+      >
         <div
-          v-for="c in filteredContacts"
-          :key="c.id"
-          class="contact-item glass-card"
-          :class="{ 'is-opening': openingContactId === c.contactUserId }"
-          @click="startConversation(c)"
-          @contextmenu.prevent="openContextMenu(c, $event)"
+          v-if="openingContactId === c.contactUserId"
+          class="item-opening-overlay"
+          aria-hidden="true"
         >
-          <div
-            v-if="openingContactId === c.contactUserId"
-            class="item-opening-overlay"
-            aria-hidden="true"
-          >
-            <Loader2 class="item-opening-spinner" :size="22" />
-          </div>
-          <div class="item-avatar" :style="{ background: contactAvatar(c) && !isImageAvatar(contactAvatar(c)) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-            <img v-if="contactAvatar(c) && isImageAvatar(contactAvatar(c))" :src="ensureAbsoluteUrl(contactAvatar(c))" class="avatar-img" referrerpolicy="no-referrer" />
-            <span v-else>{{ c.name?.[0]?.toUpperCase() || '?' }}</span>
-          </div>
-          <div class="item-content">
-            <span class="item-name">{{ c.name }}</span>
-            <span class="item-meta" dir="ltr">{{ contactPhone(c) }}</span>
-          </div>
-          <button
-            class="context-btn"
-            @click.stop="openContextMenu(c, $event)"
-            :aria-label="t('common.cancel')"
-          >
-            <MoreVertical :size="18" />
-          </button>
-          <ChevronRight :size="20" class="item-arrow" />
+          <Loader2 class="item-opening-spinner" :size="22" />
         </div>
+        <div class="modern-list-row__avatar">
+          <img v-if="contactAvatar(c) && isImageAvatar(contactAvatar(c))" :src="ensureAbsoluteUrl(contactAvatar(c))" alt="" referrerpolicy="no-referrer" />
+          <span v-else>{{ c.name?.[0]?.toUpperCase() || '?' }}</span>
+        </div>
+        <div class="modern-list-row__body">
+          <span class="modern-list-row__title">{{ c.name }}</span>
+          <span class="modern-list-row__sub" dir="ltr">{{ contactPhone(c) }}</span>
+        </div>
+        <button
+          type="button"
+          class="context-btn"
+          @click.stop="openContextMenu(c, $event)"
+          :aria-label="t('common.cancel')"
+        >
+          <MoreVertical :size="18" />
+        </button>
       </div>
     </div>
 
@@ -239,26 +217,26 @@ function goBack() {
       <Transition name="sheet">
         <div v-if="showContextMenu && contextContact" class="context-overlay" @click="showContextMenu = false">
           <div class="context-sheet" @click.stop>
-              <div class="context-sheet-handle"></div>
-              <div class="context-sheet-header">
-                <div class="context-sheet-avatar" :style="{ background: contextContact.avatar && !isImageAvatar(contextContact.avatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
-                  <img v-if="contextContact.avatar && isImageAvatar(contextContact.avatar)" :src="ensureAbsoluteUrl(contextContact.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
-                  <span v-else>{{ contextContact.name?.[0]?.toUpperCase() || '?' }}</span>
-                </div>
-                <span class="context-sheet-name">{{ contextContact.name }}</span>
+            <div class="context-sheet-handle"></div>
+            <div class="context-sheet-header">
+              <div class="context-sheet-avatar" :style="{ background: contextContact.avatar && !isImageAvatar(contextContact.avatar) ? 'var(--primary)' : 'var(--bg-elevated)' }">
+                <img v-if="contextContact.avatar && isImageAvatar(contextContact.avatar)" :src="ensureAbsoluteUrl(contextContact.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+                <span v-else>{{ contextContact.name?.[0]?.toUpperCase() || '?' }}</span>
               </div>
-              <div class="context-sheet-actions">
-                <button class="context-sheet-btn" @click="removeContact(contextContact.contactUserId)">
-                  <UserMinus :size="18" />
-                  <span>{{ t('contacts.removeFriend') }}</span>
-                </button>
-                <button class="context-sheet-btn danger" @click="blockContact(contextContact)">
-                  <Ban :size="18" />
-                  <span>{{ t('contacts.block') }}</span>
-                </button>
-              </div>
-              <button class="context-sheet-cancel" @click="showContextMenu = false">{{ t('common.cancel') }}</button>
+              <span class="context-sheet-name">{{ contextContact.name }}</span>
             </div>
+            <div class="context-sheet-actions">
+              <button class="context-sheet-btn" @click="removeContact(contextContact.contactUserId)">
+                <UserMinus :size="18" />
+                <span>{{ t('contacts.removeFriend') }}</span>
+              </button>
+              <button class="context-sheet-btn danger" @click="blockContact(contextContact)">
+                <Ban :size="18" />
+                <span>{{ t('contacts.block') }}</span>
+              </button>
+            </div>
+            <button class="context-sheet-cancel" @click="showContextMenu = false">{{ t('common.cancel') }}</button>
+          </div>
         </div>
       </Transition>
       <Transition name="sheet">
@@ -267,42 +245,42 @@ function goBack() {
             <div class="context-sheet-handle" aria-hidden="true"></div>
             <h3 class="add-sheet-title">{{ t('contacts.addByPhone') }}</h3>
             <div class="add-sheet-body">
-          <div class="field">
-            <label class="field-label" for="add-country-select">
-              <Globe :size="16" />
-              {{ t('completeProfile.country') }}
-            </label>
-            <select
-              id="add-country-select"
-              v-model="addCountry"
-              class="input-field select-field"
-              :aria-label="t('completeProfile.country')"
-            >
-              <option v-for="c in countries" :key="c.code" :value="c.code">
-                {{ c.name }} (+{{ c.dialCode }})
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label" for="add-phone-input">
-              <Phone :size="16" />
-              {{ t('completeProfile.phone') }}
-            </label>
-            <div class="phone-input-wrap">
-              <span class="dial-prefix" dir="ltr">+{{ countryCode || '964' }}</span>
-              <input
-                id="add-phone-input"
-                v-model="addPhone"
-                type="tel"
-                class="input-field phone-input"
-                :placeholder="t('contacts.phonePlaceholder')"
-                inputmode="numeric"
-                maxlength="15"
-                autocomplete="tel"
-                enterkeyhint="done"
-              />
-            </div>
-          </div>
+              <div class="field">
+                <label class="field-label" for="add-country-select">
+                  <Globe :size="16" />
+                  {{ t('completeProfile.country') }}
+                </label>
+                <select
+                  id="add-country-select"
+                  v-model="addCountry"
+                  class="input-field select-field"
+                  :aria-label="t('completeProfile.country')"
+                >
+                  <option v-for="c in countries" :key="c.code" :value="c.code">
+                    {{ c.name }} (+{{ c.dialCode }})
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="add-phone-input">
+                  <Phone :size="16" />
+                  {{ t('completeProfile.phone') }}
+                </label>
+                <div class="phone-input-wrap">
+                  <span class="dial-prefix" dir="ltr">+{{ countryCode || '964' }}</span>
+                  <input
+                    id="add-phone-input"
+                    v-model="addPhone"
+                    type="tel"
+                    class="input-field phone-input"
+                    :placeholder="t('contacts.phonePlaceholder')"
+                    inputmode="numeric"
+                    maxlength="15"
+                    autocomplete="tel"
+                    enterkeyhint="done"
+                  />
+                </div>
+              </div>
               <div v-if="addError" class="error-toast">
                 <AlertCircle :size="16" stroke-width="2" />
                 <span>{{ addError }}</span>
@@ -329,44 +307,29 @@ function goBack() {
 </template>
 
 <style scoped>
-.contacts {
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  padding-bottom: var(--safe-bottom);
+.contacts-panel {
+  padding: 0 var(--spacing) calc(96px + var(--safe-bottom));
 }
 
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
+.contacts-search {
+  margin: 0 0 12px;
+}
+
+.search-icon {
+  color: var(--text-muted);
   flex-shrink: 0;
 }
-
-.back-btn, .add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  background: var(--bg-card);
-  border: none;
-  border-radius: 12px;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.add-btn { color: var(--primary); }
 
 .need-phone-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 12px var(--spacing);
+  padding: 12px 0;
+  margin-bottom: 8px;
   background: rgba(255, 193, 7, 0.15);
+  border-radius: 12px;
+  padding-inline: 12px;
   color: var(--text-primary);
   font-size: 14px;
 }
@@ -379,85 +342,17 @@ function goBack() {
   cursor: pointer;
 }
 
-.search-wrap {
-  flex-shrink: 0;
-  padding: 0 var(--spacing) 10px;
-}
-
-.search-input-wrap {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  min-height: 40px;
-  border-radius: 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-}
-
-.search-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.search-input {
-  flex: 1;
-  min-width: 0;
-  padding: 10px 0;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: 'Cairo', sans-serif;
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 48px 24px;
-}
-
-.empty-state .empty-icon {
-  opacity: 0.5;
-  margin-bottom: 16px;
-}
-
 .empty-hint {
   font-size: 14px;
   color: var(--text-secondary);
-  margin-bottom: 24px;
+  margin-bottom: 8px;
 }
 
-.contacts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.contact-item {
+.contact-row {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  cursor: pointer;
-  border-radius: 12px;
 }
 
-.contact-item.is-opening {
+.contact-row.is-opening {
   pointer-events: none;
 }
 
@@ -483,42 +378,6 @@ function goBack() {
     transform: rotate(360deg);
   }
 }
-
-.item-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 18px;
-  color: white;
-  flex-shrink: 0;
-}
-
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.item-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.item-name { font-weight: 600; }
-.item-meta {
-  font-size: 13px;
-  color: var(--text-secondary);
-  unicode-bidi: plaintext;
-}
-.item-arrow { color: var(--text-tertiary); flex-shrink: 0; }
 
 .context-btn {
   background: none;

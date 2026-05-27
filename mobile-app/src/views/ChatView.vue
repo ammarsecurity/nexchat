@@ -703,7 +703,7 @@ async function shareCodeInChat() {
 
 <template>
   <div class="chat-view page">
-    <LoaderOverlay :show="loading" text="جاري التحميل..." />
+    <LoaderOverlay :show="loading" :text="t('common.loading')" />
     <Teleport to="body">
       <div
         v-if="showHeaderMoreMenu"
@@ -724,7 +724,7 @@ async function shareCodeInChat() {
           <Crown v-if="partnerIsFeatured" class="avatar-crown-chat" :size="18" stroke-width="2" />
         </div>
         <div class="partner-meta">
-          <div class="partner-name">{{ partner?.name || 'جارٍ التحميل...' }}</div>
+          <div class="partner-name">{{ partner?.name || t('common.loading') }}</div>
           <div class="typing-status text-sm text-muted">
             <span v-if="chat.partnerTyping" class="typing-text">
               <span class="typing-dots"><span></span><span></span><span></span></span>
@@ -890,7 +890,7 @@ async function shareCodeInChat() {
             <button class="share-btn copy-btn" @click="copyShareCode">
               <Copy v-if="!shareCodeCopied" :size="18" stroke-width="2" />
               <Check v-else :size="18" stroke-width="2" />
-              <span>{{ shareCodeCopied ? 'تم النسخ!' : 'نسخ' }}</span>
+              <span>{{ shareCodeCopied ? t('common.copied') : t('common.copy') }}</span>
             </button>
           </div>
           <button class="share-close-btn" @click="closeShareModal">إلغاء</button>
@@ -915,7 +915,7 @@ async function shareCodeInChat() {
     <!-- Image Modal -->
     <Transition name="fade">
       <div v-if="imageModalUrl" class="image-modal-overlay" @click.self="closeImageModal">
-        <button class="image-modal-close" @click="closeImageModal" aria-label="إغلاق"><X :size="24" /></button>
+        <button class="image-modal-close" @click="closeImageModal" :aria-label="t('common.close')"><X :size="24" /></button>
         <img :src="ensureAbsoluteUrl(imageModalUrl)" class="image-modal-img" alt="" @click.stop referrerpolicy="no-referrer" />
       </div>
     </Transition>
@@ -928,7 +928,7 @@ async function shareCodeInChat() {
           <span class="report-snippet-text">{{ reportedSnippetDisplay() }}</span>
         </div>
         <div class="text-sm text-secondary" style="margin-bottom:8px">سبب البلاغ:</div>
-        <input v-model="reportReason" class="input-field" placeholder="اكتب السبب..." />
+        <input v-model="reportReason" class="input-field" :placeholder="t('randomChat.reportPlaceholder')" />
         <div class="flex gap-2" style="margin-top:8px">
           <button class="btn-gradient" style="padding:10px" @click="submitReport">إرسال</button>
           <button class="btn-ghost" style="padding:10px;flex:1" @click="closeReportSheet">إلغاء</button>

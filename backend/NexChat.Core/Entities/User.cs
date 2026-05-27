@@ -15,6 +15,8 @@ public class User
     public bool IsAdmin { get; set; } = false;
     public bool IsFeatured { get; set; } = false;
     public string? Avatar { get; set; } = null;
+    /// <summary>صورة غلاف الملف الشخصي.</summary>
+    public string? CoverImageUrl { get; set; } = null;
     /// <summary>كود الدولة ISO 2 (مثل IQ, SA)</summary>
     public string? Country { get; set; } = null;
     /// <summary>رقم الهاتف مع مفتاح الدولة (مثل 9647712345678)</summary>

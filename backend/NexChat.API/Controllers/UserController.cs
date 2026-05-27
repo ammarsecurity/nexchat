@@ -35,7 +35,7 @@ public class UserController(
         return Ok(new UserProfileDto(
             user.Id, user.Name, user.Gender,
             user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured, user.BirthDate,
-            user.Country, user.PhoneNumber
+            user.Country, user.PhoneNumber, user.ShowOnlineStatusToOthers, user.CoverImageUrl
         ));
     }
 
@@ -56,7 +56,7 @@ public class UserController(
         var visibleOnline = UserOnlineVisibility.VisibleToOthers(user);
         return Ok(new PublicProfileDto(
             user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, visibleOnline,
-            user.PhoneNumber, user.Country, isContact
+            user.PhoneNumber, user.Country, isContact, user.CoverImageUrl
         ));
     }
 
@@ -141,6 +141,18 @@ public class UserController(
             await matchingHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
             await chatHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
         }
+
+        return Ok();
+    }
+
+    [HttpPut("cover")]
+    public async Task<IActionResult> UpdateCover([FromBody] UpdateCoverRequest req)
+    {
+        var cover = req.CoverImageUrl?.Length > 500 ? req.CoverImageUrl[..500] : req.CoverImageUrl;
+
+        await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.CoverImageUrl, cover));
 
         return Ok();
     }

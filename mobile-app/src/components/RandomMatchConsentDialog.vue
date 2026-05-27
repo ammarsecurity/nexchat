@@ -59,7 +59,6 @@ async function declineOrSkip() {
   }
 }
 
-/** رفض المطابقة والخروج من وضع البحث العشوائي (بدون إعادة StartSearching) */
 async function exitRandomChat() {
   if (!sessionId.value || acting.value) return
   acting.value = true
@@ -76,11 +75,14 @@ async function exitRandomChat() {
 </script>
 
 <template>
-  <Transition name="modal">
+  <Transition name="rm-modal">
     <div v-if="pending" class="rm-overlay" @click.self="declineOrSkip">
-      <div class="rm-dialog glass-card" :class="{ 'rm-featured': partnerIsFeatured }">
+      <div class="rm-sheet" :class="{ 'rm-sheet--featured': partnerIsFeatured }">
+        <div class="rm-sheet__handle" aria-hidden="true" />
+
         <p class="rm-hint">{{ t('randomMatch.hint') }}</p>
-        <div class="rm-avatar-wrap" :class="{ 'avatar-featured': partnerIsFeatured }">
+
+        <div class="rm-avatar-wrap" :class="{ 'rm-avatar-wrap--featured': partnerIsFeatured }">
           <template v-if="partner">
             <img
               v-if="avatarIsImage"
@@ -91,9 +93,10 @@ async function exitRandomChat() {
             />
             <span v-else-if="avatarIsEmoji" class="rm-avatar-emoji">{{ partner.avatar }}</span>
             <span v-else class="rm-letter">{{ nameLetter }}</span>
-            <Crown v-if="partnerIsFeatured" class="rm-crown" :size="22" stroke-width="2" />
+            <Crown v-if="partnerIsFeatured" class="rm-crown" :size="20" stroke-width="2" />
           </template>
         </div>
+
         <h3 class="rm-name">
           {{ partner?.name || '…' }}
           <Crown v-if="partnerIsFeatured" class="inline-crown" :size="14" stroke-width="2" />
@@ -101,34 +104,35 @@ async function exitRandomChat() {
         <p v-if="partner?.uniqueCode || partner?.UniqueCode" class="rm-code">
           {{ t('randomMatch.publicId') }}: {{ partner?.uniqueCode ?? partner?.UniqueCode }}
         </p>
+
         <p v-if="waitingPeer" class="rm-wait">
           <Loader2 :size="18" class="spin" />
           {{ t('randomMatch.waitingPeer') }}
         </p>
+
         <div class="rm-actions">
-          <button type="button" class="btn-skip" :disabled="acting" @click="declineOrSkip">
-            <SkipForward :size="18" />
-            <span>{{ t('randomMatch.skip') }}</span>
-          </button>
-          <button type="button" class="btn-decline" :disabled="acting" @click="declineOrSkip">
-            <X :size="18" />
-            <span>{{ t('randomMatch.decline') }}</span>
-          </button>
-          <button type="button" class="btn-accept" :disabled="acting || waitingPeer" @click="accept">
-            <Check :size="18" />
+          <button type="button" class="rm-btn rm-btn--accept" :disabled="acting || waitingPeer" @click="accept">
+            <Check :size="18" stroke-width="2.5" />
             <span>{{ t('randomMatch.accept') }}</span>
           </button>
+          <div class="rm-actions__row">
+            <button type="button" class="rm-btn rm-btn--ghost" :disabled="acting" @click="declineOrSkip">
+              <SkipForward :size="17" stroke-width="2.25" />
+              <span>{{ t('randomMatch.skip') }}</span>
+            </button>
+            <button type="button" class="rm-btn rm-btn--outline" :disabled="acting" @click="declineOrSkip">
+              <X :size="17" stroke-width="2.25" />
+              <span>{{ t('randomMatch.decline') }}</span>
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          class="btn-exit-random"
-          :disabled="acting"
-          @click="exitRandomChat"
-        >
-          <LogOut :size="18" />
+
+        <button type="button" class="rm-exit" :disabled="acting" @click="exitRandomChat">
+          <LogOut :size="17" stroke-width="2.25" />
           <span>{{ t('randomMatch.exitRandom') }}</span>
         </button>
-        <p class="rm-legal text-muted text-sm">{{ t('randomMatch.legalHint') }}</p>
+
+        <p class="rm-legal">{{ t('randomMatch.legalHint') }}</p>
       </div>
     </div>
   </Transition>
@@ -139,46 +143,65 @@ async function exitRandomChat() {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
   z-index: 10000;
-  padding: var(--spacing);
+  padding: 0;
 }
 
-.rm-dialog {
+.rm-sheet {
   width: 100%;
-  max-width: 380px;
-  padding: calc(var(--spacing) + 4px);
-  border-radius: var(--radius, 16px);
-  font-family: 'Cairo', system-ui, sans-serif;
+  max-width: min(var(--app-max-width, 100%), 480px);
+  padding: 10px var(--spacing) calc(var(--spacing) + var(--safe-bottom));
+  border-radius: 24px 24px 0 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.18);
+  font-family: 'Cairo', sans-serif;
+}
+
+.rm-sheet--featured {
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(250, 204, 21, 0.35);
+}
+
+.rm-sheet__handle {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 14px;
+  border-radius: 999px;
+  background: var(--text-tertiary);
+  opacity: 0.45;
 }
 
 .rm-hint {
   font-size: 13px;
   color: var(--text-secondary);
   text-align: center;
-  margin: 0 0 12px;
-  line-height: 1.45;
+  margin: 0 0 16px;
+  line-height: 1.5;
 }
 
 .rm-avatar-wrap {
   position: relative;
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 10px;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 12px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.35), rgba(255, 101, 132, 0.25));
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.2), rgba(96, 165, 250, 0.35));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 700;
   color: var(--primary);
+  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px rgba(37, 99, 235, 0.25);
 }
 
-.rm-avatar-wrap.avatar-featured {
-  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.6);
+.rm-avatar-wrap--featured {
+  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px rgba(250, 204, 21, 0.55);
 }
 
 .rm-avatar-img {
@@ -189,14 +212,14 @@ async function exitRandomChat() {
 }
 
 .rm-avatar-emoji {
-  font-size: 36px;
+  font-size: 38px;
   line-height: 1;
 }
 
 .rm-crown {
   position: absolute;
-  bottom: -4px;
-  right: -4px;
+  bottom: -2px;
+  inset-inline-end: -2px;
   color: #facc15;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
@@ -210,16 +233,17 @@ async function exitRandomChat() {
 
 .rm-name {
   text-align: center;
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: var(--text-primary);
 }
 
 .rm-code {
   text-align: center;
   font-size: 13px;
   color: var(--text-secondary);
-  margin: 0 0 12px;
+  margin: 0 0 14px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -230,7 +254,7 @@ async function exitRandomChat() {
   gap: 8px;
   font-size: 14px;
   color: var(--text-secondary);
-  margin: 0 0 12px;
+  margin: 0 0 14px;
 }
 
 .spin {
@@ -243,101 +267,112 @@ async function exitRandomChat() {
 
 .rm-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.rm-actions button {
-  flex: 1 1 calc(33% - 8px);
-  min-height: var(--touch-min, 44px);
-  border-radius: 12px;
+.rm-actions__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rm-btn {
+  min-height: 48px;
+  border-radius: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-family: 'Cairo', system-ui, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
+  gap: 8px;
+  font-family: 'Cairo', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
   border: none;
   -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 
-.btn-accept {
-  background: linear-gradient(135deg, var(--primary), #8b5cf6);
+.rm-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.rm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rm-btn--accept {
+  width: 100%;
+  background: linear-gradient(135deg, #2563EB, #60A5FA);
   color: #fff;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
 }
 
-.btn-decline {
-  background: var(--bg-card);
-  border: 1px solid var(--border) !important;
-  color: var(--text-secondary);
-}
-
-.btn-skip {
-  background: rgba(108, 99, 255, 0.12);
+.rm-btn--ghost {
+  background: var(--primary-soft);
   color: var(--primary);
 }
 
-.btn-exit-random {
+.rm-btn--outline {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.rm-exit {
   width: 100%;
   margin-top: 10px;
-  min-height: var(--touch-min, 44px);
-  border-radius: 12px;
+  min-height: 46px;
+  border-radius: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-family: 'Cairo', system-ui, sans-serif;
+  font-family: 'Cairo', sans-serif;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  border: 1px solid rgba(108, 99, 255, 0.4);
-  background: linear-gradient(
-    180deg,
-    rgba(108, 99, 255, 0.22) 0%,
-    rgba(108, 99, 255, 0.12) 100%
-  );
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
   color: var(--primary);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 12px rgba(108, 99, 255, 0.2);
-  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
-.btn-exit-random:disabled {
+
+.rm-exit:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-  box-shadow: none;
-}
-.btn-exit-random:not(:disabled):hover {
-  border-color: rgba(108, 99, 255, 0.55);
-  background: linear-gradient(
-    180deg,
-    rgba(108, 99, 255, 0.3) 0%,
-    rgba(108, 99, 255, 0.16) 100%
-  );
-}
-.btn-exit-random:not(:disabled):active {
-  background: linear-gradient(
-    180deg,
-    rgba(108, 99, 255, 0.2) 0%,
-    rgba(108, 99, 255, 0.1) 100%
-  );
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2) inset;
 }
 
-.rm-actions button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.rm-exit:active:not(:disabled) {
+  background: rgba(37, 99, 235, 0.14);
 }
 
 .rm-legal {
   margin: 14px 0 0;
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.45;
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
-.rm-featured.rm-dialog {
-  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.25);
+.rm-modal-enter-active,
+.rm-modal-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.rm-modal-enter-active .rm-sheet,
+.rm-modal-leave-active .rm-sheet {
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.rm-modal-enter-from,
+.rm-modal-leave-to {
+  opacity: 0;
+}
+
+.rm-modal-enter-from .rm-sheet,
+.rm-modal-leave-to .rm-sheet {
+  transform: translateY(100%);
 }
 </style>

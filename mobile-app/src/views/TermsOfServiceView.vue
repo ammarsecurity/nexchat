@@ -1,13 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ChevronRight } from 'lucide-vue-next'
-import LoaderOverlay from '../components/LoaderOverlay.vue'
-import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
+import LoaderOverlay from '../components/LoaderOverlay.vue'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 
-const router = useRouter()
-const auth = useAuthStore()
 const { t } = useI18n()
 const content = ref('')
 const loading = ref(true)
@@ -25,72 +21,19 @@ onMounted(async () => {
     loading.value = false
   }
 })
-
-function goBack() {
-  if (typeof window !== 'undefined' && window.history.length > 1) {
-    router.back()
-    return
-  }
-  router.replace(auth.token ? '/settings' : '/login')
-}
 </script>
 
 <template>
-  <div class="terms page">
+  <ModernPageShell :title="t('terms.title')" back-to="/settings">
     <LoaderOverlay :show="loading" :text="t('terms.loading')" />
-    <header class="top-bar">
-      <button type="button" class="back-btn" @click="goBack"><ChevronRight :size="22" /></button>
-      <span class="top-title">{{ t('terms.title') }}</span>
-      <div style="width:40px"></div>
-    </header>
-
-    <div class="scroll-area">
-      <div v-if="!loading" class="policy-content" v-html="content.replace(/\n/g, '<br>')"></div>
-    </div>
-  </div>
+    <div v-if="!loading" class="policy-content" v-html="content.replace(/\n/g, '<br>')" />
+  </ModernPageShell>
 </template>
 
 <style scoped>
-.terms {
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.top-bar {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
-}
-.back-btn {
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  height: var(--touch-min);
-  justify-content: center;
-  min-width: var(--touch-min);
-}
-.back-btn:active { background: var(--bg-card-hover); }
-.top-title { font-size: 17px; font-weight: 600; }
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing);
-  padding-bottom: calc(var(--spacing) + var(--safe-bottom));
-}
-
 .policy-content {
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.7;
-  white-space: pre-wrap;
 }
-.policy-content :deep(br) { display: block; }
 </style>

@@ -1,8 +1,10 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, ChevronLeft, Image, Send, Pencil, Trash2, Eye, Play, Loader2 } from 'lucide-vue-next'
+import { Send, Pencil, Trash2, Eye, Play, Loader2, Type, Film, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useLocaleStore } from '../stores/locale'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 import api, { MEDIA_UPLOAD_TIMEOUT_MS, STORY_PUBLISH_TIMEOUT_MS } from '../services/api'
 import StoryEditorCanvas from '../components/stories/StoryEditorCanvas.vue'
 import StoryDialog from '../components/stories/StoryDialog.vue'
@@ -14,6 +16,10 @@ import { StoryExportError, isStoryExportError } from '../utils/storyExport'
 
 const router = useRouter()
 const { t } = useI18n()
+const localeStore = useLocaleStore()
+
+const BackIcon = computed(() => (localeStore.isRtl ? ChevronRight : ChevronLeft))
+const ForwardIcon = computed(() => (localeStore.isRtl ? ChevronLeft : ChevronRight))
 const storiesStore = useStoriesStore()
 const auth = useAuthStore()
 
@@ -23,7 +29,7 @@ const videoSrc = ref('')
 const videoFile = ref(null)
 const originalImageFile = ref(null)
 const textOnly = ref(false)
-const backgroundColor = ref('linear-gradient(135deg,#6c63ff 0%,#ff6584 100%)')
+const backgroundColor = ref('linear-gradient(135deg,#2563eb 0%,#60a5fa 100%)')
 const caption = ref('')
 const publishing = ref(false)
 const editorRef = ref(null)
@@ -101,7 +107,7 @@ function normalizeSlide(s) {
 
 function thumbBgStyle(slide) {
   if (slide.mediaType === 'text' || (slide.backgroundColor && !slide.mediaUrl)) {
-    return { background: slide.backgroundColor || 'linear-gradient(160deg,#6c63ff,#ff6584)' }
+    return { background: slide.backgroundColor || 'linear-gradient(160deg,#2563eb,#60a5fa)' }
   }
   return { background: 'var(--bg-elevated)' }
 }
@@ -149,7 +155,7 @@ function resetEditorState() {
   originalImageFile.value = null
   textOnly.value = false
   caption.value = ''
-  backgroundColor.value = 'linear-gradient(135deg,#6c63ff 0%,#ff6584 100%)'
+  backgroundColor.value = 'linear-gradient(135deg,#2563eb 0%,#60a5fa 100%)'
 }
 
 async function loadMySlides() {
@@ -392,25 +398,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="story-create page auth-pattern" :class="{ 'story-create--edit': step === 'edit' }">
-    <header class="top-bar">
-      <button type="button" class="back-btn" @click="goBack"><ChevronRight :size="22" /></button>
-      <span class="top-title">{{ editingSlideId ? t('stories.editStory') : t('stories.createTitle') }}</span>
-      <button
-        v-if="step === 'edit'"
-        type="button"
-        class="publish-btn"
-        :class="{ 'is-publishing': publishing }"
-        :disabled="publishing"
-        :aria-label="publishing ? t('common.loading') : t('stories.publish')"
-        @click="publish"
-      >
-        <Loader2 v-if="publishing" :size="18" class="publish-spin" />
-        <Send v-else :size="18" />
-      </button>
-      <span v-else class="top-spacer" />
-    </header>
-
+  <div class="story-create" :class="{ 'story-create--edit': step === 'edit' }">
     <input
       ref="fileInput"
       type="file"
@@ -419,13 +407,39 @@ onUnmounted(() => {
       @change="onFile"
     />
 
-    <div v-if="step === 'pick'" class="pick-step">
-      <p class="pick-lead">{{ t('stories.pickSubtitle') }}</p>
+    <ModernPageShell
+      v-if="step === 'pick'"
+      :title="t('stories.createTitle')"
+      back-to="/conversations"
+    >
+      <section class="story-create-hero">
+        <p class="story-create-hero__text">{{ t('stories.pickSubtitle') }}</p>
+      </section>
+
+      <div class="create-grid">
+        <button type="button" class="create-tile create-tile--media" @click="pickImage">
+          <span class="create-tile__icon create-tile__icon--media" aria-hidden="true">
+            <Film :size="26" stroke-width="2" />
+          </span>
+          <span class="create-tile__title">{{ t('stories.pickPhotoVideo') }}</span>
+          <span class="create-tile__desc">{{ t('stories.pickPhotoVideoDesc') }}</span>
+          <component :is="ForwardIcon" class="create-tile__chevron" :size="18" stroke-width="2" aria-hidden="true" />
+        </button>
+
+        <button type="button" class="create-tile create-tile--text" @click="startTextStory">
+          <span class="create-tile__icon create-tile__icon--text" aria-hidden="true">
+            <Type :size="26" stroke-width="2" />
+          </span>
+          <span class="create-tile__title">{{ t('stories.pickText') }}</span>
+          <span class="create-tile__desc">{{ t('stories.pickTextDesc') }}</span>
+          <component :is="ForwardIcon" class="create-tile__chevron" :size="18" stroke-width="2" aria-hidden="true" />
+        </button>
+      </div>
 
       <section v-if="mySlidesLoading || mySlides.length" class="my-stories-section">
-        <div class="my-stories-header">
-          <h3 class="my-stories-title">{{ t('stories.myActiveStories') }}</h3>
-          <span v-if="!mySlidesLoading && mySlides.length" class="my-stories-count">{{ mySlides.length }}</span>
+        <div class="section-head">
+          <h2 class="section-head__title">{{ t('stories.myActiveStories') }}</h2>
+          <span v-if="!mySlidesLoading && mySlides.length" class="section-head__badge">{{ mySlides.length }}</span>
         </div>
         <p v-if="mySlidesLoading" class="my-stories-loading">{{ t('common.loading') }}</p>
         <div v-else class="my-stories-panel">
@@ -443,81 +457,82 @@ onUnmounted(() => {
                   @click="viewMyStory(slide)"
                 >
                   <div class="my-story-thumb" :style="thumbBgStyle(slide)">
-                  <img
-                    v-if="slideThumbSrc(slide)"
-                    :src="slideThumbSrc(slide)"
-                    class="my-story-img"
-                    alt=""
-                    loading="lazy"
-                    referrerpolicy="no-referrer"
-                  />
-                  <video
-                    v-else-if="slide.mediaType === 'video' && slide.mediaUrl"
-                    :src="ensureAbsoluteUrl(slide.mediaUrl)"
-                    class="my-story-img my-story-video-fallback"
-                    muted
-                    playsinline
-                    preload="metadata"
-                    @loadeddata="(e) => { try { e.target.currentTime = 0.1 } catch {} }"
-                  />
-                  <span v-else-if="slide.caption" class="my-story-caption-preview">{{ slide.caption }}</span>
-                  <span v-else class="my-story-aa">Aa</span>
-                  <span v-if="slide.mediaType === 'video'" class="my-story-type-badge" aria-hidden="true">
-                    <Play :size="14" fill="currentColor" />
-                  </span>
-                  <span v-if="slide.viewCount > 0" class="my-story-views-badge">
-                    <Eye :size="11" />
-                    {{ slide.viewCount }}
-                  </span>
-                </div>
+                    <img
+                      v-if="slideThumbSrc(slide)"
+                      :src="slideThumbSrc(slide)"
+                      class="my-story-img"
+                      alt=""
+                      loading="lazy"
+                      referrerpolicy="no-referrer"
+                    />
+                    <video
+                      v-else-if="slide.mediaType === 'video' && slide.mediaUrl"
+                      :src="ensureAbsoluteUrl(slide.mediaUrl)"
+                      class="my-story-img my-story-video-fallback"
+                      muted
+                      playsinline
+                      preload="metadata"
+                      @loadeddata="(e) => { try { e.target.currentTime = 0.1 } catch {} }"
+                    />
+                    <span v-else-if="slide.caption" class="my-story-caption-preview">{{ slide.caption }}</span>
+                    <span v-else class="my-story-aa">Aa</span>
+                    <span class="my-story-order">{{ i + 1 }}</span>
+                    <span v-if="slide.mediaType === 'video'" class="my-story-type-badge" aria-hidden="true">
+                      <Play :size="12" fill="currentColor" />
+                    </span>
+                    <span v-if="slide.viewCount > 0" class="my-story-views-badge">
+                      <Eye :size="10" />
+                      {{ slide.viewCount }}
+                    </span>
+                  </div>
                 </button>
-                <div class="my-story-overlay">
-                  <button type="button" class="my-story-action" :title="t('stories.editStory')" @click.stop="startEdit(slide)">
-                    <Pencil :size="13" stroke-width="2.5" />
-                  </button>
-                  <button
-                    type="button"
-                    class="my-story-action my-story-action--danger"
-                    :title="t('common.delete')"
-                    :aria-label="t('common.delete')"
-                    @click.stop.prevent="requestDeleteSlide(slide)"
-                  >
-                    <Trash2 :size="13" stroke-width="2.5" />
-                  </button>
-                </div>
               </div>
-              <span class="my-story-index">{{ i + 1 }}</span>
+              <div class="my-story-actions">
+                <button
+                  type="button"
+                  class="my-story-action-btn"
+                  :title="t('stories.editStory')"
+                  @click.stop="startEdit(slide)"
+                >
+                  <Pencil :size="14" stroke-width="2.5" />
+                </button>
+                <button
+                  type="button"
+                  class="my-story-action-btn my-story-action-btn--danger"
+                  :title="t('common.delete')"
+                  :aria-label="t('common.delete')"
+                  @click.stop.prevent="requestDeleteSlide(slide)"
+                >
+                  <Trash2 :size="14" stroke-width="2.5" />
+                </button>
+              </div>
             </article>
           </div>
         </div>
       </section>
 
-      <div class="pick-list">
-        <button type="button" class="pick-card pick-card--media" @click="pickImage">
-          <div class="pick-card-preview pick-card-preview--media" aria-hidden="true">
-            <Image :size="24" stroke-width="2" />
-          </div>
-          <div class="pick-card-copy">
-            <span class="pick-card-title">{{ t('stories.pickPhotoVideo') }}</span>
-            <span class="pick-card-desc">{{ t('stories.pickPhotoVideoDesc') }}</span>
-          </div>
-          <span class="pick-card-chevron" aria-hidden="true"><ChevronLeft :size="20" stroke-width="2" /></span>
-        </button>
+    </ModernPageShell>
 
-        <button type="button" class="pick-card pick-card--text" @click="startTextStory">
-          <div class="pick-card-preview pick-card-preview--text" aria-hidden="true">
-            <span class="preview-aa">Aa</span>
-          </div>
-          <div class="pick-card-copy">
-            <span class="pick-card-title">{{ t('stories.pickText') }}</span>
-            <span class="pick-card-desc">{{ t('stories.pickTextDesc') }}</span>
-          </div>
-          <span class="pick-card-chevron" aria-hidden="true"><ChevronLeft :size="20" stroke-width="2" /></span>
+    <div v-else class="story-create-edit modern-page">
+      <header class="modern-page__nav story-edit-nav">
+        <button type="button" class="modern-glass-btn" :aria-label="t('common.back')" @click="goBack">
+          <component :is="BackIcon" :size="22" stroke-width="2" />
         </button>
-      </div>
-    </div>
+        <h1 class="modern-page__title">{{ editingSlideId ? t('stories.editStory') : t('stories.createTitle') }}</h1>
+        <button
+          type="button"
+          class="story-publish-btn"
+          :class="{ 'is-publishing': publishing }"
+          :disabled="publishing"
+          :aria-label="publishing ? t('common.loading') : t('stories.publish')"
+          @click="publish"
+        >
+          <Loader2 v-if="publishing" :size="18" class="publish-spin" />
+          <Send v-else :size="18" />
+        </button>
+      </header>
 
-    <div v-else class="editor-shell">
+      <div class="editor-shell">
       <StoryEditorCanvas
         ref="editorRef"
         class="story-editor"
@@ -530,6 +545,7 @@ onUnmounted(() => {
       />
       <div class="caption-wrap">
         <input v-model="caption" type="text" class="caption-input" :placeholder="t('stories.captionPlaceholder')" />
+      </div>
       </div>
     </div>
 
@@ -548,75 +564,29 @@ onUnmounted(() => {
 
 <style scoped>
 .story-create {
-  display: flex;
-  flex-direction: column;
   min-height: 100%;
-  background: var(--bg-primary);
   font-family: 'Cairo', sans-serif;
 }
 
 .story-create--edit {
   overflow: hidden;
-  min-height: 0;
+  min-height: 100dvh;
 }
 
-.editor-shell {
-  flex: 1;
-  min-height: 0;
+.story-create-edit {
   display: flex;
   flex-direction: column;
+  min-height: 100dvh;
   overflow: hidden;
 }
 
-.editor-shell :deep(.editor-root) {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.editor-shell :deep(.editor-stage) {
-  flex: 0 1 auto;
-  max-height: min(40vh, 300px);
-  min-height: 200px;
-}
-
-.editor-shell :deep(.tools-panel) {
+.story-edit-nav {
   flex-shrink: 0;
 }
 
-.top-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: calc(var(--safe-top) + 8px) 12px 8px;
-  flex-shrink: 0;
-}
-
-.back-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-secondary);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.top-title {
-  flex: 1;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.publish-btn {
-  width: 40px;
-  height: 40px;
+.story-publish-btn {
+  width: var(--header-btn-size);
+  height: var(--header-btn-size);
   border-radius: 50%;
   border: none;
   background: var(--primary);
@@ -627,16 +597,17 @@ onUnmounted(() => {
   cursor: pointer;
   flex-shrink: 0;
   transition: opacity 0.15s ease, transform 0.12s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
 }
 
-.publish-btn:disabled,
-.publish-btn.is-publishing {
+.story-publish-btn:disabled,
+.story-publish-btn.is-publishing {
   opacity: 0.9;
   cursor: wait;
   pointer-events: none;
 }
 
-.publish-btn:active:not(:disabled) {
+.story-publish-btn:active:not(:disabled) {
   transform: scale(0.96);
 }
 
@@ -650,45 +621,43 @@ onUnmounted(() => {
   }
 }
 
-.top-spacer {
-  width: 40px;
-}
-
 .hidden-input {
   display: none;
 }
 
 /* —— Pick step —— */
-.pick-step {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 4px 16px calc(20px + var(--safe-bottom));
-  overflow-y: auto;
+.story-create-hero {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(96, 165, 250, 0.08) 100%);
+  border: 1px solid rgba(37, 99, 235, 0.12);
 }
 
-.pick-lead {
-  margin: 0 0 16px;
-  padding: 0 4px;
+.story-create-hero__text {
+  margin: 0;
   font-size: 14px;
   line-height: 1.55;
   color: var(--text-secondary);
   text-align: center;
 }
 
-.pick-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.create-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
-.pick-card {
+.create-tile {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px;
-  border-radius: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 168px;
+  padding: 16px 14px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-primary);
@@ -696,84 +665,56 @@ onUnmounted(() => {
   text-align: start;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.12s ease, background 0.12s ease;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.12s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-sm);
 }
 
-.pick-card:active {
-  transform: scale(0.99);
-  background: var(--bg-elevated);
+.create-tile:active {
+  transform: scale(0.98);
 }
 
-.pick-card-preview {
-  flex-shrink: 0;
+.create-tile__icon {
   width: 48px;
-  height: 64px;
-  border-radius: 10px;
+  height: 48px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
 }
 
-.pick-card-preview--media {
-  background: linear-gradient(160deg, #6c63ff 0%, #00d4ff 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+.create-tile__icon--media {
+  background: linear-gradient(145deg, #2563eb 0%, #60a5fa 100%);
 }
 
-.pick-card-preview--text {
-  background: linear-gradient(160deg, #6c63ff 0%, #ff6584 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+.create-tile__icon--text {
+  background: linear-gradient(145deg, #1d4ed8 0%, #93c5fd 100%);
 }
 
-.preview-aa {
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-.pick-card-copy {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pick-card-title {
-  font-size: 15px;
+.create-tile__title {
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.35;
   color: var(--text-primary);
-  line-height: 1.3;
 }
 
-.pick-card-desc {
-  font-size: 12px;
+.create-tile__desc {
+  font-size: 11px;
   font-weight: 500;
-  color: var(--text-secondary);
   line-height: 1.45;
+  color: var(--text-secondary);
+  flex: 1;
 }
 
-.pick-card-chevron {
-  flex-shrink: 0;
+.create-tile__chevron {
+  position: absolute;
+  bottom: 14px;
+  inset-inline-end: 14px;
   color: var(--text-tertiary);
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
-html[dir='ltr'] .pick-card-chevron {
-  transform: scaleX(-1);
-}
-
-html.light .pick-card,
-[data-theme='light'] .pick-card {
-  box-shadow: 0 2px 16px rgba(108, 99, 255, 0.08);
-}
-
-.my-stories-section {
-  margin-bottom: 22px;
-}
-
-.my-stories-header {
+.section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -782,25 +723,29 @@ html.light .pick-card,
   padding: 0 2px;
 }
 
-.my-stories-title {
+.section-head__title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
 }
 
-.my-stories-count {
+.section-head__badge {
   min-width: 24px;
   height: 24px;
   padding: 0 8px;
   border-radius: 12px;
-  background: rgba(108, 99, 255, 0.12);
+  background: rgba(37, 99, 235, 0.12);
   color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.my-stories-section {
+  margin-bottom: 8px;
 }
 
 .my-stories-loading {
@@ -810,28 +755,23 @@ html.light .pick-card,
   color: var(--text-tertiary);
   text-align: center;
   background: var(--bg-card);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
 }
 
 .my-stories-panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   padding: 14px 12px;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.04);
-}
-
-html.light .my-stories-panel,
-[data-theme='light'] .my-stories-panel {
-  box-shadow: 0 2px 16px rgba(108, 99, 255, 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 .my-stories-scroll {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   overflow-x: auto;
-  padding: 4px 4px 2px;
+  padding: 2px 2px 4px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -844,20 +784,20 @@ html.light .my-stories-panel,
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
-  width: 100px;
+  width: 108px;
 }
 
 .my-story-shell {
-  position: relative;
   padding: 2px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #6c63ff, #ff6584, #00d4ff);
+  background: linear-gradient(145deg, #2563eb, #60a5fa);
 }
 
 .my-story-ring {
   display: block;
+  width: 100%;
   padding: 0;
   border: none;
   border-radius: 14px;
@@ -875,8 +815,8 @@ html.light .my-stories-panel,
 
 .my-story-thumb {
   position: relative;
-  width: 92px;
-  height: 122px;
+  width: 100%;
+  aspect-ratio: 9 / 14;
   border-radius: 14px;
   overflow: hidden;
   display: flex;
@@ -884,6 +824,26 @@ html.light .my-stories-panel,
   justify-content: center;
   border: 2px solid var(--bg-card);
   box-sizing: border-box;
+}
+
+.my-story-order {
+  position: absolute;
+  top: 6px;
+  inset-inline-start: 6px;
+  z-index: 3;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .my-story-img {
@@ -926,11 +886,11 @@ html.light .my-stories-panel,
 
 .my-story-type-badge {
   position: absolute;
-  top: 8px;
-  inset-inline-start: 8px;
+  bottom: 6px;
+  inset-inline-start: 6px;
   z-index: 2;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
@@ -942,64 +902,76 @@ html.light .my-stories-panel,
 
 .my-story-views-badge {
   position: absolute;
-  top: 8px;
-  inset-inline-end: 8px;
+  bottom: 6px;
+  inset-inline-end: 6px;
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 20px;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 999px;
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   backdrop-filter: blur(4px);
 }
 
-.my-story-overlay {
-  position: absolute;
-  inset-inline: 2px;
-  bottom: 2px;
-  z-index: 4;
-  pointer-events: auto;
+.my-story-actions {
   display: flex;
-  justify-content: center;
   gap: 6px;
-  padding: 6px 8px 8px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.65), transparent);
 }
 
-.my-story-action {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.95);
+.my-story-action-btn {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
   color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.1s ease, opacity 0.1s ease;
+  transition: transform 0.1s ease, background 0.12s ease;
 }
 
-.my-story-action:active {
+.my-story-action-btn:active {
   transform: scale(0.96);
-  opacity: 0.9;
+  background: var(--bg-card-hover);
 }
 
-.my-story-action--danger {
-  color: #e53935;
-  background: rgba(255, 255, 255, 0.95);
+.my-story-action-btn--danger {
+  color: var(--danger);
+  background: rgba(244, 67, 54, 0.08);
+  border-color: rgba(244, 67, 54, 0.2);
 }
 
-.my-story-index {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
+/* —— Edit step —— */
+.editor-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-shell :deep(.editor-root) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.editor-shell :deep(.editor-stage) {
+  flex: 0 1 auto;
+  max-height: min(42vh, 320px);
+  min-height: 200px;
+}
+
+.editor-shell :deep(.tools-panel) {
+  flex-shrink: 0;
 }
 
 .caption-wrap {
@@ -1014,7 +986,7 @@ html.light .my-stories-panel,
 .caption-input {
   width: 100%;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   font-family: 'Cairo', sans-serif;

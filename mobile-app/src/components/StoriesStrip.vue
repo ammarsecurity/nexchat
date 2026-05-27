@@ -60,10 +60,14 @@ function openRing(ring) {
 }
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
+
+defineProps({
+  variant: { type: String, default: 'default' }
+})
 </script>
 
 <template>
-  <div class="stories-strip">
+  <div class="stories-strip" :class="{ 'stories-strip--hero': variant === 'hero' }">
     <div class="stories-scroll">
       <button type="button" class="story-ring story-ring--mine" @click="openCreate">
         <span class="ring-outer ring-outer--mine" :class="{ unseen: storiesStore.feed.some(r => r.isMine && r.hasUnseen) }">
@@ -179,7 +183,7 @@ html.light .conversations--wa .stories-strip,
   overflow: visible;
 }
 .ring-outer.unseen {
-  background: linear-gradient(135deg, #6c63ff, #ff6584, #00d4ff);
+  background: linear-gradient(145deg, #2563EB, #60A5FA);
 }
 
 .ring-inner {
@@ -255,6 +259,51 @@ html.light .ring-add-badge {
   white-space: nowrap;
   text-align: center;
   font-family: 'Cairo', sans-serif;
+}
+
+/* داخل بطاقة المحادثات الزرقاء */
+.stories-strip--hero {
+  padding: 8px 0 12px;
+  background: transparent;
+  border-bottom: none;
+}
+
+.stories-strip--hero .stories-scroll {
+  padding: 0 2px 4px;
+  gap: 12px;
+}
+
+.stories-strip--hero .ring-label {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.stories-strip--hero .ring-outer {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.stories-strip--hero .ring-outer.unseen {
+  background: linear-gradient(145deg, #FFFFFF 0%, #BFDBFE 55%, #60A5FA 100%);
+}
+
+.stories-strip--hero .ring-inner {
+  border-color: rgba(255, 255, 255, 0.92);
+}
+
+.stories-strip--hero .ring-outer--mine .ring-inner {
+  border: 2px dashed rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.stories-strip--hero .ring-letter {
+  color: #fff;
+}
+
+.stories-strip--hero .ring-add-badge {
+  background: #fff;
+  color: #2563EB;
+  border-color: rgba(255, 255, 255, 0.95);
 }
 </style>
 

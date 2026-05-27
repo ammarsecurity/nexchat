@@ -1,28 +1,34 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
-import { useRouter } from 'vue-router'
-import { ChevronRight, MessageCircle, MessageSquarePlus, Search, Pin, MoreVertical, Users, UsersRound, Inbox, CheckCheck, X } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
+import EmptyState from '../components/ui/EmptyState.vue'
+import ListSkeleton from '../components/ui/ListSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
-import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import { useLocaleStore } from '../stores/locale'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useConversationStore } from '../stores/conversation'
 import { useAuthStore } from '../stores/auth'
 import { useNetworkStore } from '../stores/network'
+import { useNotificationsStore } from '../stores/notifications'
 import { conversationHub, startHub } from '../services/signalr'
 import { loadConversationsListFromCache, saveConversationsList } from '../services/cache'
 import { formatGregorianDateTime } from '../utils/formatTime'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import StoriesStrip from '../components/StoriesStrip.vue'
-import ShortFilmsStrip from '../components/ShortFilmsStrip.vue'
-import { getStoriesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
+import ContactsPanel from '../components/ContactsPanel.vue'
+import { getStoriesEnabled } from '../services/siteContentFlags'
 import { formatConversationListPreview } from '../utils/shortFilmShare'
+import {
+  MessageCircle, MessageSquarePlus, Search, Pin, MoreVertical, Users, UsersRound,
+  CheckCheck, X, Bell, Check, MoreHorizontal, UserPlus
+} from 'lucide-vue-next'
+import { usePullToRefresh } from '../composables/usePullToRefresh'
 
 const router = useRouter()
 const msgReqStore = useMessageRequestsStore()
+const notificationsStore = useNotificationsStore()
 const network = useNetworkStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -32,14 +38,29 @@ const convStore = useConversationStore()
 const auth = useAuthStore()
 
 const ready = ref(false)
+const loading = ref(true)
 const conversations = computed(() => listStore.list)
 const filter = ref('all')
 const searchQuery = ref('')
 const needPhone = ref(false)
 const markingAllRead = ref(false)
 const storiesEnabled = ref(true)
-const shortFilmsEnabled = ref(true)
 const fabOpen = ref(false)
+const scrollAreaRef = ref(null)
+const contactsPanelRef = ref(null)
+
+const mainSection = computed(() => (route.query.tab === 'contacts' ? 'contacts' : 'chats'))
+
+function setMainSection(section) {
+  router.replace({
+    path: '/conversations',
+    query: section === 'contacts' ? { tab: 'contacts' } : {}
+  })
+}
+
+function openAddContact() {
+  contactsPanelRef.value?.openAddModal()
+}
 
 /** عدد طلبات المراسلة الواردة المعلقة — للشارة بجانب أيقونة البريد */
 const pendingMessageRequestsCount = computed(() => msgReqStore.pendingCount)
@@ -70,6 +91,37 @@ const filteredList = computed(() => {
   return list
 })
 
+const pinnedConversations = computed(() =>
+  filteredList.value.filter(c => c.isPinned ?? c.IsPinned)
+)
+
+const unpinnedConversations = computed(() =>
+  filteredList.value.filter(c => !(c.isPinned ?? c.IsPinned))
+)
+
+const listWithSections = computed(() => {
+  const rows = []
+  const pinned = pinnedConversations.value
+  const rest = unpinnedConversations.value
+  const showPinned = pinned.length > 0 && filter.value !== 'archived'
+
+  if (showPinned) {
+    rows.push({ type: 'header', key: 'hdr-pinned', title: t('conversations.pinnedChats'), icon: 'pin' })
+    pinned.forEach(c => rows.push({ type: 'conv', key: `p-${c.id ?? c.Id}`, data: c }))
+  }
+
+  const allItems = showPinned ? rest : filteredList.value
+  if (allItems.length || !filteredList.value.length) {
+    rows.push({ type: 'header', key: 'hdr-all', title: t('conversations.allChats'), icon: 'chat' })
+    allItems.forEach(c => rows.push({ type: 'conv', key: `a-${c.id ?? c.Id}`, data: c }))
+  }
+  return rows
+})
+
+const headerNotifCount = computed(() =>
+  (notificationsStore.unreadCount || 0) + (msgReqStore.pendingCount || 0)
+)
+
 function goToCreateGroup() {
   router.push('/conversations/create-group')
 }
@@ -77,10 +129,13 @@ function goToCreateGroup() {
 async function fetchConversations() {
   const cached = await loadConversationsListFromCache()
   if (cached?.length) listStore.setList(normalizeConversationsList(cached))
-  ready.value = true
 
   needPhone.value = false
-  if (!network.isOnline) return
+  if (!network.isOnline) {
+    ready.value = true
+    loading.value = false
+    return
+  }
   try {
     const { data } = await api.get('/conversations', {
       params: { filter: filter.value, search: searchQuery.value || undefined },
@@ -93,8 +148,13 @@ async function fetchConversations() {
     if (e.response?.status === 400 && e.response?.data?.message?.includes('رقم الهاتف')) {
       needPhone.value = true
     }
+  } finally {
+    ready.value = true
+    loading.value = false
   }
 }
+
+const { pullDistance, refreshing, bind: bindPullRefresh } = usePullToRefresh(fetchConversations)
 
 function openContextMenu(conv, e) {
   e?.stopPropagation()
@@ -177,18 +237,16 @@ async function handleListUpdated(payload) {
 }
 
 onMounted(async () => {
-  const [storiesOk, shortFilmsOk] = await Promise.all([
-    getStoriesEnabled(api),
-    getShortFilmsEnabled(api)
-  ])
+  notificationsStore.load()
+  const storiesOk = await getStoriesEnabled(api)
   storiesEnabled.value = storiesOk
-  shortFilmsEnabled.value = shortFilmsOk
   msgReqStore.fetchPendingCount()
   convStore.clearConversation()
   try {
     await startHub(conversationHub)
     conversationHub.on('ConversationListUpdated', handleListUpdated)
   } catch (_) {}
+  if (scrollAreaRef.value) bindPullRefresh(scrollAreaRef.value)
 })
 
 onUnmounted(() => {
@@ -202,7 +260,7 @@ function goToConversation(c) {
 
 function goToContacts() {
   fabOpen.value = false
-  router.push('/contacts')
+  setMainSection('contacts')
 }
 
 function toggleFabMenu() {
@@ -218,10 +276,6 @@ function goToMessageRequests() {
   router.push('/message-requests')
 }
 
-function goBack() {
-  router.replace('/home')
-}
-
 async function markAllRead() {
   if (markingAllRead.value || totalUnread.value <= 0) return
   markingAllRead.value = true
@@ -235,132 +289,184 @@ async function markAllRead() {
 </script>
 
 <template>
-  <div class="conversations page auth-pattern conversations--wa">
-    <header class="top-bar">
-      <button class="back-btn" @click="goBack" :aria-label="t('common.cancel')">
-        <ChevronRight :size="22" />
-      </button>
-      <span class="top-title">{{ t('conversations.title') }}</span>
-      <div class="header-actions">
+  <div class="conversations page conversations--chatloop">
+    <header class="conv-header">
+      <h1 class="conv-header__title">{{ t('conversations.title') }}</h1>
+      <div class="conv-header__actions">
         <button
+          v-if="mainSection === 'contacts'"
           type="button"
-          class="msg-req-btn"
-          :class="{ 'has-badge': !!messageRequestsBadgeText }"
-          @click="goToMessageRequests"
-          :aria-label="messageRequestsButtonLabel"
+          class="conv-header__action-btn"
+          :aria-label="t('contacts.addContact')"
+          @click="openAddContact"
         >
-          <span class="msg-req-btn-icon" aria-hidden="true">
-            <Inbox :size="17" stroke-width="2" />
-          </span>
-          <span class="msg-req-btn-label">{{ t('conversations.messageRequestsShort') }}</span>
-          <span v-if="messageRequestsBadgeText" class="msg-req-badge">{{ messageRequestsBadgeText }}</span>
+          <UserPlus :size="20" stroke-width="2" />
         </button>
+        <RouterLink to="/notifications" class="conv-header__bell" :aria-label="t('settings.notifications')">
+          <Bell :size="20" stroke-width="2" />
+          <span v-if="headerNotifCount > 0" class="conv-header__bell-dot" />
+        </RouterLink>
       </div>
     </header>
 
-    <StoriesStrip v-if="storiesEnabled && ready" />
-    <ShortFilmsStrip v-if="shortFilmsEnabled && ready" />
+    <div class="conv-main-tabs" :dir="localeStore.htmlDir" role="tablist" :aria-label="t('conversations.title')">
+      <button
+        type="button"
+        class="conv-main-tab"
+        :class="{ 'conv-main-tab--active': mainSection === 'chats' }"
+        role="tab"
+        :aria-selected="mainSection === 'chats'"
+        @click="setMainSection('chats')"
+      >
+        <MessageCircle :size="18" stroke-width="2" />
+        <span>{{ t('nav.conversations') }}</span>
+      </button>
+      <button
+        type="button"
+        class="conv-main-tab"
+        :class="{ 'conv-main-tab--active': mainSection === 'contacts' }"
+        role="tab"
+        :aria-selected="mainSection === 'contacts'"
+        @click="setMainSection('contacts')"
+      >
+        <Users :size="18" stroke-width="2" />
+        <span>{{ t('nav.contacts') }}</span>
+      </button>
+    </div>
 
+    <template v-if="mainSection === 'chats'">
     <div v-if="needPhone" class="need-phone-banner">
       <span>{{ t('conversations.needPhone') }}</span>
       <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
     </div>
 
-    <div class="list-toolbar" :dir="localeStore.htmlDir">
-      <div class="filter-tabs" role="tablist">
+    <div class="hero-card">
+      <div class="hero-card__head">
+        <h2 class="hero-card__label">{{ t('stories.allStory') }}</h2>
         <button
-          v-for="f in ['all', 'unread', 'archived']"
-          :key="f"
           type="button"
-          class="filter-btn"
-          :class="{ active: filter === f }"
-          role="tab"
-          :aria-selected="filter === f"
-          @click="filter = f"
+          class="hero-card__menu"
+          :aria-label="messageRequestsButtonLabel"
+          @click="goToMessageRequests"
         >
-          {{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}
+          <MoreHorizontal :size="20" stroke-width="2" />
+          <span v-if="messageRequestsBadgeText" class="hero-card__menu-badge">{{ messageRequestsBadgeText }}</span>
         </button>
       </div>
-      <div class="search-toolbar">
-        <div class="search-input-wrap">
-          <Search :size="15" class="search-icon" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="search-input"
-            :placeholder="t('conversations.searchPlaceholder')"
-          />
-        </div>
+
+      <StoriesStrip v-if="storiesEnabled && ready" variant="hero" />
+
+      <div class="hero-search">
+        <Search :size="18" class="hero-search__icon" aria-hidden="true" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="hero-search__input"
+          :placeholder="t('conversations.searchRecent')"
+        />
         <button
           type="button"
-          class="mark-all-read-btn"
+          class="hero-search__action"
           :disabled="markingAllRead || totalUnread <= 0"
           :title="t('conversations.markAllRead')"
           :aria-label="t('conversations.markAllRead')"
           @click="markAllRead"
         >
-          <CheckCheck :size="16" aria-hidden="true" />
+          <CheckCheck :size="18" stroke-width="2" />
         </button>
       </div>
     </div>
 
-    <div class="scroll-area">
-      <div v-if="!filteredList.length" class="empty-state">
-        <MessageCircle :size="48" class="empty-icon" />
-        <p>{{ t('conversations.empty') }}</p>
-        <button class="btn-gradient" @click="goToContacts">{{ t('conversations.newChat') }}</button>
+    <div class="filter-row" :dir="localeStore.htmlDir" role="tablist">
+      <button
+        v-for="f in ['all', 'unread', 'archived']"
+        :key="f"
+        type="button"
+        class="filter-chip"
+        :class="{ 'filter-chip--active': filter === f }"
+        role="tab"
+        :aria-selected="filter === f"
+        @click="filter = f"
+      >
+        <Check v-if="filter === f" :size="14" stroke-width="2.5" class="filter-chip__check" />
+        <span>{{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}</span>
+        <span v-if="f === 'unread' && totalUnread > 0" class="filter-chip__badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+      </button>
+    </div>
+
+    <div
+      ref="scrollAreaRef"
+      class="scroll-area"
+      :class="{ 'scroll-area--pulling': pullDistance > 0 || refreshing }"
+      :style="pullDistance ? { '--pull-offset': `${pullDistance}px` } : undefined"
+    >
+      <div v-if="pullDistance > 0 || refreshing" class="pull-indicator">
+        {{ refreshing ? t('common.loading') : t('conversations.pullRefresh') }}
       </div>
-      <div v-else class="conv-list">
-        <div
-          v-for="c in filteredList"
-          :key="c.id ?? c.Id"
-          class="conv-item"
-          :class="{ unread: getUnreadCount(c) > 0, 'is-group': c.isGroup ?? c.IsGroup }"
-          @click="goToConversation(c)"
-          @contextmenu.prevent="openContextMenu(c, $event)"
-        >
+      <ListSkeleton v-if="loading && !conversations.length" />
+      <EmptyState
+        v-else-if="!filteredList.length"
+        :title="t('conversations.empty')"
+      >
+        <template #icon>
+          <MessageCircle :size="32" />
+        </template>
+        <template #action>
+          <button class="btn-gradient" @click="goToContacts">{{ t('conversations.newChat') }}</button>
+        </template>
+      </EmptyState>
+      <div v-else class="chat-sections">
+        <template v-for="row in listWithSections" :key="row.key">
+          <div v-if="row.type === 'header'" class="section-head">
+            <Pin v-if="row.icon === 'pin'" :size="16" stroke-width="2" />
+            <MessageCircle v-else :size="16" stroke-width="2" />
+            <span>{{ row.title }}</span>
+          </div>
           <div
-            class="item-avatar"
-            :class="{
-              'avatar-group': c.isGroup ?? c.IsGroup,
-              'avatar-elevated-bg': !(c.isGroup ?? c.IsGroup) && !(c.partnerAvatar ?? c.PartnerAvatar),
-              'avatar-no-photo': !(c.isGroup ?? c.IsGroup) && !(
-                (c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)
-              )
-            }"
-            :style="{ background: (c.partnerAvatar ?? c.PartnerAvatar) && !isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }"
+            v-else
+            class="conv-item"
+            :class="{ unread: getUnreadCount(row.data) > 0, 'is-group': row.data.isGroup ?? row.data.IsGroup }"
+            @click="goToConversation(row.data)"
+            @contextmenu.prevent="openContextMenu(row.data, $event)"
           >
-            <CachedAvatar v-if="(c.partnerAvatar ?? c.PartnerAvatar) && isImageAvatar(c.partnerAvatar ?? c.PartnerAvatar)" :url="c.partnerAvatar ?? c.PartnerAvatar" img-class="avatar-img" />
-            <Users v-else-if="c.isGroup ?? c.IsGroup" :size="16" class="avatar-group-icon" />
-            <span v-else>{{ (c.partnerName ?? c.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
-          </div>
-          <div class="item-content">
-            <div class="item-row item-row-name">
-              <span class="item-name">{{ c.partnerName ?? c.PartnerName ?? '—' }}</span>
-              <span class="item-meta-row">
-                <span v-if="c.isGroup ?? c.IsGroup" class="group-badge">{{ t('groups.groupLabel') }}</span>
-                <span v-if="getUnreadCount(c) > 0" class="unread-badge-inline">{{ getUnreadCount(c) > 99 ? '99+' : getUnreadCount(c) }}</span>
-                <span class="item-time">{{ formatTime(c.lastMessageAt ?? c.LastMessageAt) }}</span>
-              </span>
+            <div
+              class="item-avatar"
+              :class="{
+                'avatar-group': row.data.isGroup ?? row.data.IsGroup,
+                'avatar-elevated-bg': !(row.data.isGroup ?? row.data.IsGroup) && !(row.data.partnerAvatar ?? row.data.PartnerAvatar),
+                'avatar-no-photo': !(row.data.isGroup ?? row.data.IsGroup) && !(
+                  (row.data.partnerAvatar ?? row.data.PartnerAvatar) && isImageAvatar(row.data.partnerAvatar ?? row.data.PartnerAvatar)
+                )
+              }"
+              :style="{ background: (row.data.partnerAvatar ?? row.data.PartnerAvatar) && !isImageAvatar(row.data.partnerAvatar ?? row.data.PartnerAvatar) ? 'var(--primary)' : 'var(--bg-elevated)' }"
+            >
+              <CachedAvatar v-if="(row.data.partnerAvatar ?? row.data.PartnerAvatar) && isImageAvatar(row.data.partnerAvatar ?? row.data.PartnerAvatar)" :url="row.data.partnerAvatar ?? row.data.PartnerAvatar" img-class="avatar-img" />
+              <Users v-else-if="row.data.isGroup ?? row.data.IsGroup" :size="16" class="avatar-group-icon" />
+              <span v-else>{{ (row.data.partnerName ?? row.data.PartnerName)?.[0]?.toUpperCase() || '?' }}</span>
             </div>
-            <div class="item-row">
-              <span class="item-preview">{{ getListPreview(c) }}</span>
-              <span class="item-actions">
-                <span v-if="c.isPinned ?? c.IsPinned" class="pin-badge" :title="t('conversations.pin')">
-                  <Pin :size="10" />
+            <div class="item-content">
+              <div class="item-row item-row-name">
+                <span class="item-name">{{ row.data.partnerName ?? row.data.PartnerName ?? '—' }}</span>
+                <span class="item-time">{{ formatTime(row.data.lastMessageAt ?? row.data.LastMessageAt) }}</span>
+              </div>
+              <div class="item-row item-row-preview">
+                <span class="item-preview">{{ getListPreview(row.data) }}</span>
+                <span class="item-meta-col">
+                  <span v-if="row.data.isGroup ?? row.data.IsGroup" class="group-badge">{{ t('groups.groupLabel') }}</span>
+                  <span v-if="getUnreadCount(row.data) > 0" class="unread-badge-inline">{{ getUnreadCount(row.data) > 99 ? '99+' : getUnreadCount(row.data) }}</span>
+                  <button
+                    v-if="row.data.partnerId ?? row.data.PartnerId"
+                    class="context-btn"
+                    @click.stop="openContextMenu(row.data, $event)"
+                    :aria-label="t('common.cancel')"
+                  >
+                    <MoreVertical :size="15" />
+                  </button>
                 </span>
-                <button
-                  v-if="c.partnerId ?? c.PartnerId"
-                  class="context-btn"
-                  @click.stop="openContextMenu(c, $event)"
-                  :aria-label="t('common.cancel')"
-                >
-                  <MoreVertical :size="15" />
-                </button>
-              </span>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
 
@@ -412,41 +518,336 @@ async function markAllRead() {
         <MessageSquarePlus v-else :size="24" stroke-width="2.25" />
       </button>
     </div>
+    </template>
+
+    <div v-else ref="scrollAreaRef" class="scroll-area scroll-area--contacts">
+      <ContactsPanel ref="contactsPanelRef" />
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* مظهر القائمة بصفوف وفواصل (كواتساب) مع ألوان NexChat — دون أخضر */
-.conversations.conversations--wa {
-  --wa-header: var(--bg-secondary);
-  --wa-header-text: var(--text-primary);
-  --wa-icon-on-header: var(--text-secondary);
-  --wa-subbar: var(--bg-primary);
-  --wa-search-field: var(--bg-card);
-  --wa-search-icon: var(--text-muted);
-  --wa-list-bg: var(--bg-primary);
-  --wa-row-sep: var(--border);
-  --wa-tap: rgba(255, 255, 255, 0.05);
-  --wa-accent: var(--primary);
-  --wa-filter-active: var(--primary);
-  --wa-name: var(--text-primary);
-  --wa-preview: var(--text-secondary);
+/* ——— Chatloop-style conversations ——— */
+.conversations--chatloop {
+  background: var(--bg-primary);
+  font-family: 'Cairo', sans-serif;
 }
 
-html.light .conversations.conversations--wa,
-[data-theme="light"] .conversations.conversations--wa {
-  --wa-header: var(--bg-card);
-  --wa-header-text: var(--text-primary);
-  --wa-icon-on-header: var(--text-secondary);
-  --wa-subbar: #fff;
-  --wa-search-field: var(--bg-card);
-  --wa-search-icon: var(--text-muted);
-  --wa-list-bg: var(--bg-primary);
-  --wa-row-sep: var(--border);
-  --wa-tap: rgba(0, 0, 0, 0.04);
-  --wa-filter-active: var(--primary);
-  --wa-name: var(--text-primary);
-  --wa-preview: var(--text-secondary);
+.conv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--safe-top) + 10px) var(--spacing) 8px;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+}
+
+.conv-header__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.conv-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conv-header__action-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: none;
+  border-radius: 14px;
+  color: var(--primary);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.conv-main-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 var(--spacing) 12px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.conv-main-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: 'Cairo', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.conv-main-tab--active {
+  background: var(--bg-card);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.scroll-area--contacts {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.conv-header__bell {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border-radius: 14px;
+  color: var(--text-primary);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.conv-header__bell-dot {
+  position: absolute;
+  top: 10px;
+  inset-inline-end: 11px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #EF4444;
+  border: 2px solid var(--bg-card);
+}
+
+.hero-card {
+  margin: 4px var(--spacing) 14px;
+  padding: 16px 14px 14px;
+  border-radius: 24px;
+  background: linear-gradient(145deg, #1D4ED8 0%, #2563EB 42%, #3B82F6 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28);
+  flex-shrink: 0;
+}
+
+:global(html.light) .hero-card,
+:global([data-theme='light']) .hero-card {
+  background: linear-gradient(145deg, #2563EB 0%, #3B82F6 48%, #60A5FA 100%);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.22);
+}
+
+.hero-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.hero-card__label {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.hero-card__menu {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:global(html.light) .hero-card__menu,
+:global([data-theme='light']) .hero-card__menu {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.hero-card__menu-badge {
+  position: absolute;
+  top: -4px;
+  inset-inline-end: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: #EF4444;
+  border-radius: var(--radius-full);
+  border: 2px solid #2563EB;
+}
+
+:global(html.light) .hero-card__menu-badge,
+:global([data-theme='light']) .hero-card__menu-badge {
+  border-color: #3B82F6;
+}
+
+.hero-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 0 12px 0 14px;
+  min-height: 48px;
+  background: #fff;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+}
+
+.hero-search__icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.hero-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.hero-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+.hero-search__action {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hero-search__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.filter-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 var(--spacing) 12px;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+.filter-row::-webkit-scrollbar { display: none; }
+
+.filter-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: 'Cairo', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.filter-chip--active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+}
+
+.filter-chip__check {
+  flex-shrink: 0;
+}
+
+.filter-chip__badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.filter-chip--active .filter-chip__badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+
+.chat-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 var(--spacing) calc(96px + var(--safe-bottom));
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 4px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-head svg {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .conversations {
@@ -464,11 +865,18 @@ html.light .conversations.conversations--wa,
   box-sizing: border-box;
 }
 
-.conversations--wa {
-  background: var(--wa-list-bg);
+.conversations--chatloop {
+  background: var(--bg-primary);
 }
-.conversations--wa.page.auth-pattern::before {
-  opacity: 0.06;
+
+.scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  background: var(--bg-primary);
+  -webkit-overflow-scrolling: touch;
 }
 
 .top-bar {
@@ -666,26 +1074,23 @@ html.light .msg-req-badge,
 .list-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 10px 8px;
+  gap: 10px;
+  padding: 10px var(--spacing) 12px;
   flex-shrink: 0;
-  background: var(--wa-subbar);
+  background: transparent;
 }
 
 .filter-tabs {
   display: flex;
-  gap: 3px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--bg-card);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
   box-sizing: border-box;
 }
-html.light .conversations--wa .filter-tabs,
-[data-theme="light"] .conversations--wa .filter-tabs {
-  background: var(--bg-secondary);
-}
+.filter-tabs::-webkit-scrollbar { display: none; }
 
 .search-toolbar {
   display: flex;
@@ -705,72 +1110,67 @@ html.light .conversations--wa .filter-tabs,
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(108, 99, 255, 0.35);
-  background: rgba(108, 99, 255, 0.1);
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--primary-soft);
   color: var(--primary);
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
   -webkit-tap-highlight-color: transparent;
 }
 .mark-all-read-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-html.light .conversations--wa .list-toolbar,
-[data-theme="light"] .conversations--wa .list-toolbar {
-  background: #fff;
-  border-bottom: 1px solid var(--wa-row-sep);
-}
 
 .filter-btn {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
-  min-height: 28px;
-  padding: 4px 6px;
-  font-size: 11px;
+  min-height: 36px;
+  padding: 8px 16px;
+  font-size: 13px;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
-  border-radius: 8px;
+  border-radius: var(--radius-full);
   border: none;
-  background: transparent;
-  color: var(--wa-icon-on-header, var(--text-secondary));
+  background: var(--bg-card);
+  color: var(--text-secondary);
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s, color 0.15s;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: background var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast);
   white-space: nowrap;
 }
 
 .filter-btn.active {
-  background: rgba(108, 99, 255, 0.22);
-  color: var(--wa-filter-active);
-  box-shadow: 0 0 0 1px rgba(108, 99, 255, 0.4);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 html.light .conversations--wa .filter-btn.active,
 [data-theme="light"] .conversations--wa .filter-btn.active {
-  background: rgba(108, 99, 255, 0.12);
-  color: var(--wa-filter-active);
-  box-shadow: none;
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .search-input-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  min-height: 34px;
-  border-radius: 17px;
-  border: none;
-  background: var(--wa-search-field);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+  gap: 10px;
+  padding: 0 16px;
+  min-height: 44px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 html.light .conversations--wa .search-input-wrap,
 [data-theme="light"] .conversations--wa .search-input-wrap {
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 .search-icon {
@@ -809,14 +1209,16 @@ html.light .conversations--wa .search-input::placeholder,
   color: var(--text-muted);
 }
 
-.scroll-area {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0;
-  background: var(--wa-list-bg, var(--bg-primary));
-  -webkit-overflow-scrolling: touch;
+.scroll-area--pulling {
+  transform: translateY(var(--pull-offset, 0));
+  transition: transform 0.15s var(--ease-out);
+}
+
+.pull-indicator {
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .empty-state {
@@ -839,52 +1241,37 @@ html.light .conversations--wa .search-input::placeholder,
   margin-bottom: 16px;
 }
 
-.conv-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding-bottom: calc(88px + var(--safe-bottom));
-}
-
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px 10px 10px;
-  min-height: 64px;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  min-height: 72px;
   cursor: pointer;
-  border-radius: 0;
+  border-radius: var(--radius-lg);
   position: relative;
   border: none;
-  background: transparent;
-  border-bottom: 1px solid var(--wa-row-sep, var(--border));
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
   -webkit-tap-highlight-color: transparent;
-}
-.conv-item:last-child {
-  border-bottom: none;
-}
-.conversations--wa .conv-item:active {
-  background: var(--wa-tap, var(--bg-card-hover));
+  transition: transform var(--motion-fast), box-shadow var(--motion-fast);
 }
 
-.conversations--wa .conv-item.is-group {
-  border-inline-start: 3px solid var(--wa-accent, var(--primary));
-  background: transparent;
-  padding-inline-start: 7px;
-}
-.conversations--wa .conv-item.is-group:active {
-  background: var(--wa-tap);
+.conv-item:active {
+  transform: scale(0.99);
+  box-shadow: var(--shadow-md);
 }
 
-.conv-item.unread .item-name { font-weight: 700; }
+.conversations--chatloop .conv-item.is-group {
+  border-inline-start: 3px solid var(--primary);
+  padding-inline-start: 11px;
+}
 
-.conversations--wa .conv-item.unread .item-preview {
+.conv-item.unread .item-name { font-weight: 800; }
+
+.conv-item.unread .item-preview {
   color: var(--text-secondary);
-  font-weight: 500;
-}
-html.light .conversations--wa .conv-item.unread .item-preview,
-[data-theme="light"] .conversations--wa .conv-item.unread .item-preview {
-  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -992,34 +1379,46 @@ html.light .item-avatar.avatar-elevated-bg {
   flex-shrink: 0;
 }
 
-.item-meta-row {
-  display: flex;
+.item-row-name {
+  align-items: flex-start;
+}
+
+.item-row-preview {
   align-items: center;
-  gap: 6px;
+  margin-top: 2px;
+}
+
+.item-meta-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   flex-shrink: 0;
+  min-width: 28px;
 }
 
 .item-time {
   font-size: 11px;
-  color: var(--wa-preview, var(--text-muted));
+  color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
   font-variant-numeric: tabular-nums;
-  opacity: 0.9;
+  flex-shrink: 0;
 }
 
 .unread-badge-inline {
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
   background: var(--primary);
   color: white;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   font-family: 'Cairo', sans-serif;
-  border-radius: 8px;
+  border-radius: var(--radius-full);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
 }
 
 .item-preview {
@@ -1182,7 +1581,7 @@ html.light .conversations--wa .context-btn,
 .conv-fab-main {
   width: 56px;
   height: 56px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: none;
   display: flex;
   align-items: center;
@@ -1190,10 +1589,8 @@ html.light .conversations--wa .context-btn,
   background: var(--primary);
   color: #fff;
   cursor: pointer;
-  box-shadow:
-    0 4px 12px rgba(108, 99, 255, 0.45),
-    0 2px 6px rgba(0, 0, 0, 0.15);
-  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+  transition: transform var(--motion-fast), background var(--motion-fast), box-shadow var(--motion-fast);
   -webkit-tap-highlight-color: transparent;
 }
 

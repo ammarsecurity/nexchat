@@ -1,10 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ChevronRight } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 
-const router = useRouter()
+const { t } = useI18n()
 const content = ref('')
 const loading = ref(true)
 
@@ -14,9 +14,9 @@ onMounted(async () => {
   try {
     const res = await fetch(`${API_BASE}/sitecontent/privacy_policy`)
     const data = await res.json()
-    content.value = data.content || 'لم يتم إضافة سياسة الخصوصية بعد.'
+    content.value = data.content || t('settings.privacyPolicy')
   } catch {
-    content.value = 'حدث خطأ في تحميل سياسة الخصوصية.'
+    content.value = t('common.error')
   } finally {
     loading.value = false
   }
@@ -24,63 +24,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="privacy page">
-    <LoaderOverlay :show="loading" text="جاري تحميل سياسة الخصوصية..." />
-    <header class="top-bar">
-      <button class="back-btn" @click="router.replace('/settings')"><ChevronRight :size="22" /></button>
-      <span class="top-title">سياسة الخصوصية</span>
-      <div style="width:40px"></div>
-    </header>
-
-    <div class="scroll-area">
-      <div v-if="!loading" class="policy-content" v-html="content.replace(/\n/g, '<br>')"></div>
-    </div>
-  </div>
+  <ModernPageShell :title="t('settings.privacyPolicy')" back-to="/settings">
+    <LoaderOverlay :show="loading" :text="t('common.loading')" />
+    <div v-if="!loading" class="policy-content" v-html="content.replace(/\n/g, '<br>')" />
+  </ModernPageShell>
 </template>
 
 <style scoped>
-.privacy {
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.top-bar {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
-}
-.back-btn {
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  height: var(--touch-min);
-  justify-content: center;
-  min-width: var(--touch-min);
-}
-.back-btn:active { background: var(--bg-card-hover); }
-.top-title { font-size: 17px; font-weight: 600; }
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing);
-  padding-bottom: calc(var(--spacing) + var(--safe-bottom));
-}
-
-.loading-text { text-align: center; padding: 24px; }
-
 .policy-content {
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.7;
-  white-space: pre-wrap;
 }
-.policy-content :deep(br) { display: block; }
 </style>

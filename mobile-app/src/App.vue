@@ -11,6 +11,7 @@ import IncomingConversationCallDialog from './components/IncomingConversationCal
 import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
 import LoaderOverlay from './components/LoaderOverlay.vue'
 import AppToast from './components/AppToast.vue'
+import AppTabBar from './components/AppTabBar.vue'
 import { useApiLoadingStore } from './stores/apiLoading'
 import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
@@ -261,8 +262,14 @@ watch([() => network.isOnline, () => auth.token], ([online, token]) => {
   }
 }, { immediate: true })
 
+const showTabBar = computed(() => {
+  if (!auth.token) return false
+  const paths = ['/home', '/conversations', '/settings', '/short-films']
+  return paths.includes(route.path)
+})
+
 // الصفحات الرئيسية: الضغط على الرجوع لا يخرج التطبيق
-const tabRoots = ['/', '/onboarding', '/login', '/register', '/home', '/matching']
+const tabRoots = ['/', '/onboarding', '/login', '/register', '/home', '/matching', '/conversations', '/settings', '/short-films']
 
 let backButtonListener = null
 
@@ -317,13 +324,14 @@ onUnmounted(() => {
       </div>
       <div
         class="app-content"
-        :class="{ 'has-offline-banner': !isOnline }"
+        :class="{ 'has-offline-banner': !isOnline, 'has-tab-bar': showTabBar && auth.token }"
       >
       <RouterView v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />
         </Transition>
       </RouterView>
+      <AppTabBar v-if="auth.token" />
       </div>
     </template>
     <IncomingConnectionRequestDialog v-if="auth.token" />
@@ -379,6 +387,6 @@ onUnmounted(() => {
   -webkit-tap-highlight-color: transparent;
 }
 .app-content.has-offline-banner {
-  padding-top: 48px;
+  padding-top: var(--offline-banner-height, 48px);
 }
 </style>

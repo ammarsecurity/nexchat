@@ -4,8 +4,15 @@ import { publicUrl } from '../utils/publicUrl'
 
 const STORAGE_KEY = 'nexchat_theme'
 
+function readInitialLight() {
+  const stored = localStorage.getItem(STORAGE_KEY)
+  if (stored === 'dark') return false
+  if (stored === 'light') return true
+  return true
+}
+
 export const useThemeStore = defineStore('theme', () => {
-  const isLight = ref(localStorage.getItem(STORAGE_KEY) === 'light')
+  const isLight = ref(readInitialLight())
 
   function toggleTheme() {
     isLight.value = !isLight.value
@@ -25,7 +32,7 @@ export const useThemeStore = defineStore('theme', () => {
     }
     // theme-color for mobile browser bar
     const meta = document.querySelector('meta[name="theme-color"]')
-    if (meta) meta.content = isLight.value ? '#F5F5FA' : '#0D0D1A'
+    if (meta) meta.content = isLight.value ? '#F4F7FE' : '#0F172A'
     // favicon based on theme
     const favicon = document.querySelector('link[rel="icon"]')
     if (favicon) favicon.href = publicUrl(isLight.value ? 'logo-light.png' : 'logo.png')

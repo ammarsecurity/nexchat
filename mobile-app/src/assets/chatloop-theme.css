@@ -1,0 +1,76 @@
+/* Chatloop-inspired design tokens — imported by main.css */
+
+:root {
+  /* Surfaces */
+  --bg-primary: #0F172A;
+  --bg-secondary: #1E293B;
+  --bg-card: #1E293B;
+  --bg-card-hover: #334155;
+  --bg-elevated: #334155;
+  --surface-tint: rgba(59, 130, 246, 0.08);
+
+  /* Brand */
+  --primary: #60A5FA;
+  --primary-hover: #3B82F6;
+  --primary-soft: rgba(96, 165, 250, 0.15);
+  --primary-muted: rgba(96, 165, 250, 0.22);
+  --danger: #F87171;
+  --success: #34D399;
+
+  /* Text */
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+
+  /* Shape & elevation */
+  --border: rgba(255, 255, 255, 0.08);
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.22);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.2);
+  --shadow-tab: 0 -4px 24px rgba(0, 0, 0, 0.15);
+
+  /* Messages */
+  --msg-theirs-bg: rgba(255, 255, 255, 0.08);
+  --msg-theirs-color: #F8FAFC;
+  --msg-mine-bg: linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%);
+  --msg-mine-color: #FFFFFF;
+  --system-msg-bg: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"],
+html.light {
+  --bg-primary: #F4F7FE;
+  --bg-secondary: #EBF2FF;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F0F5FF;
+  --bg-elevated: #F8FAFF;
+  --surface-tint: rgba(59, 130, 246, 0.06);
+
+  --primary: #3B82F6;
+  --primary-hover: #2563EB;
+  --primary-soft: rgba(59, 130, 246, 0.12);
+  --primary-muted: rgba(59, 130, 246, 0.18);
+  --danger: #EF4444;
+  --success: #22C55E;
+
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+
+  --border: rgba(15, 23, 42, 0.06);
+  --shadow-sm: 0 2px 10px rgba(59, 130, 246, 0.06);
+  --shadow-md: 0 8px 28px rgba(59, 130, 246, 0.1);
+  --shadow-card: 0 4px 24px rgba(59, 130, 246, 0.08);
+  --shadow-tab: 0 -4px 28px rgba(59, 130, 246, 0.08);
+
+  --msg-theirs-bg: #FFFFFF;
+  --msg-theirs-color: #0F172A;
+  --msg-mine-bg: linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%);
+  --msg-mine-color: #FFFFFF;
+  --system-msg-bg: rgba(59, 130, 246, 0.06);
+}

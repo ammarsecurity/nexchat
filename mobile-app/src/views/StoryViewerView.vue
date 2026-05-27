@@ -698,16 +698,24 @@ onUnmounted(clearTimer)
 }
 
 .icon-btn {
-  background: rgba(0, 0, 0, 0.35);
-  border: none;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: #fff;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.icon-btn:active {
+  transform: scale(0.96);
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .header-spacer {
@@ -908,8 +916,9 @@ video.media-el {
   max-height: 60vh;
   background: var(--bg-card);
   color: var(--text-primary);
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: 20px 16px calc(16px + var(--safe-bottom));
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
 }
 
 .viewers-sheet h3 {
@@ -943,9 +952,10 @@ video.media-el {
   width: 100%;
   padding: 12px;
   border: none;
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--bg-elevated);
   font-family: 'Cairo', sans-serif;
+  font-weight: 600;
   cursor: pointer;
 }
 </style>

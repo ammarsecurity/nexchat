@@ -1,40 +1,51 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { X, Globe, UserCircle, UsersRound, Users } from 'lucide-vue-next'
+import {
+  X, Globe, UserCircle, UsersRound, ShieldCheck, Sparkles, Lightbulb, Search
+} from 'lucide-vue-next'
 import BannerStrip from '../components/BannerStrip.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useMatchingStore } from '../stores/matching'
 import { useI18n } from 'vue-i18n'
 import { matchingHub, ensureConnected } from '../services/signalr'
 import { publicUrl } from '../utils/publicUrl'
+import { useReducedMotion } from '../composables/useReducedMotion'
 
 const router = useRouter()
 const matching = useMatchingStore()
 const { t } = useI18n()
+const { reducedMotion } = useReducedMotion()
 const dots = ref('.')
 const cancelling = ref(false)
-const onlineCount = ref(Math.floor(Math.random() * 200) + 50)
 let cancelledProgrammatically = false
 
-const filterLabels = computed(() => ({ all: t('matching.filterAll'), male: t('matching.filterMale'), female: t('matching.filterFemale') }))
+const filterLabels = computed(() => ({
+  all: t('matching.filterAll'),
+  male: t('matching.filterMale'),
+  female: t('matching.filterFemale')
+}))
 const filterIcons = { all: Globe, male: UserCircle, female: UsersRound }
 const filterStyles = {
-  all: { color: '#7C75FF', bg: 'rgba(124, 117, 255, 0.15)' },
-  male: { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
-  female: { color: '#EC4899', bg: 'rgba(236, 72, 153, 0.15)' }
+  all: { color: 'var(--primary)', bg: 'var(--primary-soft)' },
+  male: { color: 'var(--primary)', bg: 'var(--primary-soft)' },
+  female: { color: '#DB2777', bg: 'rgba(219, 39, 119, 0.1)' }
 }
 
+const tips = computed(() => [
+  { key: 'tip1', icon: Sparkles },
+  { key: 'tip2', icon: UsersRound },
+  { key: 'tip3', icon: Lightbulb }
+])
+
+const activeFilterStyle = computed(() => filterStyles[matching.genderFilter] ?? filterStyles.all)
+
 let dotsInterval
-let onlineInterval
 
 onMounted(async () => {
   dotsInterval = setInterval(() => {
     dots.value = dots.value.length >= 3 ? '.' : dots.value + '.'
   }, 500)
-  onlineInterval = setInterval(() => {
-    onlineCount.value = Math.max(20, onlineCount.value + Math.floor(Math.random() * 6) - 3)
-  }, 5000)
 
   if (matching.consumeResumeSearchAfterNav()) {
     try {
@@ -46,7 +57,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(dotsInterval)
-  clearInterval(onlineInterval)
   if (matching.consumeSkipNextMatchingUnmountCancel()) return
   if (!cancelledProgrammatically) {
     ensureConnected(matchingHub).then(() => matchingHub.invoke('CancelSearching')).catch(() => {})
@@ -70,247 +80,404 @@ async function cancel() {
 <template>
   <div class="matching page">
     <LoaderOverlay :show="cancelling" :text="t('matching.cancelling')" />
-    <div class="chat-pattern" aria-hidden="true"></div>
 
-    <!-- Header -->
-    <header class="matching-header">
-      <h1 class="matching-title">{{ t('matching.title') }}</h1>
-      <button class="cancel-header-btn" :disabled="cancelling" @click="cancel" :aria-label="t('common.cancel')">
-        <X :size="22" stroke-width="2" />
+    <header class="match-header">
+      <h1 class="match-header__title">{{ t('matching.title') }}</h1>
+      <button
+        type="button"
+        class="match-header__close"
+        :disabled="cancelling"
+        :aria-label="t('matching.cancelSearch')"
+        @click="cancel"
+      >
+        <X :size="20" stroke-width="2.25" />
       </button>
     </header>
 
-    <div class="content">
-      <!-- Search visual -->
-      <section class="search-section">
-        <div class="search-visual">
-          <Vue3Lottie
-            :animation-link="publicUrl('json/world-map-searching.json')"
-            width="100%"
-            height="100%"
-            :speed="0.8"
-            :loop="true"
-            :auto-play="true"
-            class="search-visual-lottie"
-          />
+    <div class="match-scroll">
+      <section class="match-status" aria-live="polite">
+        <div class="match-radar" :class="{ 'match-radar--calm': reducedMotion }">
+          <span class="match-radar__wave match-radar__wave--1" aria-hidden="true" />
+          <span class="match-radar__wave match-radar__wave--2" aria-hidden="true" />
+          <span class="match-radar__wave match-radar__wave--3" aria-hidden="true" />
+          <div class="match-radar__core">
+            <Vue3Lottie
+              v-if="!reducedMotion"
+              :animation-link="publicUrl('json/chat.json')"
+              :height="44"
+              :width="44"
+              :speed="0.9"
+              :loop="true"
+              :auto-play="true"
+              class="match-radar__lottie"
+            />
+            <Search v-else :size="28" stroke-width="2.25" />
+          </div>
         </div>
-        <div class="search-text">
-          <h2 class="search-heading">{{ t('matching.searching') }}{{ dots }}</h2>
-          <p class="search-sub">{{ t('matching.searchingFor') }}</p>
-          <div class="badges-row">
-            <div class="online-badge">
-              <Users :size="14" stroke-width="2" />
-              <span class="online-count">{{ onlineCount }}</span>
-              <span class="online-label">{{ t('home.onlineNow') }}</span>
-            </div>
-            <div class="filter-badge" :style="{ '--filter-color': filterStyles[matching.genderFilter].color }">
-              <component :is="filterIcons[matching.genderFilter]" :size="14" stroke-width="2" />
-              <span class="filter-val">{{ filterLabels[matching.genderFilter] }}</span>
-            </div>
+
+        <p class="match-status__label">
+          <span class="match-status__live" aria-hidden="true" />
+          {{ t('matching.searching') }}{{ dots }}
+        </p>
+        <h2 class="match-status__title">{{ t('matching.searchingFor') }}</h2>
+
+        <div class="match-status__meta">
+          <div class="match-meta">
+            <span class="match-meta__icon match-meta__icon--secure">
+              <ShieldCheck :size="18" stroke-width="2.25" />
+            </span>
+            <span class="match-meta__text">{{ t('matching.secureSearch') }}</span>
+          </div>
+          <div
+            class="match-meta"
+            :style="{ '--meta-accent': activeFilterStyle.color, '--meta-bg': activeFilterStyle.bg }"
+          >
+            <span class="match-meta__icon match-meta__icon--filter">
+              <component :is="filterIcons[matching.genderFilter]" :size="18" stroke-width="2.25" />
+            </span>
+            <span class="match-meta__text">{{ filterLabels[matching.genderFilter] }}</span>
           </div>
         </div>
       </section>
 
-      <!-- Banner Slider -->
-      <BannerStrip placement="matching" />
+      <section class="match-tips">
+        <h3 class="match-tips__title">{{ t('matching.tipsTitle') }}</h3>
+        <ul class="match-tips__list">
+          <li v-for="tip in tips" :key="tip.key" class="match-tips__row">
+            <span class="match-tips__icon">
+              <component :is="tip.icon" :size="16" stroke-width="2.25" />
+            </span>
+            <span>{{ t(`matching.${tip.key}`) }}</span>
+          </li>
+        </ul>
+      </section>
 
-      <!-- Cancel CTA -->
-      <button class="cancel-btn" :disabled="cancelling" @click="cancel">
-        <X :size="18" stroke-width="2" />
+      <div class="match-banners">
+        <BannerStrip placement="matching" />
+      </div>
+    </div>
+
+    <footer class="match-footer">
+      <button type="button" class="match-footer__btn" :disabled="cancelling" @click="cancel">
+        <X :size="18" stroke-width="2.25" />
         <span>{{ t('matching.cancelSearch') }}</span>
       </button>
-    </div>
+    </footer>
   </div>
 </template>
 
 <style scoped>
 .matching {
-  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  min-height: 100%;
-  overflow-y: auto;
-  padding: 0;
-  position: relative;
-  -webkit-overflow-scrolling: touch;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-family: 'Cairo', sans-serif;
 }
 
-.chat-pattern {
-  position: absolute;
-  inset: 0;
-  opacity: 0.08;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%236C63FF' stroke-width='0.35'%3E%3Cpath d='M8 8h16v16H8z'/%3E%3Cpath d='M40 8h16v16H40z'/%3E%3Cpath d='M8 40h16v16H8z'/%3E%3Cpath d='M40 40h16v16H40z'/%3E%3Cpath d='M24 24h16v16H24z'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='2' fill='%236C63FF' opacity='0.4'/%3E%3Ccircle cx='48' cy='16' r='2' fill='%23FF6584' opacity='0.35'/%3E%3Ccircle cx='16' cy='48' r='2' fill='%23FF6584' opacity='0.35'/%3E%3Ccircle cx='48' cy='48' r='2' fill='%236C63FF' opacity='0.4'/%3E%3Ccircle cx='32' cy='32' r='2' fill='%236C63FF' opacity='0.5'/%3E%3Cline x1='16' y1='16' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3Cline x1='48' y1='16' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3Cline x1='16' y1='48' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3Cline x1='48' y1='48' x2='32' y2='32' stroke='%236C63FF' stroke-width='0.25' opacity='0.3'/%3E%3C/svg%3E");
-  background-size: 64px 64px;
-  background-repeat: repeat;
-  background-position: 0 0;
-  animation: pattern-drift 28s linear infinite;
-  pointer-events: none;
-  z-index: 0;
-}
-
-@keyframes pattern-drift {
-  0% { background-position: 0 0; }
-  100% { background-position: 64px 64px; }
-}
-
-/* Header */
-.matching-header {
+.match-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 16px;
+  gap: 12px;
+  padding: calc(var(--safe-top) + 10px) var(--spacing) 12px;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  z-index: 10;
+  z-index: 2;
 }
 
-.matching-title {
-  font-size: 18px;
-  font-weight: 700;
+.match-header__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
   color: var(--text-primary);
-  font-family: 'Cairo', sans-serif;
+  letter-spacing: -0.02em;
 }
 
-.cancel-header-btn {
+.match-header__close {
   width: 44px;
   height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  border-radius: 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s, color 0.2s;
-}
-.cancel-header-btn:hover { color: var(--text-primary); }
-.cancel-header-btn:active { background: var(--bg-card-hover); }
-.cancel-header-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* Content */
-.content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  padding: 24px var(--spacing) calc(32px + var(--safe-bottom));
-  position: relative;
-  z-index: 10;
-  width: 100%;
 }
 
-/* Search section */
-.search-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  width: 100%;
+.match-header__close:active:not(:disabled) {
+  transform: scale(0.96);
+  background: var(--bg-card-hover);
 }
 
-.search-visual {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 280px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.search-visual-lottie {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.search-visual-lottie :deep(.lottie-animation-container),
-.search-visual-lottie :deep(svg) {
-  width: 100% !important;
-  height: 100% !important;
+.match-header__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.search-text { text-align: center; }
-.search-heading {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--primary);
-  margin-bottom: 4px;
-  font-family: 'Cairo', sans-serif;
-}
-.search-sub {
-  font-size: 15px;
-  color: var(--text-secondary);
+.match-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 var(--spacing) 12px;
 }
 
-.badges-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.online-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(108, 99, 255, 0.1);
-  border: 1px solid rgba(108, 99, 255, 0.2);
-  border-radius: 20px;
-  font-size: 13px;
-}
-
-.online-badge .online-count {
-  font-weight: 700;
-  color: var(--primary);
-}
-
-.online-badge .online-label {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.filter-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(108, 99, 255, 0.1);
-  border: 1px solid rgba(108, 99, 255, 0.2);
-  border-radius: 20px;
-  font-size: 13px;
-  color: var(--filter-color, var(--primary));
-}
-
-.filter-badge .filter-val {
-  font-weight: 700;
-}
-
-/* Cancel button */
-.cancel-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 340px;
-  min-height: 48px;
-  padding: 0 24px;
+.match-status {
+  margin-bottom: 14px;
+  padding: 28px 18px 18px;
+  border-radius: 24px;
+  text-align: center;
   background: var(--bg-card);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.match-radar {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  margin: 0 auto 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.match-radar__wave {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(37, 99, 235, 0.28);
+  pointer-events: none;
+}
+
+.match-radar__wave--1 {
+  animation: match-radar 2.4s ease-out infinite;
+}
+
+.match-radar__wave--2 {
+  animation: match-radar 2.4s ease-out 0.8s infinite;
+}
+
+.match-radar__wave--3 {
+  animation: match-radar 2.4s ease-out 1.6s infinite;
+}
+
+.match-radar--calm .match-radar__wave {
+  animation: none;
+  opacity: 0.35;
+}
+
+.match-radar__core {
+  position: relative;
+  z-index: 1;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(145deg, #2563EB 0%, #60A5FA 100%);
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.32);
+}
+
+.match-radar__lottie {
+  pointer-events: none;
+}
+
+.match-status__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.match-status__live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.22);
+  animation: match-live 1.3s ease-in-out infinite;
+}
+
+.match-radar--calm ~ .match-status__label .match-status__live {
+  animation: none;
+}
+
+.match-status__title {
+  margin: 0 0 20px;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.match-status__meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.match-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 78px;
+  padding: 12px 10px;
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.match-meta__icon {
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  color: var(--text-secondary);
-  font-size: 15px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.cancel-btn:hover { color: var(--danger); border-color: rgba(255, 101, 132, 0.3); }
-.cancel-btn:active { background: var(--bg-card-hover); }
-.cancel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.match-meta__icon--secure {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16A34A;
+}
+
+.match-meta__icon--filter {
+  background: var(--meta-bg, var(--primary-soft));
+  color: var(--meta-accent, var(--primary));
+}
+
+.match-meta__text {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.match-tips {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.match-tips__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.match-tips__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.match-tips__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.match-tips__icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.match-banners :deep(.banner-strip) {
+  width: 100%;
+  margin-inline: 0;
+  margin-block: 0;
+}
+
+.match-footer {
+  flex-shrink: 0;
+  padding: 10px var(--spacing) calc(10px + var(--safe-bottom));
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.06);
+}
+
+.match-footer__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: 'Cairo', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.match-footer__btn:active:not(:disabled) {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.match-footer__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@keyframes match-radar {
+  0% { transform: scale(0.55); opacity: 0.85; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+@keyframes match-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-radar__wave,
+  .match-status__live {
+    animation: none !important;
+  }
+}
 </style>

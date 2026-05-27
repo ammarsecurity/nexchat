@@ -1,11 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings, LogOut, Zap, Globe, UserCircle, UsersRound, Phone, PhoneOff, PhoneCall, Check, X, AlertCircle, Bell, BookmarkPlus, Crown, ChevronLeft, ChevronRight, MessageCircle, Hash } from 'lucide-vue-next'
+import { Globe, UserCircle, UsersRound, PhoneOff, PhoneCall, AlertCircle, Bell, BookmarkPlus, Crown, ChevronLeft, ChevronRight, MessageCircle, Hash, Copy } from 'lucide-vue-next'
 import { useLocaleStore } from '../stores/locale'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
-import HomeNavBar from '../components/HomeNavBar.vue'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
@@ -40,7 +39,6 @@ const codeError = ref('')
 const copied = ref(false)
 const loading = ref(false)
 const waitingForAccept = ref(false)
-const showLogoutConfirm = ref(false)
 const profileBannerDismissed = ref(false)
 const notifPromptLoading = ref(false)
 const randomChatEnabled = ref(true)
@@ -256,17 +254,6 @@ onUnmounted(() => {
   conversationHub.off('ConversationListUpdated', handleConversationListUpdated)
 })
 
-function openLogoutConfirm() {
-  showLogoutConfirm.value = true
-}
-
-function confirmLogout() {
-  showLogoutConfirm.value = false
-  stopHub(matchingHub)
-  auth.logout()
-  router.replace('/login')
-}
-
 async function enableNotifications() {
   notifPromptLoading.value = true
   try {
@@ -298,7 +285,7 @@ const homePrimaryCompact = computed(
 </script>
 
 <template>
-  <div class="home page auth-pattern">
+  <div class="home page home--chatloop">
     <LoaderOverlay
       :show="loading"
       :text="waitingForAccept ? t('home.waitingForAccept') : t('home.connecting')"
@@ -317,53 +304,17 @@ const homePrimaryCompact = computed(
         </div>
       </div>
     </Transition>
-    <header class="header">
-      <div class="header-inner">
-        <RouterLink
-          v-if="user?.id"
-          :to="`/profile/${user.id}`"
-          class="user-row"
-        >
-          <div class="avatar-wrap" :class="{ 'avatar-wrap--featured': isFeatured }">
-            <div class="avatar" :style="{ background: auth.avatarColor }">
-              <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
-              <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
-              <span v-else>{{ avatarLetter }}</span>
-            </div>
-            <Crown v-if="isFeatured" class="avatar-crown" :size="16" fill="currentColor" stroke-width="1.5" />
-          </div>
-          <div class="user-meta">
-            <span class="user-greeting">{{ t('home.greeting') }}</span>
-            <span class="user-name">{{ user?.name }}</span>
-          </div>
-        </RouterLink>
-        <div v-else class="user-row user-row--static">
-          <div class="avatar-wrap" :class="{ 'avatar-wrap--featured': isFeatured }">
-            <div class="avatar" :style="{ background: auth.avatarColor }">
-              <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
-              <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
-              <span v-else>{{ avatarLetter }}</span>
-            </div>
-            <Crown v-if="isFeatured" class="avatar-crown" :size="16" fill="currentColor" stroke-width="1.5" />
-          </div>
-          <div class="user-meta">
-            <span class="user-greeting">{{ t('home.greeting') }}</span>
-            <span class="user-name">{{ user?.name }}</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <RouterLink to="/settings" class="header-icon-btn header-icon-btn--with-badge" :aria-label="t('home.settings')">
-            <Settings :size="18" stroke-width="2" />
-            <span
-              v-if="notificationsStore.unreadCount > 0"
-              class="header-notif-badge"
-            >{{ notificationsStore.unreadCount > 99 ? '99+' : notificationsStore.unreadCount }}</span>
-          </RouterLink>
-          <button type="button" class="header-icon-btn header-icon-btn--danger" @click="openLogoutConfirm" :aria-label="t('home.logout')">
-            <LogOut :size="18" stroke-width="2" />
-          </button>
-        </div>
-      </div>
+
+    <header class="home-header">
+      <h1 class="home-header__title">{{ t('nav.connect') }}</h1>
+      <RouterLink
+        to="/notifications"
+        class="home-header__bell"
+        :aria-label="t('settings.notifications')"
+      >
+        <Bell :size="20" stroke-width="2" />
+        <span v-if="notificationsStore.unreadCount > 0" class="home-header__bell-dot" />
+      </RouterLink>
     </header>
 
     <!-- Cancel waiting (when user is requester) - shown above loader -->
@@ -373,21 +324,6 @@ const homePrimaryCompact = computed(
           <PhoneOff :size="18" />
           <span>{{ t('home.cancelRequest') }}</span>
         </button>
-      </div>
-    </Transition>
-
-    <!-- Logout Confirm Dialog -->
-    <Transition name="modal">
-      <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="showLogoutConfirm = false">
-        <div class="logout-dialog glass-card">
-          <div class="logout-dialog-icon"><LogOut :size="48" stroke-width="2" /></div>
-          <h3 class="logout-dialog-title">{{ t('home.logoutConfirm') }}</h3>
-          <p class="logout-dialog-text">{{ t('home.logoutConfirmText') }}</p>
-          <div class="logout-dialog-actions">
-            <button class="btn-ghost" @click="showLogoutConfirm = false">{{ t('common.cancel') }}</button>
-            <button class="logout-confirm-btn" @click="confirmLogout">{{ t('home.logout') }}</button>
-          </div>
-        </div>
       </div>
     </Transition>
 
@@ -412,186 +348,190 @@ const homePrimaryCompact = computed(
 
     <div class="home-scroll-body">
       <RouterLink
-        v-if="shortFilmsLoaded && shortFilmsEnabled"
-        to="/short-films"
-        class="saved-codes-tile short-films-home-tile"
+        v-if="user?.id"
+        :to="`/profile/${user.id}`"
+        class="home-profile"
       >
-        <div class="saved-codes-tile__icon-wrap short-films-home-tile__icon" aria-hidden="true">
-          <Vue3Lottie
-            :animation-link="publicUrl('json/shortFilm.json')"
-            :height="42"
-            :width="42"
-            :speed="1"
-            :loop="true"
-            :auto-play="true"
-            class="short-films-home-lottie"
-          />
+        <div class="home-profile__avatar-wrap" :class="{ 'home-profile__avatar-wrap--featured': isFeatured }">
+          <div class="home-profile__avatar" :style="{ background: auth.avatarColor }">
+            <img v-if="isImageAvatar(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
+            <span v-else-if="auth.avatar">{{ auth.avatar }}</span>
+            <span v-else>{{ avatarLetter }}</span>
+          </div>
+          <Crown v-if="isFeatured" class="home-profile__crown" :size="14" fill="currentColor" stroke-width="1.5" />
         </div>
-        <div class="saved-codes-tile__text">
-          <span class="saved-codes-tile__title">{{ t('shortFilms.title') }}</span>
-          <span class="saved-codes-tile__sub">{{ t('shortFilms.watchAll') }}</span>
+        <div class="home-profile__meta">
+          <span class="home-profile__greeting">{{ t('home.greeting') }}</span>
+          <span class="home-profile__name">{{ user?.name }}</span>
         </div>
-        <ChevronLeft v-if="localeStore.isRtl" :size="20" stroke-width="2" class="saved-codes-tile__chev" />
-        <ChevronRight v-else :size="20" stroke-width="2" class="saved-codes-tile__chev" />
+        <button
+          v-if="user?.uniqueCode"
+          type="button"
+          class="home-profile__code"
+          dir="ltr"
+          @click.prevent="copyCode"
+        >
+          <Hash :size="13" stroke-width="2" />
+          <span>{{ user.uniqueCode }}</span>
+          <Copy :size="13" stroke-width="2" />
+          <span v-if="copied" class="home-profile__copied">{{ t('common.copiedShort') }}</span>
+        </button>
       </RouterLink>
 
-      <!-- CTA + Filter - unified section (hidden until API loaded, then by setting) -->
       <div
         class="home-primary"
         :class="{ 'home-primary--compact': homePrimaryCompact }"
       >
-        <div v-if="randomChatSettingLoaded && randomChatEnabled" class="cta-filter-card">
-          <div class="main-cta-wrap">
-            <button class="main-cta-circle" :disabled="loading" @click="startRandom">
-              <Vue3Lottie
-                :animation-link="publicUrl('json/chat.json')"
-                :height="88"
-                :width="88"
-                :speed="0.85"
-                :loop="true"
-                :auto-play="true"
-                class="cta-circle-lottie"
-              />
-              <span class="cta-text">{{ t('home.startRandom') }}</span>
+        <article class="home-hub">
+          <div v-if="randomChatSettingLoaded && randomChatEnabled" class="home-hub__block">
+            <button class="home-start" :disabled="loading" @click="startRandom">
+              <span class="home-start__icon">
+                <Vue3Lottie
+                  :animation-link="publicUrl('json/chat.json')"
+                  :height="52"
+                  :width="52"
+                  :speed="0.85"
+                  :loop="true"
+                  :auto-play="true"
+                />
+              </span>
+              <span class="home-start__text">
+                <span class="home-start__title">{{ t('home.startRandom') }}</span>
+                <span class="home-start__sub">{{ t('matching.secureSearch') }}</span>
+              </span>
+              <component :is="localeStore.isRtl ? ChevronLeft : ChevronRight" :size="22" stroke-width="2" class="home-start__arrow" />
             </button>
-          </div>
-          <div class="segment-wrap">
-            <span class="segment-label">{{ t('home.filterLabel') }}</span>
-            <div class="segment-control">
+
+            <div class="home-segment" role="tablist" :aria-label="t('home.filterLabel')">
               <button
                 v-for="f in genderFilters"
                 :key="f.value"
-                class="segment-btn"
-                :class="{ active: matching.genderFilter === f.value }"
-                :style="matching.genderFilter === f.value ? { '--seg-color': f.color, '--seg-bg': f.bg } : {}"
+                type="button"
+                class="home-segment__btn"
+                :class="{ 'home-segment__btn--active': matching.genderFilter === f.value }"
                 @click="matching.genderFilter = f.value"
               >
-                <span class="segment-icon" :class="{ active: matching.genderFilter === f.value }">
-                  <component :is="f.Icon" :size="18" stroke-width="2" />
-                </span>
-                <span class="segment-text">{{ f.label }}</span>
+                <component :is="f.Icon" :size="16" stroke-width="2" />
+                <span>{{ f.label }}</span>
               </button>
             </div>
           </div>
-        </div>
 
-        <!-- Replacement card when random chat is disabled (only after API loaded) -->
-        <div v-if="randomChatSettingLoaded && !randomChatEnabled && codeConnectLoaded" class="cta-replacement-card">
-          <div class="cta-replacement-lottie">
-            <Vue3Lottie
-              :animation-link="publicUrl('json/chat.json')"
-              :height="80"
-              :width="120"
-              :speed="0.7"
-              :loop="true"
-              :auto-play="true"
-            />
+          <div v-else-if="randomChatSettingLoaded && !randomChatEnabled && codeConnectLoaded" class="home-hub__block home-hub__block--center">
+            <div class="home-hub__illus">
+              <Vue3Lottie
+                :animation-link="publicUrl('json/chat.json')"
+                :height="64"
+                :width="96"
+                :speed="0.7"
+                :loop="true"
+                :auto-play="true"
+              />
+            </div>
+            <h3 class="home-hub__fallback-title">
+              {{ codeConnectEnabled ? t('home.connectWithCodeTitle') : t('home.randomOffNoCodeTitle') }}
+            </h3>
+            <p class="home-hub__fallback-desc">
+              {{ codeConnectEnabled ? t('home.connectWithCodeDesc') : t('home.randomOffNoCodeDesc') }}
+            </p>
+            <RouterLink to="/conversations" class="home-start home-start--secondary">
+              <MessageCircle :size="22" stroke-width="2" />
+              <span class="home-start__title">{{ t('home.goToConversations') }}</span>
+            </RouterLink>
           </div>
-          <template v-if="codeConnectEnabled">
-            <h3 class="cta-replacement-title">{{ t('home.connectWithCodeTitle') }}</h3>
-            <p class="cta-replacement-desc">{{ t('home.connectWithCodeDesc') }}</p>
-          </template>
-          <template v-else>
-            <h3 class="cta-replacement-title">{{ t('home.randomOffNoCodeTitle') }}</h3>
-            <p class="cta-replacement-desc">{{ t('home.randomOffNoCodeDesc') }}</p>
-          </template>
-          <RouterLink to="/conversations" class="cta-replacement-btn">
-            <MessageCircle :size="20" stroke-width="2" />
-            <span>{{ t('home.goToConversations') }}</span>
-          </RouterLink>
-        </div>
 
-        <template v-if="codeConnectLoaded && codeConnectEnabled">
-          <section class="code-connect-card" aria-labelledby="code-connect-heading">
-            <div class="code-connect-card__accent" aria-hidden="true" />
-            <div class="code-connect-card__body">
-              <h2 id="code-connect-heading" class="code-connect-card__heading">
-                {{ t('home.orConnectByCode') }}
-              </h2>
+          <template v-if="codeConnectLoaded && codeConnectEnabled">
+            <div v-if="randomChatSettingLoaded && randomChatEnabled" class="home-hub__divider" aria-hidden="true">
+              <span class="home-hub__divider-line" />
+              <span class="home-hub__divider-text">{{ t('home.orConnectByCode') }}</span>
+              <span class="home-hub__divider-line" />
+            </div>
 
-              <RouterLink to="/saved-codes" class="saved-codes-tile">
-                <div class="saved-codes-tile__icon-wrap" aria-hidden="true">
-                  <BookmarkPlus :size="22" stroke-width="2" />
-                </div>
-                <div class="saved-codes-tile__text">
-                  <span class="saved-codes-tile__title">{{ t('home.savedCodes') }}</span>
-                  <span class="saved-codes-tile__sub">{{ t('home.savedCodesTileHint') }}</span>
-                </div>
-                <ChevronLeft v-if="localeStore.isRtl" :size="20" stroke-width="2" class="saved-codes-tile__chev" />
-                <ChevronRight v-else :size="20" stroke-width="2" class="saved-codes-tile__chev" />
-              </RouterLink>
-
-              <div class="code-connect-divider" role="presentation">
-                <span class="code-connect-divider__line" />
-                <span class="code-connect-divider__dot" />
-                <span class="code-connect-divider__line" />
+            <div class="home-code">
+              <div class="home-code__field">
+                <Hash :size="18" stroke-width="2" class="home-code__hash" />
+                <input
+                  id="home-user-code-input"
+                  v-model="codeInput"
+                  class="home-code__input"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="off"
+                  autocapitalize="characters"
+                  :placeholder="t('home.enterUserCode')"
+                  maxlength="7"
+                  dir="ltr"
+                  @input="codeInput = codeInput.toUpperCase()"
+                  @keyup.enter="connectByCode"
+                />
+                <button
+                  type="button"
+                  class="home-code__call"
+                  :disabled="!codeInput.trim() || loading"
+                  :aria-label="t('home.connect')"
+                  @click="connectByCode"
+                >
+                  <PhoneCall :size="20" stroke-width="2" />
+                </button>
               </div>
-
-              <div class="code-section">
-                <label class="code-field-label" for="home-user-code-input">{{ t('home.enterUserCode') }}</label>
-                <div class="code-input-wrap">
-                  <span class="code-input-prefix" aria-hidden="true">
-                    <Hash :size="20" stroke-width="2" />
-                  </span>
-                  <input
-                    id="home-user-code-input"
-                    v-model="codeInput"
-                    class="code-input"
-                    type="text"
-                    inputmode="text"
-                    autocomplete="off"
-                    autocapitalize="characters"
-                    :placeholder="t('home.enterUserCode')"
-                    maxlength="7"
-                    @input="codeInput = codeInput.toUpperCase()"
-                    @keyup.enter="connectByCode"
-                  />
-                  <button
-                    type="button"
-                    class="code-submit"
-                    :class="{ disabled: !codeInput.trim() || loading }"
-                    :disabled="!codeInput.trim() || loading"
-                    :aria-label="t('home.connect')"
-                    @click="connectByCode"
-                  >
-                    <PhoneCall :size="22" stroke-width="2" />
-                  </button>
-                </div>
-                <div v-if="codeError" class="error-toast code-error-toast">
-                  <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
-                  <span>{{ codeError }}</span>
-                </div>
+              <div v-if="codeError" class="home-code__error">
+                <AlertCircle :size="15" stroke-width="2" />
+                <span>{{ codeError }}</span>
               </div>
             </div>
-          </section>
-        </template>
+          </template>
+        </article>
+
+        <div v-if="(shortFilmsLoaded && shortFilmsEnabled) || (codeConnectLoaded && codeConnectEnabled)" class="home-shortcuts">
+          <RouterLink
+            v-if="shortFilmsLoaded && shortFilmsEnabled"
+            to="/short-films"
+            class="home-shortcut"
+          >
+            <span class="home-shortcut__icon home-shortcut__icon--film">
+              <Vue3Lottie
+                :animation-link="publicUrl('json/shortFilm.json')"
+                :height="32"
+                :width="32"
+                :speed="1"
+                :loop="true"
+                :auto-play="true"
+              />
+            </span>
+            <span class="home-shortcut__label">{{ t('shortFilms.title') }}</span>
+          </RouterLink>
+          <RouterLink
+            v-if="codeConnectLoaded && codeConnectEnabled"
+            to="/saved-codes"
+            class="home-shortcut"
+          >
+            <span class="home-shortcut__icon">
+              <BookmarkPlus :size="22" stroke-width="2" />
+            </span>
+            <span class="home-shortcut__label">{{ t('home.savedCodes') }}</span>
+          </RouterLink>
+        </div>
       </div>
 
       <div class="home-bottom">
         <BannerStrip placement="home" />
         <AppFooter />
         <!-- مساحة في التدفق تحت الفوتر؛ padding على الأب وحده لا يكفي في بعض WebView مع margin-top:auto -->
-        <div class="home-nav-spacer" aria-hidden="true" />
+        <div class="tab-bar-spacer" aria-hidden="true" />
       </div>
     </div>
-
-    <HomeNavBar
-      :loading="loading"
-      :random-chat-enabled="randomChatSettingLoaded && randomChatEnabled"
-      :short-films-enabled="shortFilmsLoaded && shortFilmsEnabled"
-      @launch="startRandom"
-    />
   </div>
 </template>
 
 <style scoped>
-.home {
+.home--chatloop {
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   min-height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  font-family: 'Cairo', sans-serif;
 }
 
 /* يملأ المسافة تحت الهيدر: المحتوى الرئيسي ثم الفوتر مثبت أسفل المنطقة عند وجود فراغ */
@@ -603,12 +543,13 @@ const homePrimaryCompact = computed(
   min-height: 0;
 }
 
-/* عنصر بارتفاع ثابت داخل .home-bottom تحت AppFooter — يدفع «NexChat» فوق الناف الثابت */
-.home-nav-spacer {
+/* عنصر بارتفاع ثابت داخل .home-bottom تحت AppFooter — يدفع «NexChat» فوق شريط التبويب */
+.home-nav-spacer,
+.tab-bar-spacer {
   flex-shrink: 0;
   width: 100%;
-  height: var(--home-nav-clearance);
-  min-height: var(--home-nav-clearance);
+  height: var(--tab-bar-clearance);
+  min-height: var(--tab-bar-clearance);
   pointer-events: none;
 }
 
@@ -646,678 +587,415 @@ const homePrimaryCompact = computed(
   color: white;
 }
 
-.header {
-  flex-shrink: 0;
-  padding: calc(var(--safe-top) + 10px) var(--spacing) 12px;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
-}
-
-.header-inner {
+.home-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  padding: calc(var(--safe-top) + 10px) var(--spacing) 8px;
+  flex-shrink: 0;
+  background: var(--bg-primary);
 }
 
-.user-row {
+.home-header__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.home-header__bell {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.home-header__bell-dot {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #EF4444;
+  border: 2px solid var(--bg-card);
+}
+
+.home-profile {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex: 1;
-  min-width: 0;
+  margin: 0 var(--spacing) 16px;
+  padding: 4px 2px;
   text-decoration: none;
   color: inherit;
   -webkit-tap-highlight-color: transparent;
-  border-radius: var(--radius);
-  padding: 4px 4px 4px 0;
-  transition: opacity 0.15s;
 }
 
-.user-row:active,
-.user-row--static:active {
+.home-profile__avatar-wrap { position: relative; flex-shrink: 0; }
+.home-profile__avatar-wrap--featured .home-profile__avatar {
+  box-shadow: 0 0 0 2px rgba(255, 115, 0, 0.4);
+}
+
+.home-profile__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  border: 2px solid var(--primary-muted);
+}
+
+.home-profile__avatar .avatar-img { width: 100%; height: 100%; object-fit: cover; }
+.home-profile__crown { position: absolute; top: -2px; inset-inline-end: -2px; color: #ff7300; z-index: 1; }
+
+.home-profile__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.home-profile__greeting { font-size: 12px; color: var(--text-muted); }
+.home-profile__name {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-profile__code {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-family: ui-monospace, 'Cairo', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.home-profile__copied {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: var(--success);
+  color: #fff;
+  font-family: 'Cairo', sans-serif;
+  font-size: 10px;
+}
+
+.home-hub {
+  margin: 0 var(--spacing) 14px;
+  padding: 18px 16px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: var(--shadow-md);
+}
+
+.home-hub__block--center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.home-hub__illus { margin-bottom: 4px; }
+
+.home-hub__fallback-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.home-hub__fallback-desc {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.home-start {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  color: #fff;
+  font-family: 'Cairo', sans-serif;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.home-start:active:not(:disabled) { transform: scale(0.98); }
+.home-start:disabled { opacity: 0.65; cursor: not-allowed; }
+
+.home-start--secondary {
+  justify-content: center;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.home-start__icon {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.home-start__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+}
+
+.home-start__title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.home-start__sub {
+  font-size: 12px;
+  font-weight: 500;
   opacity: 0.88;
 }
 
-.user-row--static {
-  cursor: default;
-}
-
-.avatar-wrap {
-  position: relative;
+.home-start__arrow {
   flex-shrink: 0;
-}
-
-.avatar-wrap--featured .avatar {
-  box-shadow: 0 0 0 2px rgba(255, 115, 0, 0.45);
-}
-
-.avatar-crown {
-  position: absolute;
-  top: -3px;
-  inset-inline-end: -3px;
-  color: #ff7300;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
-  z-index: 1;
-}
-
-.avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 17px;
-  font-weight: 700;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-}
-
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.user-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.user-greeting {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-  line-height: 1.2;
-}
-
-.user-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.header-icon-btn {
-  position: relative;
-  width: var(--header-btn-size);
-  height: var(--header-btn-size);
-  min-width: var(--header-btn-size);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.header-icon-btn:active {
-  background: var(--bg-card-hover);
-  color: var(--primary);
-  border-color: rgba(108, 99, 255, 0.25);
-}
-
-.header-icon-btn--danger:active {
-  color: var(--danger);
-  border-color: rgba(255, 101, 132, 0.35);
-}
-
-.header-notif-badge {
-  position: absolute;
-  top: -4px;
-  inset-inline-end: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
-  color: #fff;
-  background: var(--primary);
-  border-radius: 8px;
-  font-family: 'Cairo', system-ui, sans-serif;
-  pointer-events: none;
-}
-
-/* CTA + Filter - unified card */
-.cta-filter-card {
-  margin: 10px var(--spacing) 24px;
-  padding: 24px var(--spacing);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  position: relative;
-  overflow-x: clip;
-  overflow-y: visible;
-  flex-shrink: 0;
-  min-height: 280px;
-}
-.cta-filter-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.4;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ccircle cx='8' cy='8' r='1' fill='%236C63FF'/%3E%3Ccircle cx='24' cy='8' r='1' fill='%23FF6584'/%3E%3Ccircle cx='8' cy='24' r='1' fill='%23FF6584'/%3E%3Ccircle cx='24' cy='24' r='1' fill='%236C63FF'/%3E%3Ccircle cx='16' cy='16' r='0.5' fill='%236C63FF' opacity='0.6'/%3E%3C/svg%3E");
-  background-size: 40px 40px;
-  background-repeat: repeat;
-  pointer-events: none;
-}
-.cta-filter-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(108, 99, 255, 0.08) 0%, transparent 60%);
-  pointer-events: none;
-}
-.cta-filter-card > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* Replacement card when random chat is disabled */
-.cta-replacement-card {
-  margin: 10px var(--spacing) 24px;
-  padding: 24px var(--spacing);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-}
-.cta-replacement-lottie {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin: -8px 0 0;
-}
-.cta-replacement-title {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.cta-replacement-desc {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-.cta-replacement-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: var(--primary);
-  color: white;
-  border-radius: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.2s, transform 0.2s;
-}
-.cta-replacement-btn:active {
-  opacity: 0.9;
-  transform: scale(0.98);
-}
-
-/* Main CTA - circular button with animation */
-.main-cta-wrap {
-  padding: 0 0 20px;
-  display: flex;
-  justify-content: center;
-}
-
-.main-cta-circle {
-  width: 160px;
-  height: 160px;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #FF6584 100%);
-  border: none;
-  color: white;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  box-shadow:
-    0 0 0 3px rgba(108, 99, 255, 0.2),
-    0 6px 24px rgba(108, 99, 255, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  animation: cta-pulse 2.5s ease-in-out infinite;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-.main-cta-circle:active:not(:disabled) {
-  transform: scale(0.95);
-  animation: none;
-}
-.main-cta-circle:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  animation: none;
-}
-
-@keyframes cta-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 0 3px rgba(108, 99, 255, 0.2),
-      0 6px 24px rgba(108, 99, 255, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.25);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow:
-      0 0 0 6px rgba(108, 99, 255, 0.15),
-      0 8px 32px rgba(108, 99, 255, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.3);
-    transform: scale(1.03);
-  }
-}
-
-.cta-icon { flex-shrink: 0; }
-.cta-text { line-height: 1.2; text-align: center; max-width: 120px; font-size: 12px; }
-
-/* Segmented control */
-.segment-wrap {
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.segment-label {
-  display: block;
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-  padding: 0 4px;
-  font-weight: 500;
-}
-
-.segment-control {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 4px;
-  gap: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.segment-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 50px;
-  padding: 6px 4px;
-  background: transparent;
-  border: none;
-  border-radius: 10px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.segment-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  color: var(--text-muted);
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.segment-icon :deep(svg) {
-  flex-shrink: 0;
-}
-
-.segment-btn.active .segment-icon {
-  background: var(--seg-bg, rgba(124, 117, 255, 0.15));
-  color: var(--seg-color);
-}
-
-.segment-text {
-  font-weight: 500;
-  max-width: 100%;
-  line-height: 1.2;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.segment-btn.active {
-  background: var(--seg-bg, rgba(124, 117, 255, 0.12));
-  color: var(--seg-color);
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.segment-btn.active .segment-text {
-  color: var(--seg-color);
-}
-
-.segment-btn:active:not(.active) { opacity: 0.75; }
-
-@media (max-width: 380px) {
-  .cta-filter-card {
-    padding: 20px 12px;
-  }
-  .segment-control {
-    padding: 3px;
-    gap: 3px;
-    border-radius: 12px;
-  }
-  .segment-btn {
-    min-height: 46px;
-    padding: 5px 2px;
-    gap: 3px;
-    font-size: 11px;
-  }
-  .segment-icon {
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
-  }
-  .segment-icon :deep(svg) {
-    width: 16px !important;
-    height: 16px !important;
-  }
-}
-
-/* ——— بطاقة الاتصال بالكود (موحّدة مع أسلوب الصفحة) ——— */
-.code-connect-card {
-  position: relative;
-  margin: 8px var(--spacing) 20px;
-  border-radius: 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.06),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset;
-  overflow: hidden;
-}
-
-[data-theme="light"] .code-connect-card {
-  box-shadow: 0 4px 20px rgba(108, 99, 255, 0.08);
-}
-
-.code-connect-card__accent {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #6C63FF 0%, #FF6584 50%, #00D4FF 100%);
-  opacity: 0.9;
-}
-
-.code-connect-card__body {
-  position: relative;
-  z-index: 1;
-  padding: 18px 16px 20px;
-  background: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(108, 99, 255, 0.09) 0%, transparent 55%);
-}
-
-.code-connect-card__heading {
-  margin: 0 0 14px;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-align: center;
-  letter-spacing: 0.02em;
-}
-
-.saved-codes-tile {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 14px;
-  border-radius: 16px;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.08) 0%, rgba(255, 101, 132, 0.05) 100%);
-  border: 1px solid rgba(108, 99, 255, 0.18);
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.saved-codes-tile:active {
-  transform: scale(0.99);
-  border-color: rgba(108, 99, 255, 0.35);
-}
-
-.saved-codes-tile__icon-wrap {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  background: rgba(108, 99, 255, 0.15);
-  color: var(--primary);
-  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.2);
-}
-
-.saved-codes-tile__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: start;
-}
-
-.saved-codes-tile__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.saved-codes-tile__sub {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.35;
-}
-
-.saved-codes-tile__chev {
-  flex-shrink: 0;
-  color: var(--text-muted);
   opacity: 0.85;
 }
 
-.short-films-home-tile {
-  margin: 12px 16px 16px;
+.home-segment {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  border: 1px solid var(--border);
 }
 
-.short-films-home-tile__icon {
-  background: rgba(108, 99, 255, 0.15);
+.home-segment__btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: 'Cairo', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.home-segment__btn--active {
+  background: var(--bg-card);
   color: var(--primary);
-  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.2);
-  overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
-.short-films-home-lottie {
-  display: block;
-  pointer-events: none;
-}
-
-.code-connect-divider {
+.home-hub__divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 16px 0 14px;
-  padding: 0 4px;
+  margin: 18px 0 14px;
 }
 
-.code-connect-divider__line {
+.home-hub__divider-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--border) 20%,
-    var(--border) 80%,
-    transparent
-  );
-  opacity: 0.9;
+  background: var(--border);
 }
 
-.code-connect-divider__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), #FF6584);
-  opacity: 0.75;
-  flex-shrink: 0;
-}
-
-/* حقل إدخال الكود */
-.code-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0;
-}
-
-.code-field-label {
+.home-hub__divider-text {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  padding-inline-start: 4px;
-  margin: 0;
+  white-space: nowrap;
 }
 
-.code-input-wrap {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  min-height: 54px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  overflow: hidden;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.code-input-wrap:focus-within {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.18);
-}
-
-.code-input-prefix {
+.home-code__field {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding-inline-start: 14px;
-  padding-inline-end: 6px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  opacity: 0.85;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 6px 0 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.code-input {
+.home-code__field:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.home-code__hash { color: var(--text-muted); flex-shrink: 0; }
+
+.home-code__input {
   flex: 1;
   min-width: 0;
-  min-height: 52px;
-  padding-block: 0;
-  padding-inline-start: 0;
-  padding-inline-end: 58px;
-  background: transparent;
   border: none;
-  color: var(--text-primary);
-  font-size: 17px;
-  font-weight: 700;
+  background: transparent;
   font-family: ui-monospace, 'Cairo', monospace;
+  font-size: 16px;
+  font-weight: 700;
   letter-spacing: 0.12em;
-  text-align: start;
+  color: var(--text-primary);
   outline: none;
-  -webkit-appearance: none;
-  appearance: none;
 }
-.code-input::placeholder {
+
+.home-code__input::placeholder {
   color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.04em;
 }
 
-.code-submit {
-  position: absolute;
-  top: 50%;
-  inset-inline-end: 6px;
-  transform: translateY(-50%);
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0;
-  border-radius: 50%;
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 55%, #5B54E8 100%);
-  border: none;
-  color: white;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 4px 14px rgba(108, 99, 255, 0.35);
-  transition: transform 0.15s ease, opacity 0.2s, box-shadow 0.2s;
+.home-code__call {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.code-submit.disabled {
-  opacity: 0.45;
-  background: var(--bg-card-hover);
-  color: var(--text-muted);
-  box-shadow: none;
-  cursor: not-allowed;
-  transform: translateY(-50%);
-}
-.code-submit:active:not(.disabled) {
-  transform: translateY(-50%) scale(0.94);
+  border: none;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.code-error-toast {
-  margin-top: 4px;
+.home-code__call:disabled {
+  opacity: 0.4;
+  background: var(--bg-card-hover);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
+
+.home-code__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(244, 67, 54, 0.08);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.home-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 var(--spacing) 16px;
+}
+
+.home-shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  padding: 14px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s;
+}
+
+.home-shortcut:active { transform: scale(0.98); }
+
+.home-shortcut__icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  overflow: hidden;
+}
+
+.home-shortcut__icon--film { padding: 0; }
+
+.home-shortcut__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  line-height: 1.3;
+}
+
+@media (max-width: 360px) {
+  .home-profile { flex-wrap: wrap; }
+  .home-profile__code { margin-inline-start: auto; }
+  .home-shortcuts { grid-template-columns: 1fr; }
+  .home-shortcut { min-height: 72px; flex-direction: row; justify-content: flex-start; padding-inline: 16px; }
+  .home-shortcut__label { text-align: start; }
+}
+
 
 /* Logout confirm dialog */
 .logout-overlay {

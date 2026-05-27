@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, BookmarkPlus, Trash2, PhoneCall, PhoneOff, AlertCircle, X } from 'lucide-vue-next'
+import { BookmarkPlus, Trash2, PhoneCall, PhoneOff, AlertCircle, X } from 'lucide-vue-next'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
@@ -155,12 +156,12 @@ async function cancelConnectionRequest() {
 }
 
 function goBack() {
-  router.replace('/home')
+  router.replace('/settings')
 }
 </script>
 
 <template>
-  <div class="saved-codes-page page auth-pattern">
+  <ModernPageShell :title="t('home.savedCodes')" back-to="/settings">
     <LoaderOverlay :show="loading" :text="waitingForAccept ? t('home.waitingForAccept') : t('home.connecting')" />
     <Transition name="fade">
       <div v-if="waitingForAccept" class="cancel-wait-wrap">
@@ -171,21 +172,39 @@ function goBack() {
       </div>
     </Transition>
 
-    <header class="top-bar">
-      <button class="back-btn" @click="goBack" :aria-label="t('common.cancel')">
-        <ChevronRight :size="18" />
+    <template #actions>
+      <button type="button" class="modern-glass-btn" :aria-label="t('home.addCode')" @click="openAddModal">
+        <BookmarkPlus :size="20" stroke-width="2" />
       </button>
-      <span class="top-title">{{ t('home.savedCodes') }}</span>
-      <button
-        type="button"
-        class="header-add-btn"
-        :aria-label="t('home.addCode')"
-        :title="t('home.addCode')"
-        @click="openAddModal"
-      >
-        <BookmarkPlus :size="18" stroke-width="2" />
-      </button>
-    </header>
+    </template>
+
+    <div v-if="savedCodesLoading" class="modern-empty">{{ t('common.loading') }}</div>
+    <div v-else-if="!savedCodes.length" class="modern-empty">
+      <BookmarkPlus :size="48" />
+      <p>{{ t('home.noSavedCodes') }}</p>
+      <span class="empty-hint">{{ t('savedCodes.addFirstHint') }}</span>
+      <button class="btn-gradient" style="max-width: 240px" @click="openAddModal">{{ t('home.addCode') }}</button>
+    </div>
+    <div v-else class="modern-list">
+      <div v-if="codeError" class="error-msg">
+        <AlertCircle :size="16" />
+        {{ codeError }}
+      </div>
+      <div v-for="item in savedCodes" :key="item.code" class="modern-list-row code-row">
+        <div class="modern-list-row__body code-row__main" @click="connectBySavedCode(item.code)">
+          <span class="modern-list-row__title" dir="ltr">{{ item.code }}</span>
+          <span v-if="item.label" class="modern-list-row__sub">{{ item.label }}</span>
+        </div>
+        <div class="code-row__actions">
+          <button type="button" class="connect-btn" :aria-label="t('home.connect')" @click="connectBySavedCode(item.code)">
+            <PhoneCall :size="18" stroke-width="2" />
+          </button>
+          <button type="button" class="delete-btn" :aria-label="t('common.delete')" @click="removeSavedCode(item.code)">
+            <Trash2 :size="16" stroke-width="2" />
+          </button>
+        </div>
+      </div>
+    </div>
 
     <Teleport to="body">
       <Transition name="modal-fade">
@@ -244,108 +263,10 @@ function goBack() {
         </div>
       </Transition>
     </Teleport>
-
-    <div class="scroll-area">
-      <!-- قائمة الأكواد المحفوظة -->
-      <section class="list-section">
-        <div v-if="savedCodesLoading" class="loading-msg">{{ t('common.loading') }}</div>
-        <div v-else-if="!savedCodes.length" class="empty-state">
-          <BookmarkPlus :size="40" class="empty-icon" />
-          <p>{{ t('home.noSavedCodes') }}</p>
-          <span class="empty-hint">{{ t('savedCodes.addFirstHint') }}</span>
-        </div>
-        <div v-else class="codes-list">
-          <div v-if="codeError" class="error-msg mb-3">
-            <AlertCircle :size="16" />
-            {{ codeError }}
-          </div>
-          <div
-            v-for="item in savedCodes"
-            :key="item.code"
-            class="code-item"
-          >
-            <div class="code-item-main" @click="connectBySavedCode(item.code)">
-              <span class="code-value">{{ item.code }}</span>
-              <span v-if="item.label" class="code-label">{{ item.label }}</span>
-            </div>
-            <div class="code-item-actions">
-              <button
-                class="connect-btn"
-                :aria-label="t('home.connect')"
-                @click="connectBySavedCode(item.code)"
-              >
-                <PhoneCall :size="16" stroke-width="2" />
-              </button>
-              <button
-                class="delete-btn"
-                :aria-label="t('common.delete')"
-                @click="removeSavedCode(item.code)"
-              >
-                <Trash2 :size="14" stroke-width="2" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  </div>
+  </ModernPageShell>
 </template>
 
 <style scoped>
-.saved-codes-page {
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  padding-bottom: var(--safe-bottom);
-}
-
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: calc(var(--safe-top) + 8px) 12px 8px;
-  flex-shrink: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  flex-shrink: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.back-btn:active { background: var(--bg-card-hover); }
-
-.header-add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  flex-shrink: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--primary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.header-add-btn:active {
-  background: var(--bg-card-hover);
-}
-
-/* مودال إضافة كود */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.2s ease;
@@ -353,6 +274,56 @@ function goBack() {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.code-row__main {
+  cursor: pointer;
+}
+
+.code-row__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.empty-hint {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.error-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(244, 67, 54, 0.1);
+  border-radius: var(--radius-lg);
+  color: var(--danger);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.connect-btn,
+.delete-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  cursor: pointer;
+  border: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.connect-btn {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.delete-btn {
+  background: rgba(255, 101, 132, 0.12);
+  color: var(--danger);
 }
 
 .add-modal-overlay {

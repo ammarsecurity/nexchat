@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
@@ -29,6 +29,8 @@ const listStore = useConversationsListStore()
 const network = useNetworkStore()
 const localeStore = useLocaleStore()
 const { t } = useI18n()
+
+const BackIcon = computed(() => (localeStore.isRtl ? ChevronRight : ChevronLeft))
 
 let saveMessagesToCacheTimer = null
 function debouncedSaveMessages(convId) {
@@ -1091,9 +1093,9 @@ function removeReaction(msg) {
       <div v-if="callDeclined" class="declined-toast">{{ t('conversationChat.callDeclined', { name: partner?.name || '…' }) }}</div>
     </Transition>
 
-    <header class="chat-header glass-card">
-      <button class="back-btn" @click="leaveChat" :aria-label="t('common.cancel')">
-        <ChevronRight :size="22" />
+    <header class="chat-header">
+      <button type="button" class="modern-glass-btn chat-back-btn" @click="leaveChat" :aria-label="t('common.back')">
+        <component :is="BackIcon" :size="22" stroke-width="2" />
       </button>
       <button type="button" class="partner-info partner-info-btn" @click="goToPartnerProfile">
         <div class="avatar-wrap">
@@ -1116,14 +1118,14 @@ function removeReaction(msg) {
       </button>
       <div class="header-actions">
         <template v-if="!convStore.isGroup">
-          <button type="button" class="icon-btn" @click="openVideoConfirm" :title="t('conversationChat.incomingVideoCall')">
+          <button type="button" class="modern-glass-btn chat-action-btn" @click="openVideoConfirm" :title="t('conversationChat.incomingVideoCall')">
             <Video :size="20" />
           </button>
-          <button type="button" class="icon-btn" @click="openVoiceConfirm" :title="t('conversationChat.incomingVoiceCall')">
+          <button type="button" class="modern-glass-btn chat-action-btn" @click="openVoiceConfirm" :title="t('conversationChat.incomingVoiceCall')">
             <Phone :size="20" />
           </button>
         </template>
-        <button class="icon-btn" @click="showDeleteConvConfirm = true" :title="t('conversationChat.deleteConversation')">
+        <button type="button" class="modern-glass-btn chat-action-btn chat-action-btn--danger" @click="showDeleteConvConfirm = true" :title="t('conversationChat.deleteConversation')">
           <Trash2 :size="20" />
         </button>
       </div>
@@ -1470,14 +1472,30 @@ function removeReaction(msg) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding: calc(8px + var(--safe-top)) var(--spacing) 12px;
+  gap: 8px;
+  padding: calc(10px + var(--safe-top)) var(--spacing) 12px;
   flex-shrink: 0;
-  border-radius: 0 0 var(--radius) var(--radius);
-  border-top: none;
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-back-btn {
+  flex-shrink: 0;
+}
+
+.chat-action-btn {
+  width: var(--header-btn-size);
+  height: var(--header-btn-size);
+  min-width: var(--header-btn-size);
+  color: var(--text-secondary);
+}
+
+.chat-action-btn--danger {
+  color: var(--danger);
+  background: rgba(244, 67, 54, 0.08);
 }
 
 .back-btn {
@@ -1575,37 +1593,41 @@ function removeReaction(msg) {
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
   align-items: center;
 }
 
 .chat-header .icon-btn {
   align-items: center;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: none;
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
   color: var(--text-primary);
   cursor: pointer;
   display: flex;
-  height: var(--touch-min);
+  height: var(--header-btn-size);
   justify-content: center;
-  min-width: var(--touch-min);
+  min-width: var(--header-btn-size);
   padding: 0;
   -webkit-tap-highlight-color: transparent;
 }
-.chat-header .icon-btn:active { background: var(--bg-card-hover); }
-.chat-header .icon-btn.danger { background: rgba(255,101,132,0.15); color: var(--danger); border-color: rgba(255,101,132,0.25); }
+.chat-header .icon-btn:active { transform: scale(0.96); }
+.chat-header .icon-btn.danger { background: rgba(244, 67, 54, 0.1); color: var(--danger); }
 
 .messages-area {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 16px 8px;
+  padding: 16px var(--spacing) 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, 0.03) 0%, transparent 120px),
+    var(--bg-primary);
 }
 
 .empty-chat {
@@ -2000,12 +2022,15 @@ html.light .msg-action-react:active {
 .slide-down-enter-from, .slide-down-leave-to { opacity: 0; transform: translateY(-8px); }
 
 .input-area {
-  padding: 8px var(--spacing) calc(var(--spacing) + var(--safe-bottom));
+  padding: 8px var(--spacing) calc(8px + var(--safe-bottom));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.04);
 }
 
 .message-input-row {
@@ -2181,11 +2206,11 @@ html.light .msg-action-react:active {
 .msg-input {
   flex: 1;
   min-width: 0;
-  min-height: 52px;
+  min-height: 48px;
   max-height: 120px;
-  padding: 14px 16px;
-  border-radius: 24px;
-  background: var(--bg-card);
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-primary);
   font-size: 16px;
@@ -2200,7 +2225,7 @@ html.light .msg-action-react:active {
 .msg-input:focus { border-color: var(--primary); }
 
 .send-btn {
-  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
+  background: var(--primary);
   border: none;
   border-radius: 50%;
   color: white;
@@ -2211,7 +2236,7 @@ html.light .msg-action-react:active {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.35);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
   -webkit-tap-highlight-color: transparent;
 }
 .send-btn:not(:disabled):active { transform: scale(0.95); opacity: 0.95; }
@@ -2225,9 +2250,9 @@ html.light .msg-action-react:active {
   width: 48px;
   height: 48px;
   min-width: 48px;
-  background: var(--bg-card);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 50%;
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
@@ -2235,7 +2260,7 @@ html.light .msg-action-react:active {
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
 }
-.input-action-btn:active { background: var(--bg-card-hover); }
+.input-action-btn:active { background: var(--bg-card-hover); transform: scale(0.96); }
 
 .input-actions-backdrop {
   position: fixed;

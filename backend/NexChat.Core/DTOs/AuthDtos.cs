@@ -27,7 +27,8 @@ public record UserProfileDto(
     DateOnly? BirthDate = null,
     string? Country = null,
     string? PhoneNumber = null,
-    bool ShowOnlineStatusToOthers = true
+    bool ShowOnlineStatusToOthers = true,
+    string? CoverImageUrl = null
 );
 
 public record UpdateAvatarRequest(string? Avatar);
@@ -49,8 +50,11 @@ public record PublicProfileDto(
     bool IsOnline = false,
     string? PhoneNumber = null,
     string? Country = null,
-    bool IsContact = false
+    bool IsContact = false,
+    string? CoverImageUrl = null
 );
+
+public record UpdateCoverRequest(string? CoverImageUrl);
 
 public record DeleteAccountRequest(string Password);
 

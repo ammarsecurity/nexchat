@@ -3,12 +3,16 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { useI18n } from 'vue-i18n'
 import { publicUrl } from '../utils/publicUrl'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import { useReducedMotion } from '../composables/useReducedMotion'
 
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const { t } = useI18n()
+const { reducedMotion } = useReducedMotion()
 const logoImg = computed(() => publicUrl(theme.isLight ? 'logo-light.png' : 'logo.png'))
 const loading = ref(false)
 
@@ -41,17 +45,18 @@ async function goNext() {
 }
 
 onMounted(() => {
+  const delay = reducedMotion.value ? 400 : 1000
   setTimeout(async () => {
     loading.value = true
     await goNext()
     loading.value = false
-  }, 2200)
+  }, delay)
 })
 </script>
 
 <template>
   <div class="splash page">
-    <LoaderOverlay :show="loading" text="جاري التحميل..." />
+    <LoaderOverlay :show="loading" :text="t('splash.loading')" />
     <!-- Animated background orbs -->
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
@@ -59,7 +64,7 @@ onMounted(() => {
 
     <div class="content">
       <img :src="logoImg" alt="NexChat" class="splash-logo" />
-      <p class="tagline">تواصل مع العالم</p>
+      <p class="tagline">{{ t('splash.tagline') }}</p>
 
       <div class="loader">
         <div class="loader-bar"></div>

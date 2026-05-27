@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, LogOut, Pencil, Image, Upload, X, Trash2, Shield, ScrollText, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye } from 'lucide-vue-next'
+import { LogOut, Pencil, Image, Upload, X, Trash2, Shield, ScrollText, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye, ChevronRight } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -14,10 +14,12 @@ import api from '../services/api'
 import { notify } from '../utils/notify'
 import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { DEFAULT_COVER_URL } from '../utils/defaultCover'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { optInNotifications, optOutNotifications, getNotificationsEnabled, requestPermissionAndRegister } from '../services/notifications'
 import { Capacitor } from '@capacitor/core'
 import { fetchUpdateInfo } from '../services/updateCheck'
+import { matchingHub, conversationHub, storyHub, stopHub } from '../services/signalr'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -33,6 +35,9 @@ const showAvatarPicker = ref(false)
 const avatarTab = ref('preset')
 const uploadingAvatar = ref(false)
 const avatarFileInput = ref(null)
+const coverFileInput = ref(null)
+const uploadingCover = ref(false)
+const coverImgError = ref(false)
 const showLogoutConfirm = ref(false)
 const showDeleteConfirm = ref(false)
 const showDeletePassword = ref(false)
@@ -111,9 +116,46 @@ const presetAvatars = [
 const isImageUrl = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 const isEmoji   = (v) => v && !isImageUrl(v)
 
+const settingsCoverSrc = computed(() => {
+  if (coverImgError.value) return DEFAULT_COVER_URL
+  const url = profileData.value?.coverImageUrl ?? profileData.value?.CoverImageUrl
+  if (url && isImageUrl(url)) return ensureAbsoluteUrl(url)
+  return DEFAULT_COVER_URL
+})
+
 function selectPreset(emoji) {
   auth.setAvatar(emoji)
   showAvatarPicker.value = false
+}
+
+async function handleCoverUpload(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  if (coverFileInput.value) coverFileInput.value.value = ''
+  const formData = new FormData()
+  formData.append('file', file)
+  const token = localStorage.getItem('nexchat_token')
+  uploadingCover.value = true
+  try {
+    const res = await fetch(`${API_BASE}/media/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData
+    })
+    if (!res.ok) throw new Error()
+    const { url } = await res.json()
+    await api.put('/user/cover', { coverImageUrl: url })
+    if (profileData.value) {
+      profileData.value = { ...profileData.value, coverImageUrl: url }
+    } else {
+      profileData.value = { coverImageUrl: url }
+    }
+    coverImgError.value = false
+  } catch {
+    notify.error(t('common.error'))
+  } finally {
+    uploadingCover.value = false
+  }
 }
 
 async function handleAvatarUpload(e) {
@@ -145,6 +187,9 @@ function openLogoutConfirm() {
 
 function confirmLogout() {
   showLogoutConfirm.value = false
+  stopHub(matchingHub)
+  stopHub(conversationHub)
+  stopHub(storyHub)
   auth.logout()
   router.replace('/login')
 }
@@ -246,6 +291,7 @@ async function loadProfile() {
   try {
     const res = await api.get('/user/me')
     profileData.value = res.data
+    coverImgError.value = false
     showOnlineToOthers.value = res.data.showOnlineStatusToOthers !== false
   } catch {}
 }
@@ -325,21 +371,41 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="settings page">
+  <div class="modern-page page settings">
     <LoaderOverlay :show="uploadingAvatar" :text="t('settings.uploadingImage')" />
+    <LoaderOverlay :show="uploadingCover" :text="t('settings.uploadingCover')" />
     <LoaderOverlay :show="deleting" :text="t('settings.deletingAccount')" />
     <LoaderOverlay :show="supportLoading" :text="t('settings.openingSupport')" />
-    <!-- Header -->
-    <header class="top-bar">
-      <button class="back-btn" @click="router.replace('/home')"><ChevronRight :size="22" /></button>
-      <span class="top-title">{{ t('settings.title') }}</span>
-      <div style="width:40px"></div>
+    <header class="modern-page__nav settings-nav">
+      <span class="modern-page__nav-spacer" aria-hidden="true" />
+      <h1 class="modern-page__title">{{ t('settings.title') }}</h1>
+      <span class="modern-page__nav-spacer" aria-hidden="true" />
     </header>
 
-    <div class="scroll-area">
-
+    <div class="modern-page__scroll scroll-area">
       <!-- 1. Profile Card -->
       <div class="profile-card glass-card">
+        <div class="settings-cover">
+          <img
+            :src="settingsCoverSrc"
+            class="settings-cover__img"
+            alt=""
+            referrerpolicy="no-referrer"
+            @error="coverImgError = true"
+          />
+          <div class="settings-cover__fade" aria-hidden="true" />
+          <button type="button" class="settings-cover__btn" @click="coverFileInput?.click()">
+            <Image :size="16" stroke-width="2" />
+            <span>{{ t('settings.changeCover') }}</span>
+          </button>
+          <input
+            ref="coverFileInput"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+            class="hidden-input"
+            @change="handleCoverUpload"
+          />
+        </div>
         <div class="profile-card-inner">
           <div class="avatar-wrap" :class="{ 'avatar-wrap-featured': user?.isFeatured }" @click="showAvatarPicker = true">
             <img v-if="isImageUrl(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="avatar-img" referrerpolicy="no-referrer" />
@@ -724,52 +790,25 @@ onMounted(() => {
 
 <style scoped>
 .settings {
-  background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
-.top-bar {
+.settings-nav {
   flex-shrink: 0;
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) var(--spacing) 12px;
 }
-.back-btn {
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  height: var(--touch-min);
-  justify-content: center;
-  min-width: var(--touch-min);
-  transition: background 0.2s;
-}
-.back-btn:active { background: var(--bg-card-hover); }
-.top-title { font-size: 17px; font-weight: 600; }
 
 .scroll-area {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 0 var(--spacing) calc(24px + var(--safe-bottom));
 }
+
 .scroll-area > * {
   flex-shrink: 0;
 }
 
 /* Section label */
-.section-label {
-  color: var(--text-muted);
+.section-label {  color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
   padding: 4px 0 0;
@@ -781,6 +820,59 @@ onMounted(() => {
 .profile-card {
   overflow: hidden;
   padding: 0;
+}
+
+.settings-cover {
+  position: relative;
+  height: 120px;
+  overflow: hidden;
+  background: #1e3a8a;
+}
+
+.settings-cover__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.settings-cover__fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.15) 0%, rgba(15, 23, 42, 0.45) 100%);
+  pointer-events: none;
+}
+
+.settings-cover__btn {
+  position: absolute;
+  inset-inline-end: 12px;
+  bottom: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-family: 'Cairo', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-cover__btn:active {
+  transform: scale(0.98);
+}
+
+.hidden-input {
+  display: none;
 }
 
 .profile-card-inner {

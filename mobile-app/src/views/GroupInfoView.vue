@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, UserPlus, LogOut, UserMinus, Users, Pencil, Image } from 'lucide-vue-next'
+import { UserPlus, LogOut, UserMinus, Users, Pencil, Image } from 'lucide-vue-next'
+import ModernPageShell from '../components/ui/ModernPageShell.vue'
 import { useI18n } from 'vue-i18n'
 import api from '../services/api'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
@@ -183,17 +184,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="group-info page auth-pattern">
-    <header class="top-bar">
-      <button class="back-btn" @click="goBack" :aria-label="t('common.cancel')">
-        <ChevronRight :size="22" />
-      </button>
-      <span class="top-title">{{ t('groups.infoTitle') }}</span>
-      <span class="top-bar-spacer" aria-hidden="true"></span>
-    </header>
+  <ModernPageShell :title="t('groups.infoTitle')" :back-to="`/conversation/${conversationId}`">
+    <div v-if="loading" class="modern-empty">{{ t('common.loading') }}</div>
 
-    <template v-if="!loading">
-      <div class="group-header">
+    <template v-else>
+      <div class="group-hero">
         <div class="group-avatar-wrap">
           <button
             v-if="isAdmin"
@@ -203,12 +198,7 @@ onMounted(async () => {
             @click="groupImageInput?.click()"
             :aria-label="t('groups.editGroupPhoto')"
           >
-            <div
-              class="group-avatar"
-              :style="{
-                background: groupImageUrl && !isImageUrl(groupImageUrl) ? 'var(--primary)' : 'var(--bg-elevated)'
-              }"
-            >
+            <div class="modern-avatar-xl group-avatar">
               <CachedAvatar v-if="groupImageUrl && isImageUrl(groupImageUrl)" :url="groupImageUrl" img-class="avatar-img" />
               <template v-else-if="uploadingPhoto">...</template>
               <span v-else>{{ groupName?.[0]?.toUpperCase() || '?' }}</span>
@@ -217,13 +207,7 @@ onMounted(async () => {
               <Image :size="14" />
             </span>
           </button>
-          <div
-            v-else
-            class="group-avatar"
-            :style="{
-              background: groupImageUrl && !isImageUrl(groupImageUrl) ? 'var(--primary)' : 'var(--bg-elevated)'
-            }"
-          >
+          <div v-else class="modern-avatar-xl group-avatar">
             <CachedAvatar v-if="groupImageUrl && isImageUrl(groupImageUrl)" :url="groupImageUrl" img-class="avatar-img" />
             <span v-else>{{ groupName?.[0]?.toUpperCase() || '?' }}</span>
           </div>
@@ -235,6 +219,7 @@ onMounted(async () => {
             @change="onGroupPhotoChange"
           />
         </div>
+
         <div v-if="showEditName" class="group-name-edit">
           <input
             v-model="editNameValue"
@@ -250,79 +235,56 @@ onMounted(async () => {
           </div>
           <p v-if="editError" class="edit-error">{{ editError }}</p>
         </div>
-        <template v-else>
-          <div class="group-name-row">
-            <h1 class="group-name">{{ groupName }}</h1>
-            <button
-              v-if="isAdmin"
-              type="button"
-              class="icon-btn edit-name-btn"
-              :aria-label="t('groups.editGroupName')"
-              @click="startEditName"
-            >
-              <Pencil :size="18" />
-            </button>
-          </div>
-        </template>
+        <div v-else class="group-name-row">
+          <h2 class="modern-profile-name">{{ groupName }}</h2>
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="icon-btn edit-name-btn"
+            :aria-label="t('groups.editGroupName')"
+            @click="startEditName"
+          >
+            <Pencil :size="18" />
+          </button>
+        </div>
       </div>
 
-      <div class="section">
+      <section class="modern-section">
         <div class="section-header">
-          <span class="section-title">{{ t('groups.members') }} ({{ members.length }})</span>
-          <button
-            type="button"
-            class="add-member-btn"
-            @click="openAddModal"
-          >
-            <UserPlus :size="20" />
+          <h3 class="modern-section-title">{{ t('groups.members') }} ({{ members.length }})</h3>
+          <button type="button" class="add-member-btn" @click="openAddModal">
+            <UserPlus :size="18" />
             <span>{{ t('groups.addMember') }}</span>
           </button>
         </div>
-        <div class="members-list">
-          <div
-            v-for="m in members"
-            :key="m.userId ?? m.UserId"
-            class="member-row"
-          >
-            <div
-              class="member-avatar"
-              :style="{
-                background: (m.avatar ?? m.Avatar) && !isImageUrl(m.avatar ?? m.Avatar) ? 'var(--primary)' : 'var(--bg-elevated)'
-              }"
-            >
+        <div class="modern-list">
+          <div v-for="m in members" :key="m.userId ?? m.UserId" class="modern-list-row member-row">
+            <div class="modern-list-row__avatar">
               <CachedAvatar v-if="(m.avatar ?? m.Avatar) && isImageUrl(m.avatar ?? m.Avatar)" :url="m.avatar ?? m.Avatar" img-class="avatar-img" />
               <span v-else>{{ (m.name ?? m.Name)?.[0]?.toUpperCase() || '?' }}</span>
             </div>
-            <div class="member-meta">
-              <span class="member-name">{{ m.name ?? m.Name ?? '—' }}</span>
-              <span
-                class="member-role"
-                :class="{ 'member-role--admin': (m.role ?? m.Role) === 'Admin' }"
-              >{{ (m.role ?? m.Role) === 'Admin' ? t('groups.admin') : t('groups.member') }}</span>
+            <div class="modern-list-row__body">
+              <span class="modern-list-row__title">{{ m.name ?? m.Name ?? '—' }}</span>
+              <span class="modern-list-row__sub" :class="{ 'member-role--admin': (m.role ?? m.Role) === 'Admin' }">
+                {{ (m.role ?? m.Role) === 'Admin' ? t('groups.admin') : t('groups.member') }}
+              </span>
             </div>
-            <div v-if="currentUserId && String(m.userId ?? m.UserId) !== currentUserId" class="member-actions">
-              <button
-                v-if="isAdmin"
-                type="button"
-                class="icon-btn danger"
-                :disabled="removingUserId !== null"
-                :aria-label="t('groups.removeMember')"
-                @click="removeMember(m.userId ?? m.UserId)"
-              >
-                <UserMinus :size="18" />
-              </button>
-            </div>
+            <button
+              v-if="isAdmin && currentUserId && String(m.userId ?? m.UserId) !== currentUserId"
+              type="button"
+              class="icon-btn danger"
+              :disabled="removingUserId !== null"
+              :aria-label="t('groups.removeMember')"
+              @click="removeMember(m.userId ?? m.UserId)"
+            >
+              <UserMinus :size="18" />
+            </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="section leave-section">
-        <button
-          type="button"
-          class="leave-btn"
-          :disabled="leaving"
-          @click="showLeaveConfirm = true"
-        >
+      <div class="modern-option-list leave-section">
+        <button type="button" class="modern-option-btn modern-option-btn--danger" :disabled="leaving" @click="showLeaveConfirm = true">
           <LogOut :size="20" />
           <span>{{ t('groups.leaveGroup') }}</span>
         </button>
@@ -378,87 +340,20 @@ onMounted(async () => {
         </div>
       </div>
     </Teleport>
-  </div>
+  </ModernPageShell>
 </template>
 
 <style scoped>
-.group-info {
-  background: var(--bg-primary);
-  min-height: 100%;
-  padding-bottom: var(--safe-bottom);
-  font-family: 'Cairo', sans-serif;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.group-info.page.auth-pattern::before {
-  opacity: 0.05;
-}
-
-.top-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: calc(var(--safe-top) + 10px) var(--spacing) 10px;
-  position: relative;
-  flex-shrink: 0;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--touch-min);
-  height: var(--touch-min);
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  flex-shrink: 0;
-}
-
-.top-title {
-  position: absolute;
-  left: 0;
-  right: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-align: center;
-  pointer-events: none;
-}
-
-.top-bar-spacer {
-  width: var(--touch-min);
-  min-width: var(--touch-min);
-  flex-shrink: 0;
-}
-
-.group-header {
+.group-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 12px var(--spacing) 16px;
-  padding: 22px var(--spacing);
-  gap: 14px;
+  padding: 16px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  flex-shrink: 0;
-}
-html.light .group-header,
-[data-theme="light"] .group-header {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm);
 }
 
 .group-avatar-wrap {
@@ -466,365 +361,153 @@ html.light .group-header,
 }
 
 .group-avatar-btn {
+  position: relative;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  position: relative;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.group-avatar-btn:disabled {
-  opacity: 0.8;
-  cursor: wait;
-}
-
-.group-avatar {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  color: white;
-  font-size: 30px;
-  font-weight: 600;
-  box-shadow: 0 0 0 1px var(--border), 0 4px 16px rgba(0, 0, 0, 0.1);
-}
-html.light .group-avatar,
-[data-theme="light"] .group-avatar {
-  box-shadow: 0 0 0 1px var(--border), 0 2px 10px rgba(0, 0, 0, 0.06);
-}
-
-.group-avatar .avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .group-avatar-edit-badge {
   position: absolute;
-  bottom: 0;
-  inset-inline-end: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: white;
+  bottom: 4px;
+  inset-inline-end: 4px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--bg-card);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  background: var(--primary);
+  color: #fff;
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
 }
 
 .hidden-input {
-  position: absolute;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .group-name-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.group-name {
-  font-size: 21px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-  text-align: center;
-  max-width: min(100%, calc(100vw - 120px));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.25;
-}
-
-.edit-name-btn {
-  color: var(--text-muted);
-  padding: 6px;
-}
-
-.edit-name-btn:active {
-  color: var(--primary);
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .group-name-edit {
   width: 100%;
-  max-width: 280px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  max-width: 320px;
+  margin-top: 12px;
 }
 
 .group-name-input {
   width: 100%;
-  padding: 12px 16px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--bg-card);
-  color: var(--text-primary);
-  font-size: 16px;
   font-family: 'Cairo', sans-serif;
-  outline: none;
-  box-sizing: border-box;
+  font-size: 15px;
+  color: var(--text-primary);
 }
 
 .group-name-edit-actions {
   display: flex;
   gap: 8px;
-  justify-content: center;
+  margin-top: 10px;
+}
+
+.btn-edit-cancel,
+.btn-edit-save {
+  flex: 1;
+  min-height: 40px;
+  border-radius: var(--radius-lg);
+  font-family: 'Cairo', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
 }
 
 .btn-edit-cancel {
-  padding: 6px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-card);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .btn-edit-save {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 8px;
   background: var(--primary);
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.btn-edit-save:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  color: #fff;
 }
 
 .edit-error {
-  margin: 0;
+  margin-top: 8px;
   font-size: 13px;
-  color: #f44336;
+  color: var(--danger);
   text-align: center;
-}
-
-.section {
-  padding: 0 var(--spacing) 16px;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
 }
 
-.section-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-  min-width: 0;
+.section-header .modern-section-title {
+  margin: 0;
 }
 
 .add-member-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
   padding: 8px 14px;
-  background: rgba(108, 99, 255, 0.12);
-  border: 1px solid rgba(108, 99, 255, 0.35);
-  border-radius: 999px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
   color: var(--primary);
+  font-family: 'Cairo', sans-serif;
   font-size: 13px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s, border-color 0.15s;
-  flex-shrink: 0;
-}
-.add-member-btn:active {
-  background: rgba(108, 99, 255, 0.2);
-  border-color: var(--primary);
-}
-html.light .add-member-btn,
-[data-theme="light"] .add-member-btn {
-  background: rgba(108, 99, 255, 0.08);
-  border-color: rgba(108, 99, 255, 0.28);
-}
-
-.members-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  max-height: min(52vh, 420px);
-}
-
-.member-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.12s;
-}
-.member-row:last-child {
-  border-bottom: none;
-}
-.member-row:active {
-  background: var(--bg-card-hover);
-}
-
-.member-avatar {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 17px;
-  color: white;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px var(--border);
-}
-
-.member-avatar .avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.member-meta {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.member-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-family: 'Cairo', sans-serif;
-}
-
-.member-role {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-family: 'Cairo', sans-serif;
-}
-.member-role--admin {
-  display: inline-flex;
-  align-items: center;
-  width: max-content;
-  margin-top: 2px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
   font-weight: 700;
-  color: var(--primary);
-  background: rgba(108, 99, 255, 0.14);
-}
-html.light .member-role--admin,
-[data-theme="light"] .member-role--admin {
-  background: rgba(108, 99, 255, 0.1);
+  cursor: pointer;
 }
 
-.member-actions {
-  flex-shrink: 0;
+.member-row .member-role--admin {
+  color: var(--primary);
+  font-weight: 600;
 }
 
 .icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-  padding: 8px;
-  background: none;
-  border: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.icon-btn.danger {
-  color: #f44336;
-}
-
-.leave-section {
-  padding: 12px var(--spacing) calc(16px + var(--safe-bottom));
-  margin-top: auto;
-  flex-shrink: 0;
-}
-
-.leave-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: var(--touch-min);
-  padding: 12px 18px;
-  border: 1px solid rgba(244, 67, 54, 0.45);
-  border-radius: var(--radius);
-  background: rgba(244, 67, 54, 0.07);
-  color: var(--danger, #f44336);
-  font-size: 15px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s;
-}
-.leave-btn:active:not(:disabled) {
-  opacity: 0.9;
+  flex-shrink: 0;
 }
 
-.leave-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.icon-btn.danger {
+  background: rgba(244, 67, 54, 0.1);
+  color: var(--danger);
+}
+
+.leave-section {
+  margin-top: 20px;
+  padding-bottom: 8px;
 }
 
 /* Modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -834,11 +517,12 @@ html.light .member-role--admin,
 .modal-sheet {
   width: 100%;
   max-height: 70vh;
-  background: var(--bg-primary);
-  border-radius: 16px 16px 0 0;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.15);
 }
 
 .modal-header {
@@ -923,8 +607,9 @@ html.light .member-role--admin,
   max-width: 340px;
   padding: 24px;
   background: var(--bg-card);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin: auto;
+  box-shadow: var(--shadow-md);
 }
 
 .confirm-text {
@@ -945,7 +630,7 @@ html.light .member-role--admin,
   padding: 12px 20px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 999px;
   color: var(--text-primary);
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
@@ -954,9 +639,9 @@ html.light .member-role--admin,
 
 .btn-danger {
   padding: 12px 20px;
-  background: #f44336;
+  background: var(--danger);
   border: none;
-  border-radius: 12px;
+  border-radius: 999px;
   color: white;
   font-weight: 600;
   font-family: 'Cairo', sans-serif;
