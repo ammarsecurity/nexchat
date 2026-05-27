@@ -352,7 +352,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.MediaType).HasMaxLength(20);
             e.Property(x => x.Caption).HasMaxLength(500);
             e.Property(x => x.OverlayJson).HasColumnType("longtext");
-            e.Property(x => x.BackgroundColor).HasMaxLength(32);
+            e.Property(x => x.BackgroundColor).HasMaxLength(128);
             e.Property(x => x.FilterId).HasMaxLength(50);
             e.HasIndex(x => new { x.UserId, x.ExpiresAt });
             e.HasIndex(x => x.ExpiresAt);

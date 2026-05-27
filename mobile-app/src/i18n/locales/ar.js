@@ -389,7 +389,9 @@ export default {
     dialogNotice: 'تنبيه',
     viewCount: '{n} مشاهدة',
     viewMyStory: 'عرض الستوري',
-    publish: 'نشر الستوري'
+    publish: 'نشر الستوري',
+    exportFailed: 'تعذّر تصدير الستوري. جرّب صورة أصغر أو أزل بعض الملصقات ثم أعد المحاولة.',
+    publishFailed: 'تعذّر نشر الستوري على الخادم. حاول مجدداً بعد لحظات.'
   },
   shortFilms: {
     title: 'أفلام قصيرة',
@@ -409,7 +411,9 @@ export default {
     viewCount: '{n} مشاهدة',
     share: 'مشاركة',
     shareMessage: '🎬 {title}\n{link}',
-    showMore: 'عرض المزيد'
+    showMore: 'عرض المزيد',
+    pause: 'إيقاف',
+    play: 'تشغيل'
   },
   groups: {
     createTitle: 'إنشاء مجموعة',

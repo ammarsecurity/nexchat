@@ -450,3 +450,29 @@ header.top-bar {
   z-index: 0;
 }
 .auth-pattern > * { position: relative; z-index: 1; }
+
+/* Hide native WebView play overlay — playback is controlled in-app */
+video {
+  -webkit-touch-callout: none;
+}
+video::-webkit-media-controls {
+  display: none !important;
+}
+video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+video::-webkit-media-controls-panel {
+  display: none !important;
+}
+video::-webkit-media-controls-play-button {
+  display: none !important;
+}
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+}
+video::-webkit-media-controls-overlay-play-button {
+  display: none !important;
+}
+video::-webkit-media-controls-overlay-enclosure {
+  display: none !important;
+}

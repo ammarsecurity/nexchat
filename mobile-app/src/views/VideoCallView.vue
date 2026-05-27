@@ -16,6 +16,7 @@ import { requestMediaPermissions } from '../utils/mediaPermissions'
 import { createFilteredVideoStream } from '../utils/videoFilterStream'
 import { applyRemoteSpeakerRouting } from '../utils/speakerOutput'
 import { nativeSetSpeakerOn, nativeResetAudioMode } from '../utils/speakerAudioNative'
+import { ensureVideoPlaying } from '../utils/mobileVideoPlayback'
 import { Track } from 'livekit-client'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import CachedAvatar from '../components/CachedAvatar.vue'
@@ -206,7 +207,10 @@ onMounted(async () => {
       {
         onRemoteTrack: (track) => {
           remoteStream.addTrack(track.mediaStreamTrack)
-          if (remoteVideo.value) remoteVideo.value.srcObject = remoteStream
+          if (remoteVideo.value) {
+            remoteVideo.value.srcObject = remoteStream
+            void ensureVideoPlaying(remoteVideo.value)
+          }
           connected.value = true
         },
         onConnected: () => {},
@@ -244,7 +248,10 @@ onMounted(async () => {
     if (reused) {
       connected.value = true
       const ms = getRemoteTracksMediaStream(joinedRoom)
-      if (remoteVideo.value) remoteVideo.value.srcObject = ms
+      if (remoteVideo.value) {
+        remoteVideo.value.srcObject = ms
+        void ensureVideoPlaying(remoteVideo.value)
+      }
       callDuration.value = activeCall.startedAt
         ? Math.floor((Date.now() - activeCall.startedAt) / 1000)
         : 0
@@ -332,13 +339,7 @@ watchEffect((onCleanup) => {
     if (cancelled) return
     /* لا نكتم عند فشل setSinkId — على Android يكفي غالباً nativeSetSpeakerOn */
     el.muted = false
-    if (!ok && !wantSpeaker) {
-      try {
-        el.play?.()
-      } catch {
-        /* ignore */
-      }
-    }
+    void ensureVideoPlaying(el)
   })()
 })
 
@@ -374,6 +375,10 @@ function formatTime(sec) {
       :class="{ 'remote-video--voice-audio-only': voiceOnly }"
       autoplay
       playsinline
+      webkit-playsinline
+      x5-playsinline
+      disablepictureinpicture
+      controlslist="nodownload nofullscreen noremoteplayback"
     ></video>
 
     <!-- وضع المكالمة الصوتية: صورة واسم الطرف الآخر بشكل مرتب -->
@@ -464,7 +469,11 @@ function formatTime(sec) {
         class="local-video"
         autoplay
         playsinline
+        webkit-playsinline
+        x5-playsinline
         muted
+        disablepictureinpicture
+        controlslist="nodownload nofullscreen noremoteplayback"
       ></video>
       <div v-if="cameraOff" class="camera-off-pip"><VideoOff :size="32" /></div>
     </div>

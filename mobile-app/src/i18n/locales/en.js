@@ -389,7 +389,9 @@ export default {
     dialogNotice: 'Notice',
     viewCount: '{n} views',
     viewMyStory: 'View story',
-    publish: 'Publish story'
+    publish: 'Publish story',
+    exportFailed: 'Could not export the story. Try a smaller photo or fewer stickers, then try again.',
+    publishFailed: 'Could not publish the story on the server. Please try again in a moment.'
   },
   shortFilms: {
     title: 'Short films',
@@ -409,7 +411,9 @@ export default {
     viewCount: '{n} views',
     share: 'Share',
     shareMessage: '🎬 {title}\n{link}',
-    showMore: 'Show more'
+    showMore: 'Show more',
+    pause: 'Pause',
+    play: 'Play'
   },
   groups: {
     createTitle: 'Create group',

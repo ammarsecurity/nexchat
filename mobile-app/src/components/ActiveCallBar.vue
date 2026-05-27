@@ -5,6 +5,7 @@ import { PhoneOff, Mic } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useActiveCallStore } from '../stores/activeCall'
 import { getLiveKitRoom, getRemoteTracksMediaStream, leaveLiveKitRoom } from '../services/livekit'
+import { ensureVideoPlaying } from '../utils/mobileVideoPlayback'
 import CachedAvatar from './CachedAvatar.vue'
 
 defineProps({
@@ -39,7 +40,7 @@ function attachRemotePlayback() {
   const ms = getRemoteTracksMediaStream(room)
   if (ms.getTracks().length === 0) return
   el.srcObject = ms
-  el.play?.().catch(() => {})
+  void ensureVideoPlaying(el)
 }
 
 function clearRemotePlayback() {
@@ -106,6 +107,10 @@ function endCallFromBar() {
       class="active-call-remote-media"
       autoplay
       playsinline
+      webkit-playsinline
+      x5-playsinline
+      disablepictureinpicture
+      controlslist="nodownload nofullscreen noremoteplayback"
     />
 
     <button type="button" class="active-call-main" @click="openFullCall">

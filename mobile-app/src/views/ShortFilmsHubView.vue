@@ -536,8 +536,8 @@ html.light .hub-header,
 
 .films-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .film-card__thumb {
@@ -592,11 +592,11 @@ html.light .hub-header,
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 24px 8px 8px;
-  font-size: 12px;
+  padding: 20px 6px 6px;
+  font-size: 10px;
   font-weight: 600;
   color: #fff;
-  line-height: 1.3;
+  line-height: 1.25;
   text-align: start;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -616,15 +616,38 @@ html.light .hub-header,
 
 @media (max-width: 360px) {
   .films-grid {
-    gap: 6px;
+    gap: 4px;
   }
 
   .film-card__thumb {
-    border-radius: 10px;
+    border-radius: 8px;
+  }
+
+  .film-card__title {
+    font-size: 9px;
+    padding: 16px 4px 4px;
+  }
+
+  .duration-pill {
+    top: 4px;
+    inset-inline-start: 4px;
+    padding: 1px 4px;
+    font-size: 9px;
   }
 
   .film-card--row {
     flex-basis: 100px;
+  }
+}
+
+@media (min-width: 481px) {
+  .films-grid {
+    gap: 8px;
+  }
+
+  .film-card__title {
+    font-size: 11px;
+    padding: 22px 7px 7px;
   }
 }
 </style>

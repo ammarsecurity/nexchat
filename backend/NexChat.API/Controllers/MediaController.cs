@@ -14,9 +14,10 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
 
     private static bool IsValidImageContent(Stream stream)
     {
+        if (!stream.CanRead) return false;
         var header = new byte[12];
         var read = stream.Read(header, 0, header.Length);
-        stream.Position = 0;
+        if (stream.CanSeek) stream.Position = 0;
         if (read < 3) return false;
 
         // JPEG: FF D8 FF
@@ -71,19 +72,36 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
 
     private static readonly string[] AllowedAudioTypes = ["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-m4a"];
 
+    private static async Task<MemoryStream> BufferUploadAsync(IFormFile file)
+    {
+        var ms = new MemoryStream();
+        await using var src = file.OpenReadStream();
+        await src.CopyToAsync(ms);
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static bool IsAllowedStoryImageType(string? contentType)
+    {
+        var type = (contentType ?? "").ToLowerInvariant();
+        if (AllowedTypes.Contains(type)) return true;
+        // Canvas blobs from mobile WebViews often arrive without image/jpeg.
+        return type is "" or "application/octet-stream" or "binary/octet-stream";
+    }
+
     [HttpPost("upload-story-image")]
     public async Task<IActionResult> UploadStoryImage(IFormFile file)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided" });
 
-        if (!AllowedTypes.Contains(file.ContentType.ToLower()))
+        if (!IsAllowedStoryImageType(file.ContentType))
             return BadRequest(new { message = "Only images are allowed (JPEG, PNG, GIF, WebP)" });
 
         if (file.Length > 10 * 1024 * 1024)
             return BadRequest(new { message = "Max file size is 10MB" });
 
-        await using var stream = file.OpenReadStream();
+        await using var stream = await BufferUploadAsync(file);
         if (!IsValidImageContent(stream))
             return BadRequest(new { message = "File content does not match image format" });
 
@@ -105,7 +123,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
         if (file.Length > 30 * 1024 * 1024)
             return BadRequest(new { message = "Max file size is 30MB" });
 
-        await using var stream = file.OpenReadStream();
+        await using var stream = await BufferUploadAsync(file);
         return Ok(new { url = await SaveUploadAsync(stream, file.FileName, [".mp4", ".webm", ".mov"], ".mp4") });
     }
 
@@ -120,7 +138,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
         var fileName = $"{Guid.NewGuid()}{ext}";
         var filePath = Path.Combine(uploadsPath, fileName);
 
-        stream.Position = 0;
+        if (stream.CanSeek) stream.Position = 0;
         await using (var dest = new FileStream(filePath, FileMode.Create))
             await stream.CopyToAsync(dest);
 

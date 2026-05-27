@@ -10,6 +10,7 @@ import { useStoriesStore } from '../stores/stories'
 import { useAuthStore } from '../stores/auth'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { captureVideoPoster } from '../utils/videoPoster'
+import { StoryExportError, isStoryExportError } from '../utils/storyExport'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -241,6 +242,31 @@ async function confirmDeleteSlide() {
   pendingDeleteSlide.value = null
 }
 
+function storyErrorMessage(e) {
+  if (isStoryExportError(e)) return t('stories.exportFailed')
+  if (e?.response?.status >= 500) return t('stories.publishFailed')
+  return e.response?.data?.message ?? e.userMessage ?? t('common.error')
+}
+
+async function uploadStoryBlob(blob) {
+  const file = blob instanceof File
+    ? blob
+    : new File([blob], 'story.jpg', { type: blob.type || 'image/jpeg' })
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  const { data } = await api.post('/media/upload-story-image', fd, {
+    timeout: MEDIA_UPLOAD_TIMEOUT_MS,
+    skipGlobalLoader: true
+  })
+  return data.url
+}
+
+async function exportStoryBlob(required = true) {
+  const blob = await editorRef.value?.exportImage()
+  if (!blob && required) throw new StoryExportError()
+  return blob
+}
+
 async function publish() {
   if (publishing.value) return
   publishing.value = true
@@ -253,19 +279,16 @@ async function publish() {
     let mediaUrl = null
     let mediaType = 'image'
     let videoDurationSeconds = null
+    let keepTextBackground = false
 
     if (textOnly.value) {
       mediaType = 'text'
-      const blob = await editorRef.value?.exportImage()
+      const blob = await exportStoryBlob(false)
       if (blob) {
-        const fd = new FormData()
-        fd.append('file', blob, 'story.jpg')
-        const { data } = await api.post('/media/upload-story-image', fd, {
-          timeout: MEDIA_UPLOAD_TIMEOUT_MS,
-          skipGlobalLoader: true
-        })
-        mediaUrl = data.url
+        mediaUrl = await uploadStoryBlob(blob)
         mediaType = 'image'
+      } else {
+        keepTextBackground = true
       }
     } else if (videoFile.value) {
       mediaType = 'video'
@@ -287,15 +310,8 @@ async function publish() {
         })
         mediaUrl = data.url
       } else {
-        const blob = await editorRef.value?.exportImage()
-        if (!blob) throw new Error('export failed')
-        const fd = new FormData()
-        fd.append('file', blob, 'story.jpg')
-        const { data } = await api.post('/media/upload-story-image', fd, {
-          timeout: MEDIA_UPLOAD_TIMEOUT_MS,
-          skipGlobalLoader: true
-        })
-        mediaUrl = data.url
+        const blob = await exportStoryBlob(true)
+        mediaUrl = await uploadStoryBlob(blob)
       }
       mediaType = 'image'
     }
@@ -308,7 +324,7 @@ async function publish() {
       mediaType,
       caption: caption.value.trim() || null,
       overlayJson,
-      backgroundColor: textOnly.value ? backgroundColor.value : null,
+      backgroundColor: keepTextBackground ? backgroundColor.value : null,
       filterId: filterId === 'none' ? null : filterId,
       videoDurationSeconds
     }, {
@@ -320,7 +336,7 @@ async function publish() {
     await storiesStore.fetchFeed(true)
     router.replace('/conversations')
   } catch (e) {
-    showStoryAlert(e.response?.data?.message ?? e.userMessage ?? t('common.error'))
+    showStoryAlert(storyErrorMessage(e))
   } finally {
     publishing.value = false
   }
@@ -335,27 +351,11 @@ async function saveEdit() {
   const overlayJson = editorRef.value?.getOverlayJson?.() ?? null
 
   if (textOnly.value) {
-    const blob = await editorRef.value?.exportImage()
-    if (blob) {
-      const fd = new FormData()
-      fd.append('file', blob, 'story.jpg')
-      const { data } = await api.post('/media/upload-story-image', fd, {
-        timeout: MEDIA_UPLOAD_TIMEOUT_MS,
-        skipGlobalLoader: true
-      })
-      mediaUrl = data.url
-    }
+    const blob = await exportStoryBlob(false)
+    if (blob) mediaUrl = await uploadStoryBlob(blob)
   } else if (!videoFile.value && imageSrc.value) {
-    const blob = await editorRef.value?.exportImage()
-    if (blob) {
-      const fd = new FormData()
-      fd.append('file', blob, 'story.jpg')
-      const { data } = await api.post('/media/upload-story-image', fd, {
-        timeout: MEDIA_UPLOAD_TIMEOUT_MS,
-        skipGlobalLoader: true
-      })
-      mediaUrl = data.url
-    }
+    const blob = await exportStoryBlob(true)
+    if (blob) mediaUrl = await uploadStoryBlob(blob)
   }
 
   const body = {

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { X, Eye, Send, Pause } from 'lucide-vue-next'
+import { X, Eye, Send, Pause, Volume2, VolumeX } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
 import api from '../services/api'
@@ -10,6 +10,7 @@ import { useStoriesStore } from '../stores/stories'
 import { useAuthStore } from '../stores/auth'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import StoryDialog from '../components/stories/StoryDialog.vue'
+import { playVideoWithOptionalSound, unmuteVideoOnUserGesture } from '../utils/mobileVideoPlayback'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +34,8 @@ const dragX = ref(0)
 const isDragging = ref(false)
 const transitioning = ref(false)
 const videoEl = ref(null)
+const muted = ref(true)
+const userWantsSound = ref(false)
 const skipNextRouteLoad = ref(false)
 const userSwitching = ref(false)
 
@@ -139,10 +142,33 @@ async function playCurrentVideo() {
   await nextTick()
   const el = videoEl.value
   if (!el || current.value?.mediaType !== 'video') return
-  try {
-    el.currentTime = 0
-    await el.play()
-  } catch {}
+  el.currentTime = 0
+  const wantSound = userWantsSound.value && !muted.value
+  const result = await playVideoWithOptionalSound(el, wantSound)
+  if (wantSound && result.muted) {
+    muted.value = true
+  } else if (!result.muted) {
+    muted.value = false
+  }
+}
+
+async function toggleStoryMute() {
+  const el = videoEl.value
+  if (muted.value) {
+    userWantsSound.value = true
+    muted.value = false
+    if (el) {
+      const ok = await unmuteVideoOnUserGesture(el)
+      if (!ok) {
+        muted.value = true
+        userWantsSound.value = false
+      }
+    }
+  } else {
+    userWantsSound.value = false
+    muted.value = true
+    if (el) el.muted = true
+  }
 }
 
 async function onSlideChange() {
@@ -482,8 +508,18 @@ onUnmounted(clearTimer)
       <header class="viewer-header" @click.stop>
         <button type="button" class="icon-btn" @click="goBack"><X :size="22" /></button>
         <span class="viewer-name">{{ publisherName }}</span>
+        <button
+          v-if="current.mediaType === 'video'"
+          type="button"
+          class="icon-btn"
+          aria-label="mute"
+          @click="toggleStoryMute"
+        >
+          <VolumeX v-if="muted" :size="20" />
+          <Volume2 v-else :size="20" />
+        </button>
         <button v-if="isOwner" type="button" class="icon-btn" @click="openViewers"><Eye :size="20" /></button>
-        <span v-else class="header-spacer" />
+        <span v-else-if="current.mediaType !== 'video'" class="header-spacer" />
       </header>
 
       <div
@@ -514,10 +550,13 @@ onUnmounted(clearTimer)
               :src="ensureAbsoluteUrl(current.mediaUrl)"
               class="media-el"
               :style="filterStyle"
-              autoplay
               playsinline
-              muted
+              webkit-playsinline
+              x5-playsinline
+              :muted="muted"
               preload="auto"
+              disablepictureinpicture
+              controlslist="nodownload nofullscreen noremoteplayback"
             />
             <img
               v-else-if="current.mediaUrl"

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { exportStoryImage, StoryExportError } from '../../utils/storyExport'
 
 const props = defineProps({
   imageSrc: { type: String, default: '' },
@@ -401,100 +402,27 @@ function pointerPct(e) {
   }
 }
 
-function fitExportSize(imgW, imgH, maxDim = 1920) {
-  let w = imgW
-  let h = imgH
-  if (Math.max(w, h) > maxDim) {
-    const s = maxDim / Math.max(w, h)
-    w = Math.round(w * s)
-    h = Math.round(h * s)
-  }
-  return { w: Math.max(1, w), h: Math.max(1, h) }
-}
-
 async function exportImage() {
   const canvas = canvasRef.value
   if (!canvas) return null
 
-  const ctx = canvas.getContext('2d')
-  let w = 360
-  let h = 640
-
-  if (props.textOnly) {
-    canvas.width = w
-    canvas.height = h
-    const grd = ctx.createLinearGradient(0, 0, w, h)
-    grd.addColorStop(0, '#6c63ff')
-    grd.addColorStop(1, '#ff6584')
-    ctx.fillStyle = grd
-    ctx.fillRect(0, 0, w, h)
-  } else if (props.imageSrc) {
-    const img = await loadImage(props.imageSrc)
-    const size = fitExportSize(img.width, img.height)
-    w = size.w
-    h = size.h
-    canvas.width = w
-    canvas.height = h
-    ctx.filter = filterCss.value
-    ctx.drawImage(img, 0, 0, w, h)
-    ctx.filter = 'none'
-  } else if (props.videoSrc) {
-    canvas.width = w
-    canvas.height = h
-    ctx.fillStyle = '#111'
-    ctx.fillRect(0, 0, w, h)
-    ctx.fillStyle = '#fff'
-    ctx.font = '16px Cairo'
-    ctx.textAlign = 'center'
-    ctx.fillText(t('stories.videoPreviewNote'), w / 2, h / 2)
-  } else {
-    canvas.width = w
-    canvas.height = h
-  }
-
-  const uiScale = w / 360
-
-  for (const stroke of strokes.value) {
-    ctx.strokeStyle = stroke.color
-    ctx.lineWidth = stroke.size * uiScale
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.beginPath()
-    stroke.points.forEach((p, i) => {
-      const x = (p.x / 100) * w
-      const y = (p.y / 100) * h
-      if (i === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
+  try {
+    return await exportStoryImage(canvas, {
+      textOnly: props.textOnly,
+      imageSrc: props.imageSrc,
+      videoSrc: props.videoSrc,
+      backgroundColor: props.backgroundColor,
+      filterCss: filterCss.value,
+      strokes: strokes.value,
+      textLayers: textLayers.value,
+      stickers: stickers.value,
+      textFontSize,
+      videoPreviewLabel: t('stories.videoPreviewNote')
     })
-    ctx.stroke()
+  } catch (err) {
+    if (err instanceof StoryExportError) throw err
+    throw new StoryExportError(err?.message || 'Story export failed')
   }
-
-  for (const layer of textLayers.value) {
-    ctx.fillStyle = layer.color
-    ctx.font = `bold ${textFontSize(layer) * uiScale}px Cairo, sans-serif`
-    ctx.textAlign = 'center'
-    ctx.fillText(layer.text, (layer.x / 100) * w, (layer.y / 100) * h)
-  }
-
-  for (const s of stickers.value) {
-    ctx.font = `${48 * s.scale * uiScale}px serif`
-    ctx.textAlign = 'center'
-    ctx.fillText(s.emoji, (s.x / 100) * w, (s.y / 100) * h)
-  }
-
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92)
-  })
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
 }
 
 function hasEditorChanges() {
@@ -904,7 +832,13 @@ watch(filterId, () => {})
 }
 
 .export-canvas {
-  display: none;
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .tools-panel {
