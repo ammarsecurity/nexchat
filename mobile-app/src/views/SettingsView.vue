@@ -10,6 +10,7 @@ import { useThemeStore } from '../stores/theme'
 import { publicUrl } from '../utils/publicUrl'
 import { useChatStore } from '../stores/chat'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
+import AvatarPickerSheet from '../components/AvatarPickerSheet.vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
 import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
@@ -32,9 +33,6 @@ const logoImg = computed(() => publicUrl(theme.isLight ? 'logo-light.png' : 'log
 const supportLoading = ref(false)
 
 const showAvatarPicker = ref(false)
-const avatarTab = ref('preset')
-const uploadingAvatar = ref(false)
-const avatarFileInput = ref(null)
 const coverFileInput = ref(null)
 const uploadingCover = ref(false)
 const coverImgError = ref(false)
@@ -106,13 +104,6 @@ const genderLabel = computed(() => ({
   other: t('gender.other')
 }))
 
-const presetAvatars = [
-  '🦊','🐺','🦁','🐯','🐻','🐼','🐨','🦋',
-  '🦅','🐬','🦈','🐙','🌟','🎭','🎯','🎮',
-  '🚀','⚡','🔥','💎','👑','🤖','👻','🎃',
-  '🌈','🌊','🌺','🍀','⭐','🎵'
-]
-
 const isImageUrl = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 const isEmoji   = (v) => v && !isImageUrl(v)
 
@@ -122,11 +113,6 @@ const settingsCoverSrc = computed(() => {
   if (url && isImageUrl(url)) return ensureAbsoluteUrl(url)
   return DEFAULT_COVER_URL
 })
-
-function selectPreset(emoji) {
-  auth.setAvatar(emoji)
-  showAvatarPicker.value = false
-}
 
 async function handleCoverUpload(e) {
   const file = e.target.files?.[0]
@@ -155,29 +141,6 @@ async function handleCoverUpload(e) {
     notify.error(t('common.error'))
   } finally {
     uploadingCover.value = false
-  }
-}
-
-async function handleAvatarUpload(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  avatarFileInput.value.value = ''
-  const formData = new FormData()
-  formData.append('file', file)
-  const token = localStorage.getItem('nexchat_token')
-  uploadingAvatar.value = true
-  try {
-    const res = await fetch(`${API_BASE}/media/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData
-    })
-    if (!res.ok) throw new Error()
-    const { url } = await res.json()
-    auth.setAvatar(url)
-    showAvatarPicker.value = false
-  } finally {
-    uploadingAvatar.value = false
   }
 }
 
@@ -372,7 +335,6 @@ onMounted(() => {
 
 <template>
   <div class="modern-page page settings">
-    <LoaderOverlay :show="uploadingAvatar" :text="t('settings.uploadingImage')" />
     <LoaderOverlay :show="uploadingCover" :text="t('settings.uploadingCover')" />
     <LoaderOverlay :show="deleting" :text="t('settings.deletingAccount')" />
     <LoaderOverlay :show="supportLoading" :text="t('settings.openingSupport')" />
@@ -739,52 +701,7 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <!-- Avatar Picker -->
-    <Transition name="modal">
-      <div v-if="showAvatarPicker" class="modal-overlay" @click.self="showAvatarPicker = false">
-        <div class="picker-sheet glass-card">
-          <div class="sheet-handle"></div>
-
-          <div class="picker-hdr">
-            <span class="picker-title">{{ t('settings.chooseAvatar') }}</span>
-            <button class="close-x" @click="showAvatarPicker = false"><X :size="18" /></button>
-          </div>
-
-          <div class="picker-tabs">
-            <button class="ptab" :class="{ active: avatarTab === 'preset' }" @click="avatarTab = 'preset'"><Image :size="16" /> {{ t('settings.preset') }}</button>
-            <button class="ptab" :class="{ active: avatarTab === 'upload' }" @click="avatarTab = 'upload'"><Upload :size="16" /> {{ t('settings.uploadImage') }}</button>
-          </div>
-
-          <!-- Presets -->
-          <div v-if="avatarTab === 'preset'" class="presets-grid">
-            <button
-              v-for="emoji in presetAvatars"
-              :key="emoji"
-              class="preset-btn"
-              :class="{ selected: auth.avatar === emoji }"
-              :style="{ background: auth.avatarColor }"
-              @click="selectPreset(emoji)"
-            >{{ emoji }}</button>
-          </div>
-
-          <!-- Upload -->
-          <div v-else class="upload-tab">
-            <div class="upload-preview">
-              <img v-if="isImageUrl(auth.avatar)" :src="ensureAbsoluteUrl(auth.avatar)" class="prev-img" referrerpolicy="no-referrer" />
-              <div v-else class="prev-empty">
-                <Image :size="44" style="color: var(--text-muted)" />
-                <span class="text-muted text-sm">{{ t('settings.noImage') }}</span>
-              </div>
-            </div>
-            <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
-            <button class="upload-btn" :disabled="uploadingAvatar" @click="avatarFileInput.click()">
-              {{ uploadingAvatar ? t('settings.uploading') : t('settings.chooseImage') }}
-            </button>
-            <div class="text-muted text-sm" style="text-align:center">{{ t('settings.maxSize') }}</div>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <AvatarPickerSheet v-model:open="showAvatarPicker" />
   </div>
 </template>
 

@@ -6,7 +6,7 @@ public class ConversationMessage
     public Guid ConversationId { get; set; }
     public Guid SenderId { get; set; }
     public string Content { get; set; } = string.Empty;
-    public string Type { get; set; } = "text"; // "text" | "image" | "audio"
+    public string Type { get; set; } = "text"; // "text" | "image" | "audio" | "video" | "album" | "short_film"
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
     public Guid? ReplyToMessageId { get; set; }
     public bool DeletedForEveryone { get; set; } = false;

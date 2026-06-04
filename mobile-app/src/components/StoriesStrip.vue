@@ -263,20 +263,43 @@ html.light .ring-add-badge {
 
 /* داخل بطاقة المحادثات الزرقاء */
 .stories-strip--hero {
-  padding: 8px 0 12px;
+  padding: 2px 0 6px;
   background: transparent;
   border-bottom: none;
 }
 
 .stories-strip--hero .stories-scroll {
-  padding: 0 2px 4px;
-  gap: 12px;
+  padding: 0 2px 2px;
+  gap: 10px;
+}
+
+.stories-strip--hero .story-ring {
+  min-width: 52px;
+  max-width: 56px;
+  gap: 2px;
+}
+
+.stories-strip--hero .ring-inner {
+  width: 42px;
+  height: 42px;
+  border-color: rgba(255, 255, 255, 0.92);
+}
+
+.stories-strip--hero .ring-add-badge {
+  width: 14px;
+  height: 14px;
+}
+
+.stories-strip--hero .story-ring--mine .ring-add-badge {
+  width: 16px;
+  height: 16px;
 }
 
 .stories-strip--hero .ring-label {
   color: rgba(255, 255, 255, 0.95);
   font-weight: 600;
-  font-size: 11px;
+  font-size: 10px;
+  max-width: 56px;
 }
 
 .stories-strip--hero .ring-outer {
@@ -287,16 +310,13 @@ html.light .ring-add-badge {
   background: linear-gradient(145deg, #FFFFFF 0%, #BFDBFE 55%, #60A5FA 100%);
 }
 
-.stories-strip--hero .ring-inner {
-  border-color: rgba(255, 255, 255, 0.92);
-}
-
 .stories-strip--hero .ring-outer--mine .ring-inner {
   border: 2px dashed rgba(255, 255, 255, 0.88);
   background: rgba(255, 255, 255, 0.12);
 }
 
 .stories-strip--hero .ring-letter {
+  font-size: 15px;
   color: #fff;
 }
 

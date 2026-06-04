@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Image, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Image, Images, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
@@ -19,7 +19,9 @@ import { useLocaleStore } from '../stores/locale'
 import { useActiveCallStore } from '../stores/activeCall'
 import ActiveCallBar from '../components/ActiveCallBar.vue'
 import ShortFilmMessageBubble from '../components/ShortFilmMessageBubble.vue'
+import AlbumMessageBubble from '../components/AlbumMessageBubble.vue'
 import { parseShortFilmMessage, buildShortFilmShareMessage, formatConversationListPreview } from '../utils/shortFilmShare'
+import { parseAlbumMessage, buildAlbumPayload, MAX_ALBUM_IMAGES } from '../utils/conversationAlbum'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,17 +48,23 @@ const messageText = ref('')
 const messagesEl = ref(null)
 const loading = ref(false)
 const imageInput = ref(null)
+const videoInput = ref(null)
+const albumInput = ref(null)
 let mediaRecorder = null
 let currentStream = null
 let audioChunks = []
 const pendingAudioBlobs = new Map()
 const msgInputRef = ref(null)
 const uploadingImage = ref(false)
+const uploadingVideo = ref(false)
+const uploadingAlbum = ref(false)
 const isRecording = ref(false)
 const uploadingVoice = ref(false)
 const recordingSeconds = ref(0)
 let recordingTimer = null
-const imageModalUrl = ref(null)
+const imageModalUrls = ref([])
+const imageModalIndex = ref(0)
+const imageModalUrl = computed(() => imageModalUrls.value[imageModalIndex.value] ?? null)
 const showMessageMenu = ref(null)
 const showMessageMenuMsg = ref(null)
 const msgMenuPosition = ref({})
@@ -114,10 +122,16 @@ function formatAudioDuration(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function replyPreviewText(content) {
+function replyPreviewText(content, msgType) {
+  if (msgType === 'video') return t('conversationChat.replyPreviewVideo')
+  if (msgType === 'album') return t('conversationChat.replyPreviewAlbum')
+  if (msgType === 'audio') return t('conversationChat.voiceMessage')
+  if (msgType === 'image') return t('conversationChat.replyPreviewImage')
   if (!content || typeof content !== 'string') return ''
+  if (parseAlbumMessage(content)) return t('conversationChat.replyPreviewAlbum')
   const lower = content.toLowerCase()
   if (/\.(webm|m4a|ogg|opus|mp3|wav)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('webm') || lower.includes('m4a') || lower.includes('ogg')))) return t('conversationChat.voiceMessage')
+  if (/\.(mp4|mov)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && lower.includes('.mp4'))) return t('conversationChat.replyPreviewVideo')
   if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('jpg') || lower.includes('png') || lower.includes('webp')))) return t('conversationChat.replyPreviewImage')
   return content
 }
@@ -372,14 +386,17 @@ onMounted(async () => {
   conversationHub.on('ConversationListUpdated', (payload) => {
     const convId = payload?.conversationId ?? payload?.ConversationId
     const rawPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview
-    const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'))
+    const msgType = payload?.lastMessageType ?? payload?.LastMessageType ?? ''
+    const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'), { t, type: msgType, lastMessageType: msgType })
     const at = payload?.lastMessageAt ?? payload?.LastMessageAt
     if (String(convId) === String(conversationId)) {
       listStore.updateConversation(convId, {
         lastMessagePreview: preview,
         lastMessageAt: at,
         LastMessagePreview: preview,
-        LastMessageAt: at
+        LastMessageAt: at,
+        lastMessageType: msgType,
+        LastMessageType: msgType
       }, false)
     }
   })
@@ -527,6 +544,26 @@ async function sendMessage() {
   }
 }
 
+async function sendUploadedMedia(content, type) {
+  const tempId = `temp-${Date.now()}`
+  convStore.addMessage({
+    tempId,
+    senderId: currentUserId.value,
+    content,
+    type,
+    sentAt: new Date(),
+    status: 'pending'
+  })
+  scrollToBottom()
+  try {
+    await ensureConnected(conversationHub, 25000)
+    await conversationHub.invoke('SendMessage', conversationId, content, type, null)
+  } catch (err) {
+    convStore.updateMessage(tempId, { status: 'failed' })
+    console.warn('SendMessage failed after media upload:', err?.message ?? err)
+  }
+}
+
 async function handleImageUpload(e) {
   const file = e.target.files[0]
   if (!file) return
@@ -534,32 +571,65 @@ async function handleImageUpload(e) {
   const formData = new FormData()
   formData.append('file', file)
   uploadingImage.value = true
-  const tempId = `temp-${Date.now()}`
   try {
     await ensureConnected(conversationHub, 25000)
     const { data } = await api.post('/media/upload', formData, { timeout: 60000 })
     const url = data?.url
     if (!url || typeof url !== 'string') throw new Error('Invalid upload response')
-    convStore.addMessage({
-      tempId,
-      senderId: currentUserId.value,
-      content: url,
-      type: 'image',
-      sentAt: new Date(),
-      status: 'pending'
-    })
-    scrollToBottom()
-    try {
-      await ensureConnected(conversationHub, 25000)
-      await conversationHub.invoke('SendMessage', conversationId, url, 'image', null)
-    } catch (err) {
-      convStore.updateMessage(tempId, { status: 'failed' })
-      console.warn('SendMessage failed after image upload:', err?.message ?? err)
-    }
+    await sendUploadedMedia(url, 'image')
   } catch (err) {
     notify.error(err?.response?.data?.message || err?.userMessage || t('conversationChat.imageUploadFailed'))
   } finally {
     uploadingImage.value = false
+  }
+}
+
+async function handleVideoUpload(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  if (videoInput.value) videoInput.value.value = ''
+  const formData = new FormData()
+  formData.append('file', file)
+  uploadingVideo.value = true
+  try {
+    await ensureConnected(conversationHub, 25000)
+    const { data } = await api.post('/media/upload-chat-video', formData, { timeout: 120000 })
+    const url = data?.url
+    if (!url || typeof url !== 'string') throw new Error('Invalid upload response')
+    await sendUploadedMedia(url, 'video')
+  } catch (err) {
+    notify.error(err?.response?.data?.message || err?.userMessage || t('conversationChat.videoUploadFailed'))
+  } finally {
+    uploadingVideo.value = false
+  }
+}
+
+async function handleAlbumUpload(e) {
+  const files = Array.from(e.target.files || [])
+  if (albumInput.value) albumInput.value.value = ''
+  if (!files.length) return
+  if (files.length > MAX_ALBUM_IMAGES) {
+    notify.error(t('conversationChat.albumTooMany'))
+    return
+  }
+  uploadingAlbum.value = true
+  try {
+    await ensureConnected(conversationHub, 25000)
+    const urls = []
+    for (const file of files) {
+      const formData = new FormData()
+      formData.append('file', file)
+      const { data } = await api.post('/media/upload', formData, { timeout: 60000 })
+      const url = data?.url
+      if (url && typeof url === 'string') urls.push(url)
+    }
+    if (!urls.length) throw new Error('No uploads')
+    const payload = buildAlbumPayload(urls)
+    await sendUploadedMedia(payload, 'album')
+  } catch (err) {
+    notify.error(err?.response?.data?.message || err?.userMessage || t('conversationChat.albumUploadFailed'))
+  } finally {
+    uploadingAlbum.value = false
   }
 }
 
@@ -704,13 +774,18 @@ function replyToMessage(msg) {
   showMessageMenuMsg.value = null
   const isMine = String(msg.senderId) === String(currentUserId.value)
   const sf = parseShortFilmMessage(msg)
+  const album = parseAlbumMessage(msg.content)
   const preview = sf
     ? `🎬 ${(sf.title || t('shortFilms.title')).slice(0, 48)}`
-    : msg.type === 'text'
-      ? (msg.content || '').slice(0, 50)
-      : msg.type === 'audio'
-        ? '🎤'
-        : '🖼'
+    : msg.type === 'video'
+      ? t('conversationChat.replyPreviewVideo')
+      : msg.type === 'album' || album
+        ? t('conversationChat.replyPreviewAlbum')
+        : msg.type === 'text'
+          ? (msg.content || '').slice(0, 50)
+          : msg.type === 'audio'
+            ? '🎤'
+            : '🖼'
   replyingTo.value = {
     id: msg.id || msg.Id,
     content: preview,
@@ -736,6 +811,11 @@ function scrollToRepliedMessage(replyToMessageId) {
 
 function getShortFilmPayload(msg) {
   return parseShortFilmMessage(msg)
+}
+
+function getAlbumPayload(msg) {
+  if ((msg.type ?? msg.Type) !== 'album') return null
+  return parseAlbumMessage(msg.content ?? msg.Content)
 }
 
 function openSharedShortFilm(payload) {
@@ -956,12 +1036,24 @@ async function deleteConversation() {
 }
 
 function openImage(url) {
-  imageModalUrl.value = url
+  imageModalUrls.value = [url]
+  imageModalIndex.value = 0
+}
+
+function openAlbumImage(urls, startIndex = 0) {
+  if (!urls?.length) return
+  imageModalUrls.value = urls
+  imageModalIndex.value = Math.min(startIndex, urls.length - 1)
 }
 
 function closeImageModal() {
-  imageModalUrl.value = null
+  imageModalUrls.value = []
+  imageModalIndex.value = 0
 }
+
+const isMediaUploading = computed(() =>
+  uploadingImage.value || uploadingVideo.value || uploadingAlbum.value || uploadingVoice.value
+)
 
 async function leaveChat() {
   convStore.clearConversation()
@@ -1036,6 +1128,8 @@ function removeReaction(msg) {
 <template>
   <div class="conv-chat page">
     <LoaderOverlay :show="loading" :text="t('common.loading')" />
+    <LoaderOverlay :show="uploadingVideo" :text="t('conversationChat.uploadingVideo')" />
+    <LoaderOverlay :show="uploadingAlbum" :text="t('conversationChat.uploadingAlbum')" />
 
     <Transition name="fade">
       <div v-if="showVideoConfirm" class="call-overlay">
@@ -1169,10 +1263,55 @@ function removeReaction(msg) {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
             </div>
           </div>
           <img v-if="!msg.deletedForEveryone" :src="ensureAbsoluteUrl(msg.content)" class="chat-image" @click="openImage(msg.content)" referrerpolicy="no-referrer" />
+          <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
+        </div>
+        <div
+          v-else-if="getAlbumPayload(msg)"
+          class="bubble album-bubble-wrap"
+          @contextmenu="onMessageContextMenu(msg, $event)"
+        >
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
+            </div>
+          </div>
+          <AlbumMessageBubble
+            v-if="!msg.deletedForEveryone"
+            :urls="getAlbumPayload(msg).urls"
+            @open="(i) => openAlbumImage(getAlbumPayload(msg).urls, i)"
+          />
+          <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
+        </div>
+        <div
+          v-else-if="msg.type === 'video'"
+          class="bubble video-bubble"
+          @contextmenu="onMessageContextMenu(msg, $event)"
+        >
+          <div v-if="msg.replyToContent || msg.replyToSenderName" class="msg-reply-block" role="button" tabindex="0" @click.stop="scrollToRepliedMessage(msg.replyToMessageId)" @keydown.enter.space.prevent="scrollToRepliedMessage(msg.replyToMessageId)">
+            <Reply :size="12" class="msg-reply-icon" />
+            <div class="msg-reply-info">
+              <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
+            </div>
+          </div>
+          <video
+            v-if="!msg.deletedForEveryone"
+            class="chat-video"
+            :src="ensureAbsoluteUrl(msg.content)"
+            playsinline
+            webkit-playsinline
+            x5-playsinline
+            controls
+            preload="metadata"
+            disablepictureinpicture
+            controlslist="nodownload nofullscreen noremoteplayback"
+          />
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
         <div
@@ -1184,7 +1323,7 @@ function removeReaction(msg) {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
             </div>
           </div>
           <ShortFilmMessageBubble
@@ -1203,7 +1342,7 @@ function removeReaction(msg) {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
             </div>
           </div>
           <template v-if="!msg.deletedForEveryone">
@@ -1249,7 +1388,7 @@ function removeReaction(msg) {
             <Reply :size="12" class="msg-reply-icon" />
             <div class="msg-reply-info">
               <span class="msg-reply-name">{{ msg.replyToSenderName || '—' }}</span>
-              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent) }}</span>
+              <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
             </div>
           </div>
           <span v-if="msg.deletedForEveryone" class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
@@ -1390,7 +1529,7 @@ function removeReaction(msg) {
           <button
             class="input-action-btn"
             @click="showInputActionsMenu = !showInputActionsMenu"
-            :disabled="uploadingVoice || uploadingImage"
+            :disabled="isMediaUploading"
             :title="t('conversationChat.attachOrVoice')"
           >
             <MoreVertical :size="20" />
@@ -1398,11 +1537,19 @@ function removeReaction(msg) {
           <div v-if="showInputActionsMenu" class="input-actions-backdrop" @click="showInputActionsMenu = false" />
           <Transition name="fade">
             <div v-if="showInputActionsMenu" class="input-actions-menu glass-card" @click.stop>
-              <button class="input-action-menu-item" @click="showInputActionsMenu = false; imageInput?.click()">
+              <button class="input-action-menu-item" :disabled="isMediaUploading" @click="showInputActionsMenu = false; imageInput?.click()">
                 <Image :size="18" />
                 <span>{{ t('conversationChat.attachImage') }}</span>
               </button>
-              <button class="input-action-menu-item" @click="showInputActionsMenu = false; toggleVoiceRecording()">
+              <button class="input-action-menu-item" :disabled="isMediaUploading" @click="showInputActionsMenu = false; albumInput?.click()">
+                <Images :size="18" />
+                <span>{{ t('conversationChat.attachAlbum') }}</span>
+              </button>
+              <button class="input-action-menu-item" :disabled="isMediaUploading" @click="showInputActionsMenu = false; videoInput?.click()">
+                <Video :size="18" />
+                <span>{{ t('conversationChat.attachVideo') }}</span>
+              </button>
+              <button class="input-action-menu-item" :disabled="isMediaUploading" @click="showInputActionsMenu = false; toggleVoiceRecording()">
                 <Mic :size="18" />
                 <span>{{ t('conversationChat.voiceMessage') }}</span>
               </button>
@@ -1410,6 +1557,8 @@ function removeReaction(msg) {
           </Transition>
         </div>
         <input ref="imageInput" type="file" accept="image/*" style="display:none" @change="handleImageUpload" />
+        <input ref="videoInput" type="file" accept="video/mp4,video/webm,video/quicktime,video/*" style="display:none" @change="handleVideoUpload" />
+        <input ref="albumInput" type="file" accept="image/*" multiple style="display:none" @change="handleAlbumUpload" />
         <textarea
           ref="msgInputRef"
           v-model="messageText"
@@ -2311,7 +2460,6 @@ html.light .msg-action-react:active {
   background: var(--bg-card-hover);
 }
 
-.image-bubble { padding: 4px !important; overflow: hidden; }
 
 .short-film-bubble {
   padding: 4px !important;
@@ -2423,6 +2571,22 @@ html.light .msg-action-react:active {
   cursor: pointer;
   object-fit: cover;
   display: block;
+}
+
+.image-bubble,
+.video-bubble,
+.album-bubble-wrap {
+  padding: 4px !important;
+  overflow: hidden;
+}
+
+.chat-video {
+  max-width: min(260px, calc(100vw - 48px));
+  width: 100%;
+  max-height: 320px;
+  border-radius: 12px;
+  display: block;
+  background: #000;
 }
 
 .typing-bubble { padding: 12px 16px; }

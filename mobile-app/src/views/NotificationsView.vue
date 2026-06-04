@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { Bell, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useNotificationsStore } from '../stores/notifications'
@@ -8,8 +7,8 @@ import { useLocaleStore } from '../stores/locale'
 import { formatGregorianDateTime } from '../utils/formatTime'
 import ModernPageShell from '../components/ui/ModernPageShell.vue'
 import api from '../services/api'
+import { navigateFromNotification, normalizeServerNotification } from '../services/notifications'
 
-const router = useRouter()
 const { t } = useI18n()
 const notifications = useNotificationsStore()
 const localeStore = useLocaleStore()
@@ -29,18 +28,16 @@ function formatTime(timestamp) {
 function getTypeLabel(type) {
   if (type === 'video_call') return t('notifications.typeVideoCall')
   if (type === 'code_connected') return t('notifications.typeCode')
-  if (type === 'conversation_message') return t('notifications.typeMessage')
+  if (type === 'conversation_message' || type === 'message') return t('notifications.typeMessage')
+  if (type === 'story_published') return t('notifications.typeStory')
+  if (type === 'message_request') return t('notifications.typeMessageRequest')
   return t('notifications.typeDefault')
 }
 
 function handleClick(n) {
   notifications.markRead(n.id)
   if (n.serverId) api.put(`/user-notifications/${n.serverId}/read`).catch(() => {})
-  if (n.conversationId) {
-    router.push({ path: '/conversations', query: { open: n.conversationId } })
-    return
-  }
-  if (n.sessionId) router.push(`/chat/${n.sessionId}`)
+  navigateFromNotification(n)
 }
 
 function clearAll() {
@@ -54,22 +51,7 @@ onMounted(() => {
   notifications.load()
   api.get('/user-notifications?take=40')
     .then(({ data }) => {
-      const normalized = (data || []).map((x) => {
-        let parsed = {}
-        try { parsed = JSON.parse(x.dataJson || '{}') } catch {}
-        return {
-          id: `srv-${x.id}`,
-          serverId: x.id,
-          type: x.type,
-          title: x.title,
-          body: x.body,
-          timestamp: x.createdAt,
-          isRead: x.isRead,
-          sessionId: parsed.sessionId,
-          conversationId: parsed.conversationId,
-          messageRequestId: parsed.messageRequestId
-        }
-      })
+      const normalized = (data || []).map((x) => normalizeServerNotification(x))
       if (normalized.length) {
         const seen = new Set(notifications.list.map(x => String(x.serverId || x.id)))
         normalized.forEach((n) => {

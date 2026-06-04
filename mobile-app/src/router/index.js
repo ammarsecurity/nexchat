@@ -22,7 +22,13 @@ const routes = [
   { path: '/stories/view/:userId', component: () => import('../views/StoryViewerView.vue'), meta: { requiresStories: true } },
   { path: '/short-films', component: () => import('../views/ShortFilmsHubView.vue'), meta: { requiresShortFilms: true } },
   { path: '/short-films/watch', component: () => import('../views/ShortFilmsFeedView.vue'), meta: { requiresShortFilms: true } },
-  { path: '/message-requests', component: () => import('../views/MessageRequestsView.vue') },
+  {
+    path: '/message-requests',
+    redirect: (to) => ({
+      path: '/conversations',
+      query: { tab: 'requests', ...(to.query.notice ? { notice: to.query.notice } : {}) }
+    })
+  },
   { path: '/conversations/create-group', component: () => import('../views/CreateGroupView.vue') },
   { path: '/conversation/:conversationId/group-info', component: () => import('../views/GroupInfoView.vue') },
   { path: '/conversations/:conversationId/options', component: () => import('../views/ConversationOptionsView.vue') },

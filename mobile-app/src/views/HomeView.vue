@@ -113,9 +113,16 @@ onMounted(async () => {
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data }) => {
       const list = (data ?? []).map((c) => {
         const raw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
-        const formatted = formatConversationListPreview(raw, t('shortFilms.title'))
-        if (formatted === raw) return c
-        return { ...c, lastMessagePreview: formatted, LastMessagePreview: formatted }
+        const type = c?.lastMessageType ?? c?.LastMessageType ?? ''
+        const formatted = formatConversationListPreview(raw, t('shortFilms.title'), { t, type, lastMessageType: type })
+        if (formatted === raw && !type) return c
+        return {
+          ...c,
+          lastMessagePreview: formatted,
+          LastMessagePreview: formatted,
+          lastMessageType: type,
+          LastMessageType: type
+        }
       })
       listStore.setList(list)
     }).catch(() => {})
@@ -145,7 +152,8 @@ async function handleConversationListUpdated(payload) {
   const convId = payload?.conversationId ?? payload?.ConversationId
   if (!convId) return
   const rawPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
-  const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'))
+  const msgType = payload?.lastMessageType ?? payload?.LastMessageType ?? ''
+  const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'), { t, type: msgType, lastMessageType: msgType })
   const at = payload?.lastMessageAt ?? payload?.LastMessageAt
   const senderId = String(payload?.senderId ?? payload?.SenderId ?? '')
   const currentId = String(auth.user?.id ?? '')
@@ -156,15 +164,24 @@ async function handleConversationListUpdated(payload) {
     lastMessagePreview: preview,
     lastMessageAt: at,
     LastMessagePreview: preview,
-    LastMessageAt: at
+    LastMessageAt: at,
+    lastMessageType: msgType,
+    LastMessageType: msgType
   }, shouldIncrementUnread)
   if (!updated) {
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data: res }) => {
       const list = (res ?? []).map((c) => {
         const raw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
-        const formatted = formatConversationListPreview(raw, t('shortFilms.title'))
-        if (formatted === raw) return c
-        return { ...c, lastMessagePreview: formatted, LastMessagePreview: formatted }
+        const type = c?.lastMessageType ?? c?.LastMessageType ?? ''
+        const formatted = formatConversationListPreview(raw, t('shortFilms.title'), { t, type, lastMessageType: type })
+        if (formatted === raw && !type) return c
+        return {
+          ...c,
+          lastMessagePreview: formatted,
+          LastMessagePreview: formatted,
+          lastMessageType: type,
+          LastMessageType: type
+        }
       })
       listStore.setList(list)
     }).catch(() => {})
@@ -599,7 +616,7 @@ const homePrimaryCompact = computed(
 .home-header__title {
   margin: 0;
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }

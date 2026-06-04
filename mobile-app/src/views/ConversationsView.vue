@@ -18,11 +18,12 @@ import { formatGregorianDateTime } from '../utils/formatTime'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import StoriesStrip from '../components/StoriesStrip.vue'
 import ContactsPanel from '../components/ContactsPanel.vue'
+import MessageRequestsPanel from '../components/MessageRequestsPanel.vue'
 import { getStoriesEnabled } from '../services/siteContentFlags'
 import { formatConversationListPreview } from '../utils/shortFilmShare'
 import {
   MessageCircle, MessageSquarePlus, Search, Pin, MoreVertical, Users, UsersRound,
-  CheckCheck, X, Bell, Check, MoreHorizontal, UserPlus
+  CheckCheck, X, Bell, Check, UserPlus, Mail
 } from 'lucide-vue-next'
 import { usePullToRefresh } from '../composables/usePullToRefresh'
 
@@ -49,12 +50,17 @@ const fabOpen = ref(false)
 const scrollAreaRef = ref(null)
 const contactsPanelRef = ref(null)
 
-const mainSection = computed(() => (route.query.tab === 'contacts' ? 'contacts' : 'chats'))
+const mainSection = computed(() => {
+  const tab = route.query.tab
+  if (tab === 'contacts') return 'contacts'
+  if (tab === 'requests') return 'requests'
+  return 'chats'
+})
 
 function setMainSection(section) {
   router.replace({
     path: '/conversations',
-    query: section === 'contacts' ? { tab: 'contacts' } : {}
+    query: section === 'chats' ? {} : { tab: section }
   })
 }
 
@@ -69,11 +75,7 @@ const messageRequestsBadgeText = computed(() => {
   if (n <= 0) return ''
   return n > 99 ? '99+' : String(n)
 })
-const messageRequestsButtonLabel = computed(() => {
-  const base = t('conversations.messageRequests')
-  const n = pendingMessageRequestsCount.value
-  return n > 0 ? `${base} (${n})` : base
-})
+const messageRequestsTabLabel = computed(() => t('conversations.messageRequestsShort'))
 const totalUnread = computed(() =>
   conversations.value.reduce((sum, c) => sum + getUnreadCount(c), 0)
 )
@@ -118,9 +120,7 @@ const listWithSections = computed(() => {
   return rows
 })
 
-const headerNotifCount = computed(() =>
-  (notificationsStore.unreadCount || 0) + (msgReqStore.pendingCount || 0)
-)
+const headerNotifCount = computed(() => notificationsStore.unreadCount || 0)
 
 function goToCreateGroup() {
   router.push('/conversations/create-group')
@@ -181,14 +181,21 @@ function getUnreadCount(c) {
   return typeof n === 'number' ? n : parseInt(n, 10) || 0
 }
 
+function listPreviewOpts(conv) {
+  const type = conv?.lastMessageType ?? conv?.LastMessageType ?? ''
+  return { t, type, lastMessageType: type }
+}
+
 function normalizeListPreview(conv) {
   const raw = conv?.lastMessagePreview ?? conv?.LastMessagePreview ?? ''
-  const formatted = formatConversationListPreview(raw, t('shortFilms.title'))
-  if (formatted === raw) return conv
+  const formatted = formatConversationListPreview(raw, t('shortFilms.title'), listPreviewOpts(conv))
+  if (formatted === raw && !(conv?.lastMessageType ?? conv?.LastMessageType)) return conv
   return {
     ...conv,
     lastMessagePreview: formatted,
-    LastMessagePreview: formatted
+    LastMessagePreview: formatted,
+    lastMessageType: conv?.lastMessageType ?? conv?.LastMessageType,
+    LastMessageType: conv?.lastMessageType ?? conv?.LastMessageType
   }
 }
 
@@ -198,7 +205,14 @@ function normalizeConversationsList(list) {
 
 function getListPreview(conv) {
   const raw = conv?.lastMessagePreview ?? conv?.LastMessagePreview ?? ''
-  return formatConversationListPreview(raw, t('shortFilms.title')) || '—'
+  const type = conv?.lastMessageType ?? conv?.LastMessageType ?? ''
+  const formatted = formatConversationListPreview(raw, t('shortFilms.title'), { t, type, lastMessageType: type })
+  if (formatted) return formatted
+  if (type === 'video') return t('conversationChat.videoMessage')
+  if (type === 'album') return t('conversationChat.albumMessage')
+  if (type === 'image') return t('conversationChat.replyPreviewImage')
+  if (type === 'audio') return t('conversationChat.voiceMessage')
+  return '—'
 }
 
 watch(filter, fetchConversations, { immediate: true })
@@ -210,6 +224,15 @@ watch(
   }
 )
 
+watch(mainSection, (section) => {
+  if (section !== 'requests' && route.query.notice) {
+    router.replace({
+      path: '/conversations',
+      query: section === 'chats' ? {} : { tab: section }
+    })
+  }
+})
+
 watch([() => route.query.open, ready], ([openId, isReady]) => {
   if (!openId || !isReady) return
   nextTick(() => router.replace(`/conversation/${openId}`))
@@ -219,7 +242,8 @@ async function handleListUpdated(payload) {
   const convId = payload?.conversationId ?? payload?.ConversationId
   if (!convId) return
   const rawPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview ?? ''
-  const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'))
+  const msgType = payload?.lastMessageType ?? payload?.LastMessageType ?? ''
+  const preview = formatConversationListPreview(rawPreview, t('shortFilms.title'), { t, type: msgType, lastMessageType: msgType })
   const at = payload?.lastMessageAt ?? payload?.LastMessageAt
   const senderId = String(payload?.senderId ?? payload?.SenderId ?? '')
   const currentId = String(auth.user?.id ?? '')
@@ -230,7 +254,9 @@ async function handleListUpdated(payload) {
     lastMessagePreview: preview,
     lastMessageAt: at,
     LastMessagePreview: preview,
-    LastMessageAt: at
+    LastMessageAt: at,
+    lastMessageType: msgType,
+    LastMessageType: msgType
   }, shouldIncrementUnread)
   if (updated) await saveConversationsList(listStore.list)
   if (!updated) await fetchConversations()
@@ -270,10 +296,6 @@ function toggleFabMenu() {
 function goToCreateGroupFromFab() {
   fabOpen.value = false
   goToCreateGroup()
-}
-
-function goToMessageRequests() {
-  router.push('/message-requests')
 }
 
 async function markAllRead() {
@@ -332,68 +354,24 @@ async function markAllRead() {
         <Users :size="18" stroke-width="2" />
         <span>{{ t('nav.contacts') }}</span>
       </button>
-    </div>
-
-    <template v-if="mainSection === 'chats'">
-    <div v-if="needPhone" class="need-phone-banner">
-      <span>{{ t('conversations.needPhone') }}</span>
-      <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
-    </div>
-
-    <div class="hero-card">
-      <div class="hero-card__head">
-        <h2 class="hero-card__label">{{ t('stories.allStory') }}</h2>
-        <button
-          type="button"
-          class="hero-card__menu"
-          :aria-label="messageRequestsButtonLabel"
-          @click="goToMessageRequests"
-        >
-          <MoreHorizontal :size="20" stroke-width="2" />
-          <span v-if="messageRequestsBadgeText" class="hero-card__menu-badge">{{ messageRequestsBadgeText }}</span>
-        </button>
-      </div>
-
-      <StoriesStrip v-if="storiesEnabled && ready" variant="hero" />
-
-      <div class="hero-search">
-        <Search :size="18" class="hero-search__icon" aria-hidden="true" />
-        <input
-          v-model="searchQuery"
-          type="search"
-          class="hero-search__input"
-          :placeholder="t('conversations.searchRecent')"
-        />
-        <button
-          type="button"
-          class="hero-search__action"
-          :disabled="markingAllRead || totalUnread <= 0"
-          :title="t('conversations.markAllRead')"
-          :aria-label="t('conversations.markAllRead')"
-          @click="markAllRead"
-        >
-          <CheckCheck :size="18" stroke-width="2" />
-        </button>
-      </div>
-    </div>
-
-    <div class="filter-row" :dir="localeStore.htmlDir" role="tablist">
       <button
-        v-for="f in ['all', 'unread', 'archived']"
-        :key="f"
         type="button"
-        class="filter-chip"
-        :class="{ 'filter-chip--active': filter === f }"
+        class="conv-main-tab"
+        :class="{ 'conv-main-tab--active': mainSection === 'requests' }"
         role="tab"
-        :aria-selected="filter === f"
-        @click="filter = f"
+        :aria-selected="mainSection === 'requests'"
+        :aria-label="t('conversations.messageRequests')"
+        @click="setMainSection('requests')"
       >
-        <Check v-if="filter === f" :size="14" stroke-width="2.5" class="filter-chip__check" />
-        <span>{{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}</span>
-        <span v-if="f === 'unread' && totalUnread > 0" class="filter-chip__badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+        <span class="conv-main-tab__icon-wrap">
+          <Mail :size="18" stroke-width="2" />
+          <span v-if="messageRequestsBadgeText" class="conv-main-tab__badge">{{ messageRequestsBadgeText }}</span>
+        </span>
+        <span class="conv-main-tab__label">{{ messageRequestsTabLabel }}</span>
       </button>
     </div>
 
+    <template v-if="mainSection === 'chats'">
     <div
       ref="scrollAreaRef"
       class="scroll-area"
@@ -402,6 +380,57 @@ async function markAllRead() {
     >
       <div v-if="pullDistance > 0 || refreshing" class="pull-indicator">
         {{ refreshing ? t('common.loading') : t('conversations.pullRefresh') }}
+      </div>
+
+      <div v-if="needPhone" class="need-phone-banner">
+        <span>{{ t('conversations.needPhone') }}</span>
+        <button class="link-btn" @click="router.push('/complete-profile')">{{ t('completeProfile.completeNow') }}</button>
+      </div>
+
+      <div class="hero-card">
+        <div class="hero-card__pattern" aria-hidden="true" />
+        <div class="hero-card__head">
+          <h2 class="hero-card__label">{{ t('stories.allStory') }}</h2>
+        </div>
+
+        <StoriesStrip v-if="storiesEnabled && ready" variant="hero" />
+
+        <div class="hero-search">
+          <Search :size="18" class="hero-search__icon" aria-hidden="true" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="hero-search__input"
+            :placeholder="t('conversations.searchRecent')"
+          />
+          <button
+            type="button"
+            class="hero-search__action"
+            :disabled="markingAllRead || totalUnread <= 0"
+            :title="t('conversations.markAllRead')"
+            :aria-label="t('conversations.markAllRead')"
+            @click="markAllRead"
+          >
+            <CheckCheck :size="18" stroke-width="2" />
+          </button>
+        </div>
+      </div>
+
+      <div class="filter-row" :dir="localeStore.htmlDir" role="tablist">
+        <button
+          v-for="f in ['all', 'unread', 'archived']"
+          :key="f"
+          type="button"
+          class="filter-chip"
+          :class="{ 'filter-chip--active': filter === f }"
+          role="tab"
+          :aria-selected="filter === f"
+          @click="filter = f"
+        >
+          <Check v-if="filter === f" :size="14" stroke-width="2.5" class="filter-chip__check" />
+          <span>{{ f === 'all' ? t('conversations.filterAll') : f === 'unread' ? t('conversations.filterUnread') : t('conversations.filterArchived') }}</span>
+          <span v-if="f === 'unread' && totalUnread > 0" class="filter-chip__badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+        </button>
       </div>
       <ListSkeleton v-if="loading && !conversations.length" />
       <EmptyState
@@ -520,8 +549,12 @@ async function markAllRead() {
     </div>
     </template>
 
-    <div v-else ref="scrollAreaRef" class="scroll-area scroll-area--contacts">
+    <div v-else-if="mainSection === 'contacts'" ref="scrollAreaRef" class="scroll-area scroll-area--contacts">
       <ContactsPanel ref="contactsPanelRef" />
+    </div>
+
+    <div v-else ref="scrollAreaRef" class="scroll-area scroll-area--contacts">
+      <MessageRequestsPanel :initial-notice="route.query.notice" />
     </div>
   </div>
 </template>
@@ -545,7 +578,7 @@ async function markAllRead() {
 .conv-header__title {
   margin: 0;
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
@@ -584,18 +617,20 @@ async function markAllRead() {
 
 .conv-main-tab {
   flex: 1;
+  min-width: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 42px;
-  padding: 8px 10px;
+  gap: 3px;
+  min-height: 48px;
+  padding: 6px 4px;
   border: none;
   border-radius: 12px;
   background: transparent;
   color: var(--text-muted);
   font-family: 'Cairo', sans-serif;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -608,11 +643,50 @@ async function markAllRead() {
   box-shadow: var(--shadow-sm);
 }
 
+.conv-main-tab__icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.conv-main-tab__badge {
+  position: absolute;
+  top: -5px;
+  inset-inline-end: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: #EF4444;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--bg-elevated);
+  pointer-events: none;
+}
+
+.conv-main-tab--active .conv-main-tab__badge {
+  border-color: var(--bg-card);
+}
+
+.conv-main-tab__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
 .scroll-area--contacts {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--safe-bottom);
 }
 
 .conv-header__bell {
@@ -642,13 +716,15 @@ async function markAllRead() {
 }
 
 .hero-card {
-  margin: 4px var(--spacing) 14px;
-  padding: 16px 14px 14px;
-  border-radius: 24px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  margin: 4px var(--spacing) 10px;
+  padding: 10px 12px 10px;
+  border-radius: 20px;
   background: linear-gradient(145deg, #1D4ED8 0%, #2563EB 42%, #3B82F6 100%);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28);
-  flex-shrink: 0;
 }
 
 :global(html.light) .hero-card,
@@ -658,17 +734,68 @@ async function markAllRead() {
   box-shadow: 0 8px 22px rgba(37, 99, 235, 0.22);
 }
 
+.hero-card__pattern {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 32%),
+    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.26) 0%, transparent 46%),
+    radial-gradient(circle at 6% 90%, rgba(255, 255, 255, 0.14) 0%, transparent 40%),
+    radial-gradient(ellipse 75% 55% at 50% 108%, rgba(191, 219, 254, 0.32) 0%, transparent 56%),
+    radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: auto, auto, auto, auto, 11px 11px;
+}
+
+.hero-card__pattern::before {
+  content: '';
+  position: absolute;
+  inset: -15%;
+  background:
+    repeating-linear-gradient(
+      -32deg,
+      transparent,
+      transparent 18px,
+      rgba(255, 255, 255, 0.045) 18px,
+      rgba(255, 255, 255, 0.045) 19px
+    );
+  mask-image: radial-gradient(ellipse 88% 78% at 50% 38%, #000 18%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 88% 78% at 50% 38%, #000 18%, transparent 70%);
+}
+
+/* بقعة ضوء ناعمة — بدون حلقات دائرية واضحة */
+.hero-card__pattern::after {
+  content: '';
+  position: absolute;
+  top: -28px;
+  inset-inline-start: -24px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, transparent 68%);
+  filter: blur(6px);
+  opacity: 0.9;
+}
+
+.hero-card > :not(.hero-card__pattern) {
+  position: relative;
+  z-index: 1;
+}
+
 .hero-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .hero-card__label {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
   color: #fff;
   text-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
@@ -719,10 +846,10 @@ async function markAllRead() {
 .hero-search {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 4px;
-  padding: 0 12px 0 14px;
-  min-height: 48px;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 0 10px 0 12px;
+  min-height: 40px;
   background: #fff;
   border-radius: var(--radius-xl);
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
@@ -739,7 +866,7 @@ async function markAllRead() {
   border: none;
   background: transparent;
   font-family: 'Cairo', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-primary);
   outline: none;
 }
@@ -773,7 +900,6 @@ async function markAllRead() {
   gap: 8px;
   overflow-x: auto;
   padding: 0 var(--spacing) 12px;
-  flex-shrink: 0;
   scrollbar-width: none;
 }
 .filter-row::-webkit-scrollbar { display: none; }
@@ -832,7 +958,7 @@ async function markAllRead() {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0 var(--spacing) calc(96px + var(--safe-bottom));
+  padding: 0 var(--spacing);
 }
 
 .section-head {
@@ -875,6 +1001,7 @@ async function markAllRead() {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0;
+  padding-bottom: calc(96px + var(--safe-bottom));
   background: var(--bg-primary);
   -webkit-overflow-scrolling: touch;
 }
@@ -1496,12 +1623,13 @@ html.light .conversations--wa .context-btn,
 /* زر عائم — رسالة جديدة */
 .conv-fab-wrap {
   position: fixed;
-  inset-inline-end: max(16px, var(--spacing));
-  bottom: calc(20px + var(--safe-bottom));
+  left: max(16px, var(--spacing));
+  right: auto;
+  bottom: calc(28px + var(--tab-bar-clearance));
   z-index: 90;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px;
   pointer-events: none;
 }
@@ -1525,13 +1653,15 @@ html.light .conversations--wa .context-btn,
 .conv-fab-menu {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 10px;
   margin-bottom: 4px;
 }
 
 .conv-fab-menu-item {
   display: flex;
+  flex-direction: row;
+  direction: ltr;
   align-items: center;
   gap: 12px;
   padding: 0;
@@ -1556,6 +1686,8 @@ html.light .conversations--wa .context-btn,
   line-height: 1.2;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   white-space: nowrap;
+  direction: rtl;
+  text-align: right;
 }
 
 .conv-fab-menu-icon {
@@ -1626,11 +1758,6 @@ html.light .conversations--wa .context-btn,
 .fab-menu-leave-to {
   opacity: 0;
   transform: translateY(12px) scale(0.92);
-  transform-origin: bottom right;
-}
-
-[dir='rtl'] .fab-menu-enter-from,
-[dir='rtl'] .fab-menu-leave-to {
   transform-origin: bottom left;
 }
 
@@ -1641,8 +1768,8 @@ html.light .conv-fab-menu-label,
 
 @media (max-width: 420px) {
   .conv-fab-wrap {
-    inset-inline-end: 14px;
-    bottom: calc(16px + var(--safe-bottom));
+    left: 14px;
+    bottom: calc(24px + var(--tab-bar-clearance));
   }
   .conv-fab-main {
     width: 52px;

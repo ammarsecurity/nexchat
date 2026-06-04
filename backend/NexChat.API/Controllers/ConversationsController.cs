@@ -144,8 +144,10 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                     (lastRead == null || m.SentAt > lastRead));
 
             string? preview = null;
+            string? lastType = null;
             if (lastMsg != null)
             {
+                lastType = lastMsg.Type;
                 preview = ConversationPreviewHelper.BuildListPreview(
                     lastMsg.Type,
                     lastMsg.Content,
@@ -160,6 +162,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 partnerPhone,
                 partnerUniqueCode,
                 preview,
+                lastType,
                 lastMsg?.SentAt,
                 unreadCount,
                 state?.IsPinned ?? false,

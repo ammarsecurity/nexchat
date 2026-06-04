@@ -146,72 +146,136 @@ export function clearUser() {
   initializedUserId = null
 }
 
-function handleNotificationClick(data) {
+function pickField(obj, ...keys) {
+  if (!obj) return undefined
+  for (const k of keys) {
+    const v = obj[k]
+    if (v != null && v !== '') return v
+  }
+  return undefined
+}
+
+/** استخراج حقول التنقّل من dataJson أو payload الـ push. */
+export function parseNotificationData(raw) {
+  let parsed = {}
+  if (typeof raw?.dataJson === 'string') {
+    try {
+      parsed = JSON.parse(raw.dataJson)
+    } catch {
+      parsed = {}
+    }
+  } else if (raw?.dataJson && typeof raw.dataJson === 'object') {
+    parsed = raw.dataJson
+  }
+  const src = { ...parsed, ...raw }
+  const type = pickField(src, 'type', 'Type') || raw?.type || 'message'
+  return {
+    type,
+    conversationId: pickField(src, 'conversationId', 'ConversationId'),
+    sessionId: pickField(src, 'sessionId', 'SessionId'),
+    userId: pickField(src, 'userId', 'UserId'),
+    messageRequestId: pickField(src, 'messageRequestId', 'MessageRequestId'),
+    slideId: pickField(src, 'slideId', 'SlideId'),
+    voiceOnly: pickField(src, 'voiceOnly', 'VoiceOnly'),
+    callerName: pickField(src, 'callerName', 'CallerName'),
+    callerAvatar: pickField(src, 'callerAvatar', 'CallerAvatar'),
+    requesterId: pickField(src, 'requesterId', 'RequesterId'),
+    requesterName: pickField(src, 'requesterName', 'RequesterName'),
+    requesterGender: pickField(src, 'requesterGender', 'RequesterGender'),
+    requesterAvatar: pickField(src, 'requesterAvatar', 'RequesterAvatar'),
+    requesterIsFeatured: pickField(src, 'requesterIsFeatured', 'RequesterIsFeatured')
+  }
+}
+
+/** تطبيع صف إشعار من API مركز الإشعارات. */
+export function normalizeServerNotification(x) {
+  const nav = parseNotificationData({ ...x, type: x.type })
+  return {
+    id: `srv-${x.id}`,
+    serverId: x.id,
+    type: x.type || nav.type,
+    title: x.title,
+    body: x.body,
+    timestamp: x.createdAt,
+    isRead: x.isRead,
+    ...nav
+  }
+}
+
+function buildStoreItem(data, notifMeta, isRead) {
+  const nav = parseNotificationData(data)
+  return {
+    ...nav,
+    type: nav.type || data?.type || 'message',
+    title: notifMeta?.title || data?.title || 'إشعار',
+    body: notifMeta?.body || data?.body || '',
+    timestamp: Date.now(),
+    isRead: isRead === true
+  }
+}
+
+/** فتح الشاشة المناسبة حسب نوع الإشعار (مركز الإشعارات أو push). */
+export function navigateFromNotification(input) {
+  const d = parseNotificationData(input)
+  const type = d.type || input?.type
   const router = window.__nexchat_router__
   if (!router) return
 
   const pinia = typeof getActivePinia === 'function' ? getActivePinia() : null
 
-  if (data?.type === 'code_connected') {
-    if (pinia) {
+  if (type === 'code_connected') {
+    if (pinia && d.requesterId) {
       const matching = useMatchingStore(pinia)
-      const rid = data.requesterId ?? data.RequesterId
-      if (rid) {
-        matching.setIncomingConnectionRequest({
-          requesterId: String(rid),
-          requesterName: data.requesterName ?? data.RequesterName ?? '…',
-          requesterGender: data.requesterGender ?? data.RequesterGender,
-          requesterAvatar: data.requesterAvatar ?? data.RequesterAvatar,
-          requesterIsFeatured: data.requesterIsFeatured === 'true' || data.requesterIsFeatured === true
-        })
-        startIncomingCallSound()
-      }
+      matching.setIncomingConnectionRequest({
+        requesterId: String(d.requesterId),
+        requesterName: d.requesterName ?? '…',
+        requesterGender: d.requesterGender,
+        requesterAvatar: d.requesterAvatar,
+        requesterIsFeatured: d.requesterIsFeatured === 'true' || d.requesterIsFeatured === true
+      })
+      startIncomingCallSound()
     }
     router.push('/home')
     return
   }
 
-  if (data?.type === 'story_published' && (data?.userId ?? data?.UserId)) {
-    router.push(`/stories/view/${data.userId ?? data.UserId}`)
+  if (type === 'story_published' && d.userId) {
+    router.push(`/stories/view/${d.userId}`)
     return
   }
 
-  if (data?.type === 'conversation_message' && data?.conversationId) {
-    router.push({ path: '/conversations', query: { open: data.conversationId } })
+  if (type === 'conversation_message' && d.conversationId) {
+    router.push({ path: '/conversations', query: { open: d.conversationId } })
     return
   }
 
-  if (data?.type === 'message_request') {
-    router.push('/message-requests')
+  if (type === 'message_request') {
+    router.push({ path: '/conversations', query: { tab: 'requests' } })
     return
   }
 
-  if (data?.type === 'video_call') {
-    const convId = data.conversationId ?? data.ConversationId
-    const sessId = data.sessionId ?? data.SessionId
-    /** مكالمة من محادثة دائمة: إظهار نافذة القبول وليس شاشة الفيديو مباشرة */
-    if (convId && pinia) {
+  if (type === 'video_call') {
+    if (d.conversationId && pinia) {
       const incomingConv = useIncomingConversationCallStore(pinia)
       incomingConv.setIncoming({
-        conversationId: String(convId),
-        voiceOnly: data.voiceOnly === 'true' || data.voiceOnly === true,
-        callerName: data.callerName ?? data.CallerName ?? '',
-        callerAvatar: data.callerAvatar ?? data.CallerAvatar ?? null
+        conversationId: String(d.conversationId),
+        voiceOnly: d.voiceOnly === 'true' || d.voiceOnly === true,
+        callerName: d.callerName ?? '',
+        callerAvatar: d.callerAvatar ?? null
       })
       startIncomingCallSound()
       router.push('/home')
       return
     }
-    /** مكالمة فيديو من دردشة عشوائية: فتح الدردشة مع طلب وارد */
-    if (sessId) {
-      router.push({ path: `/chat/${sessId}`, query: { incomingVideoCall: '1' } })
+    if (d.sessionId) {
+      router.push({ path: `/chat/${d.sessionId}`, query: { incomingVideoCall: '1' } })
       return
     }
   }
 
-  if (!data?.sessionId) return
-
-  router.push(`/chat/${data.sessionId}`)
+  if (d.sessionId) {
+    router.push(`/chat/${d.sessionId}`)
+  }
 }
 
 /**
@@ -319,33 +383,16 @@ function bindOneSignalListeners(OneSignal) {
     const notif = event?.notification
     const payload = notif?.rawPayload || {}
     const data = notif?.additionalData || payload?.custom?.a || payload?.custom || {}
-    addToStore({
-      type: data.type || 'message',
-      title: notif?.title || 'إشعار',
-      body: notif?.body || '',
-      sessionId: data.sessionId,
-      conversationId: data.conversationId,
-      messageRequestId: data.messageRequestId,
-      timestamp: Date.now(),
-      isRead: true
-    })
-    handleNotificationClick(data)
+    const item = buildStoreItem(data, { title: notif?.title, body: notif?.body }, true)
+    addToStore(item)
+    navigateFromNotification(item)
   })
 
   OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
     const notif = event?.notification
     const payload = notif?.rawPayload || {}
     const data = notif?.additionalData || payload?.custom?.a || payload?.custom || {}
-    addToStore({
-      type: data.type || 'message',
-      title: notif?.title || 'إشعار',
-      body: notif?.body || '',
-      sessionId: data.sessionId,
-      conversationId: data.conversationId,
-      messageRequestId: data.messageRequestId,
-      timestamp: Date.now(),
-      isRead: false
-    })
+    addToStore(buildStoreItem(data, { title: notif?.title, body: notif?.body }, false))
     try { event?.preventDefault?.() } catch {}
   })
 }

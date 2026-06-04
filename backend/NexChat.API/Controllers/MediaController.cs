@@ -113,6 +113,17 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
     [HttpPost("upload-story-video")]
     public async Task<IActionResult> UploadStoryVideo(IFormFile file)
     {
+        return await UploadChatVideoInternal(file);
+    }
+
+    [HttpPost("upload-chat-video")]
+    public async Task<IActionResult> UploadChatVideo(IFormFile file)
+    {
+        return await UploadChatVideoInternal(file);
+    }
+
+    private async Task<IActionResult> UploadChatVideoInternal(IFormFile file)
+    {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided" });
 

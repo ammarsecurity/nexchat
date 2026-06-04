@@ -20,6 +20,7 @@ public record ConversationListItemDto(
     string? PartnerPhone,
     string? PartnerUniqueCode,
     string? LastMessagePreview,
+    string? LastMessageType,
     DateTime? LastMessageAt,
     int UnreadCount,
     bool IsPinned,

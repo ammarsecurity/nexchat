@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -95,15 +96,6 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         else
         {
             replyData = new Dictionary<Guid, (string Content, string Type, string? SenderName)>();
-        }
-
-        static string GetReplyPreview(string? content, string type)
-        {
-            if (type == "audio") return "رسالة صوتية";
-            if (type == "image") return "صورة";
-            if (type == "short_film") return "فيلم قصير";
-            if (string.IsNullOrEmpty(content)) return "";
-            return content.Length > 80 ? content[..80] + "…" : content;
         }
 
         Dictionary<Guid, (string Name, string? Avatar)>? senderNames = null;
@@ -279,7 +271,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         {
             logger.LogInformation("SendMessage entered: convId={ConvId}, type={Type}, contentLen={Len}", conversationId, type, content?.Length ?? 0);
             if (string.IsNullOrWhiteSpace(content) || content.Length > 5000) return;
-            if (type != "text" && type != "image" && type != "audio" && type != "short_film") type = "text";
+            if (type != "text" && type != "image" && type != "audio" && type != "short_film" && type != "video" && type != "album")
+                type = "text";
 
             if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
                 return;
@@ -307,7 +300,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     replyToId = rid;
                     var rt = replyTo.Type ?? "text";
                     var replyPlain = messageCrypto.DecryptFromStorage(replyTo.Content ?? "");
-                    replyToContent = rt == "audio" ? "رسالة صوتية" : rt == "image" ? "صورة" : rt == "short_film" ? ConversationPreviewHelper.BuildShortFilmPreview(replyPlain) : (replyPlain.Length > 80 ? replyPlain[..80] + "…" : replyPlain);
+                    replyToContent = GetReplyPreview(replyPlain, rt);
                     var replySender = await db.Users.FindAsync(replyTo.SenderId);
                     replyToSenderName = replySender?.Name ?? (replyTo.SenderId == userId ? "أنت" : "طرف آخر");
                 }
@@ -316,6 +309,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             var plainBody = type == "text" ? content.Trim() : content;
             if (type == "text")
                 plainBody = profanity.Mask(plainBody);
+            if (type == "album" && !IsValidAlbumPayload(plainBody))
+                return;
             var msg = new ConversationMessage
             {
                 ConversationId = cid,
@@ -405,7 +400,16 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             logger.LogInformation("SendMessage ReceiveMessage sent");
 
             var sender = senderUser ?? await db.Users.FindAsync(userId);
-            var preview = type == "text" ? plainBody : type == "audio" ? "رسالة صوتية" : type == "short_film" ? ConversationPreviewHelper.BuildShortFilmPreview(plainBody) : "صورة";
+            var preview = type switch
+            {
+                "text" => plainBody.Length > 80 ? plainBody[..80] + "…" : plainBody,
+                "audio" => "رسالة صوتية",
+                "image" => "صورة",
+                "video" => "فيديو",
+                "album" => ConversationPreviewHelper.BuildAlbumPreview(plainBody),
+                "short_film" => ConversationPreviewHelper.BuildShortFilmPreview(plainBody),
+                _ => plainBody
+            };
             if (preview.Length > 80) preview = preview[..80] + "…";
             if (recipientId.HasValue)
                 _ = notificationOutbox.EnqueueAsync(
@@ -419,6 +423,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             {
                 ConversationId = cid,
                 LastMessagePreview = preview,
+                LastMessageType = type,
                 LastMessageAt = msg.SentAt,
                 SenderId = userId
             };
@@ -479,11 +484,12 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         db.UserMessageDeletions.Add(new UserMessageDeletion { UserId = userId, MessageId = mid });
         await db.SaveChangesAsync();
         await Clients.Caller.SendAsync("MessageDeletedForMe", mid);
-        var (p, at, sid) = await GetLastListPreviewForUserAsync(cid, userId);
+        var (p, at, sid, lt) = await GetLastListPreviewForUserAsync(cid, userId);
         await Clients.Caller.SendAsync("ConversationListUpdated", new
         {
             ConversationId = cid,
             LastMessagePreview = p ?? "",
+            LastMessageType = lt,
             LastMessageAt = at,
             SenderId = sid
         });
@@ -716,7 +722,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
              || c.Type == ConversationType.Group && db.ConversationMembers.Any(m => m.ConversationId == conversationId && m.UserId == userId)));
 
     /// <summary>آخر رسالة يظهر معاينتها لهذا المستخدم (تجاهل المحذوفة للجميع ولـ «حذف لي»).</summary>
-    private async Task<(string? Preview, DateTime? SentAt, string? SenderId)> GetLastListPreviewForUserAsync(Guid conversationId, Guid viewerUserId)
+    private async Task<(string? Preview, DateTime? SentAt, string? SenderId, string? Type)> GetLastListPreviewForUserAsync(Guid conversationId, Guid viewerUserId)
     {
         var lastMsg = await db.ConversationMessages
             .AsNoTracking()
@@ -725,8 +731,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 !db.UserMessageDeletions.Any(d => d.UserId == viewerUserId && d.MessageId == m.Id))
             .OrderByDescending(m => m.SentAt)
             .FirstOrDefaultAsync();
-        if (lastMsg == null) return (null, null, null);
-        return (ConversationPreviewHelper.BuildListPreview(lastMsg, messageCrypto.DecryptFromStorage), lastMsg.SentAt, lastMsg.SenderId.ToString());
+        if (lastMsg == null) return (null, null, null, null);
+        return (ConversationPreviewHelper.BuildListPreview(lastMsg, messageCrypto.DecryptFromStorage), lastMsg.SentAt, lastMsg.SenderId.ToString(), lastMsg.Type);
     }
 
     /// <summary>بعد حذف للجميع: تحديث معاينة القائمة لكل مشارك حسب آخر رسالة مرئية لديه.</summary>
@@ -750,14 +756,41 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         }
         foreach (var uid in userIds.Distinct())
         {
-            var (preview, sentAt, senderId) = await GetLastListPreviewForUserAsync(cid, uid);
+            var (preview, sentAt, senderId, lastType) = await GetLastListPreviewForUserAsync(cid, uid);
             await Clients.User(uid.ToString()).SendAsync("ConversationListUpdated", new
             {
                 ConversationId = cid,
                 LastMessagePreview = preview ?? "",
+                LastMessageType = lastType,
                 LastMessageAt = sentAt,
                 SenderId = senderId
             });
+        }
+    }
+
+    private static string GetReplyPreview(string? content, string type)
+    {
+        if (type == "audio") return "رسالة صوتية";
+        if (type == "image") return "صورة";
+        if (type == "video") return "فيديو";
+        if (type == "album") return ConversationPreviewHelper.BuildAlbumPreview(content ?? "");
+        if (type == "short_film") return "فيلم قصير";
+        if (string.IsNullOrEmpty(content)) return "";
+        return content.Length > 80 ? content[..80] + "…" : content;
+    }
+
+    private static bool IsValidAlbumPayload(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("urls", out var urls) || urls.ValueKind != JsonValueKind.Array)
+                return false;
+            return urls.GetArrayLength() > 0 && urls.GetArrayLength() <= 10;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

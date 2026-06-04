@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Copy, MessageCircle, Crown, UserPlus, Check, Phone, Hash, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Copy, MessageCircle, Crown, UserPlus, Check, Phone, Hash, ChevronLeft, ChevronRight, Pencil } from 'lucide-vue-next'
+import AvatarPickerSheet from '../components/AvatarPickerSheet.vue'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
 import api from '../services/api'
@@ -15,7 +16,9 @@ import {
 } from '../utils/conversationOrMessageRequest'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import { useUserAvatarOverridesStore } from '../stores/userAvatarOverrides'
+import { useAuthStore } from '../stores/auth'
 
+const auth = useAuthStore()
 const msgReqStore = useMessageRequestsStore()
 const avatarOverrides = useUserAvatarOverridesStore()
 
@@ -28,6 +31,12 @@ const localeStore = useLocaleStore()
 const BackIcon = computed(() => (localeStore.isRtl ? ChevronRight : ChevronLeft))
 
 const userId = computed(() => route.params.userId)
+
+const isOwnProfile = computed(() => {
+  const mine = auth.user?.id ?? auth.user?.Id
+  if (!mine || !userId.value) return false
+  return String(mine) === String(userId.value)
+})
 const profile = ref(null)
 const loading = ref(true)
 const error = ref(false)
@@ -40,6 +49,7 @@ const showChatGateModal = ref(false)
 const chatGateBusy = ref(false)
 const chatGateError = ref('')
 const chatGateSuccess = ref('')
+const showAvatarPicker = ref(false)
 
 const formattedPhone = computed(() => {
   const phone = profile.value?.phoneNumber ?? profile.value?.PhoneNumber
@@ -63,6 +73,9 @@ const profileAvatarDisplay = computed(() => {
   const p = profile.value
   if (!p) return null
   const id = p.id ?? p.Id
+  if (isOwnProfile.value) {
+    return auth.avatar ?? avatarOverrides.avatarFor(id) ?? (p.avatar ?? p.Avatar)
+  }
   return avatarOverrides.avatarFor(id) ?? (p.avatar ?? p.Avatar)
 })
 
@@ -96,7 +109,33 @@ const showProfileAvatarImage = computed(() =>
   !avatarImgError.value
 )
 
+const showProfileAvatarEmoji = computed(() =>
+  profileAvatarDisplay.value &&
+  !isImageAvatar(profileAvatarDisplay.value) &&
+  !showProfileAvatarImage.value
+)
+
+function openAvatarPicker() {
+  if (!isOwnProfile.value) return
+  showAvatarPicker.value = true
+}
+
+function syncProfileAvatar() {
+  if (!profile.value) return
+  profile.value = {
+    ...profile.value,
+    avatar: auth.avatar,
+    Avatar: auth.avatar
+  }
+  avatarImgError.value = false
+}
+
 function goBack() {
+  if (isOwnProfile.value) {
+    if (window.history.length > 2) router.back()
+    else router.replace('/home')
+    return
+  }
   if (conversationIdFromState.value) router.replace(`/conversation/${conversationIdFromState.value}`)
   else router.replace('/conversations')
 }
@@ -106,8 +145,13 @@ async function fetchProfile() {
   loading.value = true
   error.value = false
   try {
-    const { data } = await api.get(`/user/profile/${userId.value}`, { skipGlobalLoader: true })
-    profile.value = data
+    if (isOwnProfile.value) {
+      const { data } = await api.get('/user/me', { skipGlobalLoader: true })
+      profile.value = { ...data, isContact: true, IsContact: true }
+    } else {
+      const { data } = await api.get(`/user/profile/${userId.value}`, { skipGlobalLoader: true })
+      profile.value = data
+    }
   } catch {
     profile.value = null
     error.value = true
@@ -234,6 +278,10 @@ async function addAsContact() {
   addingContact.value = false
 }
 
+watch(userId, () => {
+  fetchProfile()
+})
+
 onMounted(() => {
   const state = window.history.state || {}
   conversationIdFromState.value = state.conversationId ?? null
@@ -279,7 +327,16 @@ onMounted(() => {
       <div v-else class="profile-hero__content">
         <div
           class="profile-avatar-wrap"
-          :class="{ 'profile-avatar-featured': profile.isFeatured ?? profile.IsFeatured }"
+          :class="{
+            'profile-avatar-featured': profile.isFeatured ?? profile.IsFeatured,
+            'profile-avatar-wrap--editable': isOwnProfile
+          }"
+          :role="isOwnProfile ? 'button' : undefined"
+          :tabindex="isOwnProfile ? 0 : undefined"
+          :aria-label="isOwnProfile ? t('settings.chooseAvatar') : undefined"
+          @click="openAvatarPicker"
+          @keydown.enter.prevent="openAvatarPicker"
+          @keydown.space.prevent="openAvatarPicker"
         >
           <div class="modern-avatar-xl">
             <img
@@ -290,6 +347,7 @@ onMounted(() => {
               referrerpolicy="no-referrer"
               @error="avatarImgError = true"
             />
+            <span v-else-if="showProfileAvatarEmoji" class="avatar-emoji">{{ profileAvatarDisplay }}</span>
             <span v-else class="avatar-letter">
               {{ (profile.name ?? profile.Name)?.[0]?.toUpperCase() || '?' }}
             </span>
@@ -301,6 +359,9 @@ onMounted(() => {
             fill="currentColor"
             stroke-width="1"
           />
+          <span v-if="isOwnProfile" class="profile-avatar-edit" aria-hidden="true">
+            <Pencil :size="13" stroke-width="2" />
+          </span>
         </div>
 
         <h2 class="modern-profile-name">{{ profile.name ?? profile.Name ?? '—' }}</h2>
@@ -324,7 +385,12 @@ onMounted(() => {
     </section>
 
     <div v-if="!loading && profile && !error" class="modern-page__scroll profile-scroll">
-      <div class="profile-actions">
+      <div v-if="isOwnProfile" class="profile-actions">
+        <RouterLink to="/settings" class="modern-action-btn modern-action-btn--primary profile-settings-link">
+          <span>{{ t('nav.settings') }}</span>
+        </RouterLink>
+      </div>
+      <div v-else class="profile-actions">
         <div class="modern-action-row">
           <button
             class="modern-action-btn modern-action-btn--primary"
@@ -376,6 +442,8 @@ onMounted(() => {
         </div>
       </section>
     </div>
+
+    <AvatarPickerSheet v-if="isOwnProfile" v-model:open="showAvatarPicker" @updated="syncProfileAvatar" />
 
     <div
       v-if="showChatGateModal"
@@ -446,8 +514,9 @@ onMounted(() => {
   inset: 0;
   background: linear-gradient(
     180deg,
-    rgba(15, 23, 42, 0.35) 0%,
-    rgba(15, 23, 42, 0.08) 45%,
+    rgba(0, 0, 0, 0.52) 0%,
+    rgba(0, 0, 0, 0.28) 22%,
+    rgba(15, 23, 42, 0.12) 48%,
     var(--bg-primary) 100%
   );
   pointer-events: none;
@@ -482,7 +551,10 @@ onMounted(() => {
   font-weight: 800;
   color: #fff;
   text-align: center;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 2px 10px rgba(0, 0, 0, 0.75),
+    0 0 24px rgba(0, 0, 0, 0.45);
 }
 
 .profile-hero__content {
@@ -504,6 +576,15 @@ onMounted(() => {
   padding-top: 8px;
 }
 
+.profile-settings-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
 .profile-actions {
   display: flex;
   flex-direction: column;
@@ -518,6 +599,40 @@ onMounted(() => {
 
 .profile-avatar-wrap {
   position: relative;
+}
+
+.profile-avatar-wrap--editable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-avatar-wrap--editable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+  border-radius: 50%;
+}
+
+.profile-avatar-edit {
+  position: absolute;
+  bottom: 2px;
+  inset-inline-end: 2px;
+  z-index: 3;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.45);
+  border: 2px solid var(--bg-primary);
+  pointer-events: none;
+}
+
+.avatar-emoji {
+  font-size: 48px;
+  line-height: 1;
 }
 
 .profile-avatar-featured .modern-avatar-xl {

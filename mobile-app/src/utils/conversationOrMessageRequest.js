@@ -37,5 +37,5 @@ export async function createPrivateConversationOrRequest(contactUserId) {
  */
 export function goToMessageRequestsOutgoingNotice(router, variant = 'default') {
   const notice = variant === 'share' ? 'outgoing-share-wait' : 'outgoing-wait'
-  router.push({ path: '/message-requests', query: { notice } })
+  router.push({ path: '/conversations', query: { tab: 'requests', notice } })
 }
