@@ -1,6 +1,7 @@
 /* NexChat — Chatloop-inspired design system */
 @import './chatloop-theme.css';
 @import './modern-pages.css';
+@import './desktop-layout.css';
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -13,10 +14,10 @@
   --touch-min: 44px;
   --header-btn-size: 40px;
   --top-title-size: 17px;
-  --top-title-weight: 700;
+  --top-title-weight: 600;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --tab-bar-clearance: calc(80px + var(--safe-bottom));
+  --tab-bar-clearance: calc(62px + var(--safe-bottom));
   --home-nav-clearance: var(--tab-bar-clearance);
   --spacing: 16px;
   --spacing-sm: 12px;
@@ -76,35 +77,7 @@ body {
   background: var(--bg-primary);
 }
 
-/* تابلت صغير → سطح مكتب ضيق: توسيع العمود المركزي بدل حد 432px الثابت */
-@media (min-width: 480px) {
-  :root {
-    --app-max-width: min(100vw - 24px, 560px);
-    --spacing: 18px;
-  }
-}
-
-@media (min-width: 768px) {
-  :root {
-    --app-max-width: min(100vw - 48px, 720px);
-    --spacing: 20px;
-    --spacing-lg: 24px;
-    --header-btn-size: 40px;
-  }
-}
-
-@media (min-width: 1024px) {
-  :root {
-    --app-max-width: min(100vw - 64px, 920px);
-    --spacing: 22px;
-  }
-}
-
-@media (min-width: 1280px) {
-  :root {
-    --app-max-width: min(100vw - 96px, 1080px);
-  }
-}
+/* Mobile/tablet: full width until desktop shell at 1024px (see desktop-layout.css) */
 
 /* Scrollbar - مخفي مع إبقاء التمرير يعمل */
 * {
@@ -470,6 +443,16 @@ header.top-bar .top-bar-width-spacer {
   flex-shrink: 0;
   display: inline-block;
   box-sizing: border-box;
+}
+
+/* عناوين الصفحات الرئيسية (تبويبات التطبيق) */
+.conv-header__title,
+.home-header__title,
+.match-header__title {
+  font-size: var(--top-title-size);
+  font-weight: var(--top-title-weight);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 /* عناوين شريط الرجوع — حجم موحّد عبر الصفحات الثانوية */

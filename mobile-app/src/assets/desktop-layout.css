@@ -1,0 +1,252 @@
+/* Desktop layout — active from 1024px via html.layout-desktop */
+
+@media (min-width: 1024px) {
+  :root {
+    --desktop-min: 1024px;
+    --sidebar-width: 240px;
+    --content-max: 1200px;
+    --messaging-list-width: clamp(300px, 28vw, 400px);
+    --app-max-width: 100%;
+    --spacing: 20px;
+    --spacing-lg: 24px;
+    --tab-bar-clearance: 0;
+    --home-nav-clearance: 0;
+  }
+
+  html.layout-desktop {
+    background: var(--bg-elevated, #e8ecf4);
+  }
+
+  html.layout-desktop body {
+    background: var(--bg-elevated, #e8ecf4);
+  }
+
+  html.layout-desktop #app {
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: row;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  html.layout-desktop #app-root {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    min-width: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  html.layout-desktop #app-root .app-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    box-shadow: -4px 0 24px rgba(15, 23, 42, 0.06);
+  }
+
+  html[dir="rtl"].layout-desktop #app-root .app-content {
+    box-shadow: 4px 0 24px rgba(15, 23, 42, 0.06);
+  }
+
+  html.layout-desktop .has-tab-bar .page {
+    padding-bottom: 0;
+  }
+
+  html.layout-desktop .page--in-pane {
+    position: relative;
+    inset: auto;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+  }
+
+  /* ——— Messaging split (full height in main pane) ——— */
+  html.layout-desktop .app-content > .page-enter-active,
+  html.layout-desktop .app-content > .page-leave-active {
+    height: 100%;
+  }
+
+  html.layout-desktop .messaging-layout.page {
+    position: relative;
+    inset: auto;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  html.layout-desktop .messaging-layout__list,
+  html.layout-desktop .messaging-layout__chat {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html.layout-desktop .messaging-layout__chat .conv-chat.page--in-pane {
+    position: relative;
+    inset: auto;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  html.layout-desktop .conv-chat.page--in-pane .chat-header {
+    padding-top: 12px;
+  }
+
+  html.layout-desktop .conv-chat.page--in-pane .messages-area {
+    flex: 1;
+    min-height: 0;
+  }
+
+  html.layout-desktop .conversations.conversations--pane {
+    position: relative;
+    inset: auto;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  html.layout-desktop .conversations--pane .conv-header {
+    padding-top: 12px;
+  }
+
+  html.layout-desktop .conversations--pane .scroll-area {
+    padding-bottom: 12px;
+  }
+
+  .messaging-layout__empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-lg);
+    color: var(--text-muted);
+    font-size: 15px;
+    text-align: center;
+  }
+
+  html.layout-desktop .conversations--pane {
+    position: relative;
+    inset: auto;
+    height: 100%;
+    min-height: 0;
+    padding-bottom: var(--safe-bottom);
+  }
+
+  html.layout-desktop .conversations--pane .scroll-area {
+    padding-bottom: calc(16px + var(--safe-bottom));
+  }
+
+  html.layout-desktop .conv-item--active {
+    background: var(--primary-soft);
+  }
+
+  /* ——— Home ——— */
+  html.layout-desktop .home--chatloop .home-profile {
+    max-width: var(--content-max);
+    margin-inline: auto;
+    width: calc(100% - 2 * var(--spacing));
+  }
+
+  html.layout-desktop .home--chatloop .home-primary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    gap: var(--spacing-lg);
+    align-items: start;
+    max-width: var(--content-max);
+    margin-inline: auto;
+    width: calc(100% - 2 * var(--spacing));
+    padding-inline: 0;
+  }
+
+  html.layout-desktop .home--chatloop .home-hub {
+    grid-column: 1;
+  }
+
+  html.layout-desktop .home--chatloop .home-shortcuts {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing);
+  }
+
+  /* ——— Settings ——— */
+  html.layout-desktop .settings.modern-page .modern-page__scroll {
+    max-width: 640px;
+    margin-inline: auto;
+    width: 100%;
+  }
+
+  /* ——— Short films hub ——— */
+  html.layout-desktop .film-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--spacing);
+    overflow: visible;
+  }
+
+  html.layout-desktop .films-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--spacing);
+  }
+
+  /* ——— Modern pages ——— */
+  html.layout-desktop .modern-page__scroll {
+    max-width: var(--content-max);
+    margin-inline: auto;
+    width: 100%;
+  }
+
+  /* ——— Auth ——— */
+  html.layout-desktop .login.page,
+  html.layout-desktop .register.page {
+    align-items: center;
+    justify-content: center;
+  }
+
+  html.layout-desktop .login-content,
+  html.layout-desktop .register-content {
+    max-width: 400px;
+    width: 100%;
+    margin: auto;
+    padding: var(--spacing-lg);
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--border);
+  }
+
+  /* ——— Matching / centered flows ——— */
+  html.layout-desktop .matching.page,
+  html.layout-desktop .matching--chatloop {
+    max-width: 720px;
+    margin-inline: auto;
+    width: 100%;
+  }
+
+  /* ——— Modals within main pane (not under sidebar) ——— */
+  html.layout-desktop .req-overlay,
+  html.layout-desktop .logout-overlay {
+    inset-inline-start: var(--sidebar-width);
+  }
+
+  html[dir="rtl"].layout-desktop .req-overlay,
+  html[dir="rtl"].layout-desktop .logout-overlay {
+    inset-inline-start: 0;
+    inset-inline-end: var(--sidebar-width);
+  }
+
+  html.layout-desktop .modern-page.page--in-pane .modern-page__nav {
+    padding-top: 12px;
+  }
+}

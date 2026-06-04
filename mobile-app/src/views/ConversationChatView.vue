@@ -1,7 +1,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+
+const props = defineProps({
+  paneMode: { type: Boolean, default: false }
+})
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Image, Images, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Image, Images, Send, MoreVertical, Trash2, UserX, X, Clock, Check, CheckCheck, AlertCircle, RotateCcw, Mic, Play, Pause, Reply, Forward, Video, Phone, Loader2, SmilePlus, Download, Maximize2, Volume2, VolumeX } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useConversationStore } from '../stores/conversation'
 import { useConversationsListStore } from '../stores/conversationsList'
@@ -12,6 +16,8 @@ import { notify } from '../utils/notify'
 import { loadMessagesFromCache, saveMessagesForConversation, clearMessagesForConversation } from '../services/cache'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { unmuteVideoOnUserGesture, waitForVideoReady } from '../utils/mobileVideoPlayback'
+import { canDownloadMessage, downloadMessageMedia, downloadMediaUrl, downloadAlbumImages } from '../utils/mediaDownload'
 import CachedAvatar from '../components/CachedAvatar.vue'
 import { formatTime12 } from '../utils/formatTime'
 import { useI18n } from 'vue-i18n'
@@ -65,6 +71,11 @@ let recordingTimer = null
 const imageModalUrls = ref([])
 const imageModalIndex = ref(0)
 const imageModalUrl = computed(() => imageModalUrls.value[imageModalIndex.value] ?? null)
+const imageModalCount = computed(() => imageModalUrls.value.length)
+const imageModalHasMultiple = computed(() => imageModalCount.value > 1)
+const imageModalCanPrev = computed(() => imageModalHasMultiple.value && imageModalIndex.value > 0)
+const imageModalCanNext = computed(() => imageModalHasMultiple.value && imageModalIndex.value < imageModalCount.value - 1)
+let imageModalTouchStartX = 0
 const showMessageMenu = ref(null)
 const showMessageMenuMsg = ref(null)
 const msgMenuPosition = ref({})
@@ -72,6 +83,14 @@ const replyingTo = ref(null)
 const showDeleteConvConfirm = ref(false)
 const showInputActionsMenu = ref(false)
 const playingAudioId = ref(null)
+const playingVideoKey = ref(null)
+const downloadingMedia = ref(false)
+const showImageDownloadSheet = ref(false)
+const videoModalUrl = ref(null)
+const videoModalRef = ref(null)
+const videoModalPlaying = ref(false)
+const videoModalMuted = ref(true)
+const videoModalTime = ref({ current: 0, duration: 0 })
 const audioProgress = ref({})
 const audioDurations = ref({})
 const highlightedMessageId = ref(null)
@@ -160,6 +179,139 @@ function onAudioPlay(msg, e) {
 
 function onAudioPause(msg, e) {
   if (playingAudioId.value === getMsgKey(msg)) playingAudioId.value = null
+}
+
+function isChatVideoPlaying(msg) {
+  return playingVideoKey.value === getMsgKey(msg)
+}
+
+function pauseAllChatVideos(exceptEl = null) {
+  document.querySelectorAll('.chat-video').forEach((v) => {
+    if (v !== exceptEl) {
+      v.pause()
+    }
+  })
+}
+
+async function onChatVideoTap(msg, e) {
+  const video = e.currentTarget?.querySelector?.('video.chat-video')
+  if (!video || msg.deletedForEveryone) return
+  const key = getMsgKey(msg)
+  if (!video.paused) {
+    video.pause()
+    return
+  }
+  pauseAllChatVideos(video)
+  playingVideoKey.value = key
+  const ok = await unmuteVideoOnUserGesture(video)
+  if (!ok) {
+    video.muted = true
+    try {
+      await video.play()
+    } catch {
+      playingVideoKey.value = null
+    }
+  }
+}
+
+function onChatVideoPlay(msg) {
+  playingVideoKey.value = getMsgKey(msg)
+}
+
+function onChatVideoPause(msg) {
+  if (playingVideoKey.value === getMsgKey(msg)) playingVideoKey.value = null
+}
+
+function openVideoModal(url) {
+  if (!url || String(url).startsWith('blob:')) return
+  pauseAllChatVideos()
+  playingVideoKey.value = null
+  videoModalPlaying.value = false
+  videoModalMuted.value = true
+  videoModalTime.value = { current: 0, duration: 0 }
+  videoModalUrl.value = ensureAbsoluteUrl(url)
+}
+
+function closeVideoModal() {
+  const video = videoModalRef.value
+  if (video) video.pause()
+  videoModalUrl.value = null
+  videoModalPlaying.value = false
+}
+
+async function toggleVideoModalPlay() {
+  const video = videoModalRef.value
+  if (!video) return
+  if (!video.paused) {
+    video.pause()
+    return
+  }
+  await waitForVideoReady(video)
+  const ok = await unmuteVideoOnUserGesture(video)
+  if (!ok) {
+    video.muted = true
+    videoModalMuted.value = true
+  } else {
+    videoModalMuted.value = video.muted
+  }
+  try {
+    await video.play()
+  } catch {
+    videoModalPlaying.value = false
+  }
+}
+
+function onVideoModalPlay() {
+  videoModalPlaying.value = true
+}
+
+function onVideoModalPause() {
+  videoModalPlaying.value = false
+}
+
+function onVideoModalTimeUpdate(e) {
+  const el = e.target
+  videoModalTime.value = {
+    current: Number.isFinite(el.currentTime) ? el.currentTime : 0,
+    duration: Number.isFinite(el.duration) ? el.duration : 0
+  }
+}
+
+function onVideoModalLoadedMetadata(e) {
+  onVideoModalTimeUpdate(e)
+}
+
+function seekVideoModal(e) {
+  const video = videoModalRef.value
+  const duration = videoModalTime.value.duration
+  if (!video || !duration) return
+  const rect = e.currentTarget.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const pct = Math.max(0, Math.min(1, x / rect.width))
+  video.currentTime = pct * duration
+}
+
+function toggleVideoModalMute() {
+  const video = videoModalRef.value
+  if (!video) return
+  video.muted = !video.muted
+  videoModalMuted.value = video.muted
+}
+
+const videoModalProgressPct = computed(() => {
+  const { current, duration } = videoModalTime.value
+  if (!duration) return 0
+  return Math.min(100, (100 * current) / duration)
+})
+
+function downloadModalVideo() {
+  if (!videoModalUrl.value) return
+  runMediaDownload(() => downloadMediaUrl(videoModalUrl.value, { kind: 'video' }))
+}
+
+function onVideoModalKeydown(e) {
+  if (!videoModalUrl.value) return
+  if (e.key === 'Escape') closeVideoModal()
 }
 
 function onAudioTimeUpdate(msg, e) {
@@ -450,6 +602,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   mounted = false
+  window.removeEventListener('keydown', onImageModalKeydown)
+  window.removeEventListener('keydown', onVideoModalKeydown)
   if (saveMessagesToCacheTimer) clearTimeout(saveMessagesToCacheTimer)
   if (markAsReadTimer) clearTimeout(markAsReadTimer)
   if (markAsReadInterval) clearInterval(markAsReadInterval)
@@ -1047,9 +1201,133 @@ function openAlbumImage(urls, startIndex = 0) {
 }
 
 function closeImageModal() {
+  showImageDownloadSheet.value = false
   imageModalUrls.value = []
   imageModalIndex.value = 0
 }
+
+function downloadLabelForMsg(msg) {
+  const type = msg?.type ?? msg?.Type
+  if (type === 'video') return t('conversationChat.downloadVideo')
+  if (type === 'audio') return t('conversationChat.downloadAudio')
+  if (type === 'album') return t('conversationChat.downloadAlbum')
+  return t('conversationChat.downloadImage')
+}
+
+async function runMediaDownload(task) {
+  if (downloadingMedia.value) return
+  downloadingMedia.value = true
+  try {
+    await task()
+    notify.success(t('conversationChat.downloadSuccess'))
+  } catch {
+    notify.error(t('conversationChat.downloadFailed'))
+  } finally {
+    downloadingMedia.value = false
+  }
+}
+
+function downloadFromMessageMenu(msg) {
+  showMessageMenu.value = null
+  showMessageMenuMsg.value = null
+  runMediaDownload(() => downloadMessageMedia(msg))
+}
+
+function suggestedImageFilename(url, index = 0) {
+  const absolute = ensureAbsoluteUrl(url)
+  const ext = absolute.match(/\.(jpe?g|png|gif|webp|avif)(\?|$)/i)?.[1] || 'jpg'
+  const base = imageModalHasMultiple.value ? `album-${index + 1}` : 'photo'
+  return `${base}.${ext}`
+}
+
+function openImageDownloadMenu() {
+  if (!imageModalUrl.value || downloadingMedia.value) return
+  if (!imageModalHasMultiple.value) {
+    runMediaDownload(() =>
+      downloadMediaUrl(imageModalUrl.value, {
+        kind: 'image',
+        filename: suggestedImageFilename(imageModalUrl.value)
+      })
+    )
+    return
+  }
+  showImageDownloadSheet.value = true
+}
+
+function closeImageDownloadSheet() {
+  showImageDownloadSheet.value = false
+}
+
+function downloadCurrentModalImage() {
+  const url = imageModalUrl.value
+  if (!url) return
+  closeImageDownloadSheet()
+  runMediaDownload(() =>
+    downloadMediaUrl(url, {
+      kind: 'image',
+      filename: suggestedImageFilename(url, imageModalIndex.value)
+    })
+  )
+}
+
+function downloadAllModalAlbum() {
+  if (!imageModalUrls.value.length) return
+  closeImageDownloadSheet()
+  runMediaDownload(() => downloadAlbumImages(imageModalUrls.value))
+}
+
+function imageModalPrev() {
+  if (!imageModalCanPrev.value) return
+  imageModalIndex.value -= 1
+}
+
+function imageModalNext() {
+  if (!imageModalCanNext.value) return
+  imageModalIndex.value += 1
+}
+
+function imageModalGoTo(index) {
+  if (index < 0 || index >= imageModalCount.value) return
+  imageModalIndex.value = index
+}
+
+function onImageModalTouchStart(e) {
+  imageModalTouchStartX = e.touches?.[0]?.clientX ?? 0
+}
+
+function onImageModalTouchEnd(e) {
+  const endX = e.changedTouches?.[0]?.clientX ?? 0
+  const dx = endX - imageModalTouchStartX
+  if (Math.abs(dx) < 48) return
+  if (dx < 0) imageModalNext()
+  else imageModalPrev()
+}
+
+function onImageModalKeydown(e) {
+  if (!imageModalUrl.value) return
+  if (e.key === 'Escape') {
+    closeImageModal()
+    return
+  }
+  if (e.key === 'ArrowLeft') imageModalPrev()
+  if (e.key === 'ArrowRight') imageModalNext()
+}
+
+watch(imageModalUrl, (url) => {
+  if (url) {
+    window.addEventListener('keydown', onImageModalKeydown)
+  } else {
+    window.removeEventListener('keydown', onImageModalKeydown)
+  }
+})
+
+watch(videoModalUrl, (url) => {
+  if (url) {
+    window.addEventListener('keydown', onVideoModalKeydown)
+  } else {
+    window.removeEventListener('keydown', onVideoModalKeydown)
+  }
+})
 
 const isMediaUploading = computed(() =>
   uploadingImage.value || uploadingVideo.value || uploadingAlbum.value || uploadingVoice.value
@@ -1126,7 +1404,10 @@ function removeReaction(msg) {
 </script>
 
 <template>
-  <div class="conv-chat page">
+  <div
+    class="conv-chat"
+    :class="{ 'page--in-pane': props.paneMode, page: !props.paneMode }"
+  >
     <LoaderOverlay :show="loading" :text="t('common.loading')" />
     <LoaderOverlay :show="uploadingVideo" :text="t('conversationChat.uploadingVideo')" />
     <LoaderOverlay :show="uploadingAlbum" :text="t('conversationChat.uploadingAlbum')" />
@@ -1188,9 +1469,16 @@ function removeReaction(msg) {
     </Transition>
 
     <header class="chat-header">
-      <button type="button" class="modern-glass-btn chat-back-btn" @click="leaveChat" :aria-label="t('common.back')">
+      <button
+        v-if="!props.paneMode"
+        type="button"
+        class="modern-glass-btn chat-back-btn"
+        @click="leaveChat"
+        :aria-label="t('common.back')"
+      >
         <component :is="BackIcon" :size="22" stroke-width="2" />
       </button>
+      <span v-else class="chat-back-spacer" aria-hidden="true" />
       <button type="button" class="partner-info partner-info-btn" @click="goToPartnerProfile">
         <div class="avatar-wrap">
           <div class="avatar avatar-sm" :style="partnerAvatarIsImage ? {} : { background: 'var(--primary)' }">
@@ -1300,18 +1588,44 @@ function removeReaction(msg) {
               <span class="msg-reply-preview">{{ replyPreviewText(msg.replyToContent, msg.type) }}</span>
             </div>
           </div>
-          <video
-            v-if="!msg.deletedForEveryone"
-            class="chat-video"
-            :src="ensureAbsoluteUrl(msg.content)"
-            playsinline
-            webkit-playsinline
-            x5-playsinline
-            controls
-            preload="metadata"
-            disablepictureinpicture
-            controlslist="nodownload nofullscreen noremoteplayback"
-          />
+          <div v-if="!msg.deletedForEveryone" class="chat-video-wrap">
+            <video
+              class="chat-video"
+              :src="ensureAbsoluteUrl(msg.content)"
+              playsinline
+              webkit-playsinline
+              x5-playsinline
+              preload="metadata"
+              disablepictureinpicture
+              controlslist="nodownload nofullscreen noremoteplayback"
+              @play="onChatVideoPlay(msg)"
+              @pause="onChatVideoPause(msg)"
+              @ended="onChatVideoPause(msg)"
+              @click.stop="isChatVideoPlaying(msg) && openVideoModal(msg.content)"
+            />
+            <div
+              v-if="!isChatVideoPlaying(msg)"
+              class="chat-video-overlay"
+              role="button"
+              tabindex="0"
+              :aria-label="t('conversationChat.playVideo')"
+              @click.stop="onChatVideoTap(msg, $event)"
+              @keydown.enter.space.prevent="onChatVideoTap(msg, $event)"
+            >
+              <span class="chat-video-play-btn">
+                <Play :size="32" fill="currentColor" stroke-width="0" />
+              </span>
+            </div>
+            <button
+              type="button"
+              class="chat-video-expand"
+              :aria-label="t('conversationChat.expandVideo')"
+              :title="t('conversationChat.expandVideo')"
+              @click.stop="openVideoModal(msg.content)"
+            >
+              <Maximize2 :size="16" stroke-width="2" />
+            </button>
+          </div>
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
         <div
@@ -1468,6 +1782,15 @@ function removeReaction(msg) {
             <Forward :size="14" stroke-width="2" class="msg-action-icon" />
             <span class="msg-action-label">{{ t('conversationChat.share') }}</span>
           </button>
+          <button
+            v-if="canDownloadMessage(showMessageMenuMsg)"
+            class="msg-action-btn msg-action-download"
+            :disabled="downloadingMedia"
+            @click="downloadFromMessageMenu(showMessageMenuMsg)"
+          >
+            <Download :size="14" stroke-width="2" class="msg-action-icon" />
+            <span class="msg-action-label">{{ downloadLabelForMsg(showMessageMenuMsg) }}</span>
+          </button>
           <button class="msg-action-btn msg-action-me" @click="deleteForMe(showMessageMenuMsg)">
             <Trash2 :size="14" stroke-width="2" class="msg-action-icon" />
             <span class="msg-action-label">{{ t('conversationChat.deleteForMe') }}</span>
@@ -1498,24 +1821,38 @@ function removeReaction(msg) {
 
       <!-- شريط التسجيل الصوتي -->
       <Transition name="slide-up">
-        <div v-if="isRecording" class="recording-bar">
-          <div class="recording-indicator">
-            <span class="recording-dot" />
-            <div class="recording-wave">
-              <span v-for="i in 5" :key="i" class="rec-wave-bar" :style="{ animationDelay: `${(i - 1) * 0.12}s` }" />
+        <div v-if="isRecording" class="recording-bar" role="status" :aria-label="t('conversationChat.recordingVoice')">
+          <button
+            type="button"
+            class="recording-bar__discard"
+            :aria-label="t('conversationChat.discardRecording')"
+            @click="cancelRecording"
+          >
+            <Trash2 :size="20" stroke-width="2" />
+          </button>
+          <div class="recording-bar__body">
+            <div class="recording-bar__meta">
+              <span class="recording-bar__live" aria-hidden="true" />
+              <span class="recording-bar__label">{{ t('conversationChat.recordingVoice') }}</span>
+              <span class="recording-bar__time">{{ formatRecordingTime(recordingSeconds) }}</span>
+            </div>
+            <div class="recording-bar__wave" aria-hidden="true">
+              <span
+                v-for="i in 12"
+                :key="i"
+                class="recording-bar__wave-bar"
+                :style="{ animationDelay: `${(i - 1) * 0.065}s` }"
+              />
             </div>
           </div>
-          <div class="recording-timer">{{ formatRecordingTime(recordingSeconds) }}</div>
-          <div class="recording-actions">
-            <button type="button" class="recording-cancel-btn" @click="cancelRecording">
-              <X :size="18" stroke-width="2.5" />
-              <span>{{ t('common.cancel') }}</span>
-            </button>
-            <button type="button" class="recording-send-btn" @click="stopAndSendVoice">
-              <Send :size="18" stroke-width="2.5" />
-              <span>{{ t('conversationChat.sendVoice') }}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            class="recording-bar__send"
+            :aria-label="t('conversationChat.sendVoice')"
+            @click="stopAndSendVoice"
+          >
+            <Send :size="20" stroke-width="2.5" />
+          </button>
         </div>
       </Transition>
 
@@ -1588,15 +1925,232 @@ function removeReaction(msg) {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="imageModalUrl" class="image-modal-overlay" @click.self="closeImageModal">
-        <button class="image-modal-close" @click="closeImageModal"><X :size="24" /></button>
-        <img :src="ensureAbsoluteUrl(imageModalUrl)" class="image-modal-img" alt="" referrerpolicy="no-referrer" />
-      </div>
+      <Transition name="image-modal-fade">
+        <div
+          v-if="imageModalUrl"
+          class="image-modal-overlay"
+          @click.self="closeImageModal"
+          @touchstart.passive="onImageModalTouchStart"
+          @touchend.passive="onImageModalTouchEnd"
+        >
+          <div class="image-modal-top" @click.stop>
+            <span v-if="imageModalHasMultiple" class="image-modal-counter">
+              {{ t('conversationChat.albumViewerCounter', { current: imageModalIndex + 1, total: imageModalCount }) }}
+            </span>
+            <span v-else class="image-modal-counter image-modal-counter--solo" />
+            <div class="image-modal-top-actions">
+              <button
+                type="button"
+                class="image-modal-tool-btn"
+                :disabled="downloadingMedia"
+                :title="t('conversationChat.downloadChoose')"
+                :aria-label="t('conversationChat.downloadChoose')"
+                @click="openImageDownloadMenu"
+              >
+                <Download :size="20" stroke-width="2" />
+              </button>
+              <button
+                type="button"
+                class="image-modal-close"
+                :aria-label="t('common.close')"
+                @click="closeImageModal"
+              >
+                <X :size="22" stroke-width="2" />
+              </button>
+            </div>
+          </div>
+
+          <Transition name="image-download-sheet">
+            <div
+              v-if="showImageDownloadSheet && imageModalHasMultiple"
+              class="image-download-sheet-backdrop"
+              @click="closeImageDownloadSheet"
+            >
+              <div class="image-download-sheet glass-card" role="dialog" @click.stop>
+                <div class="image-download-sheet-handle" aria-hidden="true" />
+                <p class="image-download-sheet-title">{{ t('conversationChat.downloadChoose') }}</p>
+                <button
+                  type="button"
+                  class="image-download-sheet-btn"
+                  :disabled="downloadingMedia"
+                  @click="downloadCurrentModalImage"
+                >
+                  <Download :size="18" stroke-width="2" />
+                  <span>{{ t('conversationChat.downloadCurrentPhoto') }}</span>
+                  <span class="image-download-sheet-meta">
+                    {{ t('conversationChat.albumViewerCounter', { current: imageModalIndex + 1, total: imageModalCount }) }}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="image-download-sheet-btn"
+                  :disabled="downloadingMedia"
+                  @click="downloadAllModalAlbum"
+                >
+                  <Images :size="18" stroke-width="2" />
+                  <span>{{ t('conversationChat.downloadAllPhotos') }}</span>
+                  <span class="image-download-sheet-meta">{{ imageModalCount }}</span>
+                </button>
+                <button type="button" class="image-download-sheet-cancel" @click="closeImageDownloadSheet">
+                  {{ t('common.cancel') }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+
+          <button
+            v-if="imageModalCanPrev"
+            type="button"
+            class="image-modal-nav image-modal-nav--prev"
+            :aria-label="t('conversationChat.albumViewerPrev')"
+            @click.stop="imageModalPrev"
+          >
+            <ChevronLeft :size="28" stroke-width="2" />
+          </button>
+
+          <div class="image-modal-stage" @click.stop>
+            <Transition name="image-modal-slide" mode="out-in">
+              <img
+                :key="imageModalIndex"
+                :src="ensureAbsoluteUrl(imageModalUrl)"
+                class="image-modal-img"
+                alt=""
+                referrerpolicy="no-referrer"
+                draggable="false"
+              />
+            </Transition>
+          </div>
+
+          <button
+            v-if="imageModalCanNext"
+            type="button"
+            class="image-modal-nav image-modal-nav--next"
+            :aria-label="t('conversationChat.albumViewerNext')"
+            @click.stop="imageModalNext"
+          >
+            <ChevronRight :size="28" stroke-width="2" />
+          </button>
+
+          <div v-if="imageModalHasMultiple && imageModalCount <= 12" class="image-modal-dots" @click.stop>
+            <button
+              v-for="(_, i) in imageModalUrls"
+              :key="i"
+              type="button"
+              class="image-modal-dot"
+              :class="{ active: i === imageModalIndex }"
+              :aria-label="t('conversationChat.albumViewerCounter', { current: i + 1, total: imageModalCount })"
+              @click="imageModalGoTo(i)"
+            />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="image-modal-fade">
+        <div
+          v-if="videoModalUrl"
+          class="video-modal-overlay"
+          @click.self="closeVideoModal"
+        >
+          <div class="image-modal-top" @click.stop>
+            <span class="image-modal-counter image-modal-counter--solo" />
+            <div class="image-modal-top-actions">
+              <button
+                type="button"
+                class="image-modal-tool-btn"
+                :disabled="downloadingMedia"
+                :title="t('conversationChat.downloadVideo')"
+                :aria-label="t('conversationChat.downloadVideo')"
+                @click="downloadModalVideo"
+              >
+                <Download :size="20" stroke-width="2" />
+              </button>
+              <button
+                type="button"
+                class="image-modal-close"
+                :aria-label="t('common.close')"
+                @click="closeVideoModal"
+              >
+                <X :size="22" stroke-width="2" />
+              </button>
+            </div>
+          </div>
+
+          <div class="video-modal-stage" @click.stop>
+            <video
+              ref="videoModalRef"
+              class="video-modal-player"
+              :src="videoModalUrl"
+              playsinline
+              webkit-playsinline
+              x5-playsinline
+              preload="auto"
+              disablepictureinpicture
+              controlslist="nodownload nofullscreen noremoteplayback"
+              @play="onVideoModalPlay"
+              @pause="onVideoModalPause"
+              @ended="onVideoModalPause"
+              @timeupdate="onVideoModalTimeUpdate"
+              @loadedmetadata="onVideoModalLoadedMetadata"
+            />
+            <button
+              v-if="!videoModalPlaying"
+              type="button"
+              class="video-modal-center-play"
+              :aria-label="t('conversationChat.playVideo')"
+              @click="toggleVideoModalPlay"
+            >
+              <Play :size="48" fill="currentColor" stroke-width="0" />
+            </button>
+          </div>
+
+          <div class="video-modal-controls" @click.stop>
+            <button
+              type="button"
+              class="video-modal-ctrl-btn"
+              :aria-label="videoModalPlaying ? t('conversationChat.pauseVideo') : t('conversationChat.playVideo')"
+              @click="toggleVideoModalPlay"
+            >
+              <Pause v-if="videoModalPlaying" :size="22" stroke-width="2.5" />
+              <Play v-else :size="22" stroke-width="2.5" />
+            </button>
+            <div
+              class="video-modal-progress"
+              role="slider"
+              :aria-valuenow="videoModalTime.current"
+              :aria-valuemax="videoModalTime.duration"
+              tabindex="0"
+              @click="seekVideoModal"
+            >
+              <div class="video-modal-progress-fill" :style="{ width: `${videoModalProgressPct}%` }" />
+            </div>
+            <span class="video-modal-time">
+              {{ formatAudioDuration(videoModalTime.current) }} / {{ formatAudioDuration(videoModalTime.duration) }}
+            </span>
+            <button
+              type="button"
+              class="video-modal-ctrl-btn"
+              :aria-label="videoModalMuted ? t('conversationChat.unmuteVideo') : t('conversationChat.muteVideo')"
+              @click="toggleVideoModalMute"
+            >
+              <VolumeX v-if="videoModalMuted" :size="22" stroke-width="2" />
+              <Volume2 v-else :size="22" stroke-width="2" />
+            </button>
+          </div>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
 
 <style scoped>
+.chat-back-spacer {
+  width: var(--header-btn-size);
+  min-width: var(--header-btn-size);
+  flex-shrink: 0;
+}
+
 .conv-chat {
   position: relative;
   background: var(--bg-primary);
@@ -2006,6 +2560,9 @@ function removeReaction(msg) {
 .msg-action-reply:hover, .msg-action-reply:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
 .msg-action-share { color: var(--primary); }
 .msg-action-share:hover, .msg-action-share:active { background: rgba(108, 99, 255, 0.12); color: var(--primary); }
+.msg-action-download { color: var(--text); }
+.msg-action-download:hover, .msg-action-download:active { background: rgba(0, 0, 0, 0.06); }
+.msg-action-download:disabled { opacity: 0.5; }
 
 /* رد فعل — وضع داكن: نص أوضح على glass-card */
 .msg-action-react {
@@ -2192,126 +2749,163 @@ html.light .msg-action-react:active {
 .recording-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  min-height: 56px;
-  flex-shrink: 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-@media (max-width: 400px) {
-  .recording-bar {
-    gap: 10px;
-    padding: 10px 12px;
-    min-height: 52px;
-  }
-  .recording-cancel-btn span,
-  .recording-send-btn span { display: none; }
-  .recording-cancel-btn,
-  .recording-send-btn { padding: 8px 12px; }
-  .recording-timer { font-size: 15px; min-width: 40px; }
-}
-.recording-indicator {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-.recording-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #e53935;
-  animation: recording-pulse-dot 1.2s ease-in-out infinite;
-}
-@keyframes recording-pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.15); }
-}
-.recording-wave {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 28px;
-}
-.rec-wave-bar {
-  width: 4px;
-  border-radius: 2px;
-  background: var(--primary);
-  opacity: 0.7;
-  animation: rec-wave-bounce 0.5s ease-in-out infinite alternate;
-}
-.rec-wave-bar:nth-child(1) { height: 10px; }
-.rec-wave-bar:nth-child(2) { height: 18px; }
-.rec-wave-bar:nth-child(3) { height: 24px; }
-.rec-wave-bar:nth-child(4) { height: 16px; }
-.rec-wave-bar:nth-child(5) { height: 12px; }
-@keyframes rec-wave-bounce {
-  from { transform: scaleY(0.5); opacity: 0.5; }
-  to { transform: scaleY(1); opacity: 0.9; }
-}
-.recording-timer {
-  font-variant-numeric: tabular-nums;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
-  min-width: 44px;
-  letter-spacing: 0.02em;
-}
-.recording-actions {
-  display: flex;
   gap: 10px;
-  margin-right: 0;
-  margin-left: auto;
+  padding: 6px 8px 6px 10px;
+  min-height: 52px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.1) 0%,
+    var(--bg-elevated) 42%,
+    var(--bg-elevated) 100%
+  );
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  box-shadow: 0 2px 14px rgba(239, 68, 68, 0.08);
 }
-.recording-cancel-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  font-family: 'Cairo', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
-}
-.recording-cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary);
-}
-.recording-cancel-btn:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-.recording-send-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background: var(--primary);
+
+.recording-bar__discard {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
   border: none;
-  border-radius: 12px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: 'Cairo', sans-serif;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.15s, opacity 0.2s, box-shadow 0.2s;
-  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.3);
+  transition: background var(--motion-fast), transform var(--motion-fast);
 }
-.recording-send-btn:hover {
-  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.4);
+
+.recording-bar__discard:active {
+  transform: scale(0.94);
+  background: rgba(239, 68, 68, 0.2);
 }
-.recording-send-btn:active {
-  transform: scale(0.97);
-  opacity: 0.95;
+
+.recording-bar__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+.recording-bar__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recording-bar__live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  animation: recording-live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes recording-live-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
+.recording-bar__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recording-bar__time {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ef4444;
+  letter-spacing: 0.03em;
+}
+
+.recording-bar__wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 2px;
+}
+
+.recording-bar__wave-bar {
+  width: 3px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #f87171 0%, var(--primary) 100%);
+  opacity: 0.85;
+  animation: recording-wave-bounce 0.55s ease-in-out infinite alternate;
+}
+
+.recording-bar__wave-bar:nth-child(odd) { height: 10px; }
+.recording-bar__wave-bar:nth-child(3n) { height: 18px; }
+.recording-bar__wave-bar:nth-child(4n) { height: 14px; }
+.recording-bar__wave-bar:nth-child(5n) { height: 20px; }
+.recording-bar__wave-bar:nth-child(2n) { height: 12px; }
+
+@keyframes recording-wave-bounce {
+  from {
+    transform: scaleY(0.35);
+    opacity: 0.45;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.recording-bar__send {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--primary);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.32);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--motion-fast), opacity var(--motion-fast);
+}
+
+.recording-bar__send:active {
+  transform: scale(0.94);
+  opacity: 0.92;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-bar__live,
+  .recording-bar__wave-bar {
+    animation: none;
+  }
 }
 
 .uploading-voice-bar {
@@ -2580,13 +3174,176 @@ html.light .msg-action-react:active {
   overflow: hidden;
 }
 
-.chat-video {
+.chat-video-wrap {
+  position: relative;
+  display: block;
   max-width: min(260px, calc(100vw - 48px));
+  width: 100%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-video {
+  max-width: 100%;
   width: 100%;
   max-height: 320px;
   border-radius: 12px;
   display: block;
   background: #000;
+  vertical-align: top;
+}
+
+.chat-video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.chat-video-play-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.chat-video-play-btn svg {
+  margin-inline-start: 3px;
+}
+
+.chat-video-expand {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-video-expand:active {
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.video-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.94);
+  touch-action: manipulation;
+}
+
+.video-modal-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 12px 12px;
+  position: relative;
+}
+
+.video-modal-player {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  object-fit: contain;
+  background: #000;
+  border-radius: var(--radius-sm);
+}
+
+.video-modal-center-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.video-modal-center-play:active {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.video-modal-controls {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px calc(16px + var(--safe-bottom));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+}
+
+.video-modal-ctrl-btn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.video-modal-ctrl-btn:active {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.video-modal-progress {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.video-modal-progress-fill {
+  height: 100%;
+  background: var(--primary, #6c63ff);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.video-modal-time {
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .typing-bubble { padding: 12px 16px; }
@@ -2659,32 +3416,308 @@ html.light .msg-action-react:active {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0,0,0,0.92);
+  background: rgba(0, 0, 0, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: calc(12px + var(--safe-top)) 12px calc(20px + var(--safe-bottom));
+  touch-action: pan-y pinch-zoom;
+}
+
+.image-modal-top {
+  position: absolute;
+  top: calc(8px + var(--safe-top));
+  left: 12px;
+  right: 12px;
+  z-index: 3;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 16px;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
 }
+
+.image-modal-top > * {
+  pointer-events: auto;
+}
+
+.image-modal-counter {
+  min-width: 4.5rem;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+
+.image-modal-counter--solo {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.image-modal-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.image-modal-tool-btn,
 .image-modal-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.15);
+  background: rgba(255, 255, 255, 0.14);
   color: #fff;
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
+
+.image-modal-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.image-modal-tool-btn:active:not(:disabled),
+.image-modal-close:active {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.image-download-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.image-download-sheet {
+  width: 100%;
+  padding: 10px 16px calc(20px + var(--safe-bottom));
+  border-radius: var(--radius) var(--radius) 0 0 !important;
+}
+
+.image-download-sheet-handle {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.image-download-sheet-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.image-download-sheet-btn {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  margin-bottom: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+
+.image-download-sheet-btn:disabled {
+  opacity: 0.5;
+}
+
+.image-download-sheet-btn:active:not(:disabled) {
+  background: rgba(108, 99, 255, 0.12);
+}
+
+.image-download-sheet-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.image-download-sheet-cancel {
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.image-download-sheet-enter-active,
+.image-download-sheet-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.image-download-sheet-enter-active .image-download-sheet,
+.image-download-sheet-leave-active .image-download-sheet {
+  transition: transform 0.25s ease;
+}
+
+.image-download-sheet-enter-from,
+.image-download-sheet-leave-to {
+  opacity: 0;
+}
+
+.image-download-sheet-enter-from .image-download-sheet,
+.image-download-sheet-leave-to .image-download-sheet {
+  transform: translateY(100%);
+}
+
+.image-modal-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 52px 48px 40px;
+  width: 100%;
+}
+
 .image-modal-img {
   max-width: 100%;
-  max-height: 100%;
+  max-height: min(72vh, 100%);
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 8px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.image-modal-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.image-modal-nav:active {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-50%) scale(0.94);
+}
+
+.image-modal-nav--prev {
+  left: 8px;
+}
+
+.image-modal-nav--next {
+  right: 8px;
+}
+
+.image-modal-dots {
+  position: absolute;
+  bottom: calc(16px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+}
+
+.image-modal-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.image-modal-dot.active {
+  background: #fff;
+  transform: scale(1.2);
+}
+
+.image-modal-fade-enter-active,
+.image-modal-fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.image-modal-fade-enter-from,
+.image-modal-fade-leave-to {
+  opacity: 0;
+}
+
+.image-modal-slide-enter-active,
+.image-modal-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.image-modal-slide-enter-from {
+  opacity: 0;
+  transform: translateX(18px);
+}
+
+.image-modal-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-18px);
+}
+
+@media (max-width: 420px) {
+  .image-modal-stage {
+    padding: 48px 40px 36px;
+  }
+
+  .image-modal-nav {
+    width: 42px;
+    height: 42px;
+  }
+
+  .image-modal-nav--prev {
+    left: 4px;
+  }
+
+  .image-modal-nav--next {
+    right: 4px;
+  }
 }
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.25s; }

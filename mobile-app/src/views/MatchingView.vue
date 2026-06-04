@@ -190,10 +190,7 @@ async function cancel() {
 
 .match-header__title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .match-header__close {

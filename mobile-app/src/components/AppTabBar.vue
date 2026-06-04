@@ -1,61 +1,18 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { MessageCircle, Clapperboard, Rocket, User } from 'lucide-vue-next'
-import { useConversationsListStore } from '../stores/conversationsList'
-import { useMessageRequestsStore } from '../stores/messageRequests'
-import { getShortFilmsEnabled } from '../services/siteContentFlags'
-import api from '../services/api'
+import { useAppNav } from '../composables/useAppNav'
 import { useReducedMotion } from '../composables/useReducedMotion'
 import { hapticLight } from '../composables/useHaptics'
 import { publicUrl } from '../utils/publicUrl'
 
-const route = useRoute()
 const { t } = useI18n()
-const listStore = useConversationsListStore()
-const msgReqStore = useMessageRequestsStore()
+const { tabs, showTabBar, isNavActive } = useAppNav()
 const { reducedMotion } = useReducedMotion()
-
-const shortFilmsEnabled = ref(false)
-
-const totalUnread = computed(() =>
-  listStore.list.reduce((sum, c) => {
-    const n = c?.unreadCount ?? c?.UnreadCount ?? 0
-    return sum + (typeof n === 'number' ? n : parseInt(n, 10) || 0)
-  }, 0)
-)
-
-const showTabBar = computed(() => {
-  const paths = ['/home', '/conversations', '/contacts', '/settings']
-  if (shortFilmsEnabled.value) paths.push('/short-films')
-  return paths.includes(route.path)
-})
-
-const tabs = computed(() => {
-  const items = [
-    { to: '/conversations', label: t('nav.conversations'), icon: 'chat', badge: totalUnread.value },
-    ...(shortFilmsEnabled.value
-      ? [{ to: '/short-films', label: t('nav.discover'), icon: 'films', badge: 0 }]
-      : []),
-    { to: '/home', label: t('nav.connect'), icon: 'home', badge: 0 },
-    { to: '/settings', label: t('nav.profile'), icon: 'profile', badge: msgReqStore.pendingCount }
-  ]
-  return items
-})
-
-function isActive(path) {
-  return route.path === path
-}
 
 function onTabClick() {
   hapticLight()
 }
-
-onMounted(async () => {
-  msgReqStore.fetchPendingCount()
-  shortFilmsEnabled.value = await getShortFilmsEnabled(api)
-})
 
 defineExpose({ showTabBar })
 </script>
@@ -67,25 +24,25 @@ defineExpose({ showTabBar })
       :key="tab.to"
       :to="tab.to"
       class="app-tab-bar__item"
-      :class="{ 'app-tab-bar__item--active': isActive(tab.to) }"
+      :class="{ 'app-tab-bar__item--active': isNavActive(tab.to) }"
       :aria-label="tab.label"
-      :aria-current="isActive(tab.to) ? 'page' : undefined"
+      :aria-current="isNavActive(tab.to) ? 'page' : undefined"
       @click="onTabClick"
     >
       <span class="app-tab-bar__icon-wrap">
         <Vue3Lottie
           v-if="tab.icon === 'home' && !reducedMotion"
           :animation-link="publicUrl('json/Rocket%20Lunch.json')"
-          :height="40"
-          :width="40"
+          :height="32"
+          :width="32"
           :speed="0.9"
           :loop="true"
           :auto-play="true"
           class="app-tab-bar__lottie"
         />
-        <MessageCircle v-else-if="tab.icon === 'chat'" :size="24" stroke-width="2" />
-        <Clapperboard v-else-if="tab.icon === 'films'" :size="24" stroke-width="2" />
-        <Rocket v-else-if="tab.icon === 'home'" :size="24" stroke-width="2" />
+        <MessageCircle v-else-if="tab.icon === 'chat'" :size="22" stroke-width="2" />
+        <Clapperboard v-else-if="tab.icon === 'films'" :size="22" stroke-width="2" />
+        <Rocket v-else-if="tab.icon === 'home'" :size="22" stroke-width="2" />
         <User v-else :size="24" stroke-width="2" />
         <span
           v-if="tab.badge > 0 && tab.icon === 'chat'"
@@ -107,22 +64,13 @@ defineExpose({ showTabBar })
   display: flex;
   align-items: flex-end;
   justify-content: space-around;
-  padding: 10px var(--spacing) calc(10px + var(--safe-bottom));
+  padding: 6px var(--spacing) calc(6px + var(--safe-bottom));
   background: var(--bg-card);
   border-top: none;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-tab);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-}
-
-@media (min-width: 480px) {
-  .app-tab-bar {
-    left: 50%;
-    right: auto;
-    width: min(var(--app-max-width), 100%);
-    transform: translateX(-50%);
-  }
 }
 
 .app-tab-bar__item {
@@ -132,8 +80,8 @@ defineExpose({ showTabBar })
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 4px;
+  gap: 2px;
+  padding: 2px 4px;
   color: var(--text-muted);
   text-decoration: none;
   border-radius: var(--radius-full);
@@ -157,8 +105,8 @@ defineExpose({ showTabBar })
 
 .app-tab-bar__icon-wrap {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;

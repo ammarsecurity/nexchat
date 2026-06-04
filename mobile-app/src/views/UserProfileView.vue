@@ -547,8 +547,8 @@ onMounted(() => {
 .profile-hero__title {
   flex: 1;
   margin: 0;
-  font-size: 18px;
-  font-weight: 800;
+  font-size: var(--top-title-size);
+  font-weight: var(--top-title-weight);
   color: #fff;
   text-align: center;
   text-shadow:

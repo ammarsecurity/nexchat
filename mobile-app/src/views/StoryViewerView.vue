@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { X, Eye, Send, Pause, Volume2, VolumeX } from 'lucide-vue-next'
+import { X, Eye, Send, Pause, Volume2, VolumeX, Share2 } from 'lucide-vue-next'
+import { shareStoryPublic } from '../utils/shareExternal'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
 import api from '../services/api'
@@ -51,6 +52,10 @@ function showStoryAlert(message) {
 function closeStoryDialog() {
   dialogOpen.value = false
   dialogMessage.value = ''
+}
+
+async function shareCurrentStory() {
+  await shareStoryPublic(userId.value, { t, publisherName: publisherName.value })
 }
 
 const mediaCache = new Set()
@@ -524,8 +529,11 @@ onUnmounted(clearTimer)
           <VolumeX v-if="muted" :size="20" />
           <Volume2 v-else :size="20" />
         </button>
+        <button type="button" class="icon-btn" :title="t('share.shareStory')" @click="shareCurrentStory">
+          <Share2 :size="20" />
+        </button>
         <button v-if="isOwner" type="button" class="icon-btn" @click="openViewers"><Eye :size="20" /></button>
-        <span v-else-if="current.mediaType !== 'video'" class="header-spacer" />
+        <span v-else-if="current?.mediaType !== 'video'" class="header-spacer" />
       </header>
 
       <div

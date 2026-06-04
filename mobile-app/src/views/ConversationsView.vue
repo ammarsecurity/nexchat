@@ -1,5 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+
+const props = defineProps({
+  paneMode: { type: Boolean, default: false }
+})
 import { useRoute, useRouter } from 'vue-router'
 import EmptyState from '../components/ui/EmptyState.vue'
 import ListSkeleton from '../components/ui/ListSkeleton.vue'
@@ -20,6 +24,7 @@ import StoriesStrip from '../components/StoriesStrip.vue'
 import ContactsPanel from '../components/ContactsPanel.vue'
 import MessageRequestsPanel from '../components/MessageRequestsPanel.vue'
 import { getStoriesEnabled } from '../services/siteContentFlags'
+import { useStoriesStore } from '../stores/stories'
 import { formatConversationListPreview } from '../utils/shortFilmShare'
 import {
   MessageCircle, MessageSquarePlus, Search, Pin, MoreVertical, Users, UsersRound,
@@ -37,9 +42,10 @@ const localeStore = useLocaleStore()
 const listStore = useConversationsListStore()
 const convStore = useConversationStore()
 const auth = useAuthStore()
+const storiesStore = useStoriesStore()
 
 const ready = ref(false)
-const loading = ref(true)
+const listLoading = ref(true)
 const conversations = computed(() => listStore.list)
 const filter = ref('all')
 const searchQuery = ref('')
@@ -55,6 +61,11 @@ const mainSection = computed(() => {
   if (tab === 'contacts') return 'contacts'
   if (tab === 'requests') return 'requests'
   return 'chats'
+})
+
+const activeConversationId = computed(() => {
+  if (!route.path.startsWith('/conversation/')) return null
+  return String(route.params.conversationId ?? '')
 })
 
 function setMainSection(section) {
@@ -126,14 +137,19 @@ function goToCreateGroup() {
   router.push('/conversations/create-group')
 }
 
-async function fetchConversations() {
+async function fetchConversations(opts = {}) {
+  const background = opts.background === true
+  if (!background) listLoading.value = true
+
   const cached = await loadConversationsListFromCache()
-  if (cached?.length) listStore.setList(normalizeConversationsList(cached))
+  if (cached?.length && !background) {
+    listStore.setList(normalizeConversationsList(cached))
+  }
 
   needPhone.value = false
   if (!network.isOnline) {
     ready.value = true
-    loading.value = false
+    if (!background) listLoading.value = false
     return
   }
   try {
@@ -150,11 +166,13 @@ async function fetchConversations() {
     }
   } finally {
     ready.value = true
-    loading.value = false
+    if (!background) listLoading.value = false
   }
 }
 
-const { pullDistance, refreshing, bind: bindPullRefresh } = usePullToRefresh(fetchConversations)
+const { pullDistance, refreshing, bind: bindPullRefresh } = usePullToRefresh(() =>
+  fetchConversations({ background: true })
+)
 
 function openContextMenu(conv, e) {
   e?.stopPropagation()
@@ -259,13 +277,14 @@ async function handleListUpdated(payload) {
     LastMessageType: msgType
   }, shouldIncrementUnread)
   if (updated) await saveConversationsList(listStore.list)
-  if (!updated) await fetchConversations()
+  if (!updated) await fetchConversations({ background: true })
 }
 
 onMounted(async () => {
   notificationsStore.load()
   const storiesOk = await getStoriesEnabled(api)
   storiesEnabled.value = storiesOk
+  if (storiesOk) void storiesStore.fetchFeed()
   msgReqStore.fetchPendingCount()
   convStore.clearConversation()
   try {
@@ -303,7 +322,7 @@ async function markAllRead() {
   markingAllRead.value = true
   try {
     await api.put('/conversations/read-all')
-    await fetchConversations()
+    await fetchConversations({ background: true })
   } finally {
     markingAllRead.value = false
   }
@@ -311,7 +330,10 @@ async function markAllRead() {
 </script>
 
 <template>
-  <div class="conversations page conversations--chatloop">
+  <div
+    class="conversations conversations--chatloop"
+    :class="{ 'conversations--pane': props.paneMode, page: !props.paneMode }"
+  >
     <header class="conv-header">
       <h1 class="conv-header__title">{{ t('conversations.title') }}</h1>
       <div class="conv-header__actions">
@@ -393,7 +415,7 @@ async function markAllRead() {
           <h2 class="hero-card__label">{{ t('stories.allStory') }}</h2>
         </div>
 
-        <StoriesStrip v-if="storiesEnabled && ready" variant="hero" />
+        <StoriesStrip v-if="storiesEnabled" variant="hero" />
 
         <div class="hero-search">
           <Search :size="18" class="hero-search__icon" aria-hidden="true" />
@@ -416,15 +438,21 @@ async function markAllRead() {
         </div>
       </div>
 
-      <div class="filter-row" :dir="localeStore.htmlDir" role="tablist">
+      <div
+        class="filter-row"
+        :dir="localeStore.htmlDir"
+        role="tablist"
+        :aria-busy="listLoading"
+      >
         <button
           v-for="f in ['all', 'unread', 'archived']"
           :key="f"
           type="button"
           class="filter-chip"
-          :class="{ 'filter-chip--active': filter === f }"
+          :class="{ 'filter-chip--active': filter === f, 'filter-chip--loading': listLoading }"
           role="tab"
           :aria-selected="filter === f"
+          :disabled="listLoading"
           @click="filter = f"
         >
           <Check v-if="filter === f" :size="14" stroke-width="2.5" class="filter-chip__check" />
@@ -432,9 +460,17 @@ async function markAllRead() {
           <span v-if="f === 'unread' && totalUnread > 0" class="filter-chip__badge">{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
         </button>
       </div>
-      <ListSkeleton v-if="loading && !conversations.length" />
+      <div
+        v-if="listLoading && mainSection === 'chats'"
+        class="conv-list-skeleton"
+        :aria-label="t('conversations.loadingList')"
+        aria-busy="true"
+      >
+        <div class="conv-skeleton-section skeleton-shimmer" />
+        <ListSkeleton :rows="7" />
+      </div>
       <EmptyState
-        v-else-if="!filteredList.length"
+        v-else-if="ready && !filteredList.length"
         :title="t('conversations.empty')"
       >
         <template #icon>
@@ -444,7 +480,7 @@ async function markAllRead() {
           <button class="btn-gradient" @click="goToContacts">{{ t('conversations.newChat') }}</button>
         </template>
       </EmptyState>
-      <div v-else class="chat-sections">
+      <div v-else-if="filteredList.length" class="chat-sections">
         <template v-for="row in listWithSections" :key="row.key">
           <div v-if="row.type === 'header'" class="section-head">
             <Pin v-if="row.icon === 'pin'" :size="16" stroke-width="2" />
@@ -454,7 +490,11 @@ async function markAllRead() {
           <div
             v-else
             class="conv-item"
-            :class="{ unread: getUnreadCount(row.data) > 0, 'is-group': row.data.isGroup ?? row.data.IsGroup }"
+            :class="{
+              unread: getUnreadCount(row.data) > 0,
+              'is-group': row.data.isGroup ?? row.data.IsGroup,
+              'conv-item--active': activeConversationId && String(row.data.id ?? row.data.Id) === activeConversationId
+            }"
             @click="goToConversation(row.data)"
             @contextmenu.prevent="openContextMenu(row.data, $event)"
           >
@@ -499,7 +539,10 @@ async function markAllRead() {
       </div>
     </div>
 
-    <div class="conv-fab-wrap" :class="{ 'is-open': fabOpen }">
+    <div
+      class="conv-fab-wrap"
+      :class="{ 'is-open': fabOpen, 'conv-fab-wrap--pane': props.paneMode }"
+    >
       <Transition name="fab-fade">
         <button
           v-if="fabOpen"
@@ -577,10 +620,7 @@ async function markAllRead() {
 
 .conv-header__title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 500;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .conv-header__actions {
@@ -953,6 +993,24 @@ async function markAllRead() {
   color: #fff;
 }
 
+.filter-chip:disabled {
+  cursor: default;
+}
+
+.filter-chip--loading:not(.filter-chip--active) {
+  opacity: 0.72;
+}
+
+.conv-list-skeleton {
+  padding: 0 var(--spacing);
+}
+
+.conv-skeleton-section {
+  width: 120px;
+  height: 14px;
+  border-radius: 6px;
+  margin: 14px 4px 6px;
+}
 
 .chat-sections {
   display: flex;
@@ -989,6 +1047,11 @@ async function markAllRead() {
   padding-bottom: var(--safe-bottom);
   font-family: 'Cairo', sans-serif;
   box-sizing: border-box;
+}
+
+.conversations--pane {
+  position: relative;
+  padding-bottom: 0;
 }
 
 .conversations--chatloop {
@@ -1764,6 +1827,44 @@ html.light .conversations--wa .context-btn,
 html.light .conv-fab-menu-label,
 [data-theme='light'] .conv-fab-menu-label {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* ديسكتوب: FAB داخل عمود القائمة وليس أسفل الشاشة كاملة */
+@media (min-width: 1024px) {
+  .conversations--pane .scroll-area {
+    padding-bottom: 88px;
+  }
+
+  .conversations--pane .conv-fab-wrap {
+    position: absolute;
+    left: auto;
+    right: auto;
+    inset-inline-end: var(--spacing-lg);
+    inset-inline-start: auto;
+    bottom: 20px;
+    z-index: 30;
+  }
+
+  .conversations--pane .conv-fab-backdrop {
+    position: absolute;
+    inset: 0;
+    border-radius: 0;
+  }
+
+  .conversations--pane .conv-fab-menu {
+    align-items: flex-end;
+    margin-bottom: 6px;
+  }
+
+  .conversations--pane .fab-menu-enter-from,
+  .conversations--pane .fab-menu-leave-to {
+    transform-origin: bottom right;
+  }
+
+  html[dir='rtl'] .conversations--pane .fab-menu-enter-from,
+  html[dir='rtl'] .conversations--pane .fab-menu-leave-to {
+    transform-origin: bottom left;
+  }
 }
 
 @media (max-width: 420px) {

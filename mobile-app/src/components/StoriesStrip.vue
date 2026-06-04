@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -61,14 +61,37 @@ function openRing(ring) {
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
-defineProps({
+const props = defineProps({
   variant: { type: String, default: 'default' }
 })
+
+const isHero = computed(() => props.variant === 'hero')
+const skeletonCount = computed(() => (isHero.value ? 5 : 6))
+const showStoriesLoading = computed(() => storiesStore.loading)
 </script>
 
 <template>
   <div class="stories-strip" :class="{ 'stories-strip--hero': variant === 'hero' }">
-    <div class="stories-scroll">
+    <div
+      class="stories-scroll"
+      :class="{ 'stories-scroll--loading': showStoriesLoading }"
+      :aria-busy="showStoriesLoading"
+      :aria-label="showStoriesLoading ? t('stories.loadingFeed') : undefined"
+    >
+      <template v-if="showStoriesLoading">
+        <div
+          v-for="i in skeletonCount"
+          :key="`sk-${i}`"
+          class="story-ring-skeleton"
+          :class="{ 'story-ring-skeleton--hero': isHero }"
+          aria-hidden="true"
+        >
+          <div class="story-skeleton-ring skeleton-shimmer" />
+          <div class="story-skeleton-label skeleton-shimmer" />
+        </div>
+      </template>
+
+      <template v-else>
       <button type="button" class="story-ring story-ring--mine" @click="openCreate">
         <span class="ring-outer ring-outer--mine" :class="{ unseen: storiesStore.feed.some(r => r.isMine && r.hasUnseen) }">
           <span class="ring-inner">
@@ -118,6 +141,7 @@ defineProps({
         </span>
         <span class="ring-label">{{ ring.name }}</span>
       </button>
+      </template>
     </div>
   </div>
 </template>
@@ -324,6 +348,56 @@ html.light .ring-add-badge {
   background: #fff;
   color: #2563EB;
   border-color: rgba(255, 255, 255, 0.95);
+}
+
+.story-ring-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 60px;
+  max-width: 66px;
+  flex-shrink: 0;
+}
+
+.story-ring-skeleton--hero {
+  min-width: 52px;
+  max-width: 56px;
+  gap: 2px;
+}
+
+.story-skeleton-ring {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.story-ring-skeleton--hero .story-skeleton-ring {
+  width: 46px;
+  height: 46px;
+}
+
+.story-skeleton-label {
+  width: 48px;
+  height: 10px;
+  border-radius: 6px;
+}
+
+.story-ring-skeleton--hero .story-skeleton-label {
+  width: 40px;
+  height: 8px;
+}
+
+.stories-strip--hero .story-skeleton-ring.skeleton-shimmer,
+.stories-strip--hero .story-skeleton-label.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.34) 45%,
+    rgba(255, 255, 255, 0.14) 90%
+  );
+  background-size: 200% 100%;
 }
 </style>
 

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { Globe, UserCircle, UsersRound, PhoneOff, PhoneCall, AlertCircle, Bell, BookmarkPlus, Crown, ChevronLeft, ChevronRight, MessageCircle, Hash, Copy } from 'lucide-vue-next'
+import { useRouter, useRoute } from 'vue-router'
+import { Globe, UserCircle, UsersRound, PhoneOff, PhoneCall, AlertCircle, Bell, BookmarkPlus, Crown, ChevronLeft, ChevronRight, MessageCircle, Hash, Copy, Share2 } from 'lucide-vue-next'
 import { useLocaleStore } from '../stores/locale'
 import BannerStrip from '../components/BannerStrip.vue'
 import AppFooter from '../components/AppFooter.vue'
@@ -21,10 +21,13 @@ import { requestPermissionAndRegister, scheduleRegistrationRetry } from '../serv
 import api from '../services/api'
 import { getCodeConnectFeaturesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
 import { formatConversationListPreview } from '../utils/shortFilmShare'
+import { normalizeInviteCode } from '../utils/shareLinks'
+import { shareInviteCode } from '../utils/shareExternal'
 
 const isImageAvatar = (v) => v && (v.startsWith('http') || v.startsWith('/'))
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const matching = useMatchingStore()
 const chat = useChatStore()
@@ -144,6 +147,7 @@ onMounted(async () => {
   ]).finally(() => {
     randomChatSettingLoaded.value = true
     codeConnectLoaded.value = true
+    applyPendingInvite()
     shortFilmsLoaded.value = true
   })
 })
@@ -257,6 +261,26 @@ function copyCode() {
   navigator.clipboard.writeText(user.value.uniqueCode)
   copied.value = true
   setTimeout(() => copied.value = false, 2000)
+}
+
+async function shareMyInvite() {
+  await shareInviteCode(user.value?.uniqueCode, {
+    t,
+    inviterName: user.value?.name
+  })
+}
+
+function applyPendingInvite() {
+  const fromQuery = route.query.invite
+  const stored = sessionStorage.getItem('nexchat_pending_invite')
+  const code = normalizeInviteCode(
+    Array.isArray(fromQuery) ? fromQuery[0] : fromQuery || stored
+  )
+  if (!code || !codeConnectEnabled.value) return
+  sessionStorage.removeItem('nexchat_pending_invite')
+  codeInput.value = code
+  if (fromQuery) router.replace({ path: '/home', query: {} })
+  void connectByCode()
 }
 
 onUnmounted(() => {
@@ -386,12 +410,22 @@ const homePrimaryCompact = computed(
           type="button"
           class="home-profile__code"
           dir="ltr"
+          :title="t('share.shareInvite')"
           @click.prevent="copyCode"
         >
           <Hash :size="13" stroke-width="2" />
           <span>{{ user.uniqueCode }}</span>
           <Copy :size="13" stroke-width="2" />
           <span v-if="copied" class="home-profile__copied">{{ t('common.copiedShort') }}</span>
+        </button>
+        <button
+          v-if="user?.uniqueCode"
+          type="button"
+          class="home-profile__share"
+          :title="t('share.shareInvite')"
+          @click.prevent="shareMyInvite"
+        >
+          <Share2 :size="16" stroke-width="2" />
         </button>
       </RouterLink>
 
@@ -615,10 +649,7 @@ const homePrimaryCompact = computed(
 
 .home-header__title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 500;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .home-header__bell {
@@ -714,6 +745,20 @@ const homePrimaryCompact = computed(
   cursor: pointer;
   flex-shrink: 0;
   position: relative;
+}
+
+.home-profile__share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--surface-elevated, rgba(255, 255, 255, 0.08));
+  color: var(--primary);
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .home-profile__copied {

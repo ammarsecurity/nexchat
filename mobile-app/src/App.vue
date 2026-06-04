@@ -12,6 +12,9 @@ import UpdateRequiredModal from './components/UpdateRequiredModal.vue'
 import LoaderOverlay from './components/LoaderOverlay.vue'
 import AppToast from './components/AppToast.vue'
 import AppTabBar from './components/AppTabBar.vue'
+import AppSidebar from './components/AppSidebar.vue'
+import { useLayoutMode } from './composables/useLayoutMode'
+import { useAppNav } from './composables/useAppNav'
 import { useApiLoadingStore } from './stores/apiLoading'
 import { checkUpdateRequired } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
@@ -31,6 +34,7 @@ import {
   parseVideoCallAcceptedPayload
 } from './utils/incomingSignalrPayload'
 import { useI18n } from 'vue-i18n'
+import { initDeepLinks } from './services/deepLinks'
 
 const { t } = useI18n()
 const network = useNetworkStore()
@@ -75,6 +79,13 @@ const activeCall = useActiveCallStore()
 const userAvatarOverrides = useUserAvatarOverridesStore()
 const convStore = useConversationStore()
 const storiesStore = useStoriesStore()
+const { isDesktop } = useLayoutMode()
+const { showTabBar: showMobileTabBar } = useAppNav()
+
+const showTabBar = computed(() => {
+  if (!auth.token || isDesktop.value) return false
+  return showMobileTabBar.value
+})
 
 function handleOnline() {
   network.setOnline(true)
@@ -262,12 +273,6 @@ watch([() => network.isOnline, () => auth.token], ([online, token]) => {
   }
 }, { immediate: true })
 
-const showTabBar = computed(() => {
-  if (!auth.token) return false
-  const paths = ['/home', '/conversations', '/settings', '/short-films']
-  return paths.includes(route.path)
-})
-
 // الصفحات الرئيسية: الضغط على الرجوع لا يخرج التطبيق
 const tabRoots = ['/', '/onboarding', '/login', '/register', '/home', '/matching', '/conversations', '/settings', '/short-films']
 
@@ -287,6 +292,8 @@ onMounted(() => {
   matchingHub.onreconnected(() => {
     if (auth.token) setupMatchingHubListeners()
   })
+
+  initDeepLinks(router)
 
   if (Capacitor.isNativePlatform() && typeof App?.addListener === 'function') {
     App.addListener('appStateChange', ({ isActive }) => {
@@ -322,16 +329,17 @@ onUnmounted(() => {
           {{ t('noConnection.retry') }}
         </button>
       </div>
+      <AppSidebar v-if="auth.token && isDesktop" />
       <div
         class="app-content"
-        :class="{ 'has-offline-banner': !isOnline, 'has-tab-bar': showTabBar && auth.token }"
+        :class="{ 'has-offline-banner': !isOnline, 'has-tab-bar': showTabBar }"
       >
-      <RouterView v-slot="{ Component }">
-        <Transition name="page" mode="out-in">
-          <component :is="Component" />
-        </Transition>
-      </RouterView>
-      <AppTabBar v-if="auth.token" />
+        <RouterView v-slot="{ Component }">
+          <Transition name="page" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
+        <AppTabBar v-if="auth.token && !isDesktop" />
       </div>
     </template>
     <IncomingConnectionRequestDialog v-if="auth.token" />

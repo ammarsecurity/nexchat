@@ -99,7 +99,7 @@ function onBack() {
   min-width: 0;
   margin: 0;
   font-size: var(--top-title-size);
-  font-weight: 800;
+  font-weight: var(--top-title-weight);
   color: var(--text-primary);
   line-height: 1.25;
   text-align: start;

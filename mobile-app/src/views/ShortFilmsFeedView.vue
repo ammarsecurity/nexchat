@@ -5,7 +5,7 @@ import { X, ChevronUp, ChevronDown, Volume2, VolumeX, Eye, Share2, Play, Pause }
 import { useI18n } from 'vue-i18n'
 import { useShortFilmsStore } from '../stores/shortFilms'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
-import { buildShortFilmShareMessage } from '../utils/shortFilmShare'
+import { shareShortFilmPublic } from '../utils/shareExternal'
 import {
   prefetchAround,
   resolveVideoPlaybackUrl,
@@ -325,15 +325,9 @@ function closeFeed() {
   router.back()
 }
 
-function shareFilm(film) {
+async function shareFilm(film) {
   if (!film) return
-  router.push({
-    path: '/share-message',
-    state: {
-      shareMessage: buildShortFilmShareMessage(film),
-      returnPath: `/short-films/watch?start=${film.id}`
-    }
-  })
+  await shareShortFilmPublic(film, { t })
 }
 
 onMounted(async () => {

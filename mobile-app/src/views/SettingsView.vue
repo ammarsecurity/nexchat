@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { LogOut, Pencil, Image, Upload, X, Trash2, Shield, ScrollText, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye, ChevronRight } from 'lucide-vue-next'
+import { LogOut, Pencil, Image, Upload, X, Trash2, Shield, ScrollText, Copy, MessageCircle, Sun, Moon, AlertCircle, Bell, Camera, Mic, Hash, Globe, BookmarkPlus, Send, Crown, Calendar, Download, RefreshCw, Ban, Eye, ChevronRight, Share2 } from 'lucide-vue-next'
+import { shareInviteCode } from '../utils/shareExternal'
 import { useAuthStore } from '../stores/auth'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -176,6 +177,13 @@ function copyCode() {
     copiedCode.value = true
     setTimeout(() => { copiedCode.value = false }, 2000)
   }
+}
+
+async function shareInviteLink() {
+  await shareInviteCode(user.value?.uniqueCode, {
+    t,
+    inviterName: user.value?.name
+  })
 }
 
 async function openSupportChat() {
@@ -399,6 +407,9 @@ onMounted(() => {
         <button type="button" class="profile-code-copy-btn" :title="copiedCode ? t('common.copied') : t('common.copy')" @click.stop="copyCode">
           <Copy v-if="!copiedCode" :size="16" stroke-width="2" />
           <span v-else class="copied-text">{{ t('common.copiedShort') }}</span>
+        </button>
+        <button type="button" class="profile-code-copy-btn" :title="t('share.shareInvite')" @click.stop="shareInviteLink">
+          <Share2 :size="16" stroke-width="2" />
         </button>
       </div>
 
