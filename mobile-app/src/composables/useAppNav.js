@@ -1,6 +1,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../stores/auth'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import { getShortFilmsEnabled } from '../services/siteContentFlags'
@@ -52,7 +53,8 @@ export function useAppNav() {
   }
 
   onMounted(async () => {
-    msgReqStore.fetchPendingCount()
+    const auth = useAuthStore()
+    if (auth.token) msgReqStore.fetchPendingCount()
     shortFilmsEnabled.value = await getShortFilmsEnabled(api)
   })
 

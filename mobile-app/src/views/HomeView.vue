@@ -1059,7 +1059,7 @@ const homePrimaryCompact = computed(
 }
 
 
-/* Logout confirm dialog */
+/* Logout / notification / profile modals */
 .logout-overlay {
   position: absolute;
   inset: 0;
@@ -1068,6 +1068,14 @@ const homePrimaryCompact = computed(
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
   z-index: 200;
+}
+
+@media (min-width: 1024px) {
+  .logout-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+  }
 }
 .logout-dialog {
   margin: var(--spacing);

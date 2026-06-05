@@ -6,7 +6,7 @@ import router from './router'
 import { i18n } from './i18n'
 import { useThemeStore } from './stores/theme'
 import { useLocaleStore } from './stores/locale'
-import { initNotifications, clearUser } from './services/notifications'
+import { initNotifications, canUseNotifications } from './services/notifications'
 import './assets/main.css'
 
 const pinia = createPinia()
@@ -44,9 +44,10 @@ app.mount('#app')
       await auth.fetchProfileContactStatus()
     }
     const user = JSON.parse(userStr)
-    if (user?.id) {
-      const granted = await initNotifications(user.id)
-      if (!granted) auth.shouldPromptNotifications = true
+    if (user?.id && canUseNotifications()) {
+      void initNotifications(user.id).then((granted) => {
+        if (!granted) auth.shouldPromptNotifications = true
+      })
     }
   } catch {}
 })()

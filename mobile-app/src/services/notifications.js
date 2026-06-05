@@ -1,6 +1,6 @@
 /**
  * OneSignal Push Notifications Service
- * يعمل فقط على المنصة الأصلية (Capacitor)
+ * يعمل على تطبيق Capacitor الأصلي، وعلى الويب فقط عند HTTPS أو localhost.
  */
 import { Capacitor } from '@capacitor/core'
 import { getActivePinia } from 'pinia'
@@ -10,26 +10,191 @@ import { useMatchingStore } from '../stores/matching'
 import { startIncomingCallSound } from '../utils/sounds'
 
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || ''
+const ONESIGNAL_WEB_APP_ID = import.meta.env.VITE_ONESIGNAL_WEB_APP_ID || ONESIGNAL_APP_ID
+const ONESIGNAL_WEB_PUSH_ENABLED = import.meta.env.VITE_ONESIGNAL_WEB_PUSH_ENABLED === 'true'
+const ONESIGNAL_SAFARI_WEB_ID = import.meta.env.VITE_ONESIGNAL_SAFARI_WEB_ID || ''
+const ONESIGNAL_NOTIFY_BUTTON_ENABLED = import.meta.env.VITE_ONESIGNAL_NOTIFY_BUTTON_ENABLED === 'true'
 const STORAGE_KEY = 'nexchat_notifications'
+const WEB_PUSH_UNAVAILABLE_KEY = 'nexchat_web_push_unavailable'
 let initializedUserId = null
 let listenersBound = false
+let webSdkLoadingPromise = null
+let webInitPromise = null
+let webInitialized = false
+let webInitFailed = false
+let userClearing = false
+
+const notificationApiOpts = { skipUnauthorizedEvent: true, skipGlobalLoader: true }
+const ONESIGNAL_LOGIN_TIMEOUT_MS = 8000
 
 function isNative() {
   return Capacitor.isNativePlatform() && typeof window.cordova !== 'undefined'
+}
+
+function isLocalhost() {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+}
+
+function isSecureWebOrigin() {
+  return window.location.protocol === 'https:' || isLocalhost()
+}
+
+function isWebPushSupported() {
+  return !isNative() &&
+    isSecureWebOrigin() &&
+    'Notification' in window &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window
+}
+
+function isWebPushUnavailable() {
+  try {
+    return sessionStorage.getItem(WEB_PUSH_UNAVAILABLE_KEY) === '1'
+  } catch {
+    return webInitFailed
+  }
+}
+
+function markWebPushUnavailable() {
+  webInitFailed = true
+  webInitPromise = null
+  try {
+    sessionStorage.setItem(WEB_PUSH_UNAVAILABLE_KEY, '1')
+  } catch {}
+}
+
+function isWebPushConfigurationError(err) {
+  const msg = String(err?.message || err || '').toLowerCase()
+  return (
+    msg.includes('not configured for web push') ||
+    msg.includes('web push is not configured') ||
+    (msg.includes('web push') && msg.includes('not configured'))
+  )
+}
+
+function hasWebPushConfig() {
+  return ONESIGNAL_WEB_PUSH_ENABLED && !!ONESIGNAL_WEB_APP_ID && !isWebPushUnavailable()
+}
+
+export function canUseNotifications() {
+  return isNative() || (isWebPushSupported() && hasWebPushConfig())
+}
+
+/** True when web push was explicitly enabled in env (even if currently unavailable). */
+export function isWebPushEnabledInEnv() {
+  return ONESIGNAL_WEB_PUSH_ENABLED && !!ONESIGNAL_WEB_APP_ID
 }
 
 function getOneSignal() {
   return window.plugins?.OneSignal || null
 }
 
+function getWebOneSignalInitOptions() {
+  const options = {
+    appId: ONESIGNAL_WEB_APP_ID,
+    allowLocalhostAsSecureOrigin: true,
+    serviceWorkerPath: 'OneSignalSDKWorker.js',
+    serviceWorkerParam: { scope: '/' },
+    welcomeNotification: { disable: true },
+    notifyButton: {
+      enable: ONESIGNAL_NOTIFY_BUTTON_ENABLED
+    }
+  }
+  if (ONESIGNAL_SAFARI_WEB_ID) options.safari_web_id = ONESIGNAL_SAFARI_WEB_ID
+  return options
+}
+
+async function loadWebSdk() {
+  window.OneSignalDeferred = window.OneSignalDeferred || []
+  if (!webSdkLoadingPromise) {
+    webSdkLoadingPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-onesignal-web-sdk]')
+      if (existing) {
+        existing.addEventListener('load', resolve, { once: true })
+        existing.addEventListener('error', reject, { once: true })
+        return
+      }
+      const script = document.createElement('script')
+      script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'
+      script.defer = true
+      script.dataset.onesignalWebSdk = 'true'
+      script.onload = resolve
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  }
+  await webSdkLoadingPromise
+}
+
+async function withWebOneSignal(callback) {
+  if (!isWebPushSupported() || !hasWebPushConfig()) return null
+  try {
+    await loadWebSdk()
+  } catch (e) {
+    markWebPushUnavailable()
+    if (import.meta.env.DEV) console.info('OneSignal web SDK load skipped:', e?.message || e)
+    return null
+  }
+  window.OneSignalDeferred = window.OneSignalDeferred || []
+  return new Promise((resolve) => {
+    window.OneSignalDeferred.push(async (OneSignal) => {
+      try {
+        if (!webInitPromise && !webInitialized) {
+          webInitPromise = OneSignal.init(getWebOneSignalInitOptions()).then(() => {
+            bindWebOneSignalListeners(OneSignal)
+            webInitialized = true
+          })
+        }
+        if (webInitPromise) await webInitPromise
+        resolve(await callback(OneSignal))
+      } catch (e) {
+        if (/already initialized/i.test(e?.message || '')) {
+          webInitialized = true
+          webInitPromise = null
+          try {
+            resolve(await callback(OneSignal))
+            return
+          } catch (callbackError) {
+            if (import.meta.env.DEV) console.info('OneSignal web callback skipped:', callbackError?.message || callbackError)
+            resolve(null)
+            return
+          }
+        }
+        if (isWebPushConfigurationError(e)) {
+          markWebPushUnavailable()
+          if (import.meta.env.DEV) {
+            console.info(
+              'OneSignal web push is disabled: configure Web Push in OneSignal dashboard ' +
+                '(Settings → Platforms → Web) or set VITE_ONESIGNAL_WEB_PUSH_ENABLED=false'
+            )
+          }
+          resolve(null)
+          return
+        }
+        webInitFailed = true
+        webInitPromise = null
+        if (import.meta.env.DEV) console.warn('OneSignal web error:', e)
+        resolve(null)
+      }
+    })
+  })
+}
+
 /**
- * تهيئة OneSignal وربط المستخدم
- * يطلب الإذن فوراً ويشترك تلقائياً لضمان وصول الإشعارات.
+ * تهيئة OneSignal وربط المستخدم.
+ * لا تُحجِب تسجيل الدخول — استخدم promptPermission: true فقط عند طلب صريح من المستخدم.
  * @param {string} userId
- * @returns {Promise<boolean>} true إذا تم منح الإذن
+ * @param {{ promptPermission?: boolean }} [options]
+ * @returns {Promise<boolean>} true إذا الإشعارات مفعّلة
  */
-export async function initNotifications(userId) {
-  if (!isNative() || !ONESIGNAL_APP_ID || !userId) return false
+export async function initNotifications(userId, options = {}) {
+  const { promptPermission = false } = options
+  if (!isNative()) {
+    if (!canUseNotifications() || !userId) return false
+    const result = await initWebNotifications(userId, { promptPermission })
+    return result === true
+  }
+  if (!ONESIGNAL_APP_ID || !userId) return false
 
   const OneSignal = getOneSignal()
   if (!OneSignal) return false
@@ -59,6 +224,58 @@ export async function initNotifications(userId) {
   }
 }
 
+async function linkWebOneSignalUser(OneSignal, userId) {
+  const nextUserId = String(userId)
+  let currentExternalId = OneSignal.User?.externalId
+  if (!currentExternalId && typeof OneSignal.User?.getExternalId === 'function') {
+    try {
+      currentExternalId = await OneSignal.User.getExternalId()
+    } catch {}
+  }
+
+  if (currentExternalId === nextUserId) {
+    initializedUserId = nextUserId
+    return
+  }
+
+  if (currentExternalId && currentExternalId !== nextUserId) {
+    await OneSignal.logout()
+  }
+
+  if (initializedUserId !== nextUserId || !currentExternalId) {
+    // 409 in Network tab is expected when userId already exists in OneSignal — do not block login.
+    await Promise.race([
+      OneSignal.login(nextUserId),
+      new Promise((resolve) => setTimeout(resolve, ONESIGNAL_LOGIN_TIMEOUT_MS))
+    ])
+    initializedUserId = nextUserId
+  }
+}
+
+async function initWebNotifications(userId, { promptPermission = false } = {}) {
+  if (!isWebPushSupported() || !hasWebPushConfig() || !userId) return false
+
+  return await withWebOneSignal(async (OneSignal) => {
+    await linkWebOneSignalUser(OneSignal, userId)
+
+    const syncIfGranted = async () => {
+      await OneSignal.User.PushSubscription.optIn()
+      await registerWebWithBackend(OneSignal)
+    }
+
+    if (Notification.permission === 'granted') {
+      await syncIfGranted()
+      return true
+    }
+
+    if (!promptPermission) return false
+
+    const granted = await OneSignal.Notifications.requestPermission()
+    if (granted) await syncIfGranted()
+    return granted
+  }) === true
+}
+
 /**
  * انتظار جاهزية subscription id - قد لا يكون متاحاً فوراً بعد requestPermission.
  * يعيد المحاولة كل ثانية حتى يصبح الـ id جاهزاً (حد أقصى 15 ثانية).
@@ -82,10 +299,36 @@ async function registerWithBackend() {
   try {
     const id = await waitForSubscriptionId(OneSignal)
     if (id) {
-      await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() })
+      await api.post('/notifications/register', { playerId: id, platform: Capacitor.getPlatform() }, notificationApiOpts)
     }
   } catch (e) {
     console.warn('Register push error:', e)
+  }
+}
+
+async function registerWebWithBackend(OneSignal) {
+  if (!isWebPushSupported()) return
+  try {
+    const id = await waitForSubscriptionId(OneSignal, 15000)
+    if (id) {
+      await api.post('/notifications/register', { playerId: id, platform: 'web' }, notificationApiOpts)
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('Register web push error:', e)
+  }
+}
+
+async function unregisterWebWithBackend(OneSignal) {
+  if (!isWebPushSupported()) return
+  if (!localStorage.getItem('nexchat_token')) return
+  try {
+    const id = OneSignal.User?.PushSubscription?.id
+      ?? await OneSignal.User.pushSubscription.getIdAsync().catch(() => null)
+    if (id) {
+      await api.post('/notifications/unregister', { playerId: id, platform: 'web' }, notificationApiOpts)
+    }
+  } catch {
+    /* token may be invalid or already removed */
   }
 }
 
@@ -95,9 +338,11 @@ async function unregisterWithBackend() {
   if (!OneSignal) return
   try {
     const id = await waitForSubscriptionId(OneSignal, 3000)
-    if (id) await api.post('/notifications/unregister', { playerId: id, platform: Capacitor.getPlatform() })
-  } catch (e) {
-    console.warn('Unregister push error:', e)
+    if (id) {
+      await api.post('/notifications/unregister', { playerId: id, platform: Capacitor.getPlatform() }, notificationApiOpts)
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -105,10 +350,14 @@ async function unregisterWithBackend() {
  * إعادة محاولة التسجيل في الـ backend (للمستخدمين الجدد - يعطى فرصة ثانية عند فتح الصفحة الرئيسية)
  */
 export function scheduleRegistrationRetry() {
-  if (!isNative()) return
+  if (!canUseNotifications()) return
   setTimeout(() => {
-    const OneSignal = getOneSignal()
-    if (OneSignal) registerWithBackend()
+    if (isNative()) {
+      const OneSignal = getOneSignal()
+      if (OneSignal) registerWithBackend()
+      return
+    }
+    withWebOneSignal((OneSignal) => registerWebWithBackend(OneSignal))
   }, 4000)
 }
 
@@ -116,6 +365,17 @@ export function scheduleRegistrationRetry() {
  * طلب إذن الإشعارات والتسجيل في الـ backend (يُستدعى بعد الطلب المخصص)
  */
 export async function requestPermissionAndRegister() {
+  if (!canUseNotifications()) return false
+  if (!isNative()) {
+    return await withWebOneSignal(async (OneSignal) => {
+      const granted = await OneSignal.Notifications.requestPermission()
+      if (!granted) return false
+      await OneSignal.User.PushSubscription.optIn()
+      await registerWebWithBackend(OneSignal)
+      localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, '1')
+      return true
+    }) === true
+  }
   if (!isNative()) return false
   const OneSignal = getOneSignal()
   if (!OneSignal) return false
@@ -133,17 +393,29 @@ export async function requestPermissionAndRegister() {
 /**
  * إلغاء ربط المستخدم عند تسجيل الخروج
  */
-export function clearUser() {
-  if (!isNative()) return
+export async function clearUser() {
+  if (userClearing) return
+  userClearing = true
+  try {
+    if (!isNative()) {
+      await withWebOneSignal(async (OneSignal) => {
+        await unregisterWebWithBackend(OneSignal)
+        await OneSignal.logout()
+      })
+      return
+    }
 
-  const OneSignal = getOneSignal()
-  if (OneSignal) {
-    try {
-      unregisterWithBackend()
-      OneSignal.logout()
-    } catch {}
+    const OneSignal = getOneSignal()
+    if (OneSignal) {
+      try {
+        await unregisterWithBackend()
+        OneSignal.logout()
+      } catch {}
+    }
+  } finally {
+    initializedUserId = null
+    userClearing = false
   }
-  initializedUserId = null
 }
 
 function pickField(obj, ...keys) {
@@ -337,6 +609,14 @@ const NOTIFICATIONS_ENABLED_KEY = 'nexchat_notifications_enabled'
  * تفعيل الإشعارات
  */
 export function optInNotifications() {
+  if (!isNative()) {
+    withWebOneSignal(async (OneSignal) => {
+      await OneSignal.User.PushSubscription.optIn()
+      await registerWebWithBackend(OneSignal)
+      localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, '1')
+    })
+    return
+  }
   if (!isNative()) return
   const OneSignal = getOneSignal()
   if (OneSignal) {
@@ -351,6 +631,14 @@ export function optInNotifications() {
  * إلغاء تفعيل الإشعارات
  */
 export function optOutNotifications() {
+  if (!isNative()) {
+    withWebOneSignal(async (OneSignal) => {
+      await unregisterWebWithBackend(OneSignal)
+      await OneSignal.User.PushSubscription.optOut()
+      localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, '0')
+    })
+    return
+  }
   if (!isNative()) return
   const OneSignal = getOneSignal()
   if (OneSignal) {
@@ -365,6 +653,14 @@ export function optOutNotifications() {
  * التحقق من حالة تفعيل الإشعارات
  */
 export async function getNotificationsEnabled() {
+  if (!isNative()) {
+    if (!canUseNotifications()) return false
+    const enabled = await withWebOneSignal(async (OneSignal) => {
+      return OneSignal.Notifications.permission &&
+        OneSignal.User.PushSubscription.optedIn !== false
+    })
+    return enabled === true
+  }
   if (!isNative()) return false
   const OneSignal = getOneSignal()
   if (!OneSignal) return false
@@ -373,6 +669,25 @@ export async function getNotificationsEnabled() {
   } catch {
     return localStorage.getItem(NOTIFICATIONS_ENABLED_KEY) !== '0'
   }
+}
+
+function bindWebOneSignalListeners(OneSignal) {
+  if (listenersBound) return
+  listenersBound = true
+
+  OneSignal.Notifications.addEventListener('click', (event) => {
+    const notif = event?.notification
+    const data = notif?.additionalData || {}
+    const item = buildStoreItem(data, { title: notif?.title, body: notif?.body }, true)
+    addToStore(item)
+    navigateFromNotification(item)
+  })
+
+  OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+    const notif = event?.notification
+    const data = notif?.additionalData || {}
+    addToStore(buildStoreItem(data, { title: notif?.title, body: notif?.body }, false))
+  })
 }
 
 function bindOneSignalListeners(OneSignal) {

@@ -543,15 +543,6 @@ async function markAllRead() {
       class="conv-fab-wrap"
       :class="{ 'is-open': fabOpen, 'conv-fab-wrap--pane': props.paneMode }"
     >
-      <Transition name="fab-fade">
-        <button
-          v-if="fabOpen"
-          type="button"
-          class="conv-fab-backdrop"
-          :aria-label="t('common.cancel')"
-          @click="fabOpen = false"
-        />
-      </Transition>
       <Transition name="fab-menu">
         <div v-if="fabOpen" class="conv-fab-menu" role="menu">
           <button
@@ -560,10 +551,10 @@ async function markAllRead() {
             role="menuitem"
             @click="goToCreateGroupFromFab"
           >
+            <span class="conv-fab-menu-label">{{ t('conversations.newGroup') }}</span>
             <span class="conv-fab-menu-icon conv-fab-menu-icon--group">
               <UsersRound :size="20" />
             </span>
-            <span class="conv-fab-menu-label">{{ t('conversations.newGroup') }}</span>
           </button>
           <button
             type="button"
@@ -571,10 +562,10 @@ async function markAllRead() {
             role="menuitem"
             @click="goToContacts"
           >
+            <span class="conv-fab-menu-label">{{ t('conversations.newChat') }}</span>
             <span class="conv-fab-menu-icon conv-fab-menu-icon--chat">
               <MessageCircle :size="20" />
             </span>
-            <span class="conv-fab-menu-label">{{ t('conversations.newChat') }}</span>
           </button>
         </div>
       </Transition>
@@ -1686,14 +1677,14 @@ html.light .conversations--wa .context-btn,
 /* زر عائم — رسالة جديدة */
 .conv-fab-wrap {
   position: fixed;
-  left: max(16px, var(--spacing));
-  right: auto;
+  inset-inline-end: max(16px, var(--spacing));
+  inset-inline-start: auto;
   bottom: calc(28px + var(--tab-bar-clearance));
   z-index: 90;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: flex-end;
+  gap: 10px;
   pointer-events: none;
 }
 
@@ -1701,31 +1692,19 @@ html.light .conversations--wa .context-btn,
   pointer-events: auto;
 }
 
-.conv-fab-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  border: none;
-  padding: 0;
-  margin: 0;
-  background: rgba(0, 0, 0, 0.35);
-  cursor: default;
-  -webkit-tap-highlight-color: transparent;
-}
-
 .conv-fab-menu {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .conv-fab-menu-item {
   display: flex;
   flex-direction: row;
-  direction: ltr;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   padding: 0;
   border: none;
@@ -1741,16 +1720,15 @@ html.light .conversations--wa .context-btn,
 
 .conv-fab-menu-label {
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-card);
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-sm);
   white-space: nowrap;
-  direction: rtl;
-  text-align: right;
+  text-align: start;
 }
 
 .conv-fab-menu-icon {
@@ -1804,23 +1782,20 @@ html.light .conversations--wa .context-btn,
   transform: scale(0.96);
 }
 
-.fab-fade-enter-active,
-.fab-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.fab-fade-enter-from,
-.fab-fade-leave-to {
-  opacity: 0;
-}
-
 .fab-menu-enter-active,
 .fab-menu-leave-active {
   transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
 }
+
 .fab-menu-enter-from,
 .fab-menu-leave-to {
   opacity: 0;
-  transform: translateY(12px) scale(0.92);
+  transform: translateY(10px) scale(0.94);
+  transform-origin: bottom right;
+}
+
+[dir='rtl'] .fab-menu-enter-from,
+[dir='rtl'] .fab-menu-leave-to {
   transform-origin: bottom left;
 }
 
@@ -1829,7 +1804,7 @@ html.light .conv-fab-menu-label,
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
-/* ديسكتوب: FAB داخل عمود القائمة وليس أسفل الشاشة كاملة */
+/* ديسكتوب: FAB داخل عمود القائمة */
 @media (min-width: 1024px) {
   .conversations--pane .scroll-area {
     padding-bottom: 88px;
@@ -1837,39 +1812,16 @@ html.light .conv-fab-menu-label,
 
   .conversations--pane .conv-fab-wrap {
     position: absolute;
-    left: auto;
-    right: auto;
     inset-inline-end: var(--spacing-lg);
     inset-inline-start: auto;
     bottom: 20px;
     z-index: 30;
   }
-
-  .conversations--pane .conv-fab-backdrop {
-    position: absolute;
-    inset: 0;
-    border-radius: 0;
-  }
-
-  .conversations--pane .conv-fab-menu {
-    align-items: flex-end;
-    margin-bottom: 6px;
-  }
-
-  .conversations--pane .fab-menu-enter-from,
-  .conversations--pane .fab-menu-leave-to {
-    transform-origin: bottom right;
-  }
-
-  html[dir='rtl'] .conversations--pane .fab-menu-enter-from,
-  html[dir='rtl'] .conversations--pane .fab-menu-leave-to {
-    transform-origin: bottom left;
-  }
 }
 
 @media (max-width: 420px) {
   .conv-fab-wrap {
-    left: 14px;
+    inset-inline-end: 14px;
     bottom: calc(24px + var(--tab-bar-clearance));
   }
   .conv-fab-main {

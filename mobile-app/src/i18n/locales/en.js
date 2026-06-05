@@ -147,7 +147,7 @@ export default {
     chooseImage: 'Choose image',
     uploading: 'Uploading...',
     maxSize: 'Max 5 MB • JPG, PNG, GIF',
-    notifWebOnly: 'Available on Android/iOS app only',
+    notifWebOnly: 'Available on Android/iOS or HTTPS/localhost only',
     language: 'Language',
     birthDate: 'Date of birth',
     birthDateNotSet: 'Not set',

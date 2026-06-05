@@ -91,7 +91,7 @@ const profileCoverUrl = computed(() => {
 const coverImageSrc = computed(() => {
   if (coverImgError.value) return DEFAULT_COVER_URL
   const url = profileCoverUrl.value
-  if (url && isImageUrl(url)) return ensureAbsoluteUrl(url)
+  if (url && isImageAvatar(url)) return ensureAbsoluteUrl(url)
   return DEFAULT_COVER_URL
 })
 

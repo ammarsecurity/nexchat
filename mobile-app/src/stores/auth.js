@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { Capacitor } from '@capacitor/core'
 import api from '../services/api'
-import { initNotifications, clearUser } from '../services/notifications'
+import { initNotifications, clearUser, canUseNotifications } from '../services/notifications'
 import { clearUserCache } from '../services/cache'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -47,10 +46,10 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('nexchat_user', JSON.stringify(user.value))
     localStorage.setItem('nexchat_needs_profile_contact', needs ? '1' : '0')
 
-    const isNative = Capacitor.isNativePlatform() && typeof window.cordova !== 'undefined'
-    if (isNative) {
-      const granted = await initNotifications(data.userId)
-      if (!granted) shouldPromptNotifications.value = true
+    if (canUseNotifications()) {
+      void initNotifications(data.userId).then((granted) => {
+        if (!granted) shouldPromptNotifications.value = true
+      })
     }
 
     // Sync avatar from backend on login/register
@@ -69,8 +68,8 @@ export const useAuthStore = defineStore('auth', () => {
     try { await api.put('/user/avatar', { avatar: val }) } catch {}
   }
 
-  function logout() {
-    clearUser()
+  async function logout() {
+    await clearUser()
     clearUserCache()
     token.value = ''
     user.value = null

@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../stores/auth'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import { publicUrl } from '../utils/publicUrl'
 
 const listStore = useConversationsListStore()
 const msgReqStore = useMessageRequestsStore()
+const auth = useAuthStore()
 const totalUnread = computed(() => {
   return listStore.list.reduce((sum, c) => {
     const n = c?.unreadCount ?? c?.UnreadCount ?? 0
@@ -15,7 +17,7 @@ const totalUnread = computed(() => {
 })
 
 onMounted(() => {
-  msgReqStore.fetchPendingCount()
+  if (auth.token) msgReqStore.fetchPendingCount()
 })
 
 const props = defineProps({

@@ -6,8 +6,15 @@ export const useMessageRequestsStore = defineStore('messageRequests', () => {
   const pendingCount = ref(0)
 
   async function fetchPendingCount() {
+    if (!localStorage.getItem('nexchat_token')) {
+      pendingCount.value = 0
+      return
+    }
     try {
-      const { data } = await api.get('/message-requests/pending-count', { skipGlobalLoader: true })
+      const { data } = await api.get('/message-requests/pending-count', {
+        skipGlobalLoader: true,
+        skipUnauthorizedEvent: true
+      })
       pendingCount.value = typeof data === 'number' ? data : parseInt(data, 10) || 0
     } catch {
       pendingCount.value = 0

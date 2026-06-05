@@ -10,13 +10,23 @@ namespace NexChat.API.Controllers;
 [ApiController]
 public class ShareController(AppDbContext db, IConfiguration config) : ControllerBase
 {
-    private string PublicOrigin =>
+    private string FrontendOrigin =>
         (config["PublicApp:BaseUrl"] ?? config["App:PublicUrl"] ?? "").TrimEnd('/');
 
-    private string ResolveOrigin()
+    private string ShareOrigin =>
+        (config["PublicApp:ShareBaseUrl"] ?? config["Media:BaseUrl"] ?? "").TrimEnd('/');
+
+    private string ResolveFrontendOrigin()
     {
-        if (!string.IsNullOrWhiteSpace(PublicOrigin))
-            return PublicOrigin;
+        if (!string.IsNullOrWhiteSpace(FrontendOrigin))
+            return FrontendOrigin;
+        return ResolveShareOrigin();
+    }
+
+    private string ResolveShareOrigin()
+    {
+        if (!string.IsNullOrWhiteSpace(ShareOrigin))
+            return ShareOrigin;
         return $"{Request.Scheme}://{Request.Host}";
     }
 
@@ -29,7 +39,7 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
         if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             return pathOrUrl;
-        var origin = ResolveOrigin();
+        var origin = ResolveShareOrigin();
         return pathOrUrl.StartsWith('/') ? $"{origin}{pathOrUrl}" : $"{origin}/{pathOrUrl}";
     }
 
@@ -46,8 +56,9 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
             .Select(u => new { u.Name, u.Avatar })
             .FirstOrDefaultAsync();
 
-        var origin = ResolveOrigin();
-        var appHash = $"{origin}/#/join/{Uri.EscapeDataString(code)}";
+        var origin = ResolveShareOrigin();
+        var appOrigin = ResolveFrontendOrigin();
+        var appHash = $"{appOrigin}/#/join/{Uri.EscapeDataString(code)}";
         var title = user?.Name != null
             ? $"انضم إلى {user.Name} على NexChat"
             : "انضم إلى NexChat";
@@ -67,8 +78,9 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
             .FirstOrDefaultAsync(f => f.Id == id && f.IsActive);
         if (film == null) return NotFound();
 
-        var origin = ResolveOrigin();
-        var appHash = $"{origin}/#/short-films/watch?start={id}";
+        var origin = ResolveShareOrigin();
+        var appOrigin = ResolveFrontendOrigin();
+        var appHash = $"{appOrigin}/#/short-films/watch?start={id}";
         var title = string.IsNullOrWhiteSpace(film.Title) ? "فيلم قصير على NexChat" : film.Title;
         var desc = string.IsNullOrWhiteSpace(film.Description)
             ? "شاهد هذا الفيلم القصير على NexChat"
@@ -89,8 +101,9 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
         var hasActive = await db.StorySlides.AsNoTracking()
             .AnyAsync(s => s.UserId == userId && s.ExpiresAt > DateTime.UtcNow);
 
-        var origin = ResolveOrigin();
-        var appHash = $"{origin}/#/stories/view/{userId}";
+        var origin = ResolveShareOrigin();
+        var appOrigin = ResolveFrontendOrigin();
+        var appHash = $"{appOrigin}/#/stories/view/{userId}";
         var title = $"ستوري {user.Name} على NexChat";
         var desc = hasActive
             ? $"شاهد ستوريات {user.Name} على NexChat"
@@ -112,14 +125,15 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
             .Select(u => new { u.Name, u.Avatar })
             .FirstOrDefaultAsync();
 
-        var origin = ResolveOrigin();
+        var shareOrigin = ResolveShareOrigin();
+        var appOrigin = ResolveFrontendOrigin();
         return Ok(new
         {
             code,
             name = user?.Name,
             avatarUrl = AbsoluteUrl(user?.Avatar),
-            webUrl = $"{origin}/join/{Uri.EscapeDataString(code)}",
-            appUrl = $"{origin}/#/join/{Uri.EscapeDataString(code)}"
+            webUrl = $"{shareOrigin}/join/{Uri.EscapeDataString(code)}",
+            appUrl = $"{appOrigin}/#/join/{Uri.EscapeDataString(code)}"
         });
     }
 
@@ -131,15 +145,16 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
             .FirstOrDefaultAsync(f => f.Id == id && f.IsActive);
         if (film == null) return NotFound();
 
-        var origin = ResolveOrigin();
+        var shareOrigin = ResolveShareOrigin();
+        var appOrigin = ResolveFrontendOrigin();
         return Ok(new
         {
             id = film.Id,
             title = film.Title,
             description = film.Description,
             thumbnailUrl = AbsoluteUrl(film.ThumbnailUrl),
-            webUrl = $"{origin}/share/film/{id}",
-            appUrl = $"{origin}/#/short-films/watch?start={id}"
+            webUrl = $"{shareOrigin}/share/film/{id}",
+            appUrl = $"{appOrigin}/#/short-films/watch?start={id}"
         });
     }
 
@@ -151,14 +166,15 @@ public class ShareController(AppDbContext db, IConfiguration config) : Controlle
             .FirstOrDefaultAsync(u => u.Id == userId && !u.IsBanned);
         if (user == null) return NotFound();
 
-        var origin = ResolveOrigin();
+        var shareOrigin = ResolveShareOrigin();
+        var appOrigin = ResolveFrontendOrigin();
         return Ok(new
         {
             userId = user.Id,
             name = user.Name,
             avatarUrl = AbsoluteUrl(user.Avatar),
-            webUrl = $"{origin}/share/story/{userId}",
-            appUrl = $"{origin}/#/stories/view/{userId}"
+            webUrl = $"{shareOrigin}/share/story/{userId}",
+            appUrl = $"{appOrigin}/#/stories/view/{userId}"
         });
     }
 

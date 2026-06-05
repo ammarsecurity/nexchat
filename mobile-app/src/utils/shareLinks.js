@@ -5,12 +5,17 @@ const API_ORIGIN = (() => {
   return base.replace(/\/api\/?$/, '')
 })()
 
-/** Base URL for share links (web + OG). Falls back to API host without /api. */
+/** SPA origin (hash routes) — e.g. https://web.nexchat.site */
 export function getPublicAppOrigin() {
   const configured = import.meta.env.VITE_PUBLIC_APP_URL
   if (configured && typeof configured === 'string') {
     return configured.replace(/\/$/, '')
   }
+  return API_ORIGIN
+}
+
+/** API host for OG share pages (/join, /share/film, …) */
+export function getShareApiOrigin() {
   return API_ORIGIN
 }
 
@@ -28,16 +33,13 @@ export function buildInvitePath(code) {
 }
 
 export function buildInviteUrl(code) {
-  const normalized = normalizeInviteCode(code)
-  if (!normalized) return `${getPublicAppOrigin()}/#/home`
-  const origin = getPublicAppOrigin()
-  return `${origin}/join/${encodeURIComponent(normalized)}`
+  return buildInviteWebUrl(code)
 }
 
 export function buildInviteWebUrl(code) {
   const normalized = normalizeInviteCode(code)
   if (!normalized) return getPublicAppOrigin()
-  return `${getPublicAppOrigin()}/join/${encodeURIComponent(normalized)}`
+  return `${getShareApiOrigin()}/join/${encodeURIComponent(normalized)}`
 }
 
 export function buildShortFilmSharePath(filmId) {
@@ -46,10 +48,9 @@ export function buildShortFilmSharePath(filmId) {
 }
 
 export function buildShortFilmShareUrl(filmId) {
-  const origin = getPublicAppOrigin()
   const id = String(filmId || '').trim()
-  if (!id) return `${origin}/#/short-films`
-  return `${origin}/share/film/${encodeURIComponent(id)}`
+  if (!id) return `${getPublicAppOrigin()}/#/short-films`
+  return `${getShareApiOrigin()}/share/film/${encodeURIComponent(id)}`
 }
 
 export function buildStorySharePath(userId) {
@@ -58,10 +59,9 @@ export function buildStorySharePath(userId) {
 }
 
 export function buildStoryShareUrl(userId) {
-  const origin = getPublicAppOrigin()
   const id = String(userId || '').trim()
-  if (!id) return `${origin}/#/conversations`
-  return `${origin}/share/story/${encodeURIComponent(id)}`
+  if (!id) return `${getPublicAppOrigin()}/#/conversations`
+  return `${getShareApiOrigin()}/share/story/${encodeURIComponent(id)}`
 }
 
 export function buildAppHashUrl(path, query = {}) {

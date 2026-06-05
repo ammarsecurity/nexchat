@@ -18,7 +18,7 @@ import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { DEFAULT_COVER_URL } from '../utils/defaultCover'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
-import { optInNotifications, optOutNotifications, getNotificationsEnabled, requestPermissionAndRegister } from '../services/notifications'
+import { optInNotifications, optOutNotifications, getNotificationsEnabled, requestPermissionAndRegister, canUseNotifications } from '../services/notifications'
 import { Capacitor } from '@capacitor/core'
 import { fetchUpdateInfo } from '../services/updateCheck'
 import { matchingHub, conversationHub, storyHub, stopHub } from '../services/signalr'
@@ -58,7 +58,7 @@ const birthDateError = ref('')
 const mediaPermMessage = ref('')
 const mediaPermSuccess = ref(true)
 const notificationsEnabled = ref(true)
-const isNative = Capacitor.isNativePlatform()
+const notificationsSupported = canUseNotifications()
 const updateInfo = ref(null)
 const updateChecking = ref(false)
 const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.3'
@@ -67,19 +67,19 @@ const codeConnectFeaturesEnabled = ref(true)
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
 async function loadNotificationsState() {
-  if (isNative) {
+  if (notificationsSupported) {
     notificationsEnabled.value = await getNotificationsEnabled()
   }
 }
 
 async function enableNotifications() {
-  if (!isNative) return
+  if (!notificationsSupported) return
   await requestPermissionAndRegister()
   notificationsEnabled.value = true
 }
 
 function disableNotifications() {
-  if (!isNative) return
+  if (!notificationsSupported) return
   optOutNotifications()
   notificationsEnabled.value = false
 }
@@ -480,7 +480,7 @@ onMounted(() => {
         </button>
         <div class="notif-buttons-row">
           <span class="notif-label"><Bell :size="18" class="link-icon" /> {{ t('settings.notifications') }}</span>
-          <template v-if="isNative">
+          <template v-if="notificationsSupported">
             <div class="notif-btns">
               <button
                 class="notif-btn enable"

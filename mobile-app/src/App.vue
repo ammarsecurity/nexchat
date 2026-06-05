@@ -102,15 +102,23 @@ function retryConnection() {
   }
 }
 
-function handleUnauthorized() {
-  stopHub(matchingHub)
-  stopHub(conversationHub)
-  stopHub(storyHub)
-  incomingConvCall.clear()
-  matching.clearPendingRandomMatch()
-  stopIncomingCallSound()
-  useAuthStore().logout()
-  router.replace('/login')
+let unauthorizedHandling = false
+
+async function handleUnauthorized() {
+  if (unauthorizedHandling) return
+  unauthorizedHandling = true
+  try {
+    stopHub(matchingHub)
+    stopHub(conversationHub)
+    stopHub(storyHub)
+    incomingConvCall.clear()
+    matching.clearPendingRandomMatch()
+    stopIncomingCallSound()
+    await useAuthStore().logout()
+    await router.replace('/login')
+  } finally {
+    unauthorizedHandling = false
+  }
 }
 
 async function restartRandomSearch() {
@@ -334,9 +342,9 @@ onUnmounted(() => {
         class="app-content"
         :class="{ 'has-offline-banner': !isOnline, 'has-tab-bar': showTabBar }"
       >
-        <RouterView v-slot="{ Component }">
+        <RouterView v-slot="{ Component, route }">
           <Transition name="page" mode="out-in">
-            <component :is="Component" />
+            <component :is="Component" :key="route.fullPath" />
           </Transition>
         </RouterView>
         <AppTabBar v-if="auth.token && !isDesktop" />
@@ -364,8 +372,16 @@ onUnmounted(() => {
 .app-content {
   flex: 1;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   position: relative;
+}
+
+/* Route pages use position:absolute — keep pane filled during transitions */
+.app-content .page-enter-active,
+.app-content .page-leave-active {
+  width: 100%;
+  min-height: 100%;
 }
 
 .offline-banner {

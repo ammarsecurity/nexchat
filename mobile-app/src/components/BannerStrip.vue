@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
+import { useLayoutMode } from '../composables/useLayoutMode'
 
 const props = defineProps({
   placement: { type: String, required: true }
 })
+
+const { isDesktop } = useLayoutMode()
 
 const banners = ref([])
 const loading = ref(false)
@@ -24,6 +27,15 @@ const bannersDoubled = computed(() => {
   if (b.length === 1) return b
   return [...b, ...b]
 })
+
+/** Desktop: unique banners in a grid; mobile: duplicated strip for auto-scroll */
+const displayBanners = computed(() => {
+  const b = banners.value
+  if (!b.length) return []
+  return isDesktop.value ? b : bannersDoubled.value
+})
+
+const isSingleBanner = computed(() => banners.value.length === 1)
 
 async function fetchBanners() {
   loading.value = true
@@ -93,17 +105,32 @@ onUnmounted(() => {
 })
 watch(() => props.placement, fetchBanners)
 watch(bannersDoubled, (val) => {
-  if (val.length > 1) startTicker()
-  else stopTicker()
+  if (isDesktop.value || banners.value.length <= 1) stopTicker()
+  else if (val.length > 1) startTicker()
 }, { immediate: true })
+
+watch(isDesktop, (desktop) => {
+  if (desktop) stopTicker()
+  else if (banners.value.length > 1) startTicker()
+})
 </script>
 
 <template>
-  <div v-if="bannersDoubled.length" class="banner-strip" :class="{ 'single-banner': bannersDoubled.length === 1 }">
+  <div
+    v-if="displayBanners.length"
+    class="banner-strip"
+    :class="{
+      'single-banner': isSingleBanner,
+      'banner-strip--desktop': isDesktop
+    }"
+  >
     <div
       ref="scrollEl"
       class="banner-scroll"
-      :class="{ 'single-banner-scroll': bannersDoubled.length === 1 }"
+      :class="{
+        'single-banner-scroll': isSingleBanner,
+        'banner-scroll--desktop': isDesktop
+      }"
       @touchstart="onUserInteractionStart"
       @touchend="onUserInteractionEnd"
       @touchcancel="onUserInteractionEnd"
@@ -112,7 +139,7 @@ watch(bannersDoubled, (val) => {
       @mouseleave="onUserInteractionEnd"
     >
       <div
-        v-for="(b, i) in bannersDoubled"
+        v-for="(b, i) in displayBanners"
         :key="`${b.id}-${i}`"
         class="banner-item"
         :class="{ clickable: b.link }"
@@ -220,8 +247,63 @@ watch(bannersDoubled, (val) => {
 }
 
 @media (min-width: 1024px) {
-  .banner-item {
-    width: clamp(300px, 32vw, 440px);
+  .banner-strip.banner-strip--desktop {
+    width: 100%;
+    max-width: var(--content-max, 1200px);
+    margin-inline: auto;
+    margin-block: var(--spacing-lg) var(--spacing);
+    padding-inline: var(--spacing);
+  }
+
+  .banner-strip.banner-strip--desktop.single-banner {
+    display: block;
+  }
+
+  .banner-scroll.banner-scroll--desktop {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+    gap: var(--spacing);
+    overflow: visible;
+    cursor: default;
+    padding: 0;
+    direction: inherit;
+  }
+
+  .banner-strip--desktop.single-banner .banner-scroll--desktop {
+    grid-template-columns: 1fr;
+    max-width: 960px;
+    margin-inline: auto;
+  }
+
+  .banner-strip--desktop .banner-item {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    aspect-ratio: 21 / 8;
+    min-height: 140px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--border);
+    transition: transform var(--motion-fast), box-shadow var(--motion-fast);
+  }
+
+  .banner-strip--desktop .banner-item.clickable {
+    cursor: pointer;
+  }
+
+  .banner-strip--desktop .banner-item.clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  }
+
+  .banner-strip--desktop .banner-item.clickable:active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .banner-strip--desktop.single-banner .banner-item {
+    aspect-ratio: 21 / 7;
+    min-height: 160px;
   }
 }
 </style>

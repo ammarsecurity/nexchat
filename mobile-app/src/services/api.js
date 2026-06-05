@@ -42,7 +42,7 @@ api.interceptors.response.use(
     if (!err.config?.skipGlobalLoader) {
       try { useApiLoadingStore().endRequest() } catch {}
     }
-    if (err.response?.status === 401) {
+    if (err.response?.status === 401 && !err.config?.skipUnauthorizedEvent) {
       window.dispatchEvent(new CustomEvent('nexchat:unauthorized'))
     }
     const msg = err.response?.data?.message ?? err.message ?? 'حدث خطأ، حاول مجدداً'
