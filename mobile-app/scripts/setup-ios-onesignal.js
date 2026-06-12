@@ -11,6 +11,11 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const rootDir = path.resolve(__dirname, '..');
+const plat = process.env.CAPACITOR_PLATFORM_NAME;
+if (plat && plat !== 'ios') {
+  process.exit(0);
+}
+
 const pluginSrc = path.join(rootDir, 'node_modules', 'onesignal-cordova-plugin', 'src', 'ios');
 const cordovaPluginsDir = path.join(rootDir, 'ios', 'capacitor-cordova-ios-plugins');
 const targetDir = path.join(cordovaPluginsDir, 'sources', 'OnesignalCordovaPlugin');
