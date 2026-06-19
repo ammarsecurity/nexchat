@@ -69,7 +69,7 @@ onMounted(fetchConfig)
       <div>
         <div class="text-h5 font-weight-bold">ميزات التطبيق</div>
         <div class="text-body-2 text-medium-emphasis">
-          إظهار أو إخفاء عناصر في الصفحة الرئيسية لتطبيق الموبايل (iOS و Android)
+          إظهار أو إخفاء عناصر في تطبيق الموبايل (iOS و Android). إيقاف المفتاحين الأولين معاً يفعّل وضع «محادثات فقط» لمراجعة App Store.
         </div>
       </div>
       <v-btn
@@ -84,12 +84,25 @@ onMounted(fetchConfig)
       </v-btn>
     </div>
 
+    <v-card rounded="xl" elevation="0" class="pa-4 mb-4">
+      <v-alert
+        type="info"
+        variant="tonal"
+        rounded="lg"
+        class="mb-0"
+        title="وضع مراجعة App Store (محادثات فقط)"
+      >
+        لإخفاء الدردشة العشوائية والاتصال بالكود بالكامل من تطبيق iOS/Android (مثلاً أثناء مراجعة Apple):
+        أوقف <strong>الدردشة العشوائية</strong> و<strong>الاتصال بالكود</strong> معاً. يبقى للمستخدم: المحادثات، طلبات المراسلة، المجموعات، وجهات الاتصال فقط — بدون تبويب «اتصال» وبدون أكواد NX.
+      </v-alert>
+    </v-card>
+
     <v-card rounded="xl" elevation="0" class="pa-4">
       <div class="d-flex align-center justify-space-between py-2">
         <div>
           <div class="text-subtitle-1 font-weight-medium">إظهار الدردشة العشوائية</div>
           <div class="text-body-2 text-medium-emphasis mt-1">
-            إظهار زر «ابدأ محادثة عشوائية» وفلتر المطابقة (الكل / ذكور / إناث) في الصفحة الرئيسية. عند الإلغاء، يرى المستخدم بديلاً يوجّهه للمحادثات وكود الاتصال.
+            إظهار زر «ابدأ محادثة عشوائية» وفلتر المطابقة في تبويب الاتصال. عند الإلغاء يُخفى البحث العشوائي ويُمنع الوصول لمسارات `/matching` و`/chat` من التطبيق والخادم.
           </div>
         </div>
         <v-switch
@@ -107,7 +120,7 @@ onMounted(fetchConfig)
         <div>
           <div class="text-subtitle-1 font-weight-medium">إظهار الاتصال بالكود والأكواد المحفوظة</div>
           <div class="text-body-2 text-medium-emphasis mt-1">
-            إظهار حقل إدخال كود المستخدم والفاصل «أو اتصل بكود» ورابط «أكوادي المحفوظة» في الصفحة الرئيسية، وروابط «اتصالات الكود» و«أكوادي المحفوظة» في الإعدادات. عند الإلغاء يُخفى ذلك ويُمنع فتح الصفحات المرتبطة.
+            إظهار الاتصال بكود NX، الأكواد المحفوظة، دردشة الدعم، وروابط الدعوة. عند الإلغاء تُخفى كل واجهات الكود وتُحظر واجهات API المرتبطة.
           </div>
         </div>
         <v-switch

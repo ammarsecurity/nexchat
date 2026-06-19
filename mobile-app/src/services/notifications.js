@@ -5,6 +5,7 @@
 import { Capacitor } from '@capacitor/core'
 import { getActivePinia } from 'pinia'
 import api from './api'
+import { getCodeConnectFeaturesEnabled, getRandomChatEnabled } from './siteContentFlags'
 import { useIncomingConversationCallStore } from '../stores/incomingConversationCall'
 import { useMatchingStore } from '../stores/matching'
 import { startIncomingCallSound } from '../utils/sounds'
@@ -496,18 +497,24 @@ export function navigateFromNotification(input) {
   const pinia = typeof getActivePinia === 'function' ? getActivePinia() : null
 
   if (type === 'code_connected') {
-    if (pinia && d.requesterId) {
-      const matching = useMatchingStore(pinia)
-      matching.setIncomingConnectionRequest({
-        requesterId: String(d.requesterId),
-        requesterName: d.requesterName ?? '…',
-        requesterGender: d.requesterGender,
-        requesterAvatar: d.requesterAvatar,
-        requesterIsFeatured: d.requesterIsFeatured === 'true' || d.requesterIsFeatured === true
-      })
-      startIncomingCallSound()
-    }
-    router.push('/home')
+    void getCodeConnectFeaturesEnabled(api).then((enabled) => {
+      if (!enabled) {
+        router.push('/conversations')
+        return
+      }
+      if (pinia && d.requesterId) {
+        const matching = useMatchingStore(pinia)
+        matching.setIncomingConnectionRequest({
+          requesterId: String(d.requesterId),
+          requesterName: d.requesterName ?? '…',
+          requesterGender: d.requesterGender,
+          requesterAvatar: d.requesterAvatar,
+          requesterIsFeatured: d.requesterIsFeatured === 'true' || d.requesterIsFeatured === true
+        })
+        startIncomingCallSound()
+      }
+      router.push('/home')
+    })
     return
   }
 
@@ -536,11 +543,17 @@ export function navigateFromNotification(input) {
         callerAvatar: d.callerAvatar ?? null
       })
       startIncomingCallSound()
-      router.push('/home')
+      router.push('/conversations')
       return
     }
     if (d.sessionId) {
-      router.push({ path: `/chat/${d.sessionId}`, query: { incomingVideoCall: '1' } })
+      void getRandomChatEnabled(api).then((enabled) => {
+        if (!enabled) {
+          router.push('/conversations')
+          return
+        }
+        router.push({ path: `/chat/${d.sessionId}`, query: { incomingVideoCall: '1' } })
+      })
       return
     }
   }

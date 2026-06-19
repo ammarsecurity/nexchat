@@ -3,6 +3,13 @@
  */
 
 const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:5000'
+const UPDATE_POLL_MS = 90_000
+
+function isValidDownloadUrl(url) {
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim()
+  return trimmed !== '#' && /^https?:\/\//i.test(trimmed)
+}
 
 /**
  * مقارنة إصدارين (مثل "1.0" و "1.1")
@@ -23,17 +30,20 @@ function compareVersions(current, required) {
 }
 
 /**
- * فحص إذا كان التحديث مطلوباً
- * @returns { Promise<{ required: boolean, downloadUrl?: string }> }
+ * فحص إذا كان التحديث مطلوباً (إصدار التطبيق أقل من minVersion في لوحة الإدارة)
+ * @returns { Promise<{ required: boolean, downloadUrl?: string, currentVersion?: string, minVersion?: string }> }
  */
 export async function checkUpdateRequired() {
   try {
     const result = await fetchUpdateInfo()
     if (!result) return { required: false }
-    const { currentVersion, minVersion, downloadUrl } = result
-    if (!downloadUrl) return { required: false }
-    const cmp = compareVersions(currentVersion, minVersion)
-    return { required: cmp < 0, downloadUrl }
+    const { currentVersion, minVersion, downloadUrl, required } = result
+    return {
+      required: required === true,
+      downloadUrl: isValidDownloadUrl(downloadUrl) ? downloadUrl : undefined,
+      currentVersion,
+      minVersion
+    }
   } catch {
     return { required: false }
   }
@@ -41,7 +51,7 @@ export async function checkUpdateRequired() {
 
 /**
  * جلب معلومات التحديث (للإعدادات)
- * @returns { Promise<{ hasUpdate: boolean, required: boolean, downloadUrl?: string, currentVersion: string, latestVersion?: string } | null> }
+ * @returns { Promise<{ hasUpdate: boolean, required: boolean, downloadUrl?: string, currentVersion: string, latestVersion?: string, minVersion?: string } | null> }
  */
 export async function fetchUpdateInfo() {
   try {
@@ -54,7 +64,10 @@ export async function fetchUpdateInfo() {
       currentVersion = info.version || info.appVersion || currentVersion
     }
 
-    const res = await fetch(`${API_BASE}/api/SiteContent/app_update`)
+    const res = await fetch(`${API_BASE}/api/SiteContent/app_update`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    })
     if (!res.ok) return null
 
     const data = await res.json()
@@ -65,14 +78,16 @@ export async function fetchUpdateInfo() {
     const minVersion = config.minVersion || config.min_version || '1.0'
     const latestVersion = config.latestVersion || config.latest_version || minVersion
 
-    // تحديد المنصة: أندرويد → رابط أندرويد فقط، آيفون → رابط آيفون فقط
     let platform = 'web'
     if (Capacitor.isNativePlatform()) {
       platform = Capacitor.getPlatform() || 'web'
     }
     const androidUrl = (config.downloadUrl || config.download_url || '').trim()
     const iosUrl = (config.iosDownloadUrl || config.ios_download_url || '').trim()
-    const downloadUrl = platform === 'ios' ? iosUrl : (platform === 'android' ? androidUrl : (androidUrl || iosUrl))
+    let downloadUrl = platform === 'ios' ? iosUrl : (platform === 'android' ? androidUrl : '')
+    if (!isValidDownloadUrl(downloadUrl)) {
+      downloadUrl = isValidDownloadUrl(androidUrl) ? androidUrl : (isValidDownloadUrl(iosUrl) ? iosUrl : '')
+    }
 
     const cmpMin = compareVersions(currentVersion, minVersion)
     const cmpLatest = compareVersions(currentVersion, latestVersion)
@@ -81,11 +96,57 @@ export async function fetchUpdateInfo() {
     return {
       hasUpdate,
       required: cmpMin < 0,
-      downloadUrl: downloadUrl || undefined,
+      downloadUrl: isValidDownloadUrl(downloadUrl) ? downloadUrl : undefined,
       currentVersion,
-      latestVersion
+      latestVersion,
+      minVersion
     }
   } catch {
     return null
+  }
+}
+
+/**
+ * فحص دوري + عند العودة للتطبيق (للتقاط تغيير minVersion من الإدارة أثناء الاستخدام)
+ * @param {(result: Awaited<ReturnType<typeof checkUpdateRequired>>) => void} onResult
+ */
+export function startAppUpdateWatcher(onResult) {
+  let timer = null
+  let running = false
+
+  async function tick() {
+    if (running) return
+    running = true
+    try {
+      onResult(await checkUpdateRequired())
+    } finally {
+      running = false
+    }
+  }
+
+  function onVisibility() {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      void tick()
+    }
+  }
+
+  return {
+    tick,
+    start() {
+      void tick()
+      timer = setInterval(() => { void tick() }, UPDATE_POLL_MS)
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', onVisibility)
+      }
+    },
+    stop() {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility)
+      }
+    }
   }
 }

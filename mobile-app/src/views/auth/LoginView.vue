@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { normalizeInviteCode } from '../../utils/shareLinks'
 import { Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '../../stores/theme'
 import { publicUrl } from '../../utils/publicUrl'
+import { navigateAfterAuth } from '../../utils/appRouting'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
 
 const router = useRouter()
@@ -31,11 +31,11 @@ async function handleLogin() {
     const pending =
       sessionStorage.getItem('nexchat_pending_invite') ||
       (Array.isArray(route.query.invite) ? route.query.invite[0] : route.query.invite)
-    const inviteCode = normalizeInviteCode(pending)
     sessionStorage.removeItem('nexchat_pending_invite')
-    if (auth.needsProfileContact) router.replace('/complete-profile')
-    else if (inviteCode) router.replace({ path: '/home', query: { invite: inviteCode } })
-    else router.replace('/home')
+    await navigateAfterAuth(router, {
+      inviteCode: pending,
+      needsProfile: auth.needsProfileContact
+    })
   } catch (e) {
     error.value = e.userMessage ?? e.response?.data?.message ?? t('common.error')
   } finally {

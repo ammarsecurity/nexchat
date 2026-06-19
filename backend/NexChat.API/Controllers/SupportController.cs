@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NexChat.Infrastructure.Data;
+using NexChat.Infrastructure.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Controllers;
@@ -10,11 +11,14 @@ namespace NexChat.API.Controllers;
 [Route("api/support")]
 [Authorize]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("api")]
-public class SupportController(AppDbContext db) : ControllerBase
+public class SupportController(AppDbContext db, SiteContentFeatureService features) : ControllerBase
 {
     [HttpGet("session")]
-    public async Task<ActionResult<object>> GetOrCreateSession()
+    public async Task<ActionResult<object>> GetOrCreateSession(CancellationToken ct)
     {
+        if (!await features.IsCodeConnectEnabledAsync(ct))
+            return StatusCode(403, new { message = "دردشة الدعم غير متاحة حالياً" });
+
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
             return Unauthorized();

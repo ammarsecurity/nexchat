@@ -17,10 +17,12 @@ import {
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import { useUserAvatarOverridesStore } from '../stores/userAvatarOverrides'
 import { useAuthStore } from '../stores/auth'
+import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 
 const auth = useAuthStore()
 const msgReqStore = useMessageRequestsStore()
 const avatarOverrides = useUserAvatarOverridesStore()
+const codeConnectEnabled = ref(true)
 
 // المسار الافتراضي من الحوار: إضافة كجهة اتصال ثم فتح المحادثة. البديل: طلب مراسلة فقط (يُعرض في صفحة طلبات المراسلة لدى المستقبل).
 const route = useRoute()
@@ -282,9 +284,10 @@ watch(userId, () => {
   fetchProfile()
 })
 
-onMounted(() => {
+onMounted(async () => {
   const state = window.history.state || {}
   conversationIdFromState.value = state.conversationId ?? null
+  codeConnectEnabled.value = await getCodeConnectFeaturesEnabled(api)
   fetchProfile()
 })
 </script>
@@ -376,7 +379,7 @@ onMounted(() => {
             <Phone :size="15" stroke-width="2" />
             {{ formattedPhone }}
           </span>
-          <span v-if="profile.uniqueCode ?? profile.UniqueCode" class="modern-meta-item">
+          <span v-if="codeConnectEnabled && (profile.uniqueCode ?? profile.UniqueCode)" class="modern-meta-item">
             <Hash :size="15" stroke-width="2" />
             {{ profile.uniqueCode ?? profile.UniqueCode }}
           </span>
@@ -417,7 +420,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <section class="modern-section">
+      <section v-if="codeConnectEnabled" class="modern-section">
         <h3 class="modern-section-title">{{ t('settings.contactCode') }}</h3>
         <div class="modern-info-card" @click="copyCode">
           <span class="modern-info-card__value">{{ profile.uniqueCode ?? profile.UniqueCode ?? '—' }}</span>

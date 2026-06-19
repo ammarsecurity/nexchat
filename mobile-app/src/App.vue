@@ -16,7 +16,7 @@ import AppSidebar from './components/AppSidebar.vue'
 import { useLayoutMode } from './composables/useLayoutMode'
 import { useAppNav } from './composables/useAppNav'
 import { useApiLoadingStore } from './stores/apiLoading'
-import { checkUpdateRequired } from './services/updateCheck'
+import { checkUpdateRequired, startAppUpdateWatcher } from './services/updateCheck'
 import { useAuthStore } from './stores/auth'
 import { useMatchingStore } from './stores/matching'
 import { useChatStore } from './stores/chat'
@@ -35,6 +35,7 @@ import {
 } from './utils/incomingSignalrPayload'
 import { useI18n } from 'vue-i18n'
 import { initDeepLinks } from './services/deepLinks'
+import { useConnectFeatures } from './composables/useConnectFeatures'
 
 const { t } = useI18n()
 const network = useNetworkStore()
@@ -42,22 +43,25 @@ const isOnline = computed(() => network.isOnline)
 const showUpdateModal = ref(false)
 const updateDownloadUrl = ref('')
 const auth = useAuthStore()
+let updateWatcher = null
+
+function applyUpdateCheckResult({ required, downloadUrl }) {
+  if (!isOnline.value) return
+  if (required) {
+    updateDownloadUrl.value = downloadUrl || ''
+    showUpdateModal.value = true
+    return
+  }
+  showUpdateModal.value = false
+  updateDownloadUrl.value = ''
+}
 
 async function runUpdateCheck() {
   if (!isOnline.value) return
-  const { required, downloadUrl } = await checkUpdateRequired()
-  if (required && downloadUrl) {
-    updateDownloadUrl.value = downloadUrl
-    showUpdateModal.value = true
-  }
+  applyUpdateCheckResult(await checkUpdateRequired())
 }
 
 const apiLoading = useApiLoadingStore()
-const showUpdateOnCurrentPage = computed(() => {
-  const path = route.path
-  if (path.startsWith('/chat/') || path.startsWith('/video/')) return false
-  return showUpdateModal.value
-})
 const localeStore = useLocaleStore()
 
 function applyHtmlLocale() {
@@ -80,7 +84,8 @@ const userAvatarOverrides = useUserAvatarOverridesStore()
 const convStore = useConversationStore()
 const storiesStore = useStoriesStore()
 const { isDesktop } = useLayoutMode()
-const { showTabBar: showMobileTabBar } = useAppNav()
+const { showTabBar: showMobileTabBar, messagingOnlyMode } = useAppNav()
+const { connectHubEnabled, codeConnectEnabled, randomChatEnabled, loadConnectFeatures } = useConnectFeatures()
 
 const showTabBar = computed(() => {
   if (!auth.token || isDesktop.value) return false
@@ -201,7 +206,7 @@ function setupMatchingHubListeners() {
     matching.clearPendingRandomMatch()
     if (matching.consumeSkipRestartAfterRandomDecline()) {
       matching.setIdle()
-      router.push('/home')
+      router.push(messagingOnlyMode.value ? '/conversations' : '/home')
       return
     }
     restartRandomSearch()
@@ -262,15 +267,23 @@ function setupStoryHubListeners() {
 }
 
 // إبقاء MatchingHub و ConversationHub متصلين عند المستخدم المسجّل — طلبات من أي صفحة
-watch([() => network.isOnline, () => auth.token], ([online, token]) => {
+watch([() => network.isOnline, () => auth.token, connectHubEnabled], async ([online, token, hubEnabled]) => {
   if (online && token) {
-    setupMatchingHubListeners()
+    await loadConnectFeatures()
     setupConversationHubGlobalListeners()
     setupStoryHubListeners()
-    startHub(matchingHub).catch(() => {})
     startHub(conversationHub).catch(() => {})
     startHub(storyHub).catch(() => {})
     storiesStore.fetchFeed(true)
+    if (hubEnabled) {
+      setupMatchingHubListeners()
+      startHub(matchingHub).catch(() => {})
+    } else {
+      stopHub(matchingHub)
+      matching.clearPendingRandomMatch()
+      matching.clearIncomingConnectionRequest()
+      stopIncomingCallSound()
+    }
   } else {
     stopHub(matchingHub)
     stopHub(conversationHub)
@@ -282,14 +295,19 @@ watch([() => network.isOnline, () => auth.token], ([online, token]) => {
 }, { immediate: true })
 
 // الصفحات الرئيسية: الضغط على الرجوع لا يخرج التطبيق
-const tabRoots = ['/', '/onboarding', '/login', '/register', '/home', '/matching', '/conversations', '/settings', '/short-films']
+const tabRoots = computed(() => {
+  const roots = ['/', '/onboarding', '/login', '/register', '/matching', '/conversations', '/settings', '/short-films']
+  if (!messagingOnlyMode.value) roots.push('/home')
+  return roots
+})
 
 let backButtonListener = null
 
 onMounted(() => {
   network.setOnline(navigator.onLine)
   applyHtmlLocale()
-  runUpdateCheck()
+  updateWatcher = startAppUpdateWatcher(applyUpdateCheckResult)
+  updateWatcher.start()
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('nexchat:unauthorized', handleUnauthorized)
@@ -298,7 +316,7 @@ onMounted(() => {
     if (auth.token) setupConversationHubGlobalListeners()
   })
   matchingHub.onreconnected(() => {
-    if (auth.token) setupMatchingHubListeners()
+    if (auth.token && connectHubEnabled.value) setupMatchingHubListeners()
   })
 
   initDeepLinks(router)
@@ -310,7 +328,7 @@ onMounted(() => {
 
     App.addListener('backButton', () => {
       const path = route.path
-      const isAtTabRoot = path === '/' || tabRoots.includes(path)
+      const isAtTabRoot = path === '/' || tabRoots.value.includes(path)
 
       if (!isAtTabRoot) {
         router.back()
@@ -320,6 +338,7 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
+  updateWatcher?.stop()
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
   window.removeEventListener('nexchat:unauthorized', handleUnauthorized)
@@ -350,10 +369,10 @@ onUnmounted(() => {
         <AppTabBar v-if="auth.token && !isDesktop" />
       </div>
     </template>
-    <IncomingConnectionRequestDialog v-if="auth.token" />
-    <RandomMatchConsentDialog v-if="auth.token" />
+    <IncomingConnectionRequestDialog v-if="auth.token && codeConnectEnabled" />
+    <RandomMatchConsentDialog v-if="auth.token && randomChatEnabled" />
     <IncomingConversationCallDialog v-if="auth.token" />
-    <UpdateRequiredModal v-if="showUpdateOnCurrentPage" :download-url="updateDownloadUrl" />
+    <UpdateRequiredModal v-if="showUpdateModal" :download-url="updateDownloadUrl" />
     <LoaderOverlay :show="apiLoading.showOverlay" />
     <AppToast />
   </div>

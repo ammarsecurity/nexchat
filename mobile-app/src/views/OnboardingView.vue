@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { publicUrl } from '../utils/publicUrl'
+import { navigateDefaultForSession } from '../utils/appRouting'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 
 const router = useRouter()
@@ -60,7 +61,7 @@ onMounted(async () => {
 
 function finish() {
   localStorage.setItem(ONBOARDING_SEEN, '1')
-  router.replace(auth.isLoggedIn ? '/home' : '/login')
+  void navigateDefaultForSession(router, auth.isLoggedIn)
 }
 
 function next() {

@@ -1,6 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
+  // Android applicationId (iOS bundle: com.nexchat.userapp — see ios/App/App.xcodeproj)
   appId: 'site.nexchat.app',
   appName: 'NexChat – نيكس شات',
   webDir: 'dist',

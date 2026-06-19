@@ -9,6 +9,7 @@ using NexChat.Core;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
+using NexChat.Infrastructure.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Controllers;
@@ -21,7 +22,8 @@ public class UserController(
     AppDbContext db,
     IHubContext<ConversationHub> conversationHub,
     IHubContext<MatchingHub> matchingHub,
-    IHubContext<ChatHub> chatHub) : ControllerBase
+    IHubContext<ChatHub> chatHub,
+    SiteContentFeatureService features) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -205,6 +207,9 @@ public class UserController(
     [HttpGet("saved-codes")]
     public async Task<ActionResult<IEnumerable<object>>> GetSavedCodes()
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+            return StatusCode(403, new { message = "ميزة الاتصال بالكود غير متاحة" });
+
         var user = await db.Users.FindAsync(CurrentUserId);
         if (user == null)
             return Forbid();
@@ -221,6 +226,9 @@ public class UserController(
     [HttpPost("saved-codes")]
     public async Task<IActionResult> AddSavedCode([FromBody] AddSavedCodeRequest req)
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+            return StatusCode(403, new { message = "ميزة الاتصال بالكود غير متاحة" });
+
         var user = await db.Users.FindAsync(CurrentUserId);
         if (user == null)
             return Forbid();
@@ -253,6 +261,9 @@ public class UserController(
     [HttpDelete("saved-codes/{code}")]
     public async Task<IActionResult> RemoveSavedCode(string code)
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+            return StatusCode(403, new { message = "ميزة الاتصال بالكود غير متاحة" });
+
         var user = await db.Users.FindAsync(CurrentUserId);
         if (user == null)
             return Forbid();
@@ -271,6 +282,9 @@ public class UserController(
     [HttpGet("connection-history")]
     public async Task<ActionResult<IEnumerable<object>>> GetConnectionHistory([FromQuery] string filter = "sent")
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+            return StatusCode(403, new { message = "ميزة الاتصال بالكود غير متاحة" });
+
         var userId = CurrentUserId;
         var f = filter.ToLowerInvariant();
 

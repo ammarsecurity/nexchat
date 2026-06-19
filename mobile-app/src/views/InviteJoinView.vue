@@ -3,6 +3,10 @@ import { onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { normalizeInviteCode } from '../utils/shareLinks'
+import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
+import { resolveDefaultAppRoute } from '../services/siteContentFlags'
+import { navigateDefaultForSession } from '../utils/appRouting'
+import api from '../services/api'
 import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
@@ -10,10 +14,21 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t } = useI18n()
 
-onMounted(() => {
+onMounted(async () => {
+  const codeEnabled = await getCodeConnectFeaturesEnabled(api)
+  if (!codeEnabled) {
+    sessionStorage.removeItem('nexchat_pending_invite')
+    if (auth.token) {
+      router.replace(await resolveDefaultAppRoute(api))
+    } else {
+      router.replace('/login')
+    }
+    return
+  }
+
   const code = normalizeInviteCode(route.params.code)
   if (!code) {
-    router.replace('/home')
+    await navigateDefaultForSession(router, !!auth.token)
     return
   }
 

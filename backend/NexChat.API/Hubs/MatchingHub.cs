@@ -10,7 +10,11 @@ using NexChat.Core.Entities;
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class MatchingHub(MatchingService matching, AppDbContext db, NotificationOutboxService notificationOutbox) : Hub
+public class MatchingHub(
+    MatchingService matching,
+    AppDbContext db,
+    NotificationOutboxService notificationOutbox,
+    SiteContentFeatureService features) : Hub
 {
     private bool TryGetUserId(out Guid userId)
     {
@@ -31,22 +35,25 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
             .Where(u => u.Id == userId)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsOnline, true));
 
-        // إرسال طلبات الاتصال المعلقة التي فاتت المستخدم وهو غير متصل
-        var pending = matching.GetPendingRequestsForTarget(userId);
-        foreach (var (requesterId, _, _) in pending)
+        if (await features.IsCodeConnectEnabledAsync())
         {
-            var requester = await db.Users.FindAsync(requesterId);
-            if (requester != null)
+            // إرسال طلبات الاتصال المعلقة التي فاتت المستخدم وهو غير متصل
+            var pending = matching.GetPendingRequestsForTarget(userId);
+            foreach (var (requesterId, _, _) in pending)
             {
-                await Clients.Caller.SendAsync("IncomingConnectionRequest", new
+                var requester = await db.Users.FindAsync(requesterId);
+                if (requester != null)
                 {
-                    RequesterId = requesterId.ToString(),
-                    RequesterName = requester.Name,
-                    RequesterGender = requester.Gender,
-                    RequesterAvatar = requester.Avatar,
-                    RequesterIsFeatured = requester.IsFeatured
-                });
-                break; // نرسل الأحدث فقط لتجنب تداخل النوافذ
+                    await Clients.Caller.SendAsync("IncomingConnectionRequest", new
+                    {
+                        RequesterId = requesterId.ToString(),
+                        RequesterName = requester.Name,
+                        RequesterGender = requester.Gender,
+                        RequesterAvatar = requester.Avatar,
+                        RequesterIsFeatured = requester.IsFeatured
+                    });
+                    break; // نرسل الأحدث فقط لتجنب تداخل النوافذ
+                }
             }
         }
 
@@ -71,6 +78,11 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task StartSearching(string genderFilter)
     {
+        if (!await features.IsRandomChatEnabledAsync())
+        {
+            await Clients.Caller.SendAsync("Error", "الدردشة العشوائية غير متاحة حالياً");
+            return;
+        }
         if (!TryGetUserId(out var userId))
         {
             await Clients.Caller.SendAsync("Error", "Invalid request");
@@ -112,6 +124,11 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task AcceptRandomMatch(string sessionIdStr)
     {
+        if (!await features.IsRandomChatEnabledAsync())
+        {
+            await Clients.Caller.SendAsync("Error", "الدردشة العشوائية غير متاحة حالياً");
+            return;
+        }
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionIdStr, out var sessionId))
         {
             await Clients.Caller.SendAsync("Error", "Invalid request");
@@ -151,6 +168,8 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task DeclineRandomMatch(string sessionIdStr)
     {
+        if (!await features.IsRandomChatEnabledAsync())
+            return;
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionIdStr, out var sessionId))
             return;
 
@@ -167,6 +186,8 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task CancelSearching()
     {
+        if (!await features.IsRandomChatEnabledAsync())
+            return;
         if (!TryGetUserId(out var userId))
             return;
         await matching.RemoveFromQueueAsync(userId);
@@ -175,6 +196,11 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task ConnectByCode(string code)
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+        {
+            await Clients.Caller.SendAsync("CodeError", "الاتصال بالكود غير متاح حالياً");
+            return;
+        }
         if (!TryGetUserId(out var userId))
         {
             await Clients.Caller.SendAsync("CodeError", "Invalid request");
@@ -223,6 +249,11 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task AcceptConnectionRequest(string requesterIdStr)
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+        {
+            await Clients.Caller.SendAsync("CodeError", "الاتصال بالكود غير متاح حالياً");
+            return;
+        }
         if (!TryGetUserId(out var targetId))
         {
             await Clients.Caller.SendAsync("CodeError", "Invalid request");
@@ -261,6 +292,8 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task DeclineConnectionRequest(string requesterIdStr)
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+            return;
         if (!TryGetUserId(out var targetId))
             return;
         if (!Guid.TryParse(requesterIdStr, out var requesterId))
@@ -276,6 +309,8 @@ public class MatchingHub(MatchingService matching, AppDbContext db, Notification
 
     public async Task CancelConnectionRequest()
     {
+        if (!await features.IsCodeConnectEnabledAsync())
+            return;
         if (!TryGetUserId(out var requesterId))
             return;
         var (success, targetId) = await matching.CancelConnectionRequestAsync(requesterId);

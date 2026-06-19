@@ -92,7 +92,7 @@ onMounted(fetchConfig)
         v-model="minVersion"
         label="أقل إصدار مطلوب"
         placeholder="مثال: 1.0"
-        hint="المستخدمون الذين إصدارهم أقل من هذا سيرون مودل التحديث الإجباري"
+        hint="المستخدمون الذين إصدارهم أقل من هذا سيرون مودال التحديث الإجباري عند فتح التطبيق (ويُعاد الفحص كل دقيقة ونصف أثناء الاستخدام)"
         persistent-hint
         variant="outlined"
         rounded="lg"
@@ -125,7 +125,7 @@ onMounted(fetchConfig)
         v-model="iosDownloadUrl"
         label="رابط التحميل (iOS)"
         placeholder="https://apps.apple.com/..."
-        hint="رابط App Store"
+        hint="رابط App Store — لا تستخدم # أو رابطاً فارغاً وإلا لن يعمل زر التحميل على iOS"
         persistent-hint
         variant="outlined"
         rounded="lg"

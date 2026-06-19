@@ -14,7 +14,7 @@ import LoaderOverlay from '../components/LoaderOverlay.vue'
 import AvatarPickerSheet from '../components/AvatarPickerSheet.vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
-import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
+import { useConnectFeatures } from '../composables/useConnectFeatures'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { DEFAULT_COVER_URL } from '../utils/defaultCover'
 import { requestMediaPermissions } from '../utils/mediaPermissions'
@@ -62,7 +62,7 @@ const notificationsSupported = canUseNotifications()
 const updateInfo = ref(null)
 const updateChecking = ref(false)
 const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.3'
-const codeConnectFeaturesEnabled = ref(true)
+const { codeConnectEnabled: codeConnectFeaturesEnabled, loaded: codeConnectFeaturesLoaded, refreshConnectFeatures } = useConnectFeatures()
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -187,6 +187,7 @@ async function shareInviteLink() {
 }
 
 async function openSupportChat() {
+  if (!codeConnectFeaturesEnabled.value) return
   supportLoading.value = true
   try {
     const res = await api.get('/support/session')
@@ -335,9 +336,7 @@ onMounted(() => {
   loadNotificationsState()
   loadProfile()
   checkForUpdate()
-  getCodeConnectFeaturesEnabled(api).then((v) => {
-    codeConnectFeaturesEnabled.value = v
-  })
+  void refreshConnectFeatures()
 })
 </script>
 
@@ -396,7 +395,7 @@ onMounted(() => {
       </div>
 
       <!-- كود الاتصال - بطاقة منفصلة -->
-      <div class="profile-code-card glass-card" @click="copyCode">
+      <div v-if="codeConnectFeaturesLoaded && codeConnectFeaturesEnabled" class="profile-code-card glass-card" @click="copyCode">
         <div class="profile-code-icon-wrap">
           <Hash :size="18" />
         </div>
@@ -414,7 +413,7 @@ onMounted(() => {
       </div>
 
       <!-- البلد ورقم الهاتف -->
-      <RouterLink to="/complete-profile" class="profile-code-card glass-card birth-date-card link-card">
+      <RouterLink to="/complete-profile?from=settings" class="profile-code-card glass-card birth-date-card link-card">
         <div class="profile-code-icon-wrap">
           <Globe :size="18" />
         </div>
@@ -436,8 +435,8 @@ onMounted(() => {
         <ChevronRight :size="18" class="link-arrow" />
       </div>
 
-      <!-- Support Chat - بارز -->
-      <div class="support-card glass-card">
+      <!-- Support Chat - يعتمد على الاتصال بالكود -->
+      <div v-if="codeConnectFeaturesLoaded && codeConnectFeaturesEnabled" class="support-card glass-card">
         <button class="support-row" :disabled="supportLoading" @click="openSupportChat">
           <div class="support-icon-wrap">
             <MessageCircle :size="22" />
@@ -478,36 +477,59 @@ onMounted(() => {
           <span>{{ theme.isLight ? t('settings.darkMode') : t('settings.lightMode') }}</span>
           <span class="theme-badge">{{ theme.isLight ? t('settings.dark') : t('settings.light') }}</span>
         </button>
-        <div class="notif-buttons-row">
-          <span class="notif-label"><Bell :size="18" class="link-icon" /> {{ t('settings.notifications') }}</span>
-          <template v-if="notificationsSupported">
-            <div class="notif-btns">
-              <button
-                class="notif-btn enable"
-                :class="{ active: notificationsEnabled }"
-                :disabled="notificationsEnabled"
-                @click="enableNotifications"
-              >
-                {{ t('settings.enable') }}
-              </button>
-              <button
-                class="notif-btn disable"
-                :class="{ active: !notificationsEnabled }"
-                :disabled="!notificationsEnabled"
-                @click="disableNotifications"
-              >
-                {{ t('settings.disable') }}
-              </button>
+        <div class="setting-toggle-block">
+          <div class="setting-toggle-top">
+            <div
+              class="setting-toggle-icon"
+              :class="notificationsEnabled ? 'is-on' : 'is-off'"
+            >
+              <Bell :size="20" stroke-width="2" />
             </div>
-          </template>
-          <span v-else class="notif-web-msg">{{ t('settings.notifWebOnly') }}</span>
+            <div class="setting-toggle-info">
+              <span class="setting-toggle-title">{{ t('settings.notifications') }}</span>
+              <span v-if="notificationsSupported" class="setting-toggle-hint">
+                {{ notificationsEnabled ? t('settings.notificationsStatusOn') : t('settings.notificationsStatusOff') }}
+              </span>
+              <span v-else class="setting-toggle-hint">{{ t('settings.notifWebOnly') }}</span>
+            </div>
+            <span
+              v-if="notificationsSupported"
+              class="setting-status-pill"
+              :class="notificationsEnabled ? 'on' : 'off'"
+            >
+              {{ notificationsEnabled ? t('settings.statusOn') : t('settings.statusOff') }}
+            </span>
+          </div>
+          <div
+            v-if="notificationsSupported"
+            class="setting-segmented"
+            role="group"
+            :aria-label="t('settings.notifications')"
+          >
+            <button
+              type="button"
+              class="setting-segment"
+              :class="{ active: notificationsEnabled, positive: notificationsEnabled }"
+              @click="enableNotifications"
+            >
+              {{ t('settings.enable') }}
+            </button>
+            <button
+              type="button"
+              class="setting-segment"
+              :class="{ active: !notificationsEnabled, negative: !notificationsEnabled }"
+              @click="disableNotifications"
+            >
+              {{ t('settings.disable') }}
+            </button>
+          </div>
         </div>
         <RouterLink to="/notifications" class="link-row">
           <Bell :size="18" class="link-icon" />
           <span>{{ t('settings.notificationCenter') }}</span>
           <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
-        <RouterLink v-if="codeConnectFeaturesEnabled" to="/connection-history" class="link-row">
+        <RouterLink v-if="codeConnectFeaturesLoaded && codeConnectFeaturesEnabled" to="/connection-history" class="link-row">
           <Send :size="18" class="link-icon" />
           <span>{{ t('connectionHistory.title') }}</span>
           <ChevronRight :size="16" class="link-arrow" />
@@ -517,31 +539,52 @@ onMounted(() => {
           <span>{{ t('blocked.title') }}</span>
           <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
-        <RouterLink v-if="codeConnectFeaturesEnabled" to="/saved-codes" class="link-row">
+        <RouterLink v-if="codeConnectFeaturesLoaded && codeConnectFeaturesEnabled" to="/saved-codes" class="link-row">
           <BookmarkPlus :size="18" class="link-icon" />
           <span>{{ t('home.savedCodes') }}</span>
           <ChevronRight :size="16" class="link-arrow" />
         </RouterLink>
-        <div class="notif-buttons-row online-status-row">
-          <div class="online-status-col">
-            <span class="notif-label"><Eye :size="18" class="link-icon" /> {{ t('settings.showOnlineStatus') }}</span>
-            <span class="online-status-desc">{{ t('settings.showOnlineStatusDesc') }}</span>
+        <div class="setting-toggle-block" :class="{ saving: showOnlineSaving }">
+          <div class="setting-toggle-top">
+            <div
+              class="setting-toggle-icon"
+              :class="showOnlineToOthers ? 'is-on' : 'is-off'"
+            >
+              <Eye :size="20" stroke-width="2" />
+            </div>
+            <div class="setting-toggle-info">
+              <span class="setting-toggle-title">{{ t('settings.showOnlineStatus') }}</span>
+              <span class="setting-toggle-hint">
+                {{ showOnlineToOthers ? t('settings.onlineStatusVisible') : t('settings.onlineStatusHidden') }}
+              </span>
+            </div>
+            <span
+              class="setting-status-pill"
+              :class="showOnlineToOthers ? 'on' : 'off'"
+            >
+              {{ showOnlineToOthers ? t('settings.showOnlineStatusOn') : t('settings.showOnlineStatusOff') }}
+            </span>
           </div>
-          <div class="notif-btns">
+          <p class="setting-toggle-desc">{{ t('settings.showOnlineStatusDesc') }}</p>
+          <div
+            class="setting-segmented"
+            role="group"
+            :aria-label="t('settings.showOnlineStatus')"
+          >
             <button
               type="button"
-              class="notif-btn enable"
-              :class="{ active: showOnlineToOthers }"
-              :disabled="showOnlineToOthers || showOnlineSaving"
+              class="setting-segment"
+              :class="{ active: showOnlineToOthers, positive: showOnlineToOthers, success: showOnlineToOthers }"
+              :disabled="showOnlineSaving"
               @click="setShowOnlineStatusToOthers(true)"
             >
               {{ t('settings.showOnlineStatusOn') }}
             </button>
             <button
               type="button"
-              class="notif-btn disable"
-              :class="{ active: !showOnlineToOthers }"
-              :disabled="!showOnlineToOthers || showOnlineSaving"
+              class="setting-segment"
+              :class="{ active: !showOnlineToOthers, negative: !showOnlineToOthers }"
+              :disabled="showOnlineSaving"
               @click="setShowOnlineStatusToOthers(false)"
             >
               {{ t('settings.showOnlineStatusOff') }}
@@ -1117,75 +1160,146 @@ html.light .avatar-crown-settings {
 .perm-feedback.error { color: var(--danger); }
 .toggle-row { justify-content: flex-start; }
 
-/* Notification enable/disable buttons */
-.notif-buttons-row {
+/* Setting toggles (notifications, online status) */
+.setting-toggle-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 14px 12px;
   border-bottom: 1px solid var(--border);
 }
-.notif-label {
+.setting-toggle-block.saving {
+  opacity: 0.72;
+  pointer-events: none;
+}
+.setting-toggle-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.setting-toggle-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: var(--text-secondary);
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
 }
-.notif-btns {
-  display: flex;
-  gap: 8px;
-}
-.notif-btn {
-  flex: 1;
-  min-height: 36px;
-  border-radius: var(--radius-sm);
-  font-family: 'Cairo', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: 0.2s;
-  border: 1px solid var(--border);
-}
-.notif-btn.enable {
-  background: rgba(108, 99, 255, 0.15);
+.setting-toggle-icon.is-on {
+  background: rgba(108, 99, 255, 0.18);
   color: var(--primary);
-  border-color: rgba(108, 99, 255, 0.3);
 }
-.notif-btn.enable:not(:disabled):active { background: rgba(108, 99, 255, 0.25); }
-.notif-btn.enable.active,
-.notif-btn.enable:disabled {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-  cursor: default;
+.setting-toggle-icon.is-off {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--danger);
 }
-.notif-btn.disable {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
-}
-.notif-btn.disable:not(:disabled):active { background: rgba(255, 255, 255, 0.1); }
-.notif-btn.disable.active,
-.notif-btn.disable:disabled {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-muted);
-  cursor: default;
-}
-.notif-web-msg {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.online-status-row .online-status-col {
+.setting-toggle-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 100%;
 }
-.online-status-desc {
-  font-size: 11px;
+.setting-toggle-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.setting-toggle-hint {
+  font-size: 12px;
   color: var(--text-muted);
-  line-height: 1.4;
-  padding-inline-start: 28px;
+  line-height: 1.45;
+}
+.setting-toggle-desc {
+  margin: 0;
+  padding-inline-start: 52px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.setting-status-pill {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+.setting-status-pill.on {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+.setting-status-pill.off {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+}
+.setting-segmented {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-muted);
+}
+.setting-segment {
+  flex: 1;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-family: 'Cairo', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s, border-color 0.2s;
+}
+.setting-segment:not(.active):not(:disabled):active {
+  background: var(--primary-muted);
+  color: var(--text-primary);
+  transform: scale(0.98);
+}
+.setting-segment.active.positive {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(96, 165, 250, 0.4);
+}
+.setting-segment.active.success {
+  background: var(--success);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(52, 211, 153, 0.35);
+}
+.setting-segment.active.negative {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  box-shadow: 0 2px 10px rgba(248, 113, 113, 0.15);
+}
+.setting-segment:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+html.light .setting-toggle-icon.is-off {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+html.light .setting-status-pill.off {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+html.light .setting-segment.active.negative {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.28);
 }
 
 /* About */

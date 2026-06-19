@@ -19,7 +19,7 @@ import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import { publicUrl } from '../utils/publicUrl'
 import { requestPermissionAndRegister, scheduleRegistrationRetry } from '../services/notifications'
 import api from '../services/api'
-import { getCodeConnectFeaturesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
+import { getCodeConnectFeaturesEnabled, getRandomChatEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
 import { formatConversationListPreview } from '../utils/shortFilmShare'
 import { normalizeInviteCode } from '../utils/shareLinks'
 import { shareInviteCode } from '../utils/shareExternal'
@@ -72,45 +72,6 @@ onMounted(async () => {
   requestMediaPermissions()
   scheduleRegistrationRetry()
 
-  await startHub(matchingHub)
-
-  matchingHub.off('SearchCancelled')
-  matchingHub.off('CodeError')
-  matchingHub.off('ConnectionRequestSent')
-  matchingHub.off('ConnectionDeclined')
-  matchingHub.off('ConnectionCancelled')
-
-  matchingHub.on('MatchFound', matchFoundHandler)
-
-  matchingHub.on('SearchCancelled', () => {
-    matching.setIdle()
-  })
-
-  matchingHub.on('CodeError', (msg) => {
-    codeError.value = msg
-    loading.value = false
-    waitingForAccept.value = false
-    clearConnectionTimeout()
-  })
-
-  matchingHub.on('ConnectionRequestSent', () => {
-    waitingForAccept.value = true
-    startConnectionTimeout()
-  })
-
-  matchingHub.on('ConnectionDeclined', () => {
-    clearConnectionTimeout()
-    waitingForAccept.value = false
-    loading.value = false
-    codeError.value = t('home.requestDeclined')
-  })
-
-  matchingHub.on('ConnectionCancelled', () => {
-    clearConnectionTimeout()
-    waitingForAccept.value = false
-    loading.value = false
-  })
-
   try {
     await startHub(conversationHub)
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data }) => {
@@ -132,24 +93,60 @@ onMounted(async () => {
     conversationHub.on('ConversationListUpdated', handleConversationListUpdated)
   } catch {}
 
-  Promise.all([
-    api.get('SiteContent/random_chat_enabled', { skipGlobalLoader: true })
-      .then(({ data }) => {
-        randomChatEnabled.value = (data?.content ?? 'true') === 'true'
-      })
-      .catch(() => {}),
-    getCodeConnectFeaturesEnabled(api).then((enabled) => {
-      codeConnectEnabled.value = enabled
-    }),
-    getShortFilmsEnabled(api).then((enabled) => {
-      shortFilmsEnabled.value = enabled
+  const [random, code, films] = await Promise.all([
+    getRandomChatEnabled(api),
+    getCodeConnectFeaturesEnabled(api),
+    getShortFilmsEnabled(api)
+  ])
+  randomChatEnabled.value = random
+  codeConnectEnabled.value = code
+  shortFilmsEnabled.value = films
+  randomChatSettingLoaded.value = true
+  codeConnectLoaded.value = true
+  shortFilmsLoaded.value = true
+
+  if (random || code) {
+    await startHub(matchingHub)
+
+    matchingHub.off('SearchCancelled')
+    matchingHub.off('CodeError')
+    matchingHub.off('ConnectionRequestSent')
+    matchingHub.off('ConnectionDeclined')
+    matchingHub.off('ConnectionCancelled')
+
+    matchingHub.on('MatchFound', matchFoundHandler)
+
+    matchingHub.on('SearchCancelled', () => {
+      matching.setIdle()
     })
-  ]).finally(() => {
-    randomChatSettingLoaded.value = true
-    codeConnectLoaded.value = true
-    applyPendingInvite()
-    shortFilmsLoaded.value = true
-  })
+
+    matchingHub.on('CodeError', (msg) => {
+      codeError.value = msg
+      loading.value = false
+      waitingForAccept.value = false
+      clearConnectionTimeout()
+    })
+
+    matchingHub.on('ConnectionRequestSent', () => {
+      waitingForAccept.value = true
+      startConnectionTimeout()
+    })
+
+    matchingHub.on('ConnectionDeclined', () => {
+      clearConnectionTimeout()
+      waitingForAccept.value = false
+      loading.value = false
+      codeError.value = t('home.requestDeclined')
+    })
+
+    matchingHub.on('ConnectionCancelled', () => {
+      clearConnectionTimeout()
+      waitingForAccept.value = false
+      loading.value = false
+    })
+  }
+
+  if (codeConnectEnabled.value) applyPendingInvite()
 })
 
 async function handleConversationListUpdated(payload) {
@@ -406,7 +403,7 @@ const homePrimaryCompact = computed(
           <span class="home-profile__name">{{ user?.name }}</span>
         </div>
         <button
-          v-if="user?.uniqueCode"
+          v-if="user?.uniqueCode && codeConnectEnabled"
           type="button"
           class="home-profile__code"
           dir="ltr"
@@ -419,7 +416,7 @@ const homePrimaryCompact = computed(
           <span v-if="copied" class="home-profile__copied">{{ t('common.copiedShort') }}</span>
         </button>
         <button
-          v-if="user?.uniqueCode"
+          v-if="user?.uniqueCode && codeConnectEnabled"
           type="button"
           class="home-profile__share"
           :title="t('share.shareInvite')"

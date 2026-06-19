@@ -17,6 +17,8 @@ mobile-app/dist/
 admin-dashboard/dist/
 mobile-app/.vite/
 admin-dashboard/.vite/
+mobile-app/*.zip
+mobile-app/**/*.zip
 
 # Uploaded files (runtime generated)
 backend/NexChat.API/wwwroot/uploads/

@@ -1,21 +1,27 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { Globe, Phone, AlertCircle, ChevronRight } from 'lucide-vue-next'
+import { useRouter, useRoute } from 'vue-router'
+import { Globe, Phone, AlertCircle, ChevronLeft, ChevronRight, UserRound } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useI18n } from 'vue-i18n'
+import { useLocaleStore } from '../../stores/locale'
 import { useThemeStore } from '../../stores/theme'
 import { publicUrl } from '../../utils/publicUrl'
 import LoaderOverlay from '../../components/LoaderOverlay.vue'
 import { countries } from '../../data/countries'
 import api from '../../services/api'
 import { validatePhone, getPhoneErrorMessage } from '../../utils/phoneValidation'
+import { navigateDefaultForSession } from '../../utils/appRouting'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const localeStore = useLocaleStore()
 const { t } = useI18n()
 const logoImg = computed(() => publicUrl(theme.isLight ? 'logo-light.png' : 'logo.png'))
+const BackIcon = computed(() => (localeStore.isRtl ? ChevronRight : ChevronLeft))
+const showBackButton = computed(() => route.query.from === 'settings')
 
 const selectedCountry = ref(null)
 const phoneNumber = ref('')
@@ -58,6 +64,10 @@ const canSubmit = computed(() => {
   return result?.valid ?? false
 })
 
+function goBack() {
+  router.push('/settings')
+}
+
 async function handleSubmit() {
   const result = phoneValidationResult.value
   if (!result?.valid) {
@@ -73,7 +83,11 @@ async function handleSubmit() {
       phoneNumber: result.normalized
     })
     auth.setNeedsProfileContact(false)
-    router.replace('/home')
+    if (showBackButton.value) {
+      router.replace('/settings')
+      return
+    }
+    await navigateDefaultForSession(router, true)
   } catch (e) {
     error.value = e.response?.data?.message ?? t('common.error')
   } finally {
@@ -85,78 +99,83 @@ async function handleSubmit() {
 <template>
   <div class="complete-profile page auth-pattern">
     <LoaderOverlay :show="loading" :text="t('completeProfile.saving')" />
-    <div class="page-inner">
-      <header class="top-bar">
-        <button class="back-btn" @click="router.back()" :aria-label="t('common.cancel')">
-          <ChevronRight :size="22" />
-        </button>
-        <span class="top-title">{{ t('completeProfile.title') }}</span>
-        <div class="top-bar-spacer"></div>
-      </header>
-      <div class="content">
-        <img :src="logoImg" alt="NexChat" class="logo-img" />
 
-        <div class="card glass-card">
-          <p class="subtitle text-secondary">{{ t('completeProfile.subtitle') }}</p>
-
-        <form @submit.prevent="handleSubmit" class="form">
-          <!-- Country -->
-          <div class="field">
-            <label class="field-label">
-              <Globe :size="16" class="label-icon" />
-              {{ t('completeProfile.country') }}
-            </label>
-            <select
-              v-model="selectedCountry"
-              class="input-field select-field"
-              :aria-label="t('completeProfile.country')"
-              required
-            >
-              <option value="" disabled>{{ t('completeProfile.selectCountry') }}</option>
-              <option v-for="c in countries" :key="c.code" :value="c.code">
-                {{ c.name }} ({{ c.dialCode }})
-              </option>
-            </select>
-          </div>
-
-          <!-- Phone -->
-          <div class="field">
-            <label class="field-label">
-              <Phone :size="16" class="label-icon" />
-              {{ t('completeProfile.phone') }}
-            </label>
-            <div class="phone-input-wrap" :class="{ 'input-error': phoneError }">
-              <span class="dial-prefix">+{{ countryCode || '...' }}</span>
-              <input
-                v-model="phoneNumber"
-                type="tel"
-                class="input-field phone-input"
-                :placeholder="t('completeProfile.phonePlaceholder')"
-                inputmode="numeric"
-                maxlength="15"
-                autocomplete="tel"
-              />
-            </div>
-            <span v-if="phoneError" class="field-error">{{ phoneError }}</span>
-            <span v-else class="field-hint">{{ t('completeProfile.phoneHint') }}</span>
-          </div>
-
-          <div v-if="error" class="error-toast">
-            <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
-            <span>{{ error }}</span>
-          </div>
-
-          <button
-            type="submit"
-            class="btn-gradient"
-            :disabled="loading || !canSubmit"
-          >
-            <span v-if="!loading">{{ t('completeProfile.submit') }}</span>
-            <span v-else class="spinner"></span>
+    <div class="cp-scroll">
+      <div class="cp-content">
+        <header v-if="showBackButton" class="cp-nav">
+          <button type="button" class="cp-back" :aria-label="t('common.back')" @click="goBack">
+            <component :is="BackIcon" :size="22" stroke-width="2" />
           </button>
-        </form>
+          <h1 class="cp-nav-title">{{ t('completeProfile.title') }}</h1>
+          <div class="cp-nav-spacer" aria-hidden="true" />
+        </header>
+
+        <div class="cp-hero">
+          <img :src="logoImg" alt="NexChat" class="cp-logo" />
+          <div class="cp-hero-icon" aria-hidden="true">
+            <UserRound :size="28" stroke-width="2" />
+          </div>
+          <h1 v-if="!showBackButton" class="cp-title">{{ t('completeProfile.title') }}</h1>
+          <p class="cp-subtitle">{{ t('completeProfile.subtitle') }}</p>
+        </div>
+
+        <div class="cp-card glass-card">
+          <form class="cp-form" @submit.prevent="handleSubmit">
+            <div class="cp-field">
+              <label class="cp-label" for="cp-country">
+                <Globe :size="16" stroke-width="2" class="cp-label-icon" />
+                {{ t('completeProfile.country') }}
+              </label>
+              <div class="cp-select-wrap">
+                <select
+                  id="cp-country"
+                  v-model="selectedCountry"
+                  class="cp-select"
+                  :aria-label="t('completeProfile.country')"
+                  required
+                >
+                  <option value="" disabled>{{ t('completeProfile.selectCountry') }}</option>
+                  <option v-for="c in countries" :key="c.code" :value="c.code">
+                    {{ c.name }} ({{ c.dialCode }})
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="cp-field">
+              <label class="cp-label" for="cp-phone">
+                <Phone :size="16" stroke-width="2" class="cp-label-icon" />
+                {{ t('completeProfile.phone') }}
+              </label>
+              <div class="cp-phone-wrap" :class="{ 'cp-phone-wrap--error': phoneError }">
+                <span class="cp-dial">+{{ countryCode || '…' }}</span>
+                <input
+                  id="cp-phone"
+                  v-model="phoneNumber"
+                  type="tel"
+                  class="cp-phone-input"
+                  :placeholder="t('completeProfile.phonePlaceholder')"
+                  inputmode="numeric"
+                  maxlength="15"
+                  autocomplete="tel-national"
+                />
+              </div>
+              <p v-if="phoneError" class="cp-hint cp-hint--error">{{ phoneError }}</p>
+              <p v-else class="cp-hint">{{ t('completeProfile.phoneHint') }}</p>
+            </div>
+
+            <div v-if="error" class="error-toast">
+              <span class="error-toast-icon"><AlertCircle :size="18" stroke-width="2" /></span>
+              <span>{{ error }}</span>
+            </div>
+
+            <button type="submit" class="cp-submit" :disabled="loading || !canSubmit">
+              <span v-if="!loading">{{ t('completeProfile.submit') }}</span>
+              <span v-else class="spinner" />
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
     </div>
   </div>
 </template>
@@ -167,138 +186,285 @@ async function handleSubmit() {
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  overflow-y: auto;
-  position: relative;
+  overflow: hidden;
 }
 
-.page-inner {
-  width: 100%;
-  max-width: var(--app-max-width);
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 var(--spacing);
-  padding-bottom: calc(24px + var(--safe-bottom));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: calc(var(--safe-top) + 8px) 0 16px;
-  flex-shrink: 0;
-  gap: 12px;
-}
-
-.back-btn {
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  height: 44px;
-  justify-content: center;
-  min-width: 44px;
-  flex-shrink: 0;
-}
-.back-btn:active { background: var(--bg-card-hover); }
-
-.top-title {
-  font-size: 17px;
-  font-weight: 600;
+.cp-scroll {
   flex: 1;
-  text-align: center;
-  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding:
+    calc(var(--safe-top) + 8px)
+    max(var(--spacing), env(safe-area-inset-right, 0px))
+    calc(28px + var(--safe-bottom))
+    max(var(--spacing), env(safe-area-inset-left, 0px));
 }
 
-.top-bar-spacer {
+.cp-content {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.cp-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cp-back {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cp-back:active {
+  transform: scale(0.97);
+  background: var(--bg-card-hover);
+}
+
+.cp-nav-title {
+  flex: 1;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.cp-nav-spacer {
   width: 44px;
   flex-shrink: 0;
 }
 
-.content {
+.cp-hero {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  width: 100%;
-  position: relative;
-  z-index: 10;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 22px;
 }
 
-.logo-img {
-  height: 56px;
+.cp-logo {
+  height: 48px;
   width: auto;
   object-fit: contain;
-  margin-bottom: 4px;
+  margin-bottom: 14px;
 }
 
-.card { padding: 24px 20px; width: 100%; }
-.subtitle { font-size: 14px; margin-bottom: 20px; }
+.cp-hero-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid var(--primary-muted);
+}
 
-.form { display: flex; flex-direction: column; gap: 16px; }
-.field { display: flex; flex-direction: column; gap: 8px; }
-label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
-.field-label { display: flex; align-items: center; gap: 6px; }
-.label-icon { color: var(--primary); flex-shrink: 0; }
-.field-hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.field-error { font-size: 12px; color: #f44336; margin-top: 4px; display: block; }
-.phone-input-wrap.input-error { border-color: #f44336 !important; box-shadow: 0 0 0 1px rgba(244,67,54,0.3); }
+.cp-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
 
-.select-field {
+.cp-subtitle {
+  margin: 0;
+  max-width: 300px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.cp-card {
+  padding: 22px 18px;
+  border-radius: var(--radius-lg);
+}
+
+.cp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.cp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cp-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cp-label-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.cp-select-wrap {
+  position: relative;
+}
+
+.cp-select {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 44px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: 'Cairo', sans-serif;
+  font-size: 15px;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23A0A0B8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: left 14px center;
-  padding-left: 44px;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.phone-input-wrap {
+.cp-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.cp-select-wrap::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+.cp-phone-wrap {
   display: flex;
   align-items: stretch;
+  min-height: 50px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.dial-prefix {
+.cp-phone-wrap:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.cp-phone-wrap--error {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
+}
+
+.cp-dial {
   display: flex;
   align-items: center;
   padding: 0 14px;
-  background: rgba(108, 99, 255, 0.1);
+  background: var(--primary-soft);
   color: var(--primary);
   font-size: 15px;
-  font-weight: 600;
-  min-width: 60px;
+  font-weight: 700;
+  min-width: 68px;
   flex-shrink: 0;
+  border-inline-end: 1px solid var(--border);
 }
 
-.phone-input {
-  border: none !important;
-  border-radius: 0 !important;
+.cp-phone-input {
   flex: 1;
   min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0 14px;
+  font-family: 'Cairo', sans-serif;
+  font-size: 16px;
+  color: var(--text-primary);
 }
 
-.btn-gradient:disabled {
+.cp-phone-input:focus {
+  outline: none;
+}
+
+.cp-phone-input::placeholder {
+  color: var(--text-muted);
+}
+
+.cp-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.cp-hint--error {
+  color: var(--danger);
+}
+
+.cp-submit {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #7C75FF 0%, var(--primary) 50%, #5B54E8 100%);
+  color: #fff;
+  font-family: 'Cairo', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(96, 165, 250, 0.35);
+  transition: transform 0.15s, opacity 0.2s;
+}
+
+.cp-submit:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.cp-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  pointer-events: none;
+  box-shadow: none;
 }
 
 .spinner {
-  display: inline-block; width: 18px; height: 18px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: white;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 </style>

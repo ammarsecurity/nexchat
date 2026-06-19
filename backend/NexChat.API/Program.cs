@@ -26,6 +26,8 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 // Services (In-Memory Matching - no Redis needed)
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<MatchingService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<SiteContentFeatureService>();
 builder.Services.Configure<NotificationFeaturesOptions>(
     builder.Configuration.GetSection("NotificationFeatures"));
 builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(

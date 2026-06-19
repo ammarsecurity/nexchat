@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { useConversationsListStore } from '../stores/conversationsList'
 import { useMessageRequestsStore } from '../stores/messageRequests'
 import { getShortFilmsEnabled } from '../services/siteContentFlags'
+import { useConnectFeatures } from './useConnectFeatures'
 import api from '../services/api'
 
 export function useAppNav() {
@@ -13,6 +14,7 @@ export function useAppNav() {
   const listStore = useConversationsListStore()
   const msgReqStore = useMessageRequestsStore()
   const shortFilmsEnabled = ref(false)
+  const { messagingOnlyMode, loadConnectFeatures } = useConnectFeatures()
 
   const totalUnread = computed(() =>
     listStore.list.reduce((sum, c) => {
@@ -27,14 +29,17 @@ export function useAppNav() {
       ...(shortFilmsEnabled.value
         ? [{ to: '/short-films', label: t('nav.discover'), icon: 'films', badge: 0 }]
         : []),
-      { to: '/home', label: t('nav.connect'), icon: 'home', badge: 0 },
+      ...(!messagingOnlyMode.value
+        ? [{ to: '/home', label: t('nav.connect'), icon: 'home', badge: 0 }]
+        : []),
       { to: '/settings', label: t('nav.profile'), icon: 'profile', badge: msgReqStore.pendingCount }
     ]
     return items
   })
 
   const tabBarPaths = computed(() => {
-    const paths = ['/home', '/conversations', '/contacts', '/settings']
+    const paths = ['/conversations', '/contacts', '/settings']
+    if (!messagingOnlyMode.value) paths.unshift('/home')
     if (shortFilmsEnabled.value) paths.push('/short-films')
     return paths
   })
@@ -55,6 +60,7 @@ export function useAppNav() {
   onMounted(async () => {
     const auth = useAuthStore()
     if (auth.token) msgReqStore.fetchPendingCount()
+    await loadConnectFeatures()
     shortFilmsEnabled.value = await getShortFilmsEnabled(api)
   })
 
@@ -62,6 +68,7 @@ export function useAppNav() {
     tabs,
     showTabBar,
     isNavActive,
-    shortFilmsEnabled
+    shortFilmsEnabled,
+    messagingOnlyMode
   }
 }

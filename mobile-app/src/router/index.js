@@ -1,7 +1,14 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../services/api'
-import { getCodeConnectFeaturesEnabled, getStoriesEnabled, getShortFilmsEnabled } from '../services/siteContentFlags'
+import {
+  getCodeConnectFeaturesEnabled,
+  getRandomChatEnabled,
+  getStoriesEnabled,
+  getShortFilmsEnabled,
+  getMessagingOnlyMode,
+  resolveDefaultAppRoute
+} from '../services/siteContentFlags'
 
 const routes = [
   { path: '/', component: () => import('../views/SplashScreen.vue'), meta: { public: true } },
@@ -9,15 +16,15 @@ const routes = [
   { path: '/login', component: () => import('../views/auth/LoginView.vue'), meta: { public: true } },
   { path: '/register', component: () => import('../views/auth/RegisterView.vue'), meta: { public: true } },
   { path: '/complete-profile', component: () => import('../views/auth/CompleteProfileView.vue') },
-  { path: '/join/:code', component: () => import('../views/InviteJoinView.vue'), meta: { public: true } },
+  { path: '/join/:code', component: () => import('../views/InviteJoinView.vue'), meta: { requiresCodeConnectFeatures: true, public: true } },
   { path: '/home', component: () => import('../views/HomeView.vue') },
   { path: '/saved-codes', component: () => import('../views/SavedCodesView.vue'), meta: { requiresCodeConnectFeatures: true } },
   { path: '/connection-history', component: () => import('../views/ConnectionHistoryView.vue'), meta: { requiresCodeConnectFeatures: true } },
   { path: '/blocked', component: () => import('../views/BlockedView.vue') },
-  { path: '/matching', component: () => import('../views/MatchingView.vue') },
+  { path: '/matching', component: () => import('../views/MatchingView.vue'), meta: { requiresRandomChat: true } },
   { path: '/match', redirect: '/matching' },
-  { path: '/chat/:sessionId', component: () => import('../views/ChatView.vue') },
-  { path: '/video/:sessionId', component: () => import('../views/VideoCallView.vue') },
+  { path: '/chat/:sessionId', component: () => import('../views/ChatView.vue'), meta: { requiresRandomChat: true } },
+  { path: '/video/:sessionId', component: () => import('../views/VideoCallView.vue'), meta: { requiresRandomChat: true } },
   { path: '/conversations', component: () => import('../views/layouts/MessagingLayout.vue') },
   { path: '/stories/create', component: () => import('../views/StoryCreateView.vue'), meta: { requiresStories: true } },
   { path: '/stories/view/:userId', component: () => import('../views/StoryViewerView.vue'), meta: { requiresStories: true } },
@@ -53,17 +60,32 @@ router.beforeEach(async (to) => {
   if (!to.meta.public && !auth.token) return '/login'
   if (auth.token && auth.needsProfileContactRedirect && to.path !== '/complete-profile')
     return '/complete-profile'
-  if (to.meta.requiresCodeConnectFeatures && auth.token) {
+
+  if (to.meta.requiresCodeConnectFeatures) {
     const ok = await getCodeConnectFeaturesEnabled(api)
-    if (!ok) return '/home'
+    if (!ok) {
+      if (!auth.token) return '/login'
+      return resolveDefaultAppRoute(api)
+    }
   }
+
+  if (to.meta.requiresRandomChat && auth.token) {
+    const ok = await getRandomChatEnabled(api)
+    if (!ok) return resolveDefaultAppRoute(api)
+  }
+
+  if (auth.token && to.path === '/home') {
+    const messagingOnly = await getMessagingOnlyMode(api)
+    if (messagingOnly) return '/conversations'
+  }
+
   if (to.meta.requiresStories && auth.token) {
     const ok = await getStoriesEnabled(api)
     if (!ok) return '/conversations'
   }
   if (to.meta.requiresShortFilms && auth.token) {
     const ok = await getShortFilmsEnabled(api)
-    if (!ok) return '/home'
+    if (!ok) return resolveDefaultAppRoute(api)
   }
 })
 

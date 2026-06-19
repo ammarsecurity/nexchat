@@ -1,9 +1,15 @@
 <script setup>
+import { computed } from 'vue'
 import { Download } from 'lucide-vue-next'
 import { Capacitor } from '@capacitor/core'
 
 const props = defineProps({
-  downloadUrl: { type: String, required: true }
+  downloadUrl: { type: String, default: '' }
+})
+
+const hasDownloadUrl = computed(() => {
+  const url = props.downloadUrl?.trim()
+  return !!url && url !== '#' && /^https?:\/\//i.test(url)
 })
 
 function openDownload() {
@@ -23,14 +29,18 @@ function openDownload() {
         <Download :size="40" stroke-width="2" />
       </div>
       <h2 class="update-title">تحديث مطلوب</h2>
-      <p class="update-desc">يتوفر إصدار أحدث من التطبيق. يرجى التحديث للمتابعة.</p>
+      <p class="update-desc">
+        يتوفر إصدار أحدث من التطبيق. يرجى التحديث من المتجر للمتابعة.
+      </p>
       <button
+        v-if="hasDownloadUrl"
         class="update-btn"
         @click="openDownload"
       >
         <Download :size="20" stroke-width="2" />
         تحميل التحديث
       </button>
+      <p v-else class="update-no-url">رابط التحميل غير مضبوط في لوحة الإدارة. حدّث التطبيق يدوياً من المتجر.</p>
     </div>
   </div>
 </template>
@@ -79,6 +89,12 @@ function openDownload() {
   font-size: 0.95rem;
   color: var(--text-secondary);
   margin: 0 0 24px;
+  line-height: 1.5;
+}
+.update-no-url {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin: 0;
   line-height: 1.5;
 }
 

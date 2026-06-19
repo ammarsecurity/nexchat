@@ -11,6 +11,7 @@ import ActiveCallBar from '../components/ActiveCallBar.vue'
 import { useActiveCallStore } from '../stores/activeCall'
 import { ensureAbsoluteUrl } from '../utils/imageUrl'
 import api from '../services/api'
+import { getCodeConnectFeaturesEnabled } from '../services/siteContentFlags'
 import { formatTime12 } from '../utils/formatTime'
 import { useLocaleStore } from '../stores/locale'
 import { useI18n } from 'vue-i18n'
@@ -37,6 +38,7 @@ const blockError = ref('')
 const reportMessageContext = ref(null)
 const showShareModal = ref(false)
 const shareCodeCopied = ref(false)
+const codeConnectEnabled = ref(true)
 const incomingCall = ref(false)
 const callDeclined = ref(false)
 const showVideoConfirm = ref(false)
@@ -297,6 +299,12 @@ async function goToNextMatchFromRandomSession() {
 onMounted(async () => {
   chatMounted = true
   loading.value = true
+  codeConnectEnabled.value = await getCodeConnectFeaturesEnabled(api)
+  if (isSupportChat.value && !codeConnectEnabled.value) {
+    loading.value = false
+    router.replace('/conversations')
+    return
+  }
   await startHub(chatHub)
 
   chatHub.on('ReceiveMessage', (msg) => {
@@ -875,7 +883,7 @@ async function shareCodeInChat() {
 
     <!-- Share Code Modal -->
     <Transition name="modal">
-      <div v-if="showShareModal" class="share-overlay" @click.self="closeShareModal">
+      <div v-if="showShareModal && codeConnectEnabled" class="share-overlay" @click.self="closeShareModal">
         <div class="share-modal glass-card">
           <div class="share-modal-header">
             <Share2 :size="20" stroke-width="2" class="share-modal-icon" />
@@ -1032,7 +1040,7 @@ async function shareCodeInChat() {
     <!-- Input -->
     <div v-else class="input-area">
       <!-- Share Code Bar -->
-      <button v-if="!isSupportChat" class="share-code-bar" @click="openShareModal">
+      <button v-if="!isSupportChat && codeConnectEnabled" class="share-code-bar" @click="openShareModal">
         <Share2 :size="18" stroke-width="2" />
         <span>مشاركة كودك</span>
       </button>

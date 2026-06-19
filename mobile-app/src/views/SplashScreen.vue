@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { publicUrl } from '../utils/publicUrl'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import { useReducedMotion } from '../composables/useReducedMotion'
+import { navigateDefaultForSession } from '../utils/appRouting'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -22,7 +23,7 @@ const ONBOARDING_SEEN = 'nexchat_onboarding_seen'
 async function goNext() {
   const seen = localStorage.getItem(ONBOARDING_SEEN)
   if (seen) {
-    router.replace(auth.isLoggedIn ? '/home' : '/login')
+    await navigateDefaultForSession(router, auth.isLoggedIn)
     return
   }
   try {
@@ -33,7 +34,7 @@ async function goNext() {
       try {
         const parsed = JSON.parse(content)
         if (parsed.enabled === false) {
-          router.replace(auth.isLoggedIn ? '/home' : '/login')
+          await navigateDefaultForSession(router, auth.isLoggedIn)
           return
         }
       } catch {}
