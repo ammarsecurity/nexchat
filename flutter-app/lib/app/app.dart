@@ -14,6 +14,7 @@ import '../core/theme/app_theme.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/calls/call_state.dart';
 import '../features/matching/matching_controller.dart';
+import '../services/call_native.dart';
 import '../services/ring_sound.dart';
 import '../services/update_check.dart';
 import '../shared/no_connection_view.dart';
@@ -32,7 +33,6 @@ class NexChatApp extends ConsumerStatefulWidget {
 class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObserver {
   static const _updatePoll = Duration(seconds: 90);
   Timer? _updateTimer;
-  UpdateInfo? _requiredUpdate;
   StreamSubscription<void>? _unauthorizedSub;
   bool _handlingUnauthorized = false;
   bool _online = true;
@@ -57,16 +57,36 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(CallNative.setForeground(true));
+      final incoming = ref.read(incomingConvCallProvider);
+      if (incoming.visible) {
+        unawaited(CallNative.dismissIncoming());
+        unawaited(RingSound.start());
+      }
       _runUpdateCheck();
       if (ref.read(networkProvider)) unawaited(Hubs.resumeAll());
+      return;
+    }
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(CallNative.setForeground(false));
+      final incoming = ref.read(incomingConvCallProvider);
+      if (incoming.visible) {
+        unawaited(RingSound.stop());
+        unawaited(CallNative.showIncoming(
+          conversationId: incoming.conversationId,
+          voiceOnly: incoming.voiceOnly,
+          callerName: incoming.callerName,
+          callerAvatar: incoming.callerAvatar,
+        ));
+      }
     }
   }
 
   Future<void> _runUpdateCheck() async {
     if (!_online) return;
-    final info = await fetchUpdateInfo();
-    if (!mounted) return;
-    setState(() => _requiredUpdate = info != null && info.required ? info : null);
+    await ref.read(appUpdateProvider.notifier).refresh();
   }
 
   Future<void> _onCameOnline() async {
@@ -112,6 +132,7 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
     final router = ref.watch(routerProvider);
     final rtl = locale.languageCode == 'ar';
     final loggedIn = ref.watch(authProvider.select((s) => s.isLoggedIn));
+    final requiredUpdate = ref.watch(appUpdateProvider.select((u) => u != null && u.required ? u : null));
 
     ref.listen(networkProvider, (prev, next) {
       _online = next;
@@ -148,7 +169,7 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
                 ),
                 if (!_online) Positioned(top: 0, left: 0, right: 0, child: OfflineBanner(onRetry: _retryConnection)),
               ],
-              if (_requiredUpdate != null) UpdateRequiredModal(downloadUrl: _requiredUpdate!.downloadUrl),
+              if (requiredUpdate != null) UpdateRequiredModal(downloadUrl: requiredUpdate.downloadUrl),
               const AppToastHost(),
               ValueListenableBuilder<bool>(
                 valueListenable: Api.loadingOverlay,

@@ -8,6 +8,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -22,6 +24,8 @@ class IncomingCallActivity : Activity() {
     private var voiceOnly = false
     private var callerName = ""
     private var callerAvatar: String? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val expire = Runnable { decline() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +35,7 @@ class IncomingCallActivity : Activity() {
         IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_RING)
         IncomingCallRinger.start(this)
         setContentView(buildUi())
+        handler.postDelayed(expire, 60_000)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -40,6 +45,7 @@ class IncomingCallActivity : Activity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(expire)
         if (IncomingCallUi.activity === this) IncomingCallUi.activity = null
         IncomingCallRinger.stop()
         super.onDestroy()
@@ -171,7 +177,7 @@ class IncomingCallActivity : Activity() {
 
     private fun accept() {
         IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_ACCEPT)
-        IncomingCallNotifier.cancel(this)
+        IncomingCallNotifier.cancel(this, finishActivity = false)
         IncomingCallPlugin.notifyFlutterIfReady(this)
         startActivity(
             IncomingCallStore.putOn(
@@ -190,7 +196,7 @@ class IncomingCallActivity : Activity() {
 
     private fun decline() {
         IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
-        IncomingCallNotifier.cancel(this)
+        IncomingCallNotifier.cancel(this, finishActivity = false)
         IncomingCallPlugin.notifyFlutterIfReady(this)
         if (!IncomingCallPlugin.flutterReady) IncomingCallStore.clear(this)
         finish()

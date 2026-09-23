@@ -26,6 +26,8 @@ import UIKit
         result(nil)
       case "start":
         result(nil)
+      case "showIncoming", "dismissIncoming", "setForeground", "ready", "consumePending", "isEmulator":
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }

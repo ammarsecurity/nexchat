@@ -29,12 +29,7 @@ class IncomingCallReceiver : BroadcastReceiver() {
                 )
                 context.startActivity(launch)
             }
-            ACTION_DECLINE, ACTION_DISMISS -> {
-                IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
-                IncomingCallNotifier.cancel(context)
-                IncomingCallPlugin.notifyFlutterIfReady(context)
-                if (!IncomingCallPlugin.flutterReady) IncomingCallStore.clear(context)
-            }
+            ACTION_DECLINE, ACTION_DISMISS -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar)
         }
     }
 
@@ -42,5 +37,31 @@ class IncomingCallReceiver : BroadcastReceiver() {
         const val ACTION_ACCEPT = "site.nexchat.nexchat.INCOMING_ACCEPT"
         const val ACTION_DECLINE = "site.nexchat.nexchat.INCOMING_DECLINE"
         const val ACTION_DISMISS = "site.nexchat.nexchat.INCOMING_DISMISS"
+
+        fun timeoutDecline(context: Context) {
+            val pending = IncomingCallStore.peek(context) ?: return
+            timeoutDecline(
+                context,
+                pending["conversationId"] as? String,
+                pending["sessionId"] as? String,
+                pending["voiceOnly"] == true,
+                pending["callerName"] as? String ?: "",
+                pending["callerAvatar"] as? String,
+            )
+        }
+
+        fun timeoutDecline(
+            context: Context,
+            conversationId: String?,
+            sessionId: String?,
+            voiceOnly: Boolean,
+            callerName: String,
+            callerAvatar: String?,
+        ) {
+            IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
+            IncomingCallNotifier.cancel(context)
+            IncomingCallPlugin.notifyFlutterIfReady(context)
+            if (!IncomingCallPlugin.flutterReady) IncomingCallStore.clear(context)
+        }
     }
 }

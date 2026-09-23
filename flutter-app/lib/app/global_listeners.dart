@@ -23,6 +23,7 @@ import '../features/matching/matching_dialogs.dart';
 import '../features/notifications/notifications_controller.dart';
 import '../features/short_films/short_films_controller.dart';
 import '../features/stories/stories_controller.dart';
+import '../services/call_native.dart';
 import '../services/deep_links.dart';
 import '../services/notification_nav.dart';
 import '../services/push_service.dart';
@@ -48,6 +49,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
     _bindStoryHub();
     _disposers.addAll(bindMatchingHub(ref));
     _bindPush();
+    _bindIncomingNative();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncHubs();
       _initExistingSession();
@@ -96,12 +98,28 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         ref.read(notificationsProvider.notifier).add(item);
         navigateFromNotification(ref, item);
       }
-      ..onForeground = (data, title, body) => ref.read(notificationsProvider.notifier).add(storeItem(data, title, body, false));
+      ..onForeground = (data, title, body) {
+        ref.read(notificationsProvider.notifier).add(storeItem(data, title, body, false));
+        final d = parseNotificationData(data);
+        if (d['type'] == 'video_call') {
+          if (d['conversationId'] != null) {
+            NotificationHooks.onConversationCall?.call(d);
+          } else if (d['sessionId'] != null) {
+            applyIncomingCallEvent(ref, d);
+          }
+        }
+      };
 
     NotificationHooks.onConversationCall = (d) {
+      final id = d['conversationId'];
+      if (id == null || id.isEmpty) return;
+      if (isInAnotherCall(ref, exceptId: id)) {
+        Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [id])).catchError((_) => null);
+        return;
+      }
       ref.read(incomingConvCallProvider.notifier).setIncoming(IncomingConvCall(
-            conversationId: d['conversationId'],
-            voiceOnly: d['voiceOnly'] == 'true',
+            conversationId: id,
+            voiceOnly: incomingCallAsBool(d['voiceOnly']),
             callerName: d['callerName'] ?? '',
             callerAvatar: d['callerAvatar'],
           ));
@@ -116,6 +134,15 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
           ));
       RingSound.start();
     };
+  }
+
+  void _bindIncomingNative() {
+    CallNative.onIncomingEvent = (e) {
+      if (!ref.read(authProvider).isLoggedIn) return;
+      applyIncomingCallEvent(ref, e);
+    };
+    CallNative.listen();
+    unawaited(CallNative.ready());
   }
 
   void _clearMatchingOverlays() {
@@ -157,8 +184,18 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
     _disposers.add(h.on('IncomingVideoCall', (a) {
       final parsed = parseIncomingConversationCallPayload(a);
       if (parsed == null) return;
+      final cid = parsed.conversationId;
+      if (cid == null) return;
       final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
-      if (path == '/video/${parsed.conversationId}') return;
+      if (path == '/video/$cid') return;
+      if (isInAnotherCall(ref, exceptId: cid)) {
+        Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [cid])).catchError((_) => null);
+        return;
+      }
+      final prev = ref.read(incomingConvCallProvider);
+      if (prev.visible && prev.conversationId != null && prev.conversationId != cid) {
+        Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [prev.conversationId!])).catchError((_) => null);
+      }
       ref.read(incomingConvCallProvider.notifier).setIncoming(parsed);
     }));
 
@@ -167,6 +204,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       final incoming = ref.read(incomingConvCallProvider);
       if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
         ref.read(incomingConvCallProvider.notifier).clear();
+        unawaited(CallNative.dismissIncoming());
       }
     }));
 
@@ -222,6 +260,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       ref.invalidate(storiesProvider);
       ref.invalidate(shortFilmsProvider);
       ref.read(incomingConvCallProvider.notifier).clear();
+      unawaited(CallNative.dismissIncoming());
       ref.read(chatSessionProvider.notifier).clear();
       unawaited(LiveKitService.instance.leave());
       ref.read(activeCallProvider.notifier).clear();

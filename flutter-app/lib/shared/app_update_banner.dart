@@ -22,7 +22,7 @@ class AppUpdateBanner extends ConsumerWidget {
     final url = info.downloadUrl;
     final version = info.latestVersion;
     final desc = (version != null && version.isNotEmpty)
-        ? t('update.bannerDescVersion').replaceAll('{version}', version)
+        ? t('update.bannerDescVersion', {'version': version})
         : t('update.bannerDesc');
 
     Future<void> open() async {

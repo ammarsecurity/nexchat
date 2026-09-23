@@ -21,6 +21,7 @@ import '../../shared/media_widgets.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../calls/active_call_bar.dart';
+import '../calls/call_state.dart';
 import '../conversations/conversation_chat_screen.dart' show TypingBubble;
 import '../matching/matching_controller.dart';
 import 'chat_session.dart';
@@ -37,10 +38,19 @@ const _partnerPalette = [Color(0xFF6C63FF), Color(0xFFFF6584), Color(0xFF00D4FF)
 
 /// views/ChatView.vue — random / code-connect / support chat session over /hubs/chat.
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.sessionId, this.initialPartner, this.incomingVideoCall = false});
+  const ChatScreen({
+    super.key,
+    required this.sessionId,
+    this.initialPartner,
+    this.incomingVideoCall = false,
+    this.autoAcceptCall = false,
+    this.supportChat = false,
+  });
   final String sessionId;
   final Json? initialPartner;
   final bool incomingVideoCall;
+  final bool autoAcceptCall;
+  final bool supportChat;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -83,6 +93,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _callDeclined = false;
   bool _showVideoConfirm = false;
   bool _callingOut = false;
+  Timer? _outgoingRing;
   bool _showEmojiPicker = false;
   int _emojiTab = 0;
   bool _uploadingImage = false;
@@ -90,7 +101,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   String get _sid => widget.sessionId;
   String? get _myId => ref.read(authProvider).user?.id;
   Json? get _partner => ref.read(chatSessionProvider).partner;
-  bool get _isSupportChat => _partner?.s('name') == 'دعم';
+  bool get _isSupportChat => widget.supportChat || _partner?.s('name') == 'دعم';
   bool get _partnerIsFeatured => _partner?.b('isFeatured') ?? false;
   String? get _partnerUserId {
     final p = _partner;
@@ -107,9 +118,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _input.addListener(() {
       if (_input.hasFocus && _showEmojiPicker) setState(() => _showEmojiPicker = false);
     });
-    if (widget.initialPartner != null && ref.read(chatSessionProvider).sessionId != _sid) {
-      _chat.setSession(_sid, widget.initialPartner);
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _mount());
   }
 
@@ -164,6 +172,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Json? _first(List<Object?> a) => a.isNotEmpty && a[0] is Map ? Json.from(a[0] as Map) : null;
 
   Future<void> _mount() async {
+    if (widget.initialPartner != null && ref.read(chatSessionProvider).sessionId != _sid) {
+      _chat.setSession(_sid, widget.initialPartner);
+    }
     setState(() => _loading = true);
     _codeConnectEnabled = (await ref.read(featureFlagsProvider.future)).codeConnect;
     if (!_mounted) return;
@@ -235,15 +246,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         });
       }),
       h.on('IncomingVideoCall', (_) {
-        if (!_isSupportChat && mounted) setState(() => _incomingCall = true);
+        if (!_isSupportChat && mounted) {
+          final active = ref.read(activeCallProvider).sessionId;
+          if (active != null && active != _sid) {
+            Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
+            return;
+          }
+          setState(() => _incomingCall = true);
+        }
       }),
       h.on('VideoCallAccepted', (_) {
+        _outgoingRing?.cancel();
         if (mounted) setState(() => _callingOut = false);
         _leavingProgrammatically = true;
         _router.push('/video/$_sid', extra: {'initiator': true});
       }),
       h.on('VideoCallDeclined', (_) {
         if (!mounted) return;
+        _outgoingRing?.cancel();
         setState(() {
           _callingOut = false;
           _callDeclined = true;
@@ -273,7 +293,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
 
     if (!_goToNextInProgress && _mounted && widget.incomingVideoCall) {
-      if (!_isSupportChat) setState(() => _incomingCall = true);
+      if (!_isSupportChat) {
+        setState(() => _incomingCall = true);
+        if (widget.autoAcceptCall) unawaited(_acceptCall());
+      }
       _router.replace('/chat/$_sid');
     }
 
@@ -323,6 +346,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     WidgetsBinding.instance.removeObserver(this);
     _clearPartnerWait();
     _timer?.cancel();
+    _outgoingRing?.cancel();
     _typingTimeout?.cancel();
     _reconnectSub?.cancel();
     for (final off in _offs) {
@@ -532,19 +556,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (mounted) setState(() => _showVideoConfirm = false);
       return;
     }
+    final active = ref.read(activeCallProvider);
+    if (active.sessionId != null) {
+      if (mounted) setState(() => _showVideoConfirm = false);
+      if (active.sessionId == _sid) {
+        ref.read(activeCallProvider.notifier).expand();
+        _router.push('/video/$_sid', extra: {'initiator': true});
+      } else {
+        showToast(context, t('videoCall.alreadyInCall'), error: true);
+      }
+      return;
+    }
     setState(() {
       _showVideoConfirm = false;
       _callingOut = true;
     });
+    _outgoingRing?.cancel();
+    _outgoingRing = Timer(kIncomingCallRingTimeout, () {
+      if (!mounted || !_callingOut) return;
+      _cancelOutgoingCall();
+    });
     try {
       await Hubs.chat.invoke('RequestVideoCall', [_sid]);
     } catch (_) {
+      _outgoingRing?.cancel();
       if (mounted) setState(() => _callingOut = false);
     }
   }
 
   Future<void> _acceptCall() async {
     if (!_requireOnline()) return;
+    final active = ref.read(activeCallProvider);
+    if (active.sessionId != null && active.sessionId != _sid) {
+      _declineCall();
+      if (mounted) showToast(context, t('videoCall.alreadyInCall'), error: true);
+      return;
+    }
     setState(() => _incomingCall = false);
     try {
       await Hubs.chat.invoke('AcceptVideoCall', [_sid]);
@@ -566,6 +613,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _cancelOutgoingCall() {
+    _outgoingRing?.cancel();
     setState(() => _callingOut = false);
     Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
   }

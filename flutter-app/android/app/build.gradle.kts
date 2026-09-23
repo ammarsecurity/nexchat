@@ -10,8 +10,13 @@ plugins {
 // Must be the same keystore as the current Play Store build so the update installs over it.
 val keystoreProperties = Properties().apply {
     val f = rootProject.file("key.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
+    if (f.exists()) {
+        val text = f.readText(Charsets.UTF_8).removePrefix("\uFEFF")
+        load(text.reader())
+    }
 }
+
+fun keyProp(name: String): String? = keystoreProperties.getProperty(name)?.trim()?.trim('"')
 
 android {
     namespace = "site.nexchat.nexchat"
@@ -39,12 +44,17 @@ android {
     }
 
     signingConfigs {
-        if (keystoreProperties.containsKey("storeFile")) {
+        val storePath = keyProp("storeFile")
+        if (!storePath.isNullOrBlank()) {
             create("release") {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(storePath)
+                storePassword = keyProp("storePassword")
+                keyAlias = keyProp("keyAlias")
+                keyPassword = keyProp("keyPassword")
+                val type = keyProp("storeType")
+                if (!type.isNullOrBlank()) {
+                    storeType = type
+                }
             }
         }
     }
@@ -64,4 +74,9 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("com.onesignal:OneSignal:5.10.2")
+    implementation("androidx.core:core-ktx:1.16.0")
 }

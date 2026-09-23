@@ -259,7 +259,11 @@
     "requiredTitle": "Update required",
     "requiredDesc": "A newer version of the app is available. Please update from the store to continue.",
     "download": "Download update",
-    "noUrl": "The download link is not set in the admin panel. Update the app manually from the store."
+    "noUrl": "The download link is not set in the admin panel. Update the app manually from the store.",
+    "bannerTitle": "New update available",
+    "bannerDesc": "Please update the app to get the latest features and fixes.",
+    "bannerDescVersion": "Version {version} is available. Please update the app to continue.",
+    "updateNow": "Update now"
   },
   "randomMatch": {
     "hint": "Before the chat starts: accept this person, or decline/skip to find someone else. Your precise location is not shared. Reporting and blocking are available in chat per our terms.",
@@ -338,6 +342,8 @@
     "deviceNotFound": "No camera or microphone was found",
     "mediaError": "Cannot access the camera or microphone",
     "flipFailed": "Could not switch camera",
+    "alreadyInCall": "You are already in a call",
+    "peerDidNotJoin": "The other person didn't join. The call ended",
     "filters": {
       "none": "Normal",
       "grayscale": "B&W",

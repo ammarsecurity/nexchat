@@ -21,6 +21,8 @@ import '../../shared/media_widgets.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../calls/active_call_bar.dart';
+import '../calls/call_state.dart';
+import '../calls/video_call_screen.dart';
 import '../calls/whatsapp_call_ui.dart';
 import 'active_conversation.dart';
 import 'conversations_list_controller.dart';
@@ -93,6 +95,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   bool _callingOut = false;
   bool _callingVoiceOnly = false;
   bool _callDeclined = false;
+  Timer? _outgoingRing;
 
   final _recorder = AudioRecorder();
   bool _recording = false;
@@ -205,6 +208,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         final cid = '${a.firstOrNull ?? ''}';
         if (cid.isNotEmpty && cid != _cid) return;
         if (!mounted) return;
+        _outgoingRing?.cancel();
         setState(() {
           _callingOut = false;
           _callDeclined = true;
@@ -214,6 +218,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         });
       }),
       h.on('VideoCallAccepted', (_) {
+        _outgoingRing?.cancel();
         if (mounted) setState(() => _callingOut = false);
       }),
     ]);
@@ -319,6 +324,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _markReadTimer?.cancel();
     _markReadInterval?.cancel();
     _saveTimer?.cancel();
+    _outgoingRing?.cancel();
     _recordTimer?.cancel();
     if (_recording) _recorder.cancel();
     _recorder.dispose();
@@ -779,20 +785,37 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   Future<void> _startCall({required bool voiceOnly}) async {
     if (_callingOut) return;
     if (!_requireOnline()) return;
+    final active = ref.read(activeCallProvider);
+    if (active.sessionId == _cid) {
+      ref.read(activeCallProvider.notifier).expand();
+      openVideoRoute(GoRouter.of(context), _cid, {'voiceOnly': active.voiceOnly || voiceOnly, 'fromConversation': true});
+      return;
+    }
+    if (active.sessionId != null) {
+      showToast(context, t('videoCall.alreadyInCall'), error: true);
+      return;
+    }
     setState(() {
       _callingOut = true;
       _callingVoiceOnly = voiceOnly;
       _callDeclined = false;
     });
+    _outgoingRing?.cancel();
+    _outgoingRing = Timer(kIncomingCallRingTimeout, () {
+      if (!mounted || !_callingOut) return;
+      _cancelOutgoing();
+    });
     try {
       await Hubs.conversation.invoke('RequestVideoCall', [_cid, voiceOnly]);
     } catch (_) {
+      _outgoingRing?.cancel();
       if (mounted) setState(() => _callingOut = false);
     }
   }
 
   void _cancelOutgoing() {
     if (!_callingOut) return;
+    _outgoingRing?.cancel();
     setState(() => _callingOut = false);
     Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid])).catchError((_) => null);
   }

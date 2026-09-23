@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../core/feature_flags.dart';
+import '../core/network/network_status.dart';
 
 class UpdateInfo {
   const UpdateInfo({
@@ -58,3 +60,15 @@ Future<UpdateInfo?> fetchUpdateInfo() async {
     return null;
   }
 }
+
+class AppUpdateController extends Notifier<UpdateInfo?> {
+  @override
+  UpdateInfo? build() => null;
+
+  Future<void> refresh() async {
+    if (!NetworkStatus.online.value) return;
+    state = await fetchUpdateInfo();
+  }
+}
+
+final appUpdateProvider = NotifierProvider<AppUpdateController, UpdateInfo?>(AppUpdateController.new);

@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../core/i18n/i18n.dart';
 import '../core/network/api_client.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_theme.dart';
 import '../core/theme/layout.dart';
 
 /// `.btn-primary` / `.update-btn` — the brand gradient button.
@@ -562,79 +563,6 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// Branded spinning ring used by auth and page loaders.
-class AppSpinner extends StatefulWidget {
-  const AppSpinner({super.key, this.size = 36});
-  final double size;
-
-  @override
-  State<AppSpinner> createState() => _AppSpinnerState();
-}
-
-class _AppSpinnerState extends State<AppSpinner> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final box = widget.size + 28;
-    return SizedBox(
-      width: box,
-      height: box,
-      child: DecoratedBox(
-        decoration: BoxDecoration(color: c.primarySoft, shape: BoxShape.circle),
-        child: RotationTransition(
-          turns: _c,
-          child: CustomPaint(
-            painter: _SpinnerRingPainter(color: c.primary, track: c.primaryMuted),
-            child: const SizedBox.expand(),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SpinnerRingPainter extends CustomPainter {
-  const _SpinnerRingPainter({required this.color, required this.track});
-  final Color color;
-  final Color track;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.shortestSide / 2 - 10;
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.2
-        ..color = track,
-    );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -0.9,
-      1.85,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.2
-        ..strokeCap = StrokeCap.round
-        ..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SpinnerRingPainter old) => old.color != color || old.track != track;
-}
-
 /// Centered glass card: spinner + Arabic/English status line.
 class AppLoaderCard extends StatelessWidget {
   const AppLoaderCard({super.key, this.text});
@@ -644,33 +572,39 @@ class AppLoaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final label = (text?.trim().isNotEmpty ?? false) ? text!.trim() : t('common.loading');
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: c.bgCard,
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          border: Border.all(color: c.border),
-          boxShadow: [
-            BoxShadow(color: c.shadow, blurRadius: 24, offset: const Offset(0, 8)),
-          ],
-        ),
+    return Material(
+      color: c.bgCard,
+      elevation: 8,
+      shadowColor: c.shadow,
+      borderRadius: BorderRadius.circular(AppRadius.xl),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const AppSpinner(),
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: c.primary,
+                  backgroundColor: c.primarySoft,
+                  year2023: false,
+                ),
+              ),
               const SizedBox(height: 16),
               Text(
                 label,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: c.textPrimary,
+                style: const TextStyle(
+                  fontFamily: kAppFont,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   height: 1.45,
-                ),
+                  decoration: TextDecoration.none,
+                ).copyWith(color: c.textPrimary),
               ),
             ],
           ),

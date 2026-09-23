@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
@@ -21,6 +24,8 @@
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
@@ -53,10 +58,31 @@
                 <data android:scheme="https" android:host="nexchat-cloud.xaronhost.com" android:pathPrefix="/share/story/" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".IncomingCallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/IncomingCallTheme"
+            android:turnScreenOn="true" />
+        <receiver
+            android:name=".IncomingCallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="site.nexchat.nexchat.INCOMING_ACCEPT" />
+                <action android:name="site.nexchat.nexchat.INCOMING_DECLINE" />
+                <action android:name="site.nexchat.nexchat.INCOMING_DISMISS" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".CallService"
             android:exported="false"
             android:foregroundServiceType="microphone|camera" />
+        <meta-data
+            android:name="com.onesignal.NotificationServiceExtension"
+            android:value="site.nexchat.nexchat.IncomingCallNotificationExtension" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

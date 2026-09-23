@@ -8,6 +8,9 @@ import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../services/call_native.dart';
 
+const kIncomingCallRingTimeout = Duration(seconds: 60);
+const kCallPeerWaitTimeout = Duration(seconds: 45);
+
 /// Callbacks wired by VideoCallScreen (or the minimized bar) — services/livekit.js `handlers`.
 class LiveKitHandlers {
   void Function(Track track)? onRemoteTrack;

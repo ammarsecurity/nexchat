@@ -18,6 +18,7 @@ import '../../core/network/network_status.dart';
 import '../../core/storage/prefs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/layout.dart';
+import '../../shared/app_update_banner.dart';
 import '../../shared/widgets.dart';
 import '../notifications/notifications_controller.dart';
 import '../stories/stories_strip.dart';
@@ -212,6 +213,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               GlassIconButton(icon: LucideIcons.bell, badgeDot: notifCount > 0, onTap: () => context.push('/notifications')),
             ]),
           ),
+          const AppUpdateBanner(),
           _MainTabs(section: _section, pending: pending, onChanged: _setSection),
           Expanded(
             child: switch (_section) {

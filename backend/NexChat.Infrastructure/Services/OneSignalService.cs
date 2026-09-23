@@ -60,15 +60,20 @@ public class OneSignalService
             ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
         };
 
+        Dictionary<string, string>? dataDict = null;
         if (data != null)
         {
-            var dataDict = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            dataDict = JsonSerializer.Deserialize<Dictionary<string, string>>(
                 JsonSerializer.Serialize(data));
             if (dataDict != null)
                 payload["data"] = dataDict;
         }
 
-        var result = await SendPayloadWithRetryAsync(payload, "push", GetTypeFromData(data), userId, null);
+        var type = GetTypeFromData(data);
+        if (type is "video_call" or "code_connected")
+            AddUrgencyOptions(payload, dataDict);
+
+        var result = await SendPayloadWithRetryAsync(payload, "push", type, userId, null);
         return result.Success;
     }
 
@@ -115,7 +120,13 @@ public class OneSignalService
             recipientId,
             voiceOnly ? "مكالمة صوتية" : "مكالمة فيديو",
             voiceOnly ? $"{callerName} يطلب مكالمة صوتية" : $"{callerName} يطلب مكالمة فيديو",
-            new { type = "video_call", conversationId = conversationId.ToString() });
+            new Dictionary<string, string>
+            {
+                ["type"] = "video_call",
+                ["conversationId"] = conversationId.ToString(),
+                ["voiceOnly"] = voiceOnly ? "true" : "false",
+                ["callerName"] = callerName ?? ""
+            });
 
     /// <summary>إشعار بطلب مراسلة جديد (يُفتح تطبيق صفحة الطلبات).</summary>
     public Task<bool> SendMessageRequestAsync(Guid recipientId, string requesterName, Guid messageRequestId)
@@ -215,23 +226,30 @@ public class OneSignalService
         else
             return false;
 
-        AddUrgencyOptions(payload);
+        AddUrgencyOptions(payload, data);
 
         var result = await SendPayloadWithRetryAsync(payload, "push", "code_connected", recipientId, ids.FirstOrDefault());
         return result.Success;
     }
 
     /// <summary>إضافة خيارات العجلة لإشعار طلب الاتصال.</summary>
-    private void AddUrgencyOptions(Dictionary<string, object> payload)
+    private void AddUrgencyOptions(Dictionary<string, object> payload, Dictionary<string, string>? data = null)
     {
         payload["priority"] = 10;
+        payload["ttl"] = 60;
         payload["ios_interruption_level"] = "time_sensitive";
+        payload["ios_sound"] = string.IsNullOrWhiteSpace(_opts.IncomingCallSound) ? "default" : _opts.IncomingCallSound!;
 
         if (!string.IsNullOrWhiteSpace(_opts.IncomingCallChannelId))
             payload["android_channel_id"] = _opts.IncomingCallChannelId;
 
-        if (!string.IsNullOrWhiteSpace(_opts.IncomingCallSound))
-            payload["ios_sound"] = _opts.IncomingCallSound;
+        if (data != null)
+        {
+            if (data.TryGetValue("conversationId", out var cid) && !string.IsNullOrWhiteSpace(cid))
+                payload["collapse_id"] = $"call_{cid}";
+            else if (data.TryGetValue("sessionId", out var sid) && !string.IsNullOrWhiteSpace(sid))
+                payload["collapse_id"] = $"call_{sid}";
+        }
     }
 
     /// <summary>
@@ -324,7 +342,7 @@ public class OneSignalService
         data.Remove("title");
         data.Remove("body");
 
-        return new Dictionary<string, object>
+        var payload = new Dictionary<string, object>
         {
             ["app_id"] = _opts.AppId,
             ["include_aliases"] = new Dictionary<string, object>
@@ -336,6 +354,11 @@ public class OneSignalService
             ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body },
             ["data"] = data
         };
+
+        if (item.Type is "video_call" or "code_connected")
+            AddUrgencyOptions(payload, data);
+
+        return payload;
     }
 
     private async Task<(bool Success, string? ProviderMessageId, string? Error)> SendPayloadWithRetryAsync(

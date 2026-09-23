@@ -83,6 +83,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   bool _initializing = true;
   String _filter = 'none';
   Timer? _timer;
+  Timer? _peerWait;
   bool _suppressDisconnectNavigate = false;
   bool _failureReturnStarted = false;
   Room? _room;
@@ -135,7 +136,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     if (!mounted) return;
     final became = v && !_connected;
     setState(() => _connected = v);
-    if (became) unawaited(_applySpeaker());
+    if (became) {
+      _peerWait?.cancel();
+      _peerWait = null;
+      unawaited(_applySpeaker());
+    }
   }
 
   String _mediaErrorMessage(Object e) {
@@ -147,7 +152,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   Future<void> _start() async {
     try {
-      if (_voiceOnly) _speakerOn = false;
+      if (_voiceOnly) _speakerOn = await CallNative.isEmulator();
       final statuses = await [Permission.microphone, if (!_voiceOnly) Permission.camera].request();
       if (!mounted) return;
       if (statuses.values.any((s) => !s.isGranted && !s.isLimited)) {
@@ -201,6 +206,12 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         _setConnected(true);
       } else {
         unawaited(_applySpeaker());
+        _peerWait?.cancel();
+        _peerWait = Timer(kCallPeerWaitTimeout, () {
+          if (!mounted || _connected) return;
+          _error = t('videoCall.peerDidNotJoin');
+          _exitAfterFailure();
+        });
       }
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (_connected && mounted) _duration.value++;
@@ -219,7 +230,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     try {
       await AudioManager.instance.setSpeakerOutputPreferred(_speakerOn, force: _speakerOn);
     } catch (_) {}
-    unawaited(CallNative.proximity(_voiceOnly && !_speakerOn));
+    unawaited(CallNative.proximity(_connected && _voiceOnly && !_speakerOn));
   }
 
   void _exitAfterFailure() {
@@ -227,6 +238,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _failureReturnStarted = true;
     _suppressDisconnectNavigate = true;
     _timer?.cancel();
+    _peerWait?.cancel();
     if (mounted) setState(() => _initializing = false);
     unawaited(_lk.leave());
     _goBackAfterCall();
@@ -259,6 +271,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   void dispose() {
     _suppressDisconnectNavigate = true;
     _timer?.cancel();
+    _peerWait?.cancel();
     _duration.dispose();
     unawaited(CallNative.proximity(false));
     _room?.removeListener(_onRoomChanged);
@@ -315,6 +328,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   void _endCall() {
     HapticFeedback.mediumImpact();
+    _suppressDisconnectNavigate = true;
+    _peerWait?.cancel();
+    unawaited(_lk.leave());
     _goBackAfterCall();
   }
 
@@ -335,8 +351,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     final local = _lk.localVideo;
     final vo = _voiceOnly;
     final filter = _filters.firstWhere((f) => f.id == _filter);
-    final showRemote = !vo && _connected && remote != null;
-    final ringing = vo || !_connected || remote == null;
+    final showRemote = !vo && remote != null;
+    final showIdentity = vo || !showRemote;
     final status = _error.isNotEmpty
         ? _error
         : _reconnecting
@@ -388,9 +404,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         child: Scaffold(
           backgroundColor: WaCall.bgTop,
           body: Stack(children: [
-            if (showRemote)
-              Positioned.fill(child: RepaintBoundary(child: VideoTrackRenderer(remote, fit: VideoViewFit.cover))),
-            if (ringing)
+            if (showIdentity)
               Positioned.fill(
                 child: WhatsAppRingingLayout(
                   avatarUrl: avatar,
@@ -417,7 +431,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                   ),
                 ),
               ),
-            if (!vo && _connected)
+            if (showRemote)
+              Positioned.fill(child: RepaintBoundary(child: VideoTrackRenderer(remote, fit: VideoViewFit.cover))),
+            if (showRemote)
               Positioned(
                 top: 0,
                 left: 0,

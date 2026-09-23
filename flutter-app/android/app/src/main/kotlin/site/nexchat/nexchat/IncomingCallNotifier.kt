@@ -9,6 +9,8 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 
@@ -16,6 +18,8 @@ import androidx.core.app.Person
 object IncomingCallNotifier {
     const val CHANNEL_ID = "nexchat_incoming_call_v2"
     const val NOTIFICATION_ID = 71001
+    private val handler = Handler(Looper.getMainLooper())
+    private var timeout: Runnable? = null
 
     fun show(
         context: Context,
@@ -63,13 +67,27 @@ object IncomingCallNotifier {
 
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, builder.build())
+        scheduleTimeout(app)
     }
 
-    fun cancel(context: Context) {
+    fun cancel(context: Context, finishActivity: Boolean = true) {
+        cancelTimeout()
         IncomingCallRinger.stop()
-        IncomingCallUi.finish()
+        if (finishActivity) IncomingCallUi.finish()
         context.applicationContext.getSystemService(NotificationManager::class.java)
             .cancel(NOTIFICATION_ID)
+    }
+
+    private fun scheduleTimeout(context: Context) {
+        cancelTimeout()
+        val run = Runnable { IncomingCallReceiver.timeoutDecline(context) }
+        timeout = run
+        handler.postDelayed(run, 60_000)
+    }
+
+    private fun cancelTimeout() {
+        timeout?.let { handler.removeCallbacks(it) }
+        timeout = null
     }
 
     private fun ensureChannel(context: Context) {

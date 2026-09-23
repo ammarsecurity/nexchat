@@ -23,6 +23,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/layout.dart';
 import '../../services/push_service.dart';
 import '../../shared/app_footer.dart';
+import '../../shared/app_update_banner.dart';
 import '../../shared/banner_strip.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
@@ -668,6 +669,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Stack(children: [
         Column(children: [
           header,
+          const AppUpdateBanner(),
           Expanded(
             child: LayoutBuilder(
               builder: (context, box) => SingleChildScrollView(

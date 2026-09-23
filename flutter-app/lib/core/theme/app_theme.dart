@@ -26,10 +26,17 @@ ThemeData buildAppTheme({required bool light}) {
     colorScheme: base.colorScheme.copyWith(
       primary: c.primary,
       secondary: c.primary,
+      tertiary: c.primary,
       surface: c.bgCard,
       error: c.danger,
       onPrimary: Colors.white,
+      onTertiary: Colors.white,
       onSurface: c.textPrimary,
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: c.primary,
+      circularTrackColor: c.primarySoft,
+      linearTrackColor: c.primarySoft,
     ),
     textTheme: textTheme,
     primaryTextTheme: textTheme,

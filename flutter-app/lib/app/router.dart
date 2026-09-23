@@ -102,7 +102,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       case _Requires.codeConnect:
         if (!flags.codeConnect) return auth.isLoggedIn ? flags.defaultRoute : '/login';
       case _Requires.randomChat:
-        if (auth.isLoggedIn && !flags.randomChat) return flags.defaultRoute;
+        final supportChat = path.startsWith('/chat/') && state.uri.queryParameters['support'] == '1';
+        if (auth.isLoggedIn && !flags.randomChat && !supportChat) return flags.defaultRoute;
       case _Requires.stories:
         if (auth.isLoggedIn && !flags.stories) return '/conversations';
       case _Requires.shortFilms:
@@ -173,6 +174,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           sessionId: s.pathParameters['sessionId']!,
           initialPartner: e['partner'] is Map ? Map<String, dynamic>.from(e['partner'] as Map) : null,
           incomingVideoCall: q == '1' || q == 'true',
+          autoAcceptCall: s.uri.queryParameters['autoAccept'] == '1',
+          supportChat: s.uri.queryParameters['support'] == '1',
         );
       }),
       page('/video/:sessionId', (s) {

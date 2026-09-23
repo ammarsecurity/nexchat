@@ -24,6 +24,7 @@ import '../../services/update_check.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_widgets.dart';
+import '../chat/chat_session.dart';
 import 'avatar_picker_sheet.dart';
 
 const _violet = Color(0xFF6C63FF);
@@ -49,7 +50,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _mediaPermLoading = false;
   String _mediaPermMessage = '';
   bool _mediaPermSuccess = true;
-  UpdateInfo? _update;
   String _version = '';
 
   @override
@@ -57,7 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.initState();
     _notificationsEnabled = PushService.instance.enabled;
     _loadProfile();
-    _checkForUpdate();
+    unawaited(ref.read(appUpdateProvider.notifier).refresh());
     PackageInfo.fromPlatform().then((p) {
       if (mounted) setState(() => _version = p.version);
     });
@@ -74,13 +74,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _coverError = false;
         _showOnline = j.v('showOnlineStatusToOthers') != false;
       });
-    } catch (_) {}
-  }
-
-  Future<void> _checkForUpdate() async {
-    try {
-      final info = await fetchUpdateInfo();
-      if (mounted) setState(() => _update = info);
     } catch (_) {}
   }
 
@@ -182,7 +175,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final data = Json.from(await Api.get('/support/session') as Map);
       if (!mounted) return;
-      context.push('/chat/${data.s('sessionId')}', extra: {'partner': data.v('partner')});
+      final sid = data.s('sessionId');
+      if (sid == null || sid.isEmpty) {
+        showToast(context, t('common.error'), error: true);
+        return;
+      }
+      final partner = data.v('partner') is Map ? Json.from(data.v('partner') as Map) : null;
+      ref.read(chatSessionProvider.notifier).setSession(sid, partner);
+      context.push('/chat/$sid?support=1', extra: {'partner': partner});
     } catch (e) {
       if (mounted) showToast(context, Api.errorMessage(e, t('common.error')), error: true);
     } finally {
@@ -240,7 +240,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _openUpdateUrl() async {
-    final url = _update?.downloadUrl;
+    final url = ref.read(appUpdateProvider)?.downloadUrl;
     if (url == null) return;
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
@@ -287,6 +287,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final light = ref.watch(lightThemeProvider);
     final locale = ref.watch(localeProvider);
     final flags = ref.watch(featureFlagsProvider).value;
+    final update = ref.watch(appUpdateProvider);
     final cc = flags?.codeConnect == true;
     final phone = _profile?.s('phoneNumber');
     final coverUrl = _profile?.s('coverImageUrl');
@@ -540,7 +541,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ]),
           ),
           _section(t('settings.app')),
-          if (_update?.hasUpdate == true && _update?.downloadUrl != null) ...[
+          if (update?.hasUpdate == true && update?.downloadUrl != null) ...[
             _BigRowCard(
               icon: LucideIcons.download,
               title: t('settings.updateAvailable'),
