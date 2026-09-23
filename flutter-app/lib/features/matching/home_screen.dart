@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,17 +9,24 @@ import 'package:lottie/lottie.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../app/router.dart';
 import '../../core/feature_flags.dart';
+import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
+import '../../core/json.dart';
+import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
+import '../../core/network/network_status.dart';
 import '../../core/share_links.dart';
 import '../../core/storage/prefs.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/layout.dart';
 import '../../services/push_service.dart';
 import '../../shared/app_footer.dart';
 import '../../shared/banner_strip.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
+import '../conversations/conversations_list_controller.dart';
 import '../notifications/notifications_controller.dart';
 import '../settings/avatar_picker_sheet.dart';
 import 'matching_controller.dart';
@@ -44,15 +52,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _notifLoading = false;
   Timer? _connectionTimeout;
   Timer? _copiedTimer;
+  late final GoRouter _router = ref.read(routerProvider);
+  bool _visible = true;
 
   MatchingController get _matching => ref.read(matchingProvider.notifier);
+
+  bool get _isVisible => _router.routerDelegate.currentConfiguration.uri.path == '/home';
 
   @override
   void initState() {
     super.initState();
     _codeFocus.addListener(() => setState(() {}));
     [Permission.camera, Permission.microphone].request().catchError((_) => <Permission, PermissionStatus>{});
+    _visible = _isVisible;
+    _router.routerDelegate.addListener(_onRouteChanged);
+    Hubs.conversation.start().catchError((_) {});
+    _loadConversations();
     _bindHub();
+  }
+
+  void _onRouteChanged() {
+    final v = _isVisible;
+    if (v == _visible) return;
+    _visible = v;
+    if (!v && mounted && (_waitingForAccept || _loading || _connectionTimeout != null)) {
+      unawaited(_cancelConnectionRequest());
+    }
+  }
+
+  List<Json> _normalizeConversations(List<Json> list) => [
+        for (final c in list)
+          {...c, 'lastMessagePreview': formatConversationListPreview(c.s('lastMessagePreview'), type: c.s('lastMessageType'))},
+      ];
+
+  Future<void> _loadConversations() async {
+    if (!NetworkStatus.online.value) {
+      final cached = Prefs.instance.getString('nexchat_conversations_cache');
+      if (cached != null) {
+        try {
+          ref.read(conversationsListProvider.notifier).setList(_normalizeConversations(asJsonList(jsonDecode(cached))));
+        } catch (_) {}
+      }
+      return;
+    }
+    try {
+      final data = await Api.get('/conversations', query: {'filter': 'all'});
+      if (!mounted) return;
+      ref.read(conversationsListProvider.notifier).setList(_normalizeConversations(asJsonList(data)));
+    } catch (_) {}
   }
 
   Future<void> _bindHub() async {
@@ -77,7 +124,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
         }),
         h.on('ConnectionRequestSent', (_) {
-          if (mounted) setState(() => _waitingForAccept = true);
+          if (!mounted) return;
+          setState(() => _waitingForAccept = true);
           _startTimeout();
         }),
         h.on('ConnectionDeclined', (_) {
@@ -110,8 +158,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    _router.routerDelegate.removeListener(_onRouteChanged);
     for (final off in _offs) {
       off();
+    }
+    if (_waitingForAccept || _loading) {
+      Hubs.matching.ensureConnected().then((_) => Hubs.matching.invoke('CancelConnectionRequest')).catchError((_) => null);
     }
     _clearTimeout();
     _copiedTimer?.cancel();
@@ -143,6 +195,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _startRandom() async {
+    if (!ref.read(networkProvider)) {
+      if (mounted) showToast(context, t('noConnection.actionFailed'), error: true);
+      return;
+    }
     setState(() => _loading = true);
     _matching.setSearching();
     try {
@@ -150,6 +206,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       await Hubs.matching.invoke('StartSearching', [_matching.current.genderFilter]);
       if (mounted && _matching.current.status != MatchStatus.matched) context.push('/matching');
     } catch (_) {
+      _matching.setIdle();
+      if (mounted) showToast(context, t('home.connectionError'), error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -157,6 +215,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _connectByCode() async {
     if (_code.text.trim().isEmpty) return;
+    if (!ref.read(networkProvider)) {
+      setState(() => _codeError = t('noConnection.actionFailed'));
+      return;
+    }
     setState(() => _codeError = '');
     final code = _code.text.trim().toUpperCase();
     if (!code.startsWith('NX-') || code.length != 7) {
@@ -207,9 +269,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _applyPendingInvite() {
     final fromQuery = widget.invite;
     final stored = Prefs.instance.getString(Keys.pendingInvite);
+    if (stored != null) Prefs.instance.setString(Keys.pendingInvite, null);
     final code = normalizeInviteCode((fromQuery?.isNotEmpty ?? false) ? fromQuery : stored);
     if (code.isEmpty) return;
-    Prefs.instance.setString(Keys.pendingInvite, null);
     _code.text = code;
     if (fromQuery != null && fromQuery.isNotEmpty) context.replace('/home');
     _connectByCode();
@@ -219,13 +281,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _notifLoading = true);
     try {
       await PushService.instance.optIn();
-    } catch (_) {}
-    PushService.promptNotifications.value = false;
+      PushService.promptNotifications.value = false;
+    } catch (_) {
+      if (mounted) showToast(context, t('common.error'), error: true);
+    }
     if (mounted) setState(() => _notifLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(networkProvider, (prev, next) {
+      if (prev == false && next == true) unawaited(_loadConversations());
+    });
     final c = context.colors;
     final auth = ref.watch(authProvider);
     final user = auth.user;
@@ -304,7 +371,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 Icon(LucideIcons.hash, size: 13, color: c.primary),
                                 const SizedBox(width: 5),
                                 Text(uniqueCode,
-                                    style: TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.66, color: c.primary)),
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.66, color: c.primary)),
                                 const SizedBox(width: 5),
                                 Icon(LucideIcons.copy, size: 13, color: c.primary),
                               ]),
@@ -481,10 +548,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 textInputAction: TextInputAction.go,
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _connectByCode(),
-                style: TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1.9, color: c.textPrimary),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1.9, color: c.textPrimary),
                 decoration: InputDecoration(
                   hintText: t('home.enterUserCode'),
-                  hintStyle: TextStyle(color: c.textMuted, fontWeight: FontWeight.w500, letterSpacing: 0.6, fontFamily: null),
+                  hintStyle: TextStyle(color: c.textMuted, fontWeight: FontWeight.w500, letterSpacing: 0.6),
                   counterText: '',
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
@@ -533,8 +600,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         boxShadow: [BoxShadow(color: c.shadow, blurRadius: 20, offset: const Offset(0, 6))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (loaded && randomOn) randomBlock else if (loaded) fallbackBlock,
-        if (loaded && codeOn) codeBlock,
+        if (!loaded)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 36),
+            child: Center(child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5))),
+          )
+        else ...[
+          if (randomOn) randomBlock else fallbackBlock,
+          if (codeOn) codeBlock,
+        ],
       ]),
     );
 
@@ -617,7 +691,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: 48 + MediaQuery.paddingOf(context).bottom,
+            bottom: tabBarClearance(context) + 16,
             child: Center(
               child: Material(
                 color: const Color(0xB3000000),

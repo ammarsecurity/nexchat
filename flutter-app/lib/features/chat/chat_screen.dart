@@ -14,6 +14,7 @@ import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
+import '../../core/network/network_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/media.dart';
 import '../../shared/media_widgets.dart';
@@ -64,6 +65,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _mounted = true;
   bool _leavingProgrammatically = false;
   bool _goToNextInProgress = false;
+  bool _routeCurrent = true;
+  bool _partnerWaitPaused = false;
+  void Function()? _deferredNav;
   bool _loading = false;
   bool _codeConnectEnabled = true;
 
@@ -109,6 +113,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     WidgetsBinding.instance.addPostFrameCallback((_) => _mount());
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final cur = ModalRoute.isCurrentOf(context) ?? true;
+    if (cur == _routeCurrent) return;
+    _routeCurrent = cur;
+    if (!cur) {
+      if (_partnerWaitTimer != null) {
+        _clearPartnerWait();
+        _partnerWaitPaused = true;
+      }
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_mounted || !_isCurrent) return;
+      if (!_goToNextInProgress) _leavingProgrammatically = false;
+      final nav = _deferredNav;
+      _deferredNav = null;
+      if (nav != null) {
+        nav();
+        return;
+      }
+      if (_partnerWaitPaused) {
+        _partnerWaitPaused = false;
+        _startPartnerWait();
+      }
+    });
+  }
+
+  bool get _isCurrent => mounted && (ModalRoute.isCurrentOf(context) ?? true);
+
+  /// Navigation side-effects must not fire while another route (e.g. /video) covers this chat.
+  void _whenCurrent(void Function() nav) {
+    if (_isCurrent) {
+      nav();
+    } else {
+      _deferredNav = nav;
+    }
+  }
+
   Json _normalize(Json m) => {
         'id': m.v('id'),
         'senderId': m.v('senderId'),
@@ -125,7 +169,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (!_mounted) return;
     if (_isSupportChat && !_codeConnectEnabled) {
       setState(() => _loading = false);
-      _router.pushReplacement('/conversations');
+      _router.go('/conversations');
       return;
     }
     try {
@@ -147,7 +191,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       h.on('SessionEnded', (_) {
         _timer?.cancel();
         if (!_isSupportChat) {
-          _goToNextMatch();
+          _clearPartnerWait();
+          _partnerWaitPaused = false;
+          _whenCurrent(_goToNextMatch);
           return;
         }
         if (mounted) setState(() => _sessionEnded = true);
@@ -155,7 +201,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }),
       h.on('Error', (_) {
         if (!_mounted || _sessionEnded) return;
-        if (!_isSupportChat) _goToNextMatch();
+        if (!_isSupportChat) _whenCurrent(_goToNextMatch);
       }),
       h.on('SessionJoined', (a) {
         final data = _first(a);
@@ -172,7 +218,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           if ((p.s('name') ?? '').isNotEmpty) _clearPartnerWait();
         }
         final cur = ref.read(chatSessionProvider);
-        if (cur.sessionId == null && data.s('id') != null) _chat.setSession(data.s('id'), _partner);
+        final joinedId = data.s('id');
+        if (cur.sessionId == null && joinedId != null) _chat.setSessionId(joinedId);
         if (msgs.isNotEmpty && ref.read(chatSessionProvider).messages.isEmpty) {
           _chat.setMessages([for (final m in msgs) {..._normalize(m), 'status': 'sent'}]);
         }
@@ -207,18 +254,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }),
     ]);
 
-    try {
-      await Hubs.chat.invoke('JoinSession', [_sid]);
-    } catch (_) {
-      if (_isSupportChat) {
-        _leavingProgrammatically = true;
-        _chat.clear();
-        _router.go('/settings');
-      } else {
-        await _goToNextMatch();
+    if (!ref.read(networkProvider)) {
+      if (mounted) setState(() => _loading = false);
+    } else {
+      try {
+        await Hubs.chat.invoke('JoinSession', [_sid]);
+      } catch (_) {
+        if (_isSupportChat) {
+          _leavingProgrammatically = true;
+          _chat.clear();
+          _router.go('/settings');
+        } else {
+          await _goToNextMatch();
+        }
+      } finally {
+        if (!_goToNextInProgress && mounted) setState(() => _loading = false);
       }
-    } finally {
-      if (!_goToNextInProgress && mounted) setState(() => _loading = false);
     }
 
     if (!_goToNextInProgress && _mounted && widget.incomingVideoCall) {
@@ -226,13 +277,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _router.replace('/chat/$_sid');
     }
 
-    if (!_goToNextInProgress && _mounted && (_partner?.s('name') ?? '').isEmpty) {
-      _partnerWaitTimer = Timer(const Duration(seconds: 20), () {
-        _partnerWaitTimer = null;
-        if (!_mounted || _goToNextInProgress || _sessionEnded) return;
-        if (_isSupportChat || (_partner?.s('name') ?? '').isNotEmpty) return;
-        _goToNextMatch();
-      });
+    if (!_goToNextInProgress && _mounted && (_partner?.s('name') ?? '').isEmpty && ref.read(networkProvider)) {
+      if (_isCurrent) {
+        _startPartnerWait();
+      } else {
+        _partnerWaitPaused = true;
+      }
     }
 
     _reconnectSub = Hubs.chat.onReconnected.listen((_) async {
@@ -241,11 +291,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         await Hubs.chat.invoke('JoinSession', [_sid]);
       } catch (_) {
         if (!_isSupportChat) {
-          _goToNextMatch();
+          _whenCurrent(_goToNextMatch);
         } else {
-          _leavingProgrammatically = true;
-          _chat.clear();
-          _router.go('/settings');
+          _whenCurrent(() {
+            _leavingProgrammatically = true;
+            _chat.clear();
+            _router.go('/settings');
+          });
         }
       }
     });
@@ -260,7 +312,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_sessionEnded) {
+    if (state == AppLifecycleState.resumed && !_sessionEnded && NetworkStatus.online.value) {
       Hubs.chat.invoke('JoinSession', [_sid]).catchError((_) => null);
     }
   }
@@ -278,7 +330,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
     if (!_sessionEnded && !_leavingProgrammatically) {
       final to = _router.routerDelegate.currentConfiguration.uri.path;
-      if (to != '/video/$_sid') Hubs.chat.invoke('LeaveSession', [_sid]).catchError((_) => null);
+      if (to != '/video/$_sid' && NetworkStatus.online.value) {
+        Hubs.chat.invoke('LeaveSession', [_sid]).catchError((_) => null);
+      }
     }
     _text.dispose();
     _input.dispose();
@@ -291,8 +345,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _partnerWaitTimer = null;
   }
 
+  void _startPartnerWait() {
+    _clearPartnerWait();
+    if (!_mounted || _goToNextInProgress || _sessionEnded) return;
+    if (_isSupportChat || (_partner?.s('name') ?? '').isNotEmpty) return;
+    _partnerWaitTimer = Timer(const Duration(seconds: 20), () {
+      _partnerWaitTimer = null;
+      if (!_mounted || _goToNextInProgress || _sessionEnded) return;
+      if (_isSupportChat || (_partner?.s('name') ?? '').isNotEmpty) return;
+      _whenCurrent(_goToNextMatch);
+    });
+  }
+
   Future<void> _goToNextMatch() async {
     if (_goToNextInProgress || !_mounted || _isSupportChat) return;
+    if (!NetworkStatus.online.value) {
+      _leavingProgrammatically = true;
+      _chat.clear();
+      _matching.setIdle();
+      _router.go('/home');
+      return;
+    }
     _goToNextInProgress = true;
     _leavingProgrammatically = true;
     if (mounted) setState(() => _loading = true);
@@ -308,9 +381,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _router.pushReplacement('/matching');
   }
 
+  bool _requireOnline({bool send = false}) {
+    if (ref.read(networkProvider)) return true;
+    if (mounted) showToast(context, t(send ? 'noConnection.sendFailed' : 'noConnection.actionFailed'), error: true);
+    return false;
+  }
+
   String _tempId() => 'temp-${DateTime.now().millisecondsSinceEpoch}-${UniqueKey().hashCode.toRadixString(36)}';
 
   Future<void> _sendRaw(String content, String type) async {
+    if (!_requireOnline(send: true)) return;
     final tempId = _tempId();
     _chat.addMessage({'tempId': tempId, 'senderId': _myId, 'content': content, 'type': type, 'sentAt': DateTime.now(), 'status': 'pending'});
     try {
@@ -322,6 +402,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   void _onInput(String _) {
     setState(() {});
+    if (!ref.read(networkProvider)) return;
     if (_typingTimeout == null) Hubs.chat.invoke('StartTyping', [_sid]).catchError((_) => null);
     _typingTimeout?.cancel();
     _typingTimeout = Timer(const Duration(milliseconds: 1500), () {
@@ -345,6 +426,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _retry(Json msg) async {
     if (msg['status'] != 'failed') return;
+    if (!_requireOnline(send: true)) return;
     final tempId = _tempId();
     _chat.updateMessage('${msg['tempId']}', {'tempId': tempId, 'status': 'pending'});
     try {
@@ -355,13 +437,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   Future<void> _pickAndSendImage() async {
+    if (!_requireOnline(send: true)) return;
     final file = await pickImage();
     if (file == null) return;
     setState(() => _uploadingImage = true);
     try {
       final url = await uploadFile('media/upload', file.path, filename: file.name);
       await _sendRaw(url, 'image');
-    } catch (_) {
+    } catch (e) {
+      if (mounted) showToast(context, Api.errorMessage(e, t('common.error')), error: true);
     } finally {
       if (mounted) setState(() => _uploadingImage = false);
     }
@@ -373,7 +457,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _timer?.cancel();
     final support = _isSupportChat;
     try {
-      await Hubs.chat.invoke('LeaveSession', [_sid]);
+      if (NetworkStatus.online.value) await Hubs.chat.invoke('LeaveSession', [_sid]);
       _chat.clear();
       _matching.setIdle();
       _router.go(support ? '/settings' : '/home');
@@ -384,6 +468,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   Future<void> _submitReport() async {
+    if (!_requireOnline()) return;
     var reason = _reportReason.text.trim();
     final snap = _reportSnippet?.trim();
     if (reason.isEmpty && (snap?.isNotEmpty ?? false)) reason = t('randomChat.reportContentDefault');
@@ -399,6 +484,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         });
       }
     } catch (_) {
+      if (mounted) showToast(context, t('common.error'), error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -442,26 +528,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   Future<void> _confirmStartVideo() async {
+    if (!_requireOnline()) {
+      if (mounted) setState(() => _showVideoConfirm = false);
+      return;
+    }
     setState(() {
       _showVideoConfirm = false;
       _callingOut = true;
     });
     try {
       await Hubs.chat.invoke('RequestVideoCall', [_sid]);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _callingOut = false);
+    }
   }
 
   Future<void> _acceptCall() async {
+    if (!_requireOnline()) return;
     setState(() => _incomingCall = false);
     try {
       await Hubs.chat.invoke('AcceptVideoCall', [_sid]);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() => _incomingCall = true);
+        showToast(context, t('common.error'), error: true);
+      }
+      return;
+    }
+    if (!mounted) return;
     _leavingProgrammatically = true;
     _router.push('/video/$_sid', extra: {'initiator': false});
   }
 
   void _declineCall() {
     setState(() => _incomingCall = false);
+    Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
+  }
+
+  void _cancelOutgoingCall() {
+    setState(() => _callingOut = false);
     Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
   }
 
@@ -506,6 +611,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(networkProvider, (prev, next) {
+      if (prev == false && next == true && !_sessionEnded) {
+        Hubs.chat.start().then((_) => Hubs.chat.invoke('JoinSession', [_sid])).catchError((_) => null);
+      }
+    });
     final c = context.colors;
     final session = ref.watch(chatSessionProvider);
     final partner = session.partner;
@@ -632,7 +742,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 borderRadius: BorderRadius.circular(16),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 220, maxHeight: 280),
-                  child: Image(image: mediaImage(content), fit: BoxFit.cover),
+                  child: Image(image: mediaImage(content, cacheWidth: bubbleImageCacheWidth), fit: BoxFit.cover),
                 ),
               ),
             )
@@ -1013,7 +1123,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 const SizedBox(height: 8),
                 Text('جاري الاتصال...', style: TextStyle(fontSize: 14, color: c.textSecondary)),
                 const SizedBox(height: 24),
-                Row(children: [callBtn(LucideIcons.x, 'إلغاء الطلب', () => setState(() => _callingOut = false), accept: false)]),
+                Row(children: [callBtn(LucideIcons.x, 'إلغاء الطلب', _cancelOutgoingCall, accept: false)]),
               ]),
             ),
           if (_callDeclined)
@@ -1052,7 +1162,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   alignment: Alignment.center,
                   child: Text(ref.read(authProvider).user?.uniqueCode ?? '',
                       textDirection: TextDirection.ltr,
-                      style: TextStyle(fontFamily: 'monospace', fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 2, color: c.primary)),
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 2, color: c.primary)),
                 ),
                 const SizedBox(height: 16),
                 Row(children: [

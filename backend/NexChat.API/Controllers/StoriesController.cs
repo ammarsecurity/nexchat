@@ -156,7 +156,7 @@ public class StoriesController(
         var slideId = slide.Id;
         var thumb = GetThumbUrl(slide);
         var publisherName = user.Name ?? "مستخدم";
-        _ = BroadcastStoryPublishedAsync(publisherId, slideId, thumb, publisherName);
+        _ = BroadcastStoryPublishedAsync(publisherId, slideId, thumb, publisherName, user.Avatar);
 
         return Ok(dto);
     }
@@ -319,7 +319,7 @@ public class StoriesController(
                 s.MediaUrl,
                 s.MediaType,
                 s.Caption,
-                isOwner ? s.OverlayJson : null,
+                s.OverlayJson,
                 s.BackgroundColor,
                 s.FilterId,
                 s.VideoDurationSeconds,
@@ -459,7 +459,8 @@ public class StoriesController(
         Guid publisherId,
         Guid slideId,
         string? thumbUrl,
-        string publisherName)
+        string publisherName,
+        string? publisherAvatar)
     {
         try
         {
@@ -492,7 +493,8 @@ public class StoriesController(
                         userId = publisherId,
                         slideId,
                         thumbUrl,
-                        publisherName
+                        publisherName,
+                        publisherAvatar
                     });
             }
         }

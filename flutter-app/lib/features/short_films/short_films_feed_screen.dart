@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -32,6 +33,7 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
   bool _scrolling = false;
   final Map<String, VideoPlayerController> _players = {};
   final Set<String> _playing = {};
+  final Set<String> _failed = {};
 
   ShortFilm? get _current => _index < _films.length ? _films[_index] : null;
 
@@ -58,10 +60,38 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
   }
 
   @override
+  void didUpdateWidget(ShortFilmsFeedScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final start = widget.startId;
+    if (start == null || start == oldWidget.startId || !_ready) return;
+    _jumpToFilm(start);
+  }
+
+  Future<void> _jumpToFilm(String id) async {
+    var i = _films.indexWhere((f) => f.id == id);
+    if (i < 0) {
+      final store = ref.read(shortFilmsProvider.notifier);
+      await store.fetchAll(force: true);
+      await store.loadAllPages();
+      if (!mounted || widget.startId != id) return;
+      setState(() => _films = store.current.feed);
+      i = _films.indexWhere((f) => f.id == id);
+    }
+    final p = _pages;
+    if (i < 0 || p == null || !p.hasClients) return;
+    if (i == _index) {
+      _onIndexChanged();
+    } else {
+      p.jumpToPage(i);
+    }
+  }
+
+  @override
   void dispose() {
     _pages?.dispose();
-    for (final p in _players.values) {
-      p.dispose();
+    for (final e in _players.entries) {
+      ShortFilmCache.instance.releaseInUse(e.key);
+      e.value.dispose();
     }
     super.dispose();
   }
@@ -74,6 +104,7 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
         ? VideoPlayerController.file(File.fromUri(uri))
         : VideoPlayerController.networkUrl(uri);
     _players[f.id] = c;
+    ShortFilmCache.instance.markInUse(f.id);
     c.addListener(() {
       final isPlaying = c.value.isPlaying;
       if (isPlaying != _playing.contains(f.id) && mounted) {
@@ -84,7 +115,10 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
       await c.initialize();
       await c.setLooping(true);
       await c.setVolume(_muted ? 0 : 1);
-    } catch (_) {}
+      _failed.remove(f.id);
+    } catch (_) {
+      _failed.add(f.id);
+    }
     if (!mounted) return;
     setState(() {});
     if (_current?.id == f.id) _playCurrent();
@@ -98,6 +132,7 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
     }
     for (final id in _players.keys.where((id) => !keep.contains(id)).toList()) {
       _players.remove(id)?.dispose();
+      ShortFilmCache.instance.releaseInUse(id);
       _playing.remove(id);
     }
     ShortFilmCache.instance.prefetchAround(_films, _index);
@@ -236,6 +271,21 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
       onTap: isCurrent ? _togglePlayPause : null,
       child: Stack(fit: StackFit.expand, children: [
         const ColoredBox(color: Color(0xFF111111)),
+        if (_failed.contains(film.id) && isCurrent)
+          Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(t('common.error'), style: const TextStyle(color: Colors.white70, fontSize: 15)),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  _failed.remove(film.id);
+                  _players.remove(film.id)?.dispose();
+                  unawaited(_ensurePlayer(film));
+                },
+                child: Text(t('noConnection.retry'), style: const TextStyle(color: Colors.white)),
+              ),
+            ]),
+          ),
         if (v != null && v.value.isInitialized)
           AnimatedOpacity(
             duration: const Duration(milliseconds: 220),

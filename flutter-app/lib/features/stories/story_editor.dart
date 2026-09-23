@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
+import 'package:image/image.dart' as imglib;
 import 'package:video_player/video_player.dart';
 
 import '../../core/i18n/i18n.dart';
@@ -13,7 +16,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import 'stories_controller.dart';
 
-const _textColors = [Color(0xFFFFFFFF), Color(0xFF000000), Color(0xFFFF6584), Color(0xFF6C63FF), Color(0xFF22C55E), Color(0xFFFBBF24)];
+const _textColors = [Color(0xFFFFFFFF), Color(0xFF000000), Color(0xFFFF6584), Color(0xFF6C63FF), Color(0xFF22C55E), Color(0xFFFBBF24), Color(0xFF38BDF8), Color(0xFFF472B6)];
 const storyBgPresets = [
   'linear-gradient(135deg,#2563eb 0%,#60a5fa 100%)',
   'linear-gradient(135deg,#0ea5e9 0%,#3b82f6 100%)',
@@ -22,7 +25,7 @@ const storyBgPresets = [
   '#1a1a2e',
   '#ffffff',
 ];
-const _stickers = ['😀', '😂', '❤️', '🔥', '👍', '🎉', '✨', '💯', '😍', '🤩', '👋', '💬'];
+const _stickers = ['😀', '😂', '😍', '🤩', '😘', '😭', '😡', '😱', '❤️', '🔥', '👍', '👎', '🎉', '✨', '💯', '👋', '💬', '🙏', '💪', '⭐', '🌹', '🎵', '📍', '🌙'];
 const _filters = [
   ('none', 'stories.filterNone'),
   ('grayscale', 'stories.filterGray'),
@@ -33,18 +36,21 @@ const _filters = [
 ];
 const _minScale = 0.35;
 const _maxScale = 4.0;
-const _exportWidth = 1080.0;
+const _exportMaxDim = 1080;
+const _exportQuality = 85;
+const _textStorySize = Size(720, 1280);
 
 double _clampScale(double s) => s.clamp(_minScale, _maxScale).toDouble();
 
 class _TextLayer {
-  _TextLayer(this.id, this.text);
+  _TextLayer(this.id, this.text, {this.x = 50, this.y = 42, this.color = Colors.white, this.fontSize = 28, this.scale = 1});
   final String id;
   String text;
-  double x = 50, y = 45;
-  Color color = Colors.white;
-  double fontSize = 22;
-  double scale = 1;
+  double x;
+  double y;
+  Color color;
+  double fontSize;
+  double scale;
 
   Map<String, dynamic> toJson() => {'id': id, 'text': text, 'x': x, 'y': y, 'color': _hex(color), 'fontSize': fontSize, 'scale': scale};
 }
@@ -83,7 +89,9 @@ class StoryEditor extends StatefulWidget {
     this.textOnly = false,
     required this.backgroundColor,
     this.initialFilterId = 'none',
+    this.initialOverlayJson,
     required this.onBackgroundChanged,
+    this.onInteractingChanged,
   });
 
   /// Local file path or remote url.
@@ -92,14 +100,17 @@ class StoryEditor extends StatefulWidget {
   final bool textOnly;
   final String backgroundColor;
   final String initialFilterId;
+  final String? initialOverlayJson;
   final ValueChanged<String> onBackgroundChanged;
+
+  /// True while the draw tool is selected or a pointer is down on the stage (parent should stop scrolling).
+  final ValueChanged<bool>? onInteractingChanged;
 
   @override
   State<StoryEditor> createState() => StoryEditorState();
 }
 
 class StoryEditorState extends State<StoryEditor> {
-  final _boundary = GlobalKey();
   late String _filterId = widget.initialFilterId.isEmpty ? 'none' : widget.initialFilterId;
   final List<_TextLayer> _texts = [];
   final List<_Sticker> _stickerLayers = [];
@@ -110,8 +121,10 @@ class StoryEditorState extends State<StoryEditor> {
   double _brushSize = 4;
   String? _selectedText;
   String? _selectedSticker;
-  bool _exporting = false;
+  int _stagePointers = 0;
+  bool _interacting = false;
   final _textInput = TextEditingController();
+  final _textFocus = FocusNode();
   VideoPlayerController? _video;
   int _idSeq = 0;
 
@@ -122,6 +135,12 @@ class StoryEditorState extends State<StoryEditor> {
   Size _stageSize = Size.zero;
 
   String get filterId => _filterId;
+
+  int? get videoDurationSeconds {
+    final d = _video?.value.duration;
+    if (d == null || d.inMilliseconds <= 0) return null;
+    return (d.inMilliseconds / 1000).round().clamp(1, 60);
+  }
 
   bool get hasEditorChanges => _filterId != 'none' || _texts.isNotEmpty || _stickerLayers.isNotEmpty || _strokes.isNotEmpty;
 
@@ -136,9 +155,70 @@ class StoryEditorState extends State<StoryEditor> {
 
   bool _isRemote(String s) => s.startsWith('http') || s.startsWith('/uploads') || s.startsWith('/media');
 
+  Color _parseHex(String? raw, [Color fallback = Colors.white]) {
+    var h = (raw ?? '').trim().replaceFirst('#', '');
+    if (h.length == 3) h = h.split('').map((c) => '$c$c').join();
+    if (h.length == 6) h = 'FF$h';
+    final n = int.tryParse(h, radix: 16);
+    return n == null ? fallback : Color(n);
+  }
+
+  void _loadOverlay(String? raw) {
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final data = jsonDecode(raw);
+      if (data is! Map) return;
+      for (final item in (data['textLayers'] as List? ?? const [])) {
+        if (item is! Map) continue;
+        _texts.add(_TextLayer(
+          '${item['id'] ?? _newId()}',
+          '${item['text'] ?? ''}',
+          x: (item['x'] as num?)?.toDouble() ?? 50,
+          y: (item['y'] as num?)?.toDouble() ?? 42,
+          color: _parseHex(item['color']?.toString()),
+          fontSize: (item['fontSize'] as num?)?.toDouble() ?? 28,
+          scale: (item['scale'] as num?)?.toDouble() ?? 1,
+        ));
+      }
+      for (final item in (data['stickers'] as List? ?? const [])) {
+        if (item is! Map) continue;
+        _stickerLayers.add(_Sticker(
+          '${item['id'] ?? _newId()}',
+          '${item['emoji'] ?? '😀'}',
+          (item['x'] as num?)?.toDouble() ?? 50,
+          (item['y'] as num?)?.toDouble() ?? 50,
+        )..scale = (item['scale'] as num?)?.toDouble() ?? 1);
+      }
+      for (final item in (data['strokes'] as List? ?? const [])) {
+        if (item is! Map) continue;
+        final pts = <Offset>[];
+        for (final p in (item['points'] as List? ?? const [])) {
+          if (p is Map) pts.add(Offset((p['x'] as num?)?.toDouble() ?? 0, (p['y'] as num?)?.toDouble() ?? 0));
+        }
+        if (pts.isNotEmpty) {
+          _strokes.add(_Stroke(_parseHex(item['color']?.toString(), Colors.white), (item['size'] as num?)?.toDouble() ?? 4, pts));
+        }
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadOverlay(widget.initialOverlayJson);
+    if (widget.textOnly && _texts.isEmpty) {
+      final layer = _TextLayer(_newId(), '');
+      _texts.add(layer);
+      _selectedText = layer.id;
+      _tool = 'text';
+    }
+    final selected = _selText;
+    if (selected != null) _textInput.text = selected.text;
+    if (_selectedText != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _textFocus.requestFocus();
+      });
+    }
     _initVideo();
   }
 
@@ -175,13 +255,14 @@ class StoryEditorState extends State<StoryEditor> {
   void dispose() {
     _video?.dispose();
     _textInput.dispose();
+    _textFocus.dispose();
     super.dispose();
   }
 
   String _newId() => '${DateTime.now().microsecondsSinceEpoch}-${_idSeq++}';
 
-  void _addText() {
-    final layer = _TextLayer(_newId(), t('stories.defaultText'));
+  void _addText({Offset? at}) {
+    final layer = _TextLayer(_newId(), '', x: at?.dx ?? 50, y: at?.dy ?? 42);
     setState(() {
       _texts.add(layer);
       _selectedText = layer.id;
@@ -189,6 +270,30 @@ class StoryEditorState extends State<StoryEditor> {
       _tool = 'text';
       _textInput.text = layer.text;
     });
+    _textFocus.requestFocus();
+  }
+
+  void _onTextTool() {
+    final current = _selText;
+    if (_tool == 'text' && current != null && current.text.trim().isNotEmpty) {
+      _addText();
+      return;
+    }
+    final empty = _texts.where((l) => l.text.trim().isEmpty).lastOrNull;
+    if (empty != null) {
+      _selectText(empty);
+      return;
+    }
+    if (current != null) {
+      _selectText(current);
+      return;
+    }
+    final last = _texts.lastOrNull;
+    if (last != null) {
+      _selectText(last);
+      return;
+    }
+    _addText();
   }
 
   void _selectText(_TextLayer l) {
@@ -198,14 +303,34 @@ class StoryEditorState extends State<StoryEditor> {
       _tool = 'text';
       _textInput.text = l.text;
     });
+    _textFocus.requestFocus();
+  }
+
+  void _clearSelection() {
+    _textFocus.unfocus();
+    setState(() {
+      _selectedText = null;
+      _selectedSticker = null;
+    });
+  }
+
+  void _setTool(String tool) {
+    _textFocus.unfocus();
+    setState(() {
+      _tool = tool;
+      if (tool != 'text') _selectedText = null;
+      if (tool != 'sticker') _selectedSticker = null;
+    });
   }
 
   void _addSticker(String emoji) {
     final r = math.Random();
     final s = _Sticker(_newId(), emoji, 30 + r.nextDouble() * 40, 30 + r.nextDouble() * 40);
+    _textFocus.unfocus();
     setState(() {
       _stickerLayers.add(s);
       _selectedSticker = s.id;
+      _selectedText = null;
       _tool = 'sticker';
     });
   }
@@ -218,107 +343,237 @@ class StoryEditorState extends State<StoryEditor> {
     );
   }
 
-  /// Returns a PNG of the stage at 1080px width (like storyExport.js composing the frame).
+  void _setStagePointers(int n) {
+    _stagePointers = math.max(0, n);
+    _notifyInteracting();
+  }
+
+  void _notifyInteracting() {
+    final v = _tool == 'draw' || _stagePointers > 0;
+    if (v == _interacting) return;
+    _interacting = v;
+    widget.onInteractingChanged?.call(v);
+  }
+
+  Future<ui.Image> _resolveImage(ImageProvider provider) {
+    final done = Completer<ui.Image>();
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        if (done.isCompleted) {
+          info.dispose();
+        } else {
+          done.complete(info.image);
+        }
+      },
+      onError: (e, st) {
+        stream.removeListener(listener);
+        if (!done.isCompleted) done.completeError(e, st ?? StackTrace.current);
+      },
+    );
+    stream.addListener(listener);
+    return done.future.timeout(const Duration(seconds: 20));
+  }
+
+  /// Bakes background + photo + drawings + text + stickers into a JPEG (Vue storyExport.js).
   Future<File?> exportImage() async {
-    setState(() {
-      _exporting = true;
-    });
-    await WidgetsBinding.instance.endOfFrame;
+    final imgSrc = widget.textOnly ? null : widget.imageSrc;
+    final dir = Directionality.of(context);
+    final stageW = _stageSize.isEmpty ? 270.0 : _stageSize.width;
+    ui.Image? source;
     try {
-      final ctx = _boundary.currentContext;
-      final ro = ctx?.findRenderObject();
-      if (ro is! RenderRepaintBoundary) return null;
-      final ratio = _exportWidth / ro.size.width;
-      final img = await ro.toImage(pixelRatio: ratio);
-      final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-      img.dispose();
-      if (bytes == null) return null;
-      final file = File('${Directory.systemTemp.path}/story-${DateTime.now().millisecondsSinceEpoch}.png');
-      await file.writeAsBytes(bytes.buffer.asUint8List());
+      if (imgSrc != null && imgSrc.isNotEmpty) {
+        final ImageProvider base = _isRemote(imgSrc) ? CachedNetworkImageProvider(Api.absoluteUrl(imgSrc)!) : FileImage(File(imgSrc));
+        source = await _resolveImage(ResizeImage(base, width: _exportMaxDim, height: _exportMaxDim, policy: ResizeImagePolicy.fit));
+      }
+      final size = source != null ? Size(source.width.toDouble(), source.height.toDouble()) : _textStorySize;
+      final rect = Offset.zero & size;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, rect);
+
+      if (widget.textOnly) {
+        paintStoryBackground(canvas, size, widget.backgroundColor);
+      } else {
+        canvas.drawRect(rect, Paint()..color = const Color(0xFF111111));
+        if (source != null) {
+          final m = storyFilterMatrix(_filterId);
+          paintImage(
+            canvas: canvas,
+            rect: rect,
+            image: source,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            colorFilter: m == null ? null : ColorFilter.matrix(m),
+          );
+        }
+      }
+
+      _StrokesPainter(_strokes).paint(canvas, size);
+      final k = size.width / stageW;
+      Offset at(double x, double y) => Offset(x / 100 * size.width, y / 100 * size.height);
+      void drawCentered(TextPainter tp, Offset center) {
+        tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+        tp.dispose();
+      }
+
+      for (final l in _texts) {
+        if (l.text.trim().isEmpty) continue;
+        final tp = TextPainter(
+          text: TextSpan(
+            text: l.text,
+            style: TextStyle(
+              color: l.color,
+              fontSize: l.fontSize * l.scale * k,
+              fontWeight: FontWeight.w800,
+              height: 1.25,
+              shadows: [Shadow(color: const Color(0x99000000), blurRadius: 8 * k, offset: Offset(0, 2 * k))],
+            ),
+          ),
+          textAlign: TextAlign.center,
+          textDirection: dir,
+        )..layout(maxWidth: size.width * 0.88);
+        drawCentered(tp, at(l.x, l.y));
+      }
+      for (final s in _stickerLayers) {
+        final tp = TextPainter(
+          text: TextSpan(text: s.emoji, style: TextStyle(fontSize: 48 * s.scale * k, height: 1)),
+          textDirection: dir,
+        )..layout();
+        drawCentered(tp, at(s.x, s.y));
+      }
+
+      final picture = recorder.endRecording();
+      final frame = await picture.toImage(size.width.round(), size.height.round());
+      picture.dispose();
+      final png = await frame.toByteData(format: ui.ImageByteFormat.png);
+      frame.dispose();
+      if (png == null) return null;
+      final pngBytes = Uint8List.fromList(png.buffer.asUint8List());
+      List<int>? jpg;
+      try {
+        jpg = await Isolate.run(() {
+          final decoded = imglib.decodePng(pngBytes);
+          if (decoded == null) return null;
+          return imglib.encodeJpg(decoded, quality: _exportQuality);
+        });
+      } catch (_) {
+        final decoded = imglib.decodePng(pngBytes);
+        if (decoded != null) jpg = imglib.encodeJpg(decoded, quality: _exportQuality);
+      }
+      if (jpg == null) return null;
+      final file = File('${Directory.systemTemp.path}/story-${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await file.writeAsBytes(jpg);
       return file;
+    } catch (_) {
+      return null;
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      source?.dispose();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final h = MediaQuery.sizeOf(context).height;
-    final stageMaxH = math.max(200.0, math.min(h * 0.42, 320.0));
+    if ((_tool == 'draw' || _stagePointers > 0) != _interacting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _notifyInteracting();
+      });
+    }
+    final toolsMax = math.min(300.0, MediaQuery.sizeOf(context).height * 0.36);
     return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 320, maxHeight: stageMaxH),
+      Expanded(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Center(
             child: AspectRatio(
               aspectRatio: 9 / 16,
               child: Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: const [BoxShadow(color: Color(0x2E000000), blurRadius: 32, offset: Offset(0, 8))],
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 28, offset: Offset(0, 10))],
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: ClipRRect(borderRadius: BorderRadius.circular(24), child: _stage()),
+                child: Listener(
+                  onPointerDown: (_) => _setStagePointers(_stagePointers + 1),
+                  onPointerUp: (_) => _setStagePointers(_stagePointers - 1),
+                  onPointerCancel: (_) => _setStagePointers(_stagePointers - 1),
+                  child: ClipRRect(borderRadius: BorderRadius.circular(22), child: _stage()),
+                ),
               ),
             ),
           ),
         ),
       ),
-      const SizedBox(height: 12),
-      Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: c.bgCard,
-          border: Border(top: BorderSide(color: c.border)),
-          boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 20, offset: Offset(0, -4))],
+      Material(
+        color: c.bgCard,
+        elevation: 8,
+        shadowColor: const Color(0x14000000),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: toolsMax),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _toolTabs(c),
+              ..._options(c),
+              if (widget.textOnly) _bgCard(c),
+            ]),
+          ),
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _toolTabs(c),
-          ..._options(c),
-          if (widget.textOnly) _bgCard(c),
-        ]),
       ),
     ]);
+  }
+
+  void _onEmptyTap(TapUpDetails d) {
+    if (_tool == 'draw') return;
+    if (widget.textOnly && (_tool == 'text' || _tool == 'none')) {
+      final empty = _texts.where((l) => l.text.trim().isEmpty).lastOrNull;
+      if (empty != null) {
+        _selectText(empty);
+        return;
+      }
+      if (_texts.isEmpty) {
+        _addText(at: _pct(d.localPosition));
+        return;
+      }
+    }
+    _clearSelection();
   }
 
   Widget _stage() {
     return LayoutBuilder(builder: (context, box) {
       _stageSize = box.biggest;
       final w = box.maxWidth;
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => setState(() {
-          _selectedSticker = null;
-          _selectedText = null;
-        }),
-        onPanStart: _tool != 'draw'
-            ? null
-            : (d) => setState(() => _currentStroke = _Stroke(_brushColor, _brushSize, [_pct(d.localPosition)])),
-        onPanUpdate: _tool != 'draw' ? null : (d) => setState(() => _currentStroke?.points.add(_pct(d.localPosition))),
-        onPanEnd: _tool != 'draw'
-            ? null
-            : (_) => setState(() {
-                  if (_currentStroke != null) _strokes.add(_currentStroke!);
-                  _currentStroke = null;
-                }),
-        child: RepaintBoundary(
-          key: _boundary,
-          child: Stack(clipBehavior: Clip.none, children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: widget.textOnly ? storyBackgroundDecoration(widget.backgroundColor) : const BoxDecoration(color: Color(0xFF111111)),
-              ),
-            ),
-            if (!widget.textOnly) Positioned.fill(child: _media()),
-            Positioned.fill(
-              child: IgnorePointer(child: CustomPaint(painter: _StrokesPainter([..._strokes, ?_currentStroke]))),
-            ),
-            for (final l in _texts) _textLayer(l, w),
-            for (final s in _stickerLayers) _stickerLayer(s),
-          ]),
-        ),
+      return RepaintBoundary(
+        child: Stack(clipBehavior: Clip.none, fit: StackFit.expand, children: [
+          DecoratedBox(
+            decoration: widget.textOnly ? storyBackgroundDecoration(widget.backgroundColor) : const BoxDecoration(color: Color(0xFF111111)),
+          ),
+          if (!widget.textOnly) _media(),
+          IgnorePointer(child: CustomPaint(painter: _StrokesPainter([..._strokes, ?_currentStroke]))),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: _tool == 'draw' ? null : _onEmptyTap,
+            onPanStart: _tool != 'draw'
+                ? null
+                : (d) => setState(() => _currentStroke = _Stroke(_brushColor, _brushSize, [_pct(d.localPosition)])),
+            onPanUpdate: _tool != 'draw' ? null : (d) => setState(() => _currentStroke?.points.add(_pct(d.localPosition))),
+            onPanEnd: _tool != 'draw'
+                ? null
+                : (_) => setState(() {
+                      if (_currentStroke != null) _strokes.add(_currentStroke!);
+                      _currentStroke = null;
+                    }),
+          ),
+          IgnorePointer(
+            ignoring: _tool == 'draw',
+            child: Stack(clipBehavior: Clip.none, children: [
+              for (final l in _texts) _textLayer(l, w),
+              for (final s in _stickerLayers) _stickerLayer(s),
+            ]),
+          ),
+        ]),
       );
     });
   }
@@ -339,7 +594,7 @@ class StoryEditorState extends State<StoryEditor> {
   }
 
   Widget _layerChrome({required bool selected, required Widget child, required VoidCallback onDelete, required GestureDragUpdateCallback onScaleHandle, required VoidCallback onScaleHandleStart}) {
-    if (!selected || _exporting) return child;
+    if (!selected) return child;
     return Stack(clipBehavior: Clip.none, children: [
       Positioned.fill(
         left: -10,
@@ -436,17 +691,49 @@ class StoryEditorState extends State<StoryEditor> {
             l.scale = _clampScale(handleStart + handleDy * -0.008);
           }),
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: stageW * 0.9, minWidth: 80),
-            child: Text(
-              l.text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: l.color,
-                fontSize: l.fontSize * l.scale,
-                fontWeight: FontWeight.w700,
-                shadows: const [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
-              ),
-            ),
+            constraints: BoxConstraints(maxWidth: stageW * 0.88, minWidth: 96),
+            child: selected
+                ? TextField(
+                    controller: _textInput,
+                    focusNode: _textFocus,
+                    autofocus: true,
+                    maxLines: null,
+                    textAlign: TextAlign.center,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.done,
+                    cursorColor: Colors.white,
+                    onChanged: (v) => setState(() => l.text = v),
+                    onSubmitted: (_) => _textFocus.unfocus(),
+                    style: TextStyle(
+                      color: l.color,
+                      fontSize: l.fontSize * l.scale,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                      shadows: const [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
+                    ),
+                    decoration: InputDecoration(
+                      isCollapsed: true,
+                      border: InputBorder.none,
+                      hintText: t('stories.defaultText'),
+                      hintStyle: TextStyle(
+                        color: l.color.withValues(alpha: 0.45),
+                        fontSize: l.fontSize * l.scale,
+                        fontWeight: FontWeight.w800,
+                        height: 1.25,
+                      ),
+                    ),
+                  )
+                : Text(
+                    l.text.isEmpty ? t('stories.defaultText') : l.text,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: l.text.isEmpty ? l.color.withValues(alpha: 0.45) : l.color,
+                      fontSize: l.fontSize * l.scale,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                      shadows: const [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
+                    ),
+                  ),
           ),
         ),
       ),
@@ -462,11 +749,20 @@ class StoryEditorState extends State<StoryEditor> {
       y: s.y,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _selectedSticker = s.id),
+        onTap: () => setState(() {
+          _selectedSticker = s.id;
+          _selectedText = null;
+          _tool = 'sticker';
+          _textFocus.unfocus();
+        }),
         onScaleStart: _tool == 'draw'
             ? null
             : (d) {
-                setState(() => _selectedSticker = s.id);
+                setState(() {
+                  _selectedSticker = s.id;
+                  _selectedText = null;
+                  _tool = 'sticker';
+                });
                 _gestureStartPct = Offset(s.x, s.y);
                 _gestureStartFocal = d.focalPoint;
                 _gestureStartScale = s.scale;
@@ -527,13 +823,15 @@ class StoryEditorState extends State<StoryEditor> {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: c.bgElevated, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(999)),
       child: Row(children: [
-        tab('text', t('stories.toolText'), _addText),
+        tab('text', t('stories.toolText'), _onTextTool),
         const SizedBox(width: 6),
-        tab('draw', t('stories.toolDraw'), () => setState(() => _tool = 'draw')),
+        tab('draw', t('stories.toolDraw'), () => _setTool('draw')),
         const SizedBox(width: 6),
-        tab('sticker', t('stories.toolSticker'), () => setState(() => _tool = 'sticker')),
-        const SizedBox(width: 6),
-        tab('filter', t('stories.toolFilter'), () => setState(() => _tool = 'filter')),
+        tab('sticker', t('stories.toolSticker'), () => _setTool('sticker')),
+        if (!widget.textOnly) ...[
+          const SizedBox(width: 6),
+          tab('filter', t('stories.toolFilter'), () => _setTool('filter')),
+        ],
       ]),
     );
   }
@@ -605,22 +903,6 @@ class StoryEditorState extends State<StoryEditor> {
       return [
         _card(c, [
           _label(c, t('stories.textEdit')),
-          TextField(
-            controller: _textInput,
-            onChanged: (v) => setState(() => sel.text = v),
-            style: TextStyle(fontSize: 14, color: c.textPrimary),
-            decoration: InputDecoration(
-              hintText: t('stories.defaultText'),
-              isDense: true,
-              filled: true,
-              fillColor: c.bgCard,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.primary)),
-            ),
-          ),
-          const SizedBox(height: 12),
           _sublabel(c, t('stories.textColor')),
           _swatches(c, sel.color, (col) => setState(() => sel.color = col)),
           Padding(

@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/layout.dart';
 import '../../shared/video_poster.dart';
 import '../../shared/widgets.dart';
 import 'short_films_controller.dart';
@@ -45,12 +46,23 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
     if (_scroll.position.extentAfter < 160) _store.loadMore();
   }
 
+  void _fillViewport() {
+    if (!mounted || !_scroll.hasClients || !_store.current.hasMore) return;
+    if (_scroll.position.maxScrollExtent < 160) _onScroll();
+  }
+
   void _openFilm(ShortFilm f) => context.push('/short-films/watch?start=${f.id}');
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final st = ref.watch(shortFilmsProvider);
+    ref.listen(shortFilmsProvider, (prev, next) {
+      final wasBusy = prev == null || prev.loading || prev.loadingMore;
+      if (wasBusy && !next.loading && !next.loadingMore) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _fillViewport());
+      }
+    });
     if (st.loading || st.loadingMore) {
       if (!_spin.isAnimating) _spin.repeat();
     } else {
@@ -61,7 +73,7 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
     final gridTitle = st.selectedSectionId == null
         ? t('shortFilms.allFilms')
         : st.sections.where((s) => s.id == st.selectedSectionId).firstOrNull?.name ?? t('shortFilms.allFilms');
-    final bottom = 100 + MediaQuery.paddingOf(context).bottom;
+    final bottom = tabScrollPadding(context, extra: 16);
 
     Widget content;
     if (st.loading && !st.loaded) {
@@ -266,7 +278,8 @@ class FilmCard extends StatelessWidget {
     );
     Widget thumb;
     if (film.thumbnailUrl != null) {
-      thumb = CachedNetworkImage(imageUrl: Api.absoluteUrl(film.thumbnailUrl)!, fit: BoxFit.cover, errorWidget: (_, _, _) => fallback);
+      thumb = CachedNetworkImage(
+          imageUrl: Api.absoluteUrl(film.thumbnailUrl)!, fit: BoxFit.cover, memCacheWidth: 480, errorWidget: (_, _, _) => fallback);
     } else if (film.videoUrl != null) {
       thumb = VideoFramePoster(url: film.videoUrl!, placeholder: fallback);
     } else {

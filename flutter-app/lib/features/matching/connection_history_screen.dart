@@ -29,7 +29,10 @@ class _ConnectionHistoryScreenState extends State<ConnectionHistoryScreen> {
   }
 
   Future<void> _fetch() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _list = [];
+    });
     try {
       final data = await Api.get('/user/connection-history', query: {'filter': _tab});
       if (mounted) setState(() => _list = asJsonList(data));
@@ -65,7 +68,8 @@ class _ConnectionHistoryScreenState extends State<ConnectionHistoryScreen> {
       ('received', t('connectionHistory.received'), LucideIcons.inbox),
       ('missed', t('connectionHistory.missed'), LucideIcons.clock),
     ];
-    return ModernPage(
+    return Stack(children: [
+      ModernPage(
       title: t('connectionHistory.title'),
       backTo: '/settings',
       body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -99,12 +103,7 @@ class _ConnectionHistoryScreenState extends State<ConnectionHistoryScreen> {
               ),
           ]),
         ),
-        if (_loading)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 48),
-            child: Center(child: Text(t('common.loading'), style: TextStyle(color: c.textMuted))),
-          )
-        else if (_list.isEmpty)
+        if (!_loading && _list.isEmpty)
           EmptyState(icon: LucideIcons.hash, text: t('connectionHistory.empty'))
         else
           for (final item in _list)
@@ -136,6 +135,8 @@ class _ConnectionHistoryScreenState extends State<ConnectionHistoryScreen> {
               ),
             ),
       ]),
-    );
+    ),
+      LoaderOverlay(show: _loading, text: t('common.loading')),
+    ]);
   }
 }

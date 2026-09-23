@@ -158,7 +158,8 @@ class WhatsAppRingingLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.paddingOf(context);
-    return DecoratedBox(
+    return SizedBox.expand(
+      child: DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -179,8 +180,9 @@ class WhatsAppRingingLayout extends StatelessWidget {
           ),
         ),
         if (top != null) Positioned(top: 0, left: 0, right: 0, child: top!),
-        Padding(
-          padding: EdgeInsets.fromLTRB(24, 88 + pad.top, 24, 28 + pad.bottom),
+        Positioned.fill(
+          child: Padding(
+          padding: EdgeInsets.fromLTRB(24, 88 + pad.top, 24, (actions.isEmpty ? 128 : 28) + pad.bottom),
           child: Column(children: [
             const Spacer(),
             CallPulseAvatar(url: avatarUrl, name: name, size: 140, pulse: pulse),
@@ -196,14 +198,17 @@ class WhatsAppRingingLayout extends StatelessWidget {
             Text(status, textAlign: TextAlign.center, style: WaCall.statusStyle()),
             if (statusExtra != null) ...[const SizedBox(height: 12), statusExtra!],
             const Spacer(),
-            Row(
-              textDirection: TextDirection.ltr,
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: actions,
-            ),
+            if (actions.isNotEmpty)
+              Row(
+                textDirection: TextDirection.ltr,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: actions,
+              ),
           ]),
         ),
+        ),
       ]),
+    ),
     );
   }
 }
@@ -230,13 +235,14 @@ class WhatsAppCallTopBar extends StatelessWidget {
           const SizedBox(width: 48),
         Expanded(
           child: Column(children: [
-            Text(
-              name.isEmpty ? '…' : name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            if (name.isNotEmpty)
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+              ),
             if (subtitle != null && subtitle!.isNotEmpty) ...[
               const SizedBox(height: 2),
               Text(subtitle!, style: WaCall.statusStyle(0.8).copyWith(fontSize: 13)),

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/router.dart';
 import '../../core/feature_flags.dart';
 import '../../core/json.dart';
 import '../../core/network/hubs.dart';
+import '../../core/network/network_status.dart';
 import '../../services/ring_sound.dart';
 import '../chat/chat_session.dart';
 
@@ -132,6 +135,7 @@ Json? _firstMap(List<Object?> a) => a.isNotEmpty && a[0] is Map ? Json.from(a[0]
 
 /// App.vue restartRandomSearch()
 Future<void> restartRandomSearch(WidgetRef ref) async {
+  if (!NetworkStatus.online.value) return;
   final m = ref.read(matchingProvider.notifier)..setSearching();
   try {
     await Hubs.matching.ensureConnected();
@@ -144,10 +148,20 @@ List<void Function()> bindMatchingHub(WidgetRef ref) {
   final h = Hubs.matching;
   MatchingController m() => ref.read(matchingProvider.notifier);
   void openChat(String sessionId, Json? partner) {
+    final router = ref.read(routerProvider);
+    final top = router.routerDelegate.currentConfiguration.uri.path;
+    if (top == '/chat/$sessionId') {
+      m().setMatched();
+      return;
+    }
     m().armSkipNextMatchingUnmountCancel();
     ref.read(chatSessionProvider.notifier).setSession(sessionId, partner);
     m().setMatched();
-    ref.read(routerProvider).push('/chat/$sessionId');
+    if (top == '/matching' || top.startsWith('/chat/')) {
+      router.pushReplacement('/chat/$sessionId');
+    } else {
+      router.push('/chat/$sessionId');
+    }
   }
 
   return [
@@ -188,15 +202,26 @@ List<void Function()> bindMatchingHub(WidgetRef ref) {
       m().clearPendingRandomMatch();
       restartRandomSearch(ref);
     }),
+    h.on('Error', (_) {
+      m().clearPendingRandomMatch();
+    }),
     h.on('RandomMatchDeclined', (_) async {
       m().clearPendingRandomMatch();
       if (m().consumeSkipRestartAfterRandomDecline()) {
         m().setIdle();
         final flags = await ref.read(featureFlagsProvider.future);
-        ref.read(routerProvider).push(flags.defaultRoute);
+        ref.read(routerProvider).go(flags.defaultRoute);
         return;
       }
       restartRandomSearch(ref);
     }),
+    () {
+      final sub = h.onReconnected.listen((_) {
+        if (ref.read(matchingProvider).status == MatchStatus.searching) {
+          unawaited(restartRandomSearch(ref));
+        }
+      });
+      return sub.cancel;
+    }(),
   ];
 }

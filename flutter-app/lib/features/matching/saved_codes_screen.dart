@@ -8,6 +8,7 @@ import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
+import '../../core/network/network_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
 
@@ -90,20 +91,30 @@ class _SavedCodesScreenState extends State<SavedCodesScreen> {
       final data = await Api.get('/user/saved-codes');
       if (mounted) setState(() => _codes = asJsonList(data));
     } catch (_) {
-      if (mounted) setState(() => _codes = []);
+      if (mounted && _codes.isEmpty) setState(() => _codes = []);
     } finally {
       if (mounted) setState(() => _listLoading = false);
     }
   }
 
   Future<void> _remove(String code) async {
+    if (!NetworkStatus.online.value) {
+      if (mounted) setState(() => _codeError = t('noConnection.actionFailed'));
+      return;
+    }
     try {
       await Api.delete('/user/saved-codes/${Uri.encodeComponent(code)}');
       await _fetch();
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) setState(() => _codeError = Api.errorMessage(e, t('common.error')));
+    }
   }
 
   Future<void> _connect(String code) async {
+    if (!NetworkStatus.online.value) {
+      setState(() => _codeError = t('noConnection.actionFailed'));
+      return;
+    }
     setState(() {
       _codeError = '';
       _loading = true;
@@ -277,6 +288,10 @@ class _AddCodeDialogState extends State<_AddCodeDialog> {
   }
 
   Future<void> _submit() async {
+    if (!NetworkStatus.online.value) {
+      setState(() => _error = t('noConnection.actionFailed'));
+      return;
+    }
     final code = _code.text.trim().toUpperCase();
     if (code.isEmpty || !code.startsWith('NX-') || code.length != 7) {
       setState(() => _error = t('home.codeFormatError'));

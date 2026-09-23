@@ -5,7 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
+import '../../core/network/network_status.dart';
 import '../calls/css_filter.dart';
+import 'story_overlay.dart';
+
+export 'story_overlay.dart';
 
 /// stores/stories.js ring.
 class StoryRing {
@@ -74,6 +78,10 @@ class StoriesController extends Notifier<StoriesState> {
   Future<void> fetchFeed({bool force = false}) async {
     if (state.loading) return;
     if (state.loaded && !force) return;
+    if (!NetworkStatus.online.value) {
+      state = state.copyWith(loading: false, loaded: true);
+      return;
+    }
     state = state.copyWith(loading: true);
     try {
       final data = await Api.get('/stories/feed');
@@ -94,7 +102,7 @@ class StoriesController extends Notifier<StoriesState> {
     final ring = StoryRing(
       userId: userId,
       name: payload.s('publisherName') ?? prev?.name ?? '—',
-      avatar: prev?.avatar,
+      avatar: payload.s('publisherAvatar') ?? payload.s('avatar') ?? prev?.avatar,
       hasUnseen: true,
       latestThumbUrl: payload.s('thumbUrl') ?? prev?.latestThumbUrl,
       latestAt: DateTime.now().toIso8601String(),
@@ -107,6 +115,14 @@ class StoriesController extends Notifier<StoriesState> {
       feed.insert(0, ring);
     }
     feed.sort((a, b) => (b.isMine ? 1 : 0) - (a.isMine ? 1 : 0));
+    state = state.copyWith(feed: feed);
+  }
+
+  void patchAvatar(String userId, String? avatar) {
+    final feed = [...state.feed];
+    final idx = feed.indexWhere((r) => r.userId == userId);
+    if (idx < 0) return;
+    feed[idx] = feed[idx].copyWith(avatar: avatar);
     state = state.copyWith(feed: feed);
   }
 
@@ -150,6 +166,7 @@ class StorySlide {
     this.filterId,
     this.videoDurationSeconds,
     this.viewCount = 0,
+    this.overlayJson,
   });
 
   final String id;
@@ -161,6 +178,7 @@ class StorySlide {
   final String? filterId;
   final num? videoDurationSeconds;
   final int viewCount;
+  final String? overlayJson;
 
   bool get isVideo => mediaType == 'video';
   bool get isText => mediaType == 'text';
@@ -175,6 +193,7 @@ class StorySlide {
         filterId: s.s('filterId'),
         videoDurationSeconds: s.v('videoDurationSeconds') as num?,
         viewCount: s.i('viewCount'),
+        overlayJson: storyOverlayAsString(s.v('overlayJson')),
       );
 }
 
@@ -250,4 +269,14 @@ BoxDecoration storyBackgroundDecoration(String? css, {BorderRadius? radius}) {
   final solid = v.startsWith('#') ? hex(v) : null;
   if (solid != null) return BoxDecoration(color: solid, borderRadius: radius);
   return storyBackgroundDecoration('linear-gradient(135deg,#6c63ff,#ff6584)', radius: radius);
+}
+
+void paintStoryBackground(Canvas canvas, Size size, String? css) {
+  final dec = storyBackgroundDecoration(css);
+  final rect = Offset.zero & size;
+  if (dec.gradient is LinearGradient) {
+    canvas.drawRect(rect, Paint()..shader = (dec.gradient as LinearGradient).createShader(rect));
+    return;
+  }
+  canvas.drawRect(rect, Paint()..color = dec.color ?? const Color(0xFF2563EB));
 }

@@ -26,7 +26,19 @@ class ShortFilmCache {
   Directory? _dir;
   final Map<String, String> _state = {};
   final List<_Job> _queue = [];
+  final Map<String, int> _inUse = {};
   int _active = 0;
+
+  void markInUse(String id) => _inUse[id] = (_inUse[id] ?? 0) + 1;
+
+  void releaseInUse(String id) {
+    final n = (_inUse[id] ?? 0) - 1;
+    if (n <= 0) {
+      _inUse.remove(id);
+    } else {
+      _inUse[id] = n;
+    }
+  }
 
   Future<Directory> _root() async {
     if (_dir != null) return _dir!;
@@ -139,13 +151,14 @@ class ShortFilmCache {
       ..sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
     for (final f in files) {
       if (total + required <= maxCacheBytes) break;
+      final id = f.uri.pathSegments.last.replaceAll('.mp4', '');
+      if (_inUse.containsKey(id)) continue;
       final size = f.lengthSync();
       try {
         f.deleteSync();
       } catch (_) {
         continue;
       }
-      final id = f.uri.pathSegments.last.replaceAll('.mp4', '');
       _state.remove(id);
       total -= size;
     }

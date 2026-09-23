@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/i18n/i18n.dart';
 import '../../core/network/hubs.dart';
+import '../../core/network/network_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/banner_strip.dart';
 import '../../shared/widgets.dart';
@@ -36,8 +37,15 @@ class _MatchingScreenState extends ConsumerState<MatchingScreen> with TickerProv
     _dotsTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (mounted) setState(() => _dots = _dots.length >= 3 ? '.' : '$_dots.');
     });
-    if (_matching.consumeResumeSearchAfterNav()) {
-      Hubs.matching.ensureConnected().then((_) => Hubs.matching.invoke('StartSearching', [_matching.current.genderFilter])).catchError((_) => null);
+    if (_matching.consumeResumeSearchAfterNav() && NetworkStatus.online.value) {
+      Hubs.matching.ensureConnected().then((_) => Hubs.matching.invoke('StartSearching', [_matching.current.genderFilter])).catchError((_) {
+        _matching.setIdle();
+        if (mounted) {
+          showToast(context, t('home.connectionError'), error: true);
+          context.go('/home');
+        }
+        return null;
+      });
     }
   }
 
@@ -56,11 +64,15 @@ class _MatchingScreenState extends ConsumerState<MatchingScreen> with TickerProv
     _cancelledProgrammatically = true;
     setState(() => _cancelling = true);
     try {
-      await Hubs.matching.ensureConnected();
-      await Hubs.matching.invoke('CancelSearching');
+      if (NetworkStatus.online.value) {
+        await Hubs.matching.ensureConnected();
+        await Hubs.matching.invoke('CancelSearching');
+      }
       _matching.setIdle();
       if (mounted) context.go('/home');
     } catch (_) {
+      _matching.setIdle();
+      if (mounted) context.go('/home');
     } finally {
       if (mounted) setState(() => _cancelling = false);
     }
@@ -68,6 +80,13 @@ class _MatchingScreenState extends ConsumerState<MatchingScreen> with TickerProv
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(networkProvider, (prev, next) {
+      if (prev == true && next == false && !_cancelledProgrammatically) {
+        _cancelledProgrammatically = true;
+        _matching.setIdle();
+        if (mounted) context.go('/home');
+      }
+    });
     final c = context.colors;
     final pad = MediaQuery.paddingOf(context);
     final reduced = MediaQuery.disableAnimationsOf(context);

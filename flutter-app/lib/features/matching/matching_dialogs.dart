@@ -8,6 +8,8 @@ import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
+import '../../core/network/network_status.dart';
+import '../../shared/widgets.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/ring_sound.dart';
 import 'matching_controller.dart';
@@ -187,9 +189,25 @@ class _IncomingConnectionRequestOverlayState extends ConsumerState<IncomingConne
   ConnectionRequest? _last;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _expire == null && ref.read(matchingProvider).incomingConnectionRequest != null) _startExpiry();
+    });
+  }
+
+  @override
   void dispose() {
     _expire?.cancel();
     super.dispose();
+  }
+
+  void _startExpiry() {
+    _expire?.cancel();
+    _expire = Timer(const Duration(seconds: 60), () {
+      RingSound.stop();
+      ref.read(matchingProvider.notifier).clearIncomingConnectionRequest();
+    });
   }
 
   void _clear() {
@@ -199,11 +217,17 @@ class _IncomingConnectionRequestOverlayState extends ConsumerState<IncomingConne
   }
 
   Future<void> _accept(ConnectionRequest r) async {
+    if (!NetworkStatus.online.value) {
+      if (mounted) showToast(context, t('noConnection.actionFailed'), error: true);
+      return;
+    }
     _clear();
     try {
       await Hubs.matching.ensureConnected();
       await Hubs.matching.invoke('AcceptConnectionRequest', [r.requesterId]);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) showToast(context, t('noConnection.actionFailed'), error: true);
+    }
   }
 
   void _decline(ConnectionRequest r) {
@@ -215,12 +239,8 @@ class _IncomingConnectionRequestOverlayState extends ConsumerState<IncomingConne
   Widget build(BuildContext context) {
     ref.listen(matchingProvider.select((s) => s.incomingConnectionRequest), (_, r) {
       _expire?.cancel();
-      if (r != null) {
-        _expire = Timer(const Duration(seconds: 60), () {
-          RingSound.stop();
-          ref.read(matchingProvider.notifier).clearIncomingConnectionRequest();
-        });
-      }
+      _expire = null;
+      if (r != null) _startExpiry();
     });
     final req = ref.watch(matchingProvider.select((s) => s.incomingConnectionRequest));
     if (req != null) _last = req;
@@ -278,6 +298,10 @@ class _RandomMatchConsentOverlayState extends ConsumerState<RandomMatchConsentOv
 
   Future<void> _accept(String sid) async {
     if (_acting) return;
+    if (!NetworkStatus.online.value) {
+      if (mounted) showToast(context, t('noConnection.actionFailed'), error: true);
+      return;
+    }
     setState(() {
       _acting = true;
       _waitingPeer = true;
@@ -286,7 +310,10 @@ class _RandomMatchConsentOverlayState extends ConsumerState<RandomMatchConsentOv
       await Hubs.matching.ensureConnected();
       await Hubs.matching.invoke('AcceptRandomMatch', [sid]);
     } catch (_) {
-      if (mounted) setState(() => _waitingPeer = false);
+      if (mounted) {
+        setState(() => _waitingPeer = false);
+        showToast(context, t('noConnection.actionFailed'), error: true);
+      }
     } finally {
       if (mounted) setState(() => _acting = false);
     }

@@ -66,6 +66,12 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
   String get _publisherName =>
       ref.read(storiesProvider).feed.where((r) => r.userId == _userId).firstOrNull?.name ?? '—';
 
+  String? get _publisherAvatar {
+    final ring = ref.read(storiesProvider).feed.where((r) => r.userId == _userId).firstOrNull;
+    if (_isOwner) return ref.read(authProvider).avatar ?? ring?.avatar;
+    return ring?.avatar;
+  }
+
   List<StoryRing> get _feedRings {
     final withSlides = ref.read(storiesProvider).feed.where((r) => r.slideCount > 0);
     return [...withSlides.where((r) => r.isMine), ...withSlides.where((r) => !r.isMine)];
@@ -82,10 +88,25 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
     });
   }
 
+  bool _syncingRoute = false;
+
+  @override
+  void didUpdateWidget(StoryViewerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_syncingRoute) return;
+    if (oldWidget.userId != widget.userId || oldWidget.slideId != widget.slideId) {
+      _mediaCache.clear();
+      _userId = widget.userId;
+      _loadSlidesForUser(widget.userId, startSlideId: widget.slideId, initial: true);
+    }
+  }
+
   @override
   void dispose() {
     _progress.dispose();
-    _video?.dispose();
+    final v = _video;
+    _video = null;
+    v?.dispose();
     _reply.dispose();
     _replyFocus.dispose();
     super.dispose();
@@ -134,26 +155,42 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
       _video = c;
       try {
         await c.initialize().timeout(const Duration(seconds: 15));
+        if (!mounted || _video != c) return;
         await c.setVolume(_muted ? 0 : 1);
+        if (!mounted || _video != c) return;
         c.addListener(() {
           final playing = c.value.isPlaying;
           if (playing != _videoPlaying && mounted && _video == c) setState(() => _videoPlaying = playing);
         });
-      } catch (_) {}
+      } catch (_) {
+        if (!mounted || _video != c) return;
+        if (_index < _slides.length - 1) {
+          setState(() => _index++);
+          await _onSlideChange();
+        } else {
+          await _goToAdjacentUser(1);
+        }
+        return;
+      }
       if (!mounted || _video != c) return;
-    } else if (!_mediaCache.contains(slide.id)) {
+    } else if (slide.mediaUrl != null && !_mediaCache.contains(slide.id)) {
       setState(() => _mediaReady = false);
       await _preload(slide);
       _mediaCache.add(slide.id);
       if (!mounted || _current?.id != slide.id) return;
     }
 
-    final ms = slide.isVideo ? ((slide.videoDurationSeconds ?? 15) * 1000).clamp(0, 60000).toInt() : _slideMs;
+    final fromVideo = _video?.value.duration.inMilliseconds ?? 0;
+    final fromSlide = ((slide.videoDurationSeconds ?? 15) * 1000).toInt();
+    final ms = slide.isVideo ? (fromVideo > 0 ? fromVideo : fromSlide).clamp(1, 60000) : _slideMs;
     _progress.duration = Duration(milliseconds: ms <= 0 ? 15000 : ms);
     setState(() => _mediaReady = true);
-    if (_video != null) {
-      await _video!.seekTo(Duration.zero);
-      if (!_paused && !_holding) await _video!.play();
+    final v = _video;
+    if (v != null) {
+      await v.seekTo(Duration.zero);
+      if (!mounted || _video != v) return;
+      if (!_paused && !_holding) await v.play();
+      if (!mounted || _video != v) return;
     }
     if (!_paused && !_holding && !_replyFocus.hasFocus) _progress.forward(from: 0);
     _recordView();
@@ -209,9 +246,11 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
   Future<void> _recordView() async {
     final slide = _current;
     if (slide == null || _isOwner) return;
+    final stories = ref.read(storiesProvider.notifier);
+    final uid = _userId;
     try {
       await Api.post('/stories/${slide.id}/view');
-      ref.read(storiesProvider.notifier).markRingSeen(_userId);
+      stories.markRingSeen(uid);
     } catch (_) {}
   }
 
@@ -229,7 +268,13 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
     }
     _mediaCache.clear();
     _paused = false;
-    await _loadSlidesForUser(rings[j].userId, direction: delta > 0 ? 'next' : 'prev', startIndex: delta > 0 ? 0 : null);
+    final nextId = rings[j].userId;
+    await _loadSlidesForUser(nextId, direction: delta > 0 ? 'next' : 'prev', startIndex: delta > 0 ? 0 : null);
+    if (!mounted) return;
+    final from = widget.from;
+    _syncingRoute = true;
+    context.replace(Uri(path: '/stories/view/$nextId', queryParameters: {if (from != null && from.isNotEmpty) 'from': from}).toString());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncingRoute = false);
   }
 
   Future<void> _navigate(String direction) async {
@@ -460,6 +505,8 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
                       child: Row(children: [
                         _IconBtn(icon: LucideIcons.x, size: 22, onTap: _goBack),
                         const SizedBox(width: 10),
+                        UserAvatar(url: _publisherAvatar, name: _publisherName, size: 28),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(_publisherName,
                               maxLines: 1,
@@ -605,7 +652,7 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
           ),
         ),
       ));
-    } else if (slide.caption?.isNotEmpty ?? false) {
+    } else if (slide.overlayJson == null && (slide.caption?.isNotEmpty ?? false)) {
       children.add(Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -615,7 +662,11 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
         ),
       ));
     }
-    if ((slide.caption?.isNotEmpty ?? false) && !slide.isText && slide.mediaUrl != null) {
+    final bakedImage = slide.mediaUrl != null && !slide.isVideo;
+    if (!bakedImage) {
+      children.add(Positioned.fill(child: StoryOverlayLayer(overlayJson: slide.overlayJson)));
+    }
+    if ((slide.caption?.isNotEmpty ?? false) && slide.mediaUrl != null) {
       children.add(Positioned(
         left: 16,
         right: 16,

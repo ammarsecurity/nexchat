@@ -15,6 +15,7 @@ import '../../shared/video_poster.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import 'stories_controller.dart';
+import 'story_dialog.dart';
 import 'story_editor.dart';
 
 class _ExportFailed implements Exception {}
@@ -39,6 +40,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
   String _background = defaultStoryBackground;
   bool _publishing = false;
   String? _editingSlideId;
+  String? _editingOverlay;
   String _editingFilterId = 'none';
   List<StorySlide> _mySlides = const [];
   bool _mySlidesLoading = false;
@@ -69,6 +71,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
 
   void _resetEditor() {
     _editingSlideId = null;
+    _editingOverlay = null;
     _editingFilterId = 'none';
     _imageSrc = null;
     _videoSrc = null;
@@ -119,6 +122,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
         _editingSlideId = s.id;
         _caption.text = s.caption ?? '';
         _editingFilterId = (s.filterId?.isNotEmpty ?? false) ? s.filterId! : 'none';
+        _editingOverlay = (s.isText || s.isVideo || s.mediaUrl == null) ? s.overlayJson : null;
         if (s.isVideo && s.mediaUrl != null) {
           _videoSrc = s.mediaUrl;
         } else if (s.isText || (s.backgroundColor != null && s.mediaUrl == null)) {
@@ -132,41 +136,29 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
         _step = 'edit';
       });
 
-  void _viewMyStory(StorySlide s) {
+  Future<void> _viewMyStory(StorySlide s) async {
     final uid = ref.read(authProvider).user?.id;
     if (uid == null) return;
-    context.push(Uri(path: '/stories/view/$uid', queryParameters: {'slideId': s.id, 'from': 'create'}).toString());
+    await context.push(Uri(path: '/stories/view/$uid', queryParameters: {'slideId': s.id, 'from': 'create'}).toString());
+    if (mounted && _step == 'pick') _loadMySlides();
   }
 
   Future<void> _requestDelete(StorySlide s) async {
-    final ok = await confirmDialog(
+    final stories = ref.read(storiesProvider.notifier);
+    await showStoryConfirm(
       context,
-      title: t('stories.deleteSlideTitle'),
       message: t('stories.confirmDeleteSlide'),
-      confirm: t('common.delete'),
-      cancel: t('common.cancel'),
-      danger: true,
+      onConfirm: () async {
+        await Api.delete('/stories/${s.id}');
+        if (!mounted) return;
+        setState(() => _mySlides = _mySlides.where((x) => x.id != s.id).toList());
+        stories.invalidate();
+        await stories.fetchFeed(force: true);
+      },
     );
-    if (!ok) return;
-    try {
-      await Api.delete('/stories/${s.id}');
-      setState(() => _mySlides = _mySlides.where((x) => x.id != s.id).toList());
-      final stories = ref.read(storiesProvider.notifier);
-      stories.invalidate();
-      await stories.fetchFeed(force: true);
-    } catch (e) {
-      if (mounted) _alert(Api.errorMessage(e, t('common.error')));
-    }
   }
 
-  Future<void> _alert(String message) => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(t('stories.dialogNotice')),
-          content: Text(message),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('common.ok')))],
-        ),
-      );
+  Future<void> _alert(String message) => showStoryAlert(context, message);
 
   String _errorMessage(Object e) {
     if (e is _ExportFailed) return t('stories.exportFailed');
@@ -178,7 +170,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
     final file = await _editorKey.currentState?.exportImage();
     if (file == null && required) throw _ExportFailed();
     if (file == null) return null;
-    return uploadFile('/media/upload-story-image', file.path, filename: 'story.png', timeout: mediaUploadTimeout);
+    return uploadFile('/media/upload-story-image', file.path, filename: 'story.jpg', timeout: mediaUploadTimeout);
   }
 
   Options get _publishOptions => Options(sendTimeout: storyPublishTimeout, receiveTimeout: storyPublishTimeout);
@@ -194,16 +186,10 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
       }
       String? mediaUrl;
       var mediaType = 'image';
-      var keepTextBackground = false;
 
       if (_textOnly) {
-        mediaType = 'text';
-        mediaUrl = await _export(required: false);
-        if (mediaUrl != null) {
-          mediaType = 'image';
-        } else {
-          keepTextBackground = true;
-        }
+        mediaUrl = await _export(required: true);
+        mediaType = 'image';
       } else if (_videoFile != null) {
         mediaType = 'video';
         mediaUrl = await uploadFile('/media/upload-story-video', _videoFile!, timeout: mediaUploadTimeout);
@@ -224,9 +210,9 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
           'mediaType': mediaType,
           'caption': _caption.text.trim().isEmpty ? null : _caption.text.trim(),
           'overlayJson': editor?.overlayJson,
-          'backgroundColor': keepTextBackground ? _background : null,
+          'backgroundColor': _textOnly ? _background : null,
           'filterId': filterId == 'none' ? null : filterId,
-          'videoDurationSeconds': null,
+          'videoDurationSeconds': editor?.videoDurationSeconds,
         },
         _publishOptions,
       );
@@ -248,7 +234,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
     final filterId = editor?.filterId ?? 'none';
     String? mediaUrl;
     if (_textOnly) {
-      mediaUrl = await _export(required: false);
+      mediaUrl = await _export(required: true);
     } else if (_videoFile == null && _imageSrc != null) {
       mediaUrl = await _export(required: true);
     }
@@ -382,6 +368,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
     final pad = MediaQuery.paddingOf(context);
     return Scaffold(
       backgroundColor: c.bgPrimary,
+      resizeToAvoidBottomInset: true,
       body: Column(children: [
         Padding(
           padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 12),
@@ -416,16 +403,15 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
           ]),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            child: StoryEditor(
-              key: _editorKey,
-              imageSrc: _imageSrc,
-              videoSrc: _videoSrc,
-              textOnly: _textOnly,
-              backgroundColor: _background,
-              initialFilterId: _editingFilterId,
-              onBackgroundChanged: (bg) => setState(() => _background = bg),
-            ),
+          child: StoryEditor(
+            key: _editorKey,
+            imageSrc: _imageSrc,
+            videoSrc: _videoSrc,
+            textOnly: _textOnly,
+            backgroundColor: _background,
+            initialFilterId: _editingFilterId,
+            initialOverlayJson: _editingOverlay,
+            onBackgroundChanged: (bg) => setState(() => _background = bg),
           ),
         ),
         Container(
@@ -517,22 +503,26 @@ class _MyStoryCard extends StatelessWidget {
       content = slide.isVideo
           ? VideoFramePoster(url: slide.mediaUrl!)
           : CachedNetworkImage(imageUrl: Api.absoluteUrl(slide.mediaUrl)!, fit: BoxFit.cover);
-    } else if (slide.caption?.isNotEmpty ?? false) {
-      content = Center(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(slide.caption!,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, height: 1.35, shadows: [Shadow(color: Color(0x59000000), blurRadius: 3)])),
-        ),
-      );
     } else {
-      content = const Center(
-        child: Text('Aa', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, shadows: [Shadow(color: Color(0x40000000), blurRadius: 4)])),
-      );
+      content = Stack(fit: StackFit.expand, children: [
+        if (slide.caption?.isNotEmpty ?? false)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(slide.caption!,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, height: 1.35, shadows: [Shadow(color: Color(0x59000000), blurRadius: 3)])),
+            ),
+          )
+        else if (firstOverlayText(slide.overlayJson) == null)
+          const Center(
+            child: Text('Aa', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, shadows: [Shadow(color: Color(0x40000000), blurRadius: 4)])),
+          ),
+        StoryOverlayLayer(overlayJson: slide.overlayJson),
+      ]);
     }
     Widget badge(Widget child, {EdgeInsets padding = EdgeInsets.zero}) => Container(
           padding: padding,

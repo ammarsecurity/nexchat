@@ -167,9 +167,7 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
     try {
       final data = await Api.get('/short-films/sections');
       state = state.copyWith(sections: asJsonList(data).map(FilmSection.fromJson).toList());
-    } catch (_) {
-      state = state.copyWith(sections: const []);
-    }
+    } catch (_) {}
   }
 
   Future<void> fetchBrowse({int previewSize = 8}) async {
@@ -180,9 +178,7 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
         sectionBrowse: asJsonList(m.v('sections')).map(FilmSection.fromJson).toList(),
         uncategorizedBrowse: asJsonList(m.v('uncategorizedFilms')).map(ShortFilm.fromJson).toList(),
       );
-    } catch (_) {
-      state = state.copyWith(sectionBrowse: const [], uncategorizedBrowse: const []);
-    }
+    } catch (_) {}
   }
 
   Future<void> fetchPage({bool reset = false}) async {
@@ -211,7 +207,7 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
       state = state.copyWith(list: list, total: total, hasMore: hasMore, page: state.page + 1, loaded: true);
       if (reset) ShortFilmCache.instance.prefetchFilms(state.featured, priority: CachePriority.high);
     } catch (_) {
-      if (reset) state = state.copyWith(list: const [], featured: const [], total: 0, hasMore: false);
+      if (reset && !state.loaded) state = state.copyWith(list: const [], featured: const [], total: 0, hasMore: false);
     } finally {
       state = state.copyWith(loading: false, loadingMore: false);
     }

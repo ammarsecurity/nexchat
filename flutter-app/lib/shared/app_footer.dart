@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/feature_flags.dart';
 import '../core/json.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/layout.dart';
 
 const _lucideSvg = {
   'twitter': '<path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/>',
@@ -52,7 +53,7 @@ class _AppFooterState extends State<AppFooter> {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + tabBarClearance(context)),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.only(top: 16),
