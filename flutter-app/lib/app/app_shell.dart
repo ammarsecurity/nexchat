@@ -117,8 +117,8 @@ class _TabItem extends StatelessWidget {
         icon = Icon(LucideIcons.user, size: 24, color: color);
     }
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         HapticFeedback.lightImpact();
         if (!active) GoRouter.of(context).go(tab.to);

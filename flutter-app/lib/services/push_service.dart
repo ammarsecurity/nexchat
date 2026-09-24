@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../core/config/env.dart';
 import '../core/network/api_client.dart';
@@ -14,43 +15,88 @@ class PushService {
   PushService._();
   static final instance = PushService._();
 
+  bool _bootstrapped = false;
   bool _initialized = false;
   String? _userId;
+  bool _observerBound = false;
 
   /// auth.shouldPromptNotifications — set after login when permission wasn't granted.
   static final promptNotifications = ValueNotifier<bool>(false);
 
+  void Function(Map<String, dynamic> data, String? title, String? body)? _onOpen;
+  void Function(Map<String, dynamic> data, String? title, String? body)? _onForeground;
+  ({Map<String, dynamic> data, String? title, String? body})? _pendingOpen;
+
   /// Set by the app shell: routes a tapped notification (same payload fields as the Vue app).
-  void Function(Map<String, dynamic> data, String? title, String? body)? onOpen;
+  set onOpen(void Function(Map<String, dynamic> data, String? title, String? body)? v) {
+    _onOpen = v;
+    final pending = _pendingOpen;
+    if (v != null && pending != null) {
+      _pendingOpen = null;
+      v(pending.data, pending.title, pending.body);
+    }
+  }
 
   /// Set by the app shell: records a notification received while the app is in the foreground.
-  void Function(Map<String, dynamic> data, String? title, String? body)? onForeground;
+  set onForeground(void Function(Map<String, dynamic> data, String? title, String? body)? v) => _onForeground = v;
 
   String get _platform => Platform.isIOS ? 'ios' : 'android';
 
-  Future<bool> init(String userId, {bool promptPermission = true}) async {
-    if (Env.oneSignalAppId.isEmpty) return false;
+  /// Must run before [runApp] so the native SDK can attach the FCM token and click queue.
+  Future<void> bootstrap() async {
+    if (_bootstrapped || Env.oneSignalAppId.isEmpty) return;
     try {
-      if (!_initialized) {
-        OneSignal.initialize(Env.oneSignalAppId);
-        OneSignal.Notifications.addClickListener((event) {
-          final n = event.notification;
-          onOpen?.call(Map<String, dynamic>.from(n.additionalData ?? const {}), n.title, n.body);
-        });
-        OneSignal.Notifications.addForegroundWillDisplayListener((event) {
-          final n = event.notification;
-          onForeground?.call(Map<String, dynamic>.from(n.additionalData ?? const {}), n.title, n.body);
+      await OneSignal.initialize(Env.oneSignalAppId);
+      OneSignal.Notifications.addClickListener((event) {
+        final n = event.notification;
+        final data = Map<String, dynamic>.from(n.additionalData ?? const {});
+        final handler = _onOpen;
+        if (handler != null) {
+          handler(data, n.title, n.body);
+        } else {
+          _pendingOpen = (data: data, title: n.title, body: n.body);
+        }
+      });
+      OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+        final n = event.notification;
+        final data = Map<String, dynamic>.from(n.additionalData ?? const {});
+        _onForeground?.call(data, n.title, n.body);
+        final type = '${data['type'] ?? ''}';
+        if (type == 'video_call') {
           event.preventDefault();
+        }
+      });
+      if (!_observerBound) {
+        _observerBound = true;
+        OneSignal.User.pushSubscription.addObserver((_) => unawaited(_registerWithBackend()));
+        OneSignal.Notifications.addPermissionObserver((granted) {
+          if (granted) unawaited(_registerWithBackend());
         });
-        _initialized = true;
       }
+      _bootstrapped = true;
+      _initialized = true;
+    } catch (_) {}
+  }
+
+  Future<bool> init(String userId, {bool promptPermission = true}) async {
+    if (Env.oneSignalAppId.isEmpty || userId.isEmpty) return false;
+    try {
+      await bootstrap();
+      if (!_bootstrapped) return false;
       if (_userId != userId) {
-        OneSignal.login(userId);
+        try {
+          await OneSignal.login(userId).timeout(const Duration(seconds: 8));
+        } catch (_) {}
         _userId = userId;
       }
-      final granted = promptPermission ? await OneSignal.Notifications.requestPermission(true) : OneSignal.Notifications.permission;
+      if (Platform.isAndroid) {
+        await Permission.notification.request();
+      }
+      final granted = promptPermission
+          ? await OneSignal.Notifications.requestPermission(true)
+          : OneSignal.Notifications.permission;
       if (granted) {
-        OneSignal.User.pushSubscription.optIn();
+        await OneSignal.User.pushSubscription.optIn();
         unawaited(_registerWithBackend());
       }
       return granted;
@@ -62,8 +108,10 @@ class PushService {
   bool get enabled => _initialized && OneSignal.Notifications.permission && (OneSignal.User.pushSubscription.optedIn ?? false);
 
   Future<void> optIn() async {
+    await bootstrap();
+    if (Platform.isAndroid) await Permission.notification.request();
     await OneSignal.Notifications.requestPermission(true);
-    OneSignal.User.pushSubscription.optIn();
+    await OneSignal.User.pushSubscription.optIn();
     unawaited(_registerWithBackend());
   }
 
@@ -71,21 +119,23 @@ class PushService {
 
   Future<String?> _waitForSubscriptionId() async {
     final started = DateTime.now();
-    while (DateTime.now().difference(started) < const Duration(seconds: 15)) {
+    while (DateTime.now().difference(started) < const Duration(seconds: 20)) {
       final id = OneSignal.User.pushSubscription.id;
       if (id != null && id.isNotEmpty) return id;
-      await Future<void>.delayed(const Duration(seconds: 1));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     }
     return null;
   }
 
   Future<void> _registerWithBackend() async {
-    final id = await _waitForSubscriptionId();
+    final id = OneSignal.User.pushSubscription.id ?? await _waitForSubscriptionId();
     if (id == null) return;
     try {
-      await Api.dio.post('notifications/register',
-          data: {'playerId': id, 'platform': _platform},
-          options: Options(extra: {'skipUnauthorizedEvent': true, 'skipGlobalLoader': true}));
+      await Api.dio.post(
+        'notifications/register',
+        data: {'playerId': id, 'platform': _platform},
+        options: Options(extra: {'skipUnauthorizedEvent': true, 'skipGlobalLoader': true}),
+      );
     } catch (_) {}
   }
 
@@ -94,11 +144,13 @@ class PushService {
     try {
       final id = OneSignal.User.pushSubscription.id;
       if (id != null) {
-        await Api.dio.post('notifications/unregister',
-            data: {'playerId': id, 'platform': _platform},
-            options: Options(extra: {'skipUnauthorizedEvent': true, 'skipGlobalLoader': true}));
+        await Api.dio.post(
+          'notifications/unregister',
+          data: {'playerId': id, 'platform': _platform},
+          options: Options(extra: {'skipUnauthorizedEvent': true, 'skipGlobalLoader': true}),
+        );
       }
-      OneSignal.logout();
+      await OneSignal.logout();
     } catch (_) {}
     _userId = null;
   }

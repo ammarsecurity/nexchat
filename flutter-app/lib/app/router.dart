@@ -182,8 +182,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         final e = s.extra is Map ? s.extra as Map : const {};
         return VideoCallScreen(
           sessionId: s.pathParameters['sessionId']!,
-          voiceOnly: e['voiceOnly'] == true,
-          fromConversation: e['fromConversation'] == true,
+          voiceOnly: e['voiceOnly'] == true || s.uri.queryParameters['voice'] == '1',
+          fromConversation: e['fromConversation'] == true || s.uri.queryParameters['conv'] == '1',
         );
       }, swipeBack: false),
       page('/stories/create', (_) => const StoryCreateScreen()),

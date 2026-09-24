@@ -14,6 +14,7 @@ import '../core/storage/prefs.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/calls/call_state.dart';
 import '../features/calls/incoming_call_dialog.dart';
+import '../features/calls/video_call_screen.dart';
 import '../features/chat/chat_session.dart';
 import '../features/conversations/active_conversation.dart';
 import '../features/conversations/avatar_overrides.dart';
@@ -225,7 +226,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
           );
       ref.read(activeCallProvider.notifier).expand();
       final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
-      if (path == '/video/$cid') return;
+      if (path == '/video/$cid' || videoScreenMounts(cid) > 0) return;
       openAcceptedCall(ref.read(routerProvider), cid, voiceOnly);
     }));
 

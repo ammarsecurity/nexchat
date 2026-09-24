@@ -9,36 +9,40 @@ import org.json.JSONObject
 @Keep
 class IncomingCallNotificationExtension : INotificationServiceExtension {
     override fun onNotificationReceived(event: INotificationReceivedEvent) {
-        val data = event.notification.additionalData ?: return
-        if (data.optString("type") != "video_call") return
+        try {
+            val data = event.notification.additionalData ?: return
+            if (data.optString("type") != "video_call") return
 
-        val context = event.context.applicationContext
-        val conversationId = data.stringOrNull("conversationId")
-        val sessionId = data.stringOrNull("sessionId")
-        if (conversationId.isNullOrBlank() && sessionId.isNullOrBlank()) return
+            val context = event.context.applicationContext
+            val conversationId = data.stringOrNull("conversationId")
+            val sessionId = data.stringOrNull("sessionId")
+            if (conversationId.isNullOrBlank() && sessionId.isNullOrBlank()) return
 
-        val voiceOnly = data.optString("voiceOnly") == "true" || data.optBoolean("voiceOnly", false)
-        val callerName = data.optString("callerName").ifBlank { "NexChat" }
-        val callerAvatar = data.stringOrNull("callerAvatar")
+            val voiceOnly = data.optString("voiceOnly") == "true" || data.optBoolean("voiceOnly", false)
+            val callerName = data.optString("callerName").ifBlank { "NexChat" }
+            val callerAvatar = data.stringOrNull("callerAvatar")
 
-        IncomingCallStore.save(
-            context,
-            conversationId,
-            sessionId,
-            voiceOnly,
-            callerName,
-            callerAvatar,
-            IncomingCallStore.ACTION_RING,
-        )
-        event.preventDefault()
+            IncomingCallStore.save(
+                context,
+                conversationId,
+                sessionId,
+                voiceOnly,
+                callerName,
+                callerAvatar,
+                IncomingCallStore.ACTION_RING,
+            )
+            event.preventDefault()
 
-        if (IncomingCallStore.isForeground(context)) {
+            if (IncomingCallStore.isForeground(context)) {
+                IncomingCallPlugin.notifyFlutterIfReady(context)
+                return
+            }
+
+            IncomingCallNotifier.show(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar)
             IncomingCallPlugin.notifyFlutterIfReady(context)
-            return
+        } catch (_: Exception) {
+            // Never swallow regular OneSignal notifications if call parsing fails.
         }
-
-        IncomingCallNotifier.show(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar)
-        IncomingCallPlugin.notifyFlutterIfReady(context)
     }
 
     private fun JSONObject.stringOrNull(key: String): String? {

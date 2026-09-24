@@ -29,16 +29,34 @@ void returnToRoute(GoRouter router, String path) {
   }
 }
 
+String? _openingVideoSid;
+final _videoScreenMounts = <String, int>{};
+
+int videoScreenMounts(String sessionId) => _videoScreenMounts[sessionId] ?? 0;
+
 /// Shows the call screen for [sessionId], popping back to an existing one instead of stacking a second instance.
 void openVideoRoute(GoRouter router, String sessionId, Map<String, Object?> extra) {
+  final path = router.routerDelegate.currentConfiguration.uri.path;
+  if (path == '/video/$sessionId' || _openingVideoSid == sessionId) return;
   final matches = router.routerDelegate.currentConfiguration.matches;
   final i = matches.lastIndexWhere((m) => m.matchedLocation == '/video/$sessionId');
-  if (i < 0) {
-    router.push('/video/$sessionId', extra: extra);
+  if (i >= 0) {
+    var above = matches.length - 1 - i;
+    if (above > 0) router.routerDelegate.navigatorKey.currentState?.popUntil((_) => above-- <= 0);
     return;
   }
-  var above = matches.length - 1 - i;
-  if (above > 0) router.routerDelegate.navigatorKey.currentState?.popUntil((_) => above-- <= 0);
+  _openingVideoSid = sessionId;
+  final loc = Uri(
+    path: '/video/$sessionId',
+    queryParameters: {
+      if (extra['voiceOnly'] == true) 'voice': '1',
+      if (extra['fromConversation'] == true) 'conv': '1',
+    },
+  ).toString();
+  router.push(loc, extra: extra);
+  Future<void>.delayed(const Duration(milliseconds: 800), () {
+    if (_openingVideoSid == sessionId) _openingVideoSid = null;
+  });
 }
 
 /// views/VideoCallView.vue
@@ -95,6 +113,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   @override
   void initState() {
     super.initState();
+    _videoScreenMounts[_sid] = videoScreenMounts(_sid) + 1;
+    if (_openingVideoSid == _sid) _openingVideoSid = null;
     _activeCtrl = ref.read(activeCallProvider.notifier);
     _router = GoRouter.of(context);
     Future.microtask(() {
@@ -152,7 +172,6 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   Future<void> _start() async {
     try {
-      if (_voiceOnly) _speakerOn = await CallNative.isEmulator();
       final statuses = await [Permission.microphone, if (!_voiceOnly) Permission.camera].request();
       if (!mounted) return;
       if (statuses.values.any((s) => !s.isGranted && !s.isLimited)) {
@@ -185,7 +204,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       final reused = await _lk.join(_sid,
           voiceOnly: _voiceOnly, partnerName: p.name.isNotEmpty ? p.name : _activeCtrl.current.partnerName);
       if (reused == null) {
-        if (mounted && !(_activeCtrl.current.minimized && _activeCtrl.current.sessionId == _sid)) {
+        if (mounted &&
+            videoScreenMounts(_sid) <= 1 &&
+            !(_activeCtrl.current.minimized && _activeCtrl.current.sessionId == _sid)) {
           _exitAfterFailure();
         }
         return;
@@ -234,7 +255,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   }
 
   void _exitAfterFailure() {
-    if (_failureReturnStarted) return;
+    if (_failureReturnStarted || videoScreenMounts(_sid) > 1) return;
     _failureReturnStarted = true;
     _suppressDisconnectNavigate = true;
     _timer?.cancel();
@@ -275,6 +296,16 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _duration.dispose();
     unawaited(CallNative.proximity(false));
     _room?.removeListener(_onRoomChanged);
+    final remaining = (_videoScreenMounts[_sid] ?? 1) - 1;
+    if (remaining <= 0) {
+      _videoScreenMounts.remove(_sid);
+    } else {
+      _videoScreenMounts[_sid] = remaining;
+    }
+    if (remaining > 0) {
+      super.dispose();
+      return;
+    }
     final ac = _activeCtrl.current;
     final owns = _ownedGen != 0 && _lk.generation == _ownedGen && _lk.sessionId == _sid;
     if (ac.minimized && ac.sessionId == _sid && owns) {
@@ -351,7 +382,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     final local = _lk.localVideo;
     final vo = _voiceOnly;
     final filter = _filters.firstWhere((f) => f.id == _filter);
-    final showRemote = !vo && remote != null;
+    final showRemote = !vo && _connected && remote != null;
     final showIdentity = vo || !showRemote;
     final status = _error.isNotEmpty
         ? _error
@@ -432,7 +463,14 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                 ),
               ),
             if (showRemote)
-              Positioned.fill(child: RepaintBoundary(child: VideoTrackRenderer(remote, fit: VideoViewFit.cover))),
+              Positioned.fill(
+                child: VideoTrackRenderer(
+                  remote,
+                  fit: VideoViewFit.cover,
+                  renderMode: VideoRenderMode.texture,
+                  placeholderBuilder: (_) => const ColoredBox(color: Color(0xFF0B141A)),
+                ),
+              ),
             if (showRemote)
               Positioned(
                 top: 0,

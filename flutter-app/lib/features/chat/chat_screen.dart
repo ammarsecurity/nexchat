@@ -22,6 +22,7 @@ import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../calls/active_call_bar.dart';
 import '../calls/call_state.dart';
+import '../calls/video_call_screen.dart';
 import '../conversations/conversation_chat_screen.dart' show TypingBubble;
 import '../matching/matching_controller.dart';
 import 'chat_session.dart';
@@ -604,7 +605,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
     if (!mounted) return;
     _leavingProgrammatically = true;
-    _router.push('/video/$_sid', extra: {'initiator': false});
+    openVideoRoute(_router, _sid, {'initiator': false, 'voiceOnly': false});
   }
 
   void _declineCall() {

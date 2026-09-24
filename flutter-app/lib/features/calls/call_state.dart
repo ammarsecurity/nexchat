@@ -31,6 +31,8 @@ class LiveKitService {
   String? _lastSessionId;
   EventsListener<RoomEvent>? _listener;
   int _generation = 0;
+  Completer<bool?>? _joinWait;
+  String? _joinWaitSid;
   final handlers = LiveKitHandlers();
 
   /// Returns true when an already-connected room for the same session was reused, null when a [leave]
@@ -43,15 +45,24 @@ class LiveKitService {
   Future<bool?> join(String sessionId, {required bool voiceOnly, String partnerName = ''}) async {
     final r = room;
     if (r != null && r.connectionState == ConnectionState.connected && _lastSessionId == sessionId) return true;
+    final pending = _joinWait;
+    if (pending != null && _joinWaitSid == sessionId) return pending.future;
     final savedDc = handlers.onDisconnected;
     handlers.onDisconnected = null;
     await leave();
     handlers.onDisconnected = savedDc;
+    final wait = Completer<bool?>();
+    _joinWait = wait;
+    _joinWaitSid = sessionId;
+    try {
     final gen = _generation;
     _lastSessionId = sessionId;
     _cameraPosition = CameraPosition.front;
     final data = await Api.post('livekit/token', {'roomName': sessionId}) as Map;
-    if (gen != _generation) return null;
+    if (gen != _generation) {
+      _finishJoin(wait, null);
+      return null;
+    }
     final newRoom = Room(roomOptions: const RoomOptions(adaptiveStream: true, dynacast: true));
     room = newRoom;
     final l = newRoom.createListener();
@@ -78,22 +89,48 @@ class LiveKitService {
 
     try {
       await newRoom.connect(data.str('url'), data.str('token'));
-    } catch (_) {
-      if (await cancelled()) return null;
+    } catch (e) {
+      if (await cancelled()) {
+        _finishJoin(wait, null);
+        return null;
+      }
+      _finishJoin(wait, null);
       rethrow;
     }
-    if (await cancelled()) return null;
+    if (await cancelled()) {
+      _finishJoin(wait, null);
+      return null;
+    }
     unawaited(CallNative.start(video: !voiceOnly, title: t('videoCall.callInBackground'), text: partnerName));
     final lp = newRoom.localParticipant;
     try {
       await lp?.setMicrophoneEnabled(true);
-      if (await cancelled()) return null;
+      if (await cancelled()) {
+        _finishJoin(wait, null);
+        return null;
+      }
       if (!voiceOnly) await lp?.setCameraEnabled(true);
     } catch (e) {
       if (gen == _generation) handlers.onMediaError?.call(e);
     }
-    if (await cancelled()) return null;
+    if (await cancelled()) {
+      _finishJoin(wait, null);
+      return null;
+    }
+    _finishJoin(wait, false);
     return false;
+    } catch (e) {
+      _finishJoin(wait, null);
+      rethrow;
+    }
+  }
+
+  void _finishJoin(Completer<bool?> wait, bool? value) {
+    if (!wait.isCompleted) wait.complete(value);
+    if (_joinWait == wait) {
+      _joinWait = null;
+      _joinWaitSid = null;
+    }
   }
 
   Future<void> _discard(Room r, EventsListener<RoomEvent> l) async {
@@ -108,6 +145,10 @@ class LiveKitService {
 
   Future<void> leave() async {
     _generation++;
+    final wait = _joinWait;
+    _joinWait = null;
+    _joinWaitSid = null;
+    if (wait != null && !wait.isCompleted) wait.complete(null);
     final r = room;
     room = null;
     _lastSessionId = null;

@@ -620,48 +620,51 @@ class _MainTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    const ids = ['chats', 'contacts', 'requests'];
+    const gap = 6.0;
+    final index = ids.indexOf(section).clamp(0, ids.length - 1);
+
     Widget tab(String id, IconData icon, String label, [int badge = 0]) {
       final active = section == id;
       return Expanded(
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => onChanged(id),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+          child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-            decoration: BoxDecoration(
-              color: active ? c.bgCard : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: active ? [BoxShadow(color: c.shadow, blurRadius: 6)] : null,
-            ),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Stack(clipBehavior: Clip.none, children: [
-                Icon(icon, size: 18, color: active ? c.primary : c.textMuted),
-                if (badge > 0)
-                  PositionedDirectional(
-                    top: -5,
-                    end: -9,
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 16),
-                      height: 16,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: active ? c.bgCard : c.bgElevated, width: 2),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Stack(clipBehavior: Clip.none, children: [
+                  Icon(icon, size: 18, color: active ? c.primary : c.textMuted),
+                  if (badge > 0)
+                    PositionedDirectional(
+                      top: -5,
+                      end: -9,
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 16),
+                        height: 16,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: active ? c.bgCard : c.bgElevated, width: 2),
+                        ),
+                        child: Text(badge > 99 ? '99+' : '$badge',
+                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700, height: 1)),
                       ),
-                      child: Text(badge > 99 ? '99+' : '$badge',
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700, height: 1)),
                     ),
-                  ),
-              ]),
-              const SizedBox(height: 3),
-              Text(label,
+                ]),
+                const SizedBox(height: 3),
+                Text(
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? c.primary : c.textMuted, height: 1.2)),
-            ]),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? c.primary : c.textMuted, height: 1.2),
+                ),
+              ]),
+            ),
           ),
         ),
       );
@@ -671,13 +674,33 @@ class _MainTabs extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: c.bgElevated, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
-      child: Row(children: [
-        tab('chats', LucideIcons.messageCircle, t('nav.conversations')),
-        const SizedBox(width: 6),
-        tab('contacts', LucideIcons.users, t('nav.contacts')),
-        const SizedBox(width: 6),
-        tab('requests', LucideIcons.mail, t('conversations.messageRequestsShort'), pending),
-      ]),
+      child: LayoutBuilder(builder: (context, box) {
+        final tabW = (box.maxWidth - gap * (ids.length - 1)) / ids.length;
+        return Stack(children: [
+          AnimatedPositionedDirectional(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            start: index * (tabW + gap),
+            width: tabW,
+            top: 0,
+            bottom: 0,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.bgCard,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: c.shadow, blurRadius: 6)],
+              ),
+            ),
+          ),
+          Row(children: [
+            tab('chats', LucideIcons.messageCircle, t('nav.conversations')),
+            const SizedBox(width: gap),
+            tab('contacts', LucideIcons.users, t('nav.contacts')),
+            const SizedBox(width: gap),
+            tab('requests', LucideIcons.mail, t('conversations.messageRequestsShort'), pending),
+          ]),
+        ]);
+      }),
     );
   }
 }
