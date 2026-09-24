@@ -231,7 +231,7 @@ public class MatchingHub(
 
         if (user != null)
         {
-            _ = notificationOutbox.EnqueueAsync(
+            await notificationOutbox.EnqueueAsync(
                 targetId!.Value,
                 "code_connected",
                 "اتصال جديد",

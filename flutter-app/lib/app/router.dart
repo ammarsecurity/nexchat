@@ -178,14 +178,21 @@ final routerProvider = Provider<GoRouter>((ref) {
           supportChat: s.uri.queryParameters['support'] == '1',
         );
       }),
-      page('/video/:sessionId', (s) {
-        final e = s.extra is Map ? s.extra as Map : const {};
-        return VideoCallScreen(
-          sessionId: s.pathParameters['sessionId']!,
-          voiceOnly: e['voiceOnly'] == true || s.uri.queryParameters['voice'] == '1',
-          fromConversation: e['fromConversation'] == true || s.uri.queryParameters['conv'] == '1',
-        );
-      }, swipeBack: false),
+      GoRoute(
+        path: '/video/:sessionId',
+        pageBuilder: (context, s) {
+          final e = s.extra is Map ? s.extra as Map : const {};
+          return NoTransitionPage<void>(
+            key: s.pageKey,
+            name: s.name,
+            child: VideoCallScreen(
+              sessionId: s.pathParameters['sessionId']!,
+              voiceOnly: e['voiceOnly'] == true || s.uri.queryParameters['voice'] == '1',
+              fromConversation: e['fromConversation'] == true || s.uri.queryParameters['conv'] == '1',
+            ),
+          );
+        },
+      ),
       page('/stories/create', (_) => const StoryCreateScreen()),
       page(
         '/stories/view/:userId',

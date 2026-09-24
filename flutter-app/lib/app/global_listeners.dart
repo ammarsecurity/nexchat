@@ -97,18 +97,23 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       ..onOpen = (data, title, body) {
         final item = storeItem(data, title, body, true);
         ref.read(notificationsProvider.notifier).add(item);
+        final d = parseNotificationData(data);
+        if (d['type'] == 'message_request') {
+          unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
+        }
         navigateFromNotification(ref, item);
       }
       ..onForeground = (data, title, body) {
         ref.read(notificationsProvider.notifier).add(storeItem(data, title, body, false));
         final d = parseNotificationData(data);
-        if (d['type'] == 'video_call') {
-          if (d['conversationId'] != null) {
-            NotificationHooks.onConversationCall?.call(d);
-          } else if (d['sessionId'] != null) {
-            applyIncomingCallEvent(ref, d);
-          }
+        if (d['type'] == 'message_request') {
+          // Show the tab badge immediately; refetch for the accurate count.
+          final n = ref.read(pendingRequestsProvider);
+          ref.read(pendingRequestsProvider.notifier).set(n + 1);
+          unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
         }
+        // video_call: do not start ringing from a push payload here.
+        // Live calls arrive via SignalR and/or the native full-screen call notification.
       };
 
     NotificationHooks.onConversationCall = (d) {
@@ -139,11 +144,16 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
 
   void _bindIncomingNative() {
     CallNative.onIncomingEvent = (e) {
-      if (!ref.read(authProvider).isLoggedIn) return;
-      applyIncomingCallEvent(ref, e);
+      queueOrApplyIncomingCall(ref, e);
     };
     CallNative.listen();
-    unawaited(CallNative.ready());
+    unawaited(() async {
+      await CallNative.ready();
+      // Intent may land after markReady on a cold start — pick up leftovers.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      final pending = await CallNative.consumePending();
+      if (pending != null) queueOrApplyIncomingCall(ref, pending);
+    }());
   }
 
   void _clearMatchingOverlays() {
@@ -283,7 +293,10 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(authProvider.select((s) => s.isLoggedIn), (_, _) => _syncHubs());
+    ref.listen(authProvider.select((s) => s.isLoggedIn), (prev, next) {
+      _syncHubs();
+      if (next) flushPendingIncomingCall(ref);
+    });
     ref.listen(featureFlagsProvider.select((a) => a.value?.connectHub), (_, _) => _syncHubs());
     final loggedIn = ref.watch(authProvider.select((s) => s.isLoggedIn));
     final flags = ref.watch(featureFlagsProvider).value ?? FeatureFlags.hiddenUntilLoaded;

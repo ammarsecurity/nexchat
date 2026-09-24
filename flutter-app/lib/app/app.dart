@@ -13,8 +13,10 @@ import '../core/network/network_status.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/calls/call_state.dart';
+import '../features/conversations/conversations_list_controller.dart';
 import '../features/matching/matching_controller.dart';
 import '../services/call_native.dart';
+import '../services/push_service.dart';
 import '../services/ring_sound.dart';
 import '../services/update_check.dart';
 import '../shared/no_connection_view.dart';
@@ -65,6 +67,10 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
       }
       _runUpdateCheck();
       if (ref.read(networkProvider)) unawaited(Hubs.resumeAll());
+      if (ref.read(authProvider).isLoggedIn) {
+        unawaited(PushService.instance.refreshRegistration());
+        unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
+      }
       return;
     }
     if (state == AppLifecycleState.hidden ||

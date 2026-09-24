@@ -145,6 +145,7 @@ class WhatsAppRingingLayout extends StatelessWidget {
     required this.actions,
     this.pulse = true,
     this.top,
+    this.overlay = false,
   });
 
   final String? avatarUrl;
@@ -154,31 +155,35 @@ class WhatsAppRingingLayout extends StatelessWidget {
   final List<Widget> actions;
   final bool pulse;
   final Widget? top;
+  final bool overlay;
 
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.paddingOf(context);
     return SizedBox.expand(
       child: DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [WaCall.bgTop, WaCall.bgMid, WaCall.bgBottom],
-        ),
+      decoration: BoxDecoration(
+        gradient: overlay
+            ? null
+            : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [WaCall.bgTop, WaCall.bgMid, WaCall.bgBottom],
+              ),
       ),
       child: Stack(children: [
-        const Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(0, -0.35),
-                radius: 0.95,
-                colors: [Color(0x3300A884), Color(0x0000A884)],
+        if (!overlay)
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(0, -0.35),
+                  radius: 0.95,
+                  colors: [Color(0x3300A884), Color(0x0000A884)],
+                ),
               ),
             ),
           ),
-        ),
         if (top != null) Positioned(top: 0, left: 0, right: 0, child: top!),
         Positioned.fill(
           child: Padding(

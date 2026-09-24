@@ -36,7 +36,8 @@ object IncomingCallNotifier {
         ensureChannel(app)
 
         val fullScreen = activityIntent(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_RING, 11)
-        val accept = actionIntent(app, IncomingCallReceiver.ACTION_ACCEPT, conversationId, sessionId, voiceOnly, name, callerAvatar, 12)
+        // CallStyle accept must be an Activity PendingIntent — BroadcastReceivers are unreliable from the shade.
+        val accept = mainActivityIntent(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_ACCEPT, 12)
         val decline = actionIntent(app, IncomingCallReceiver.ACTION_DECLINE, conversationId, sessionId, voiceOnly, name, callerAvatar, 13)
 
         val person = Person.Builder().setName(name).setImportant(true).build()
@@ -123,6 +124,35 @@ object IncomingCallNotifier {
         val intent = IncomingCallStore.putOn(
             Intent(context, IncomingCallActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_USER_ACTION),
+            conversationId,
+            sessionId,
+            voiceOnly,
+            callerName,
+            callerAvatar,
+            action,
+        )
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
+
+    /** Opens Flutter MainActivity with accept/ring extras so Dart can navigate to the call UI. */
+    fun mainActivityIntent(
+        context: Context,
+        conversationId: String?,
+        sessionId: String?,
+        voiceOnly: Boolean,
+        callerName: String,
+        callerAvatar: String?,
+        action: String,
+        requestCode: Int,
+    ): PendingIntent {
+        val intent = IncomingCallStore.putOn(
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             conversationId,
             sessionId,
             voiceOnly,

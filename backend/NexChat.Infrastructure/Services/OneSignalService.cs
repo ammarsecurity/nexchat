@@ -42,39 +42,91 @@ public class OneSignalService
     public bool IsConfigured => !string.IsNullOrEmpty(_opts.AppId) && !string.IsNullOrEmpty(_opts.RestApiKey);
 
     /// <summary>
-    /// إرسال إشعار لمستخدم واحد عبر external_id (userId)
+    /// إرسال إشعار لمستخدم واحد: أحدث subscription_ids أولاً، ثم external_id كاحتياط.
     /// </summary>
     public async Task<bool> SendToUserAsync(Guid userId, string title, string body, object? data = null)
     {
         if (!IsConfigured) return false;
-
-        var payload = new Dictionary<string, object>
-        {
-            ["app_id"] = _opts.AppId,
-            ["include_aliases"] = new Dictionary<string, object>
-            {
-                ["external_id"] = new[] { userId.ToString() }
-            },
-            ["target_channel"] = "push",
-            ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
-            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
-        };
 
         Dictionary<string, string>? dataDict = null;
         if (data != null)
         {
             dataDict = JsonSerializer.Deserialize<Dictionary<string, string>>(
                 JsonSerializer.Serialize(data));
-            if (dataDict != null)
-                payload["data"] = dataDict;
         }
 
         var type = GetTypeFromData(data);
+        var result = await SendToUserInternalAsync(userId, title, body, dataDict, type);
+        return result.Success;
+    }
+
+    private async Task<(bool Success, string? ProviderMessageId, string? Error)> SendToUserInternalAsync(
+        Guid userId,
+        string title,
+        string body,
+        Dictionary<string, string>? dataDict,
+        string type)
+    {
+        var subIds = await GetRecentSubscriptionIdsAsync(userId);
+
+        if (subIds.Count > 0)
+        {
+            var bySub = BuildPushPayload(title, body, dataDict, type, subscriptionIds: subIds, externalUserId: null);
+            var subResult = await SendPayloadWithRetryAsync(bySub, "push", type, userId, subIds.FirstOrDefault());
+            if (subResult.Success)
+                return subResult;
+
+            _logger.LogWarning(
+                "OneSignal subscription send missed recipients; falling back to external_id. Type={Type} User={User} Error={Error}",
+                type, userId, subResult.Error);
+        }
+
+        var byAlias = BuildPushPayload(title, body, dataDict, type, subscriptionIds: null, externalUserId: userId);
+        return await SendPayloadWithRetryAsync(byAlias, "push", type, userId, null);
+    }
+
+    private async Task<List<string>> GetRecentSubscriptionIdsAsync(Guid userId)
+    {
+        return await _db.DeviceSubscriptions
+            .AsNoTracking()
+            .Where(d => d.UserId == userId && d.OneSignalPlayerId != "")
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => d.OneSignalPlayerId)
+            .Take(8)
+            .ToListAsync();
+    }
+
+    private Dictionary<string, object> BuildPushPayload(
+        string title,
+        string body,
+        Dictionary<string, string>? dataDict,
+        string type,
+        IReadOnlyList<string>? subscriptionIds,
+        Guid? externalUserId)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["app_id"] = _opts.AppId,
+            ["target_channel"] = "push",
+            ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
+            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
+        };
+
+        if (subscriptionIds is { Count: > 0 })
+            payload["include_subscription_ids"] = subscriptionIds.ToArray();
+        else if (externalUserId.HasValue)
+            payload["include_aliases"] = new Dictionary<string, object>
+            {
+                ["external_id"] = new[] { externalUserId.Value.ToString() }
+            };
+
+        if (dataDict != null && dataDict.Count > 0)
+            payload["data"] = dataDict;
+
         if (type is "video_call" or "code_connected")
             AddUrgencyOptions(payload, dataDict);
 
-        var result = await SendPayloadWithRetryAsync(payload, "push", type, userId, null);
-        return result.Success;
+        return payload;
     }
 
     /// <summary>
@@ -324,41 +376,16 @@ public class OneSignalService
     {
         if (!IsConfigured) return (false, null, "OneSignal not configured");
 
-        var payload = BuildPayloadForOutbox(item);
-        if (payload == null)
-            return (false, null, $"Unknown outbox type: {item.Type}");
-
-        var firstSub = TryGetFirstSubscriptionId(payload);
-        var result = await SendPayloadWithRetryAsync(payload, "push", item.Type, item.RecipientUserId, firstSub);
-        return (result.Success, result.ProviderMessageId, result.Error);
-    }
-
-    private Dictionary<string, object>? BuildPayloadForOutbox(NotificationOutboxItem item)
-    {
         var data = JsonSerializer.Deserialize<Dictionary<string, string>>(item.PayloadJson ?? "{}")
                    ?? new Dictionary<string, string>();
         var title = data.TryGetValue("title", out var t) ? t : "إشعار";
         var body = data.TryGetValue("body", out var b) ? b : "";
         data.Remove("title");
         data.Remove("body");
+        if (!data.ContainsKey("type"))
+            data["type"] = item.Type;
 
-        var payload = new Dictionary<string, object>
-        {
-            ["app_id"] = _opts.AppId,
-            ["include_aliases"] = new Dictionary<string, object>
-            {
-                ["external_id"] = new[] { item.RecipientUserId.ToString() }
-            },
-            ["target_channel"] = "push",
-            ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
-            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body },
-            ["data"] = data
-        };
-
-        if (item.Type is "video_call" or "code_connected")
-            AddUrgencyOptions(payload, data);
-
-        return payload;
+        return await SendToUserInternalAsync(item.RecipientUserId, title, body, data, item.Type);
     }
 
     private async Task<(bool Success, string? ProviderMessageId, string? Error)> SendPayloadWithRetryAsync(
@@ -383,15 +410,23 @@ public class OneSignalService
                 var resBody = await res.Content.ReadAsStringAsync();
                 lastStatus = (int)res.StatusCode;
                 providerMessageId = TryExtractProviderId(resBody);
+                var errors = TryExtractErrors(resBody);
 
-                if (res.IsSuccessStatusCode)
+                // HTTP 200 with empty id = no subscribed recipients matched (not a real delivery).
+                if (res.IsSuccessStatusCode && !string.IsNullOrWhiteSpace(providerMessageId))
                 {
-                    await PersistDeliveryLogAsync(channel, type, recipientUserId, recipientSubscriptionId, true, lastStatus, attempt, providerMessageId, null, payloadJson);
+                    await PersistDeliveryLogAsync(channel, type, recipientUserId, recipientSubscriptionId, true, lastStatus, attempt, providerMessageId, errors, payloadJson);
                     return (true, providerMessageId, null);
                 }
 
-                lastError = $"HTTP {(int)res.StatusCode}: {resBody}";
+                lastError = res.IsSuccessStatusCode
+                    ? (errors ?? "OneSignal accepted request but matched zero subscribers (empty id)")
+                    : $"HTTP {(int)res.StatusCode}: {resBody}";
                 await PersistDeliveryLogAsync(channel, type, recipientUserId, recipientSubscriptionId, false, lastStatus, attempt, providerMessageId, lastError, payloadJson);
+
+                // Empty-audience responses won't improve with the same payload — stop early.
+                if (res.IsSuccessStatusCode && string.IsNullOrWhiteSpace(providerMessageId))
+                    break;
             }
             catch (Exception ex)
             {
@@ -449,10 +484,30 @@ public class OneSignalService
         {
             using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.TryGetProperty("id", out var idEl))
-                return idEl.GetString();
+            {
+                var id = idEl.GetString();
+                return string.IsNullOrWhiteSpace(id) ? null : id;
+            }
         }
         catch {}
         return null;
+    }
+
+    private static string? TryExtractErrors(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("errors", out var errorsEl)) return null;
+            if (errorsEl.ValueKind == JsonValueKind.Array)
+                return string.Join("; ", errorsEl.EnumerateArray().Select(e => e.ToString()));
+            return errorsEl.ToString();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string GetTypeFromData(object? data)
@@ -466,12 +521,5 @@ public class OneSignalService
         }
         catch {}
         return "generic";
-    }
-
-    private static string? TryGetFirstSubscriptionId(Dictionary<string, object> payload)
-    {
-        if (!payload.TryGetValue("include_subscription_ids", out var idsObj) || idsObj is not IEnumerable<string> ids)
-            return null;
-        return ids.FirstOrDefault();
     }
 }

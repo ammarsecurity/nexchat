@@ -41,6 +41,20 @@ public class NotificationsController(AppDbContext db) : ControllerBase
         }
 
         await db.SaveChangesAsync();
+
+        // Drop stale player ids so push targeting prefers live devices.
+        const int keep = 6;
+        var stale = await db.DeviceSubscriptions
+            .Where(d => d.UserId == userId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Skip(keep)
+            .ToListAsync();
+        if (stale.Count > 0)
+        {
+            db.DeviceSubscriptions.RemoveRange(stale);
+            await db.SaveChangesAsync();
+        }
+
         return Ok();
     }
 

@@ -15,7 +15,6 @@ import '../../shared/widgets.dart';
 import '../conversations/active_conversation.dart';
 import 'call_partner.dart';
 import 'call_state.dart';
-import 'css_filter.dart';
 import 'whatsapp_call_ui.dart';
 
 /// Replaces the current route with [path], popping instead when it is already the route underneath (avoids a duplicate chat screen).
@@ -70,22 +69,6 @@ class VideoCallScreen extends ConsumerStatefulWidget {
   ConsumerState<VideoCallScreen> createState() => _VideoCallScreenState();
 }
 
-class _Filter {
-  const _Filter(this.id, this.matrix);
-  final String id;
-  final List<double>? matrix;
-}
-
-final _filters = [
-  const _Filter('none', null),
-  _Filter('grayscale', CssFilter.grayscale(1).matrix),
-  _Filter('sepia', CssFilter.sepia(0.8).matrix),
-  _Filter('vintage', CssFilter.sepia(0.4).then(CssFilter.contrast(1.1)).then(CssFilter.saturate(0.9)).matrix),
-  _Filter('warm', CssFilter.sepia(0.3).then(CssFilter.hueRotate(-10)).matrix),
-  _Filter('cool', CssFilter.hueRotate(180).then(CssFilter.saturate(0.8)).matrix),
-  _Filter('cinematic', CssFilter.contrast(1.2).then(CssFilter.saturate(0.7)).matrix),
-];
-
 class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   final _lk = LiveKitService.instance;
   late final ActiveCallController _activeCtrl;
@@ -99,11 +82,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   bool _connected = false;
   String _error = '';
   bool _initializing = true;
-  String _filter = 'none';
   Timer? _timer;
   Timer? _peerWait;
   bool _suppressDisconnectNavigate = false;
   bool _failureReturnStarted = false;
+  bool _nativeStarted = false;
   Room? _room;
   int _ownedGen = 0;
 
@@ -117,10 +100,18 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     if (_openingVideoSid == _sid) _openingVideoSid = null;
     _activeCtrl = ref.read(activeCallProvider.notifier);
     _router = GoRouter.of(context);
-    Future.microtask(() {
-      if (mounted) _syncMeta();
+    // Voice defaults to earpiece (Vue). Emulator keeps speaker so proximity never blacks the screen.
+    _speakerOn = !_voiceOnly;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncMeta();
+      unawaited(CallNative.clearLockScreen());
+      unawaited(CallNative.dismissIncoming());
+      // Second frame: chrome is painted before permissions / LiveKit / FGS.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_start());
+      });
     });
-    _start();
   }
 
   bool get _isConversationContext {
@@ -172,6 +163,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   Future<void> _start() async {
     try {
+      if (_voiceOnly) {
+        final emu = await CallNative.isEmulator();
+        if (mounted && emu) setState(() => _speakerOn = true);
+      }
       final statuses = await [Permission.microphone, if (!_voiceOnly) Permission.camera].request();
       if (!mounted) return;
       if (statuses.values.any((s) => !s.isGranted && !s.isLimited)) {
@@ -180,7 +175,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         return;
       }
       final h = _lk.handlers;
-      h.onRemoteTrack = (_) => _setConnected(true);
+      h.onRemoteTrack = (track) {
+        // Audio alone marks connected; video tracks only matter for non-voice UI.
+        if (track is! VideoTrack || !_voiceOnly) _setConnected(true);
+        if (mounted) setState(() {});
+      };
       h.onDisconnected = () {
         _setConnected(false);
         if (_suppressDisconnectNavigate) return;
@@ -204,11 +203,21 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       final reused = await _lk.join(_sid,
           voiceOnly: _voiceOnly, partnerName: p.name.isNotEmpty ? p.name : _activeCtrl.current.partnerName);
       if (reused == null) {
-        if (mounted &&
-            videoScreenMounts(_sid) <= 1 &&
-            !(_activeCtrl.current.minimized && _activeCtrl.current.sessionId == _sid)) {
-          _exitAfterFailure();
+        if (_lk.isInSession(_sid) || (_activeCtrl.current.minimized && _activeCtrl.current.sessionId == _sid)) {
+          if (mounted) {
+            _room = _lk.room;
+            _ownedGen = _lk.generation;
+            _room?.addListener(_onRoomChanged);
+            _setConnected(_room?.remoteParticipants.isNotEmpty ?? false);
+            await _armNativeAndTimer(reused: true);
+          }
+          return;
         }
+        if (mounted) {
+          _error = _error.isNotEmpty ? _error : t('videoCall.mediaError');
+          setState(() => _initializing = false);
+        }
+        if (videoScreenMounts(_sid) <= 1) _exitAfterFailure();
         return;
       }
       if (!mounted) {
@@ -219,10 +228,6 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       _room = _lk.room;
       _ownedGen = _lk.generation;
       _room?.addListener(_onRoomChanged);
-      if (reused) {
-        final started = _activeCtrl.current.startedAt;
-        _duration.value = started == null ? 0 : DateTime.now().difference(started).inSeconds;
-      }
       if (reused || (_room?.remoteParticipants.isNotEmpty ?? false)) {
         _setConnected(true);
       } else {
@@ -234,9 +239,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
           _exitAfterFailure();
         });
       }
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_connected && mounted) _duration.value++;
-      });
+      await _armNativeAndTimer(reused: reused == true);
     } catch (e) {
       if (!mounted) return;
       final m = Api.errorMessage(e);
@@ -245,6 +248,28 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     } finally {
       if (mounted) setState(() => _initializing = false);
     }
+  }
+
+  Future<void> _armNativeAndTimer({required bool reused}) async {
+    if (reused) {
+      final started = _activeCtrl.current.startedAt;
+      _duration.value = started == null ? 0 : DateTime.now().difference(started).inSeconds;
+    }
+    if (!_nativeStarted) {
+      _nativeStarted = true;
+      final p = _partner;
+      await CallNative.start(
+        video: !_voiceOnly,
+        title: t('videoCall.callInBackground'),
+        text: p.name.isNotEmpty ? p.name : _activeCtrl.current.partnerName,
+      );
+      await CallNative.clearLockScreen();
+    }
+    unawaited(_applySpeaker());
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_connected && mounted) _duration.value++;
+    });
   }
 
   Future<void> _applySpeaker() async {
@@ -381,41 +406,52 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     final remote = _lk.remoteVideo;
     final local = _lk.localVideo;
     final vo = _voiceOnly;
-    final filter = _filters.firstWhere((f) => f.id == _filter);
+    // Voice never mounts a remote video texture (Vue: opacity 0 / 1x1). Video only after peer is in.
     final showRemote = !vo && _connected && remote != null;
-    final showIdentity = vo || !showRemote;
     final status = _error.isNotEmpty
         ? _error
         : _reconnecting
             ? t('videoCall.reconnecting')
             : _connected
-                ? ''
+                ? (vo ? t('videoCall.voiceCallLive') : '')
                 : t('conversationChat.connectingCall');
 
-    Widget controls() => Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, 28 + pad.bottom),
-          child: Row(
-            textDirection: TextDirection.ltr,
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              CallCircleButton(icon: _muted ? LucideIcons.micOff : LucideIcons.mic, onTap: _toggleMute, active: _muted, size: 58),
-              CallCircleButton(
-                icon: _speakerOn ? LucideIcons.volume2 : LucideIcons.volume,
-                onTap: _toggleSpeaker,
-                active: _speakerOn,
-                size: 58,
+    Widget controls() => Material(
+          color: Colors.transparent,
+          elevation: 24,
+          child: Container(
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Color(0xF0000000), Color(0x00000000)],
               ),
-              CallCircleButton(icon: LucideIcons.phoneOff, onTap: _endCall, background: WaCall.decline, size: 68, iconSize: 28),
-              if (!vo) ...[
+            ),
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 28 + pad.bottom),
+            child: Row(
+              textDirection: TextDirection.ltr,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                CallCircleButton(icon: _muted ? LucideIcons.micOff : LucideIcons.mic, onTap: _toggleMute, active: _muted, size: 58),
                 CallCircleButton(
-                  icon: _cameraOff ? LucideIcons.videoOff : LucideIcons.video,
-                  onTap: _toggleCamera,
-                  active: _cameraOff,
+                  icon: _speakerOn ? LucideIcons.volume2 : LucideIcons.volume,
+                  onTap: _toggleSpeaker,
+                  active: _speakerOn,
                   size: 58,
                 ),
-                CallCircleButton(icon: LucideIcons.switchCamera, onTap: _flipCamera, active: _flipping, size: 58),
+                CallCircleButton(icon: LucideIcons.phoneOff, onTap: _endCall, background: WaCall.decline, size: 68, iconSize: 28),
+                if (!vo) ...[
+                  CallCircleButton(
+                    icon: _cameraOff ? LucideIcons.videoOff : LucideIcons.video,
+                    onTap: _toggleCamera,
+                    active: _cameraOff,
+                    size: 58,
+                  ),
+                  CallCircleButton(icon: LucideIcons.switchCamera, onTap: _flipCamera, active: _flipping, size: 58),
+                ],
               ],
-            ],
+            ),
           ),
         );
 
@@ -432,172 +468,117 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
-        child: Scaffold(
-          backgroundColor: WaCall.bgTop,
-          body: Stack(children: [
-            if (showIdentity)
-              Positioned.fill(
-                child: WhatsAppRingingLayout(
-                  avatarUrl: avatar,
-                  name: name,
-                  status: status,
-                  pulse: !_connected,
-                  statusExtra: _connected
-                      ? _timeText(const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 1,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ))
-                      : null,
-                  actions: const [],
-                  top: WhatsAppCallTopBar(
-                    name: '',
-                    onMinimize: _openChatDuringCall,
-                    trailing: IconButton(
-                      onPressed: _openChatDuringCall,
-                      icon: const Icon(LucideIcons.messageSquare, color: Colors.white, size: 22),
-                    ),
+        child: Material(
+          color: WaCall.bgTop,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Opaque base — never leave “window black” if textures fail.
+              const ColoredBox(color: WaCall.bgTop),
+              if (showRemote)
+                Positioned.fill(
+                  child: VideoTrackRenderer(
+                    remote,
+                    fit: VideoViewFit.cover,
+                    renderMode: VideoRenderMode.texture,
+                    placeholderBuilder: (_) => const ColoredBox(color: WaCall.bgTop),
                   ),
                 ),
-              ),
-            if (showRemote)
-              Positioned.fill(
-                child: VideoTrackRenderer(
-                  remote,
-                  fit: VideoViewFit.cover,
-                  renderMode: VideoRenderMode.texture,
-                  placeholderBuilder: (_) => const ColoredBox(color: Color(0xFF0B141A)),
-                ),
-              ),
-            if (showRemote)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0x99000000), Color(0x00000000)],
-                    ),
-                  ),
-                  child: WhatsAppCallTopBar(
+              // Chrome is always opaque for voice / waiting. For live video: solid top+bottom bars only
+              // (never a full-screen transparent DecoratedBox — Android RTC textures punch through it).
+              if (vo || !showRemote)
+                Positioned.fill(
+                  child: WhatsAppRingingLayout(
+                    avatarUrl: avatar,
                     name: name,
-                    subtitle: _reconnecting ? t('videoCall.reconnecting') : null,
-                    onMinimize: _openChatDuringCall,
-                    trailing: _connected
-                        ? Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: _timeText(const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            )),
-                          )
+                    status: status,
+                    pulse: !_connected,
+                    statusExtra: _connected
+                        ? _timeText(const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 1,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ))
                         : null,
+                    actions: const [],
+                    top: WhatsAppCallTopBar(
+                      name: '',
+                      onMinimize: _openChatDuringCall,
+                      trailing: IconButton(
+                        onPressed: _openChatDuringCall,
+                        icon: const Icon(LucideIcons.messageSquare, color: Colors.white, size: 22),
+                      ),
+                    ),
+                  ),
+                )
+              else ...[
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Material(
+                    color: const Color(0xCC0B141A),
+                    elevation: 24,
+                    child: WhatsAppCallTopBar(
+                      name: name,
+                      subtitle: _reconnecting ? t('videoCall.reconnecting') : null,
+                      onMinimize: _openChatDuringCall,
+                      trailing: _connected
+                          ? Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: _timeText(const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              )),
+                            )
+                          : IconButton(
+                              onPressed: _openChatDuringCall,
+                              icon: const Icon(LucideIcons.messageSquare, color: Colors.white, size: 22),
+                            ),
+                    ),
                   ),
                 ),
-              ),
-            if (!vo && _connected)
-              PositionedDirectional(
-                top: 100 + pad.top,
-                end: 16,
-                child: Container(
-                  width: 108,
-                  height: 144,
-                  decoration: BoxDecoration(
+              ],
+              if (!vo && _connected)
+                PositionedDirectional(
+                  top: 100 + pad.top,
+                  end: 16,
+                  child: Material(
+                    elevation: 24,
                     color: const Color(0xFF111111),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.28), width: 1.5),
-                    boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 12, offset: Offset(0, 4))],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _cameraOff || local == null
-                      ? Center(child: Icon(LucideIcons.videoOff, size: 28, color: Colors.white.withValues(alpha: 0.55)))
-                      : GestureDetector(
-                          onDoubleTap: _flipCamera,
-                          child: RepaintBoundary(
-                            child: ColorFiltered(
-                              colorFilter: filter.matrix == null
-                                  ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
-                                  : ColorFilter.matrix(filter.matrix!),
+                    clipBehavior: Clip.antiAlias,
+                    child: Container(
+                      width: 108,
+                      height: 144,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.28), width: 1.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: _cameraOff || local == null
+                          ? Center(child: Icon(LucideIcons.videoOff, size: 28, color: Colors.white.withValues(alpha: 0.55)))
+                          : GestureDetector(
+                              onDoubleTap: _flipCamera,
                               child: VideoTrackRenderer(
                                 local,
                                 fit: VideoViewFit.cover,
+                                renderMode: VideoRenderMode.texture,
                                 mirrorMode: _lk.cameraPosition == CameraPosition.front
                                     ? VideoViewMirrorMode.mirror
                                     : VideoViewMirrorMode.off,
                               ),
                             ),
-                          ),
-                        ),
-                ),
-              ),
-            if (!vo && _connected)
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 118 + pad.bottom,
-                child: SizedBox(
-                  height: 72,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      for (final f in _filters)
-                        GestureDetector(
-                          onTap: () => setState(() => _filter = f.id),
-                          child: Container(
-                            width: 52,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: _filter == f.id ? Colors.white : Colors.white.withValues(alpha: 0.15),
-                                width: _filter == f.id ? 2 : 1,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: ColorFiltered(
-                              colorFilter: f.matrix == null
-                                  ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
-                                  : ColorFilter.matrix(f.matrix!),
-                              child: const DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.all(Radius.circular(11)),
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [Color(0xFF667EEA), Color(0xFF764BA2), Color(0xFFF093FB)],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Color(0xCC000000), Color(0x00000000)],
-                  ),
-                ),
-                child: controls(),
-              ),
-            ),
-            LoaderOverlay(show: _initializing, text: t('videoCall.preparing')),
-          ]),
+              Positioned(left: 0, right: 0, bottom: 0, child: controls()),
+              LoaderOverlay(show: _initializing, text: t('videoCall.preparing')),
+            ],
+          ),
         ),
       ),
     );

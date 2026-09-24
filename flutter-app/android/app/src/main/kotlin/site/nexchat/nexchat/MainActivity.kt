@@ -42,12 +42,15 @@ class MainActivity : FlutterActivity() {
                         call.argument<String>("title") ?: "NexChat",
                         call.argument<String>("text") ?: "",
                     )
-                    applyLockScreen(true)
                     result.success(null)
                 }
                 "stop" -> {
                     CallService.stop(applicationContext)
                     setProximity(false)
+                    applyLockScreen(false)
+                    result.success(null)
+                }
+                "clearLockScreen" -> {
                     applyLockScreen(false)
                     result.success(null)
                 }
@@ -114,6 +117,9 @@ class MainActivity : FlutterActivity() {
         if (intent == null || !intentHasIncoming(intent)) return
         val action = intent.getStringExtra(IncomingCallStore.EXTRA_ACTION) ?: IncomingCallStore.ACTION_RING
         IncomingCallStore.saveFromIntent(this, intent, action)
+        if (action == IncomingCallStore.ACTION_ACCEPT || action == IncomingCallStore.ACTION_DECLINE) {
+            IncomingCallNotifier.cancel(this)
+        }
         IncomingCallPlugin.notifyFlutterIfReady(this)
     }
 

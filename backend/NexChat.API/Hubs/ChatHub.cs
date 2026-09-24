@@ -134,7 +134,7 @@ public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutb
         var sender = await db.Users.FindAsync(userId);
         var preview = type == "text" ? textBody : "صورة";
         if (preview.Length > 80) preview = preview[..80] + "…";
-        _ = notificationOutbox.EnqueueAsync(
+        await notificationOutbox.EnqueueAsync(
             recipientId,
             "message",
             sender?.Name ?? "شخص",
@@ -184,7 +184,7 @@ public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutb
         await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall");
         var recipientId = session.User1Id == userId ? session.User2Id : session.User1Id;
         var caller = session.User1Id == userId ? session.User1 : session.User2;
-        _ = notificationOutbox.EnqueueAsync(
+        await notificationOutbox.EnqueueAsync(
             recipientId,
             "video_call",
             "مكالمة فيديو",

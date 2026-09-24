@@ -22,7 +22,7 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
       router.push('/conversations');
       return;
     }
-    if (d['requesterId'] != null) NotificationHooks.onConnectionRequest?.call(d);
+    // Do not re-open the live "connection request" dialog from an old notification.
     router.push('/home');
     return;
   }
@@ -40,16 +40,19 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
     return;
   }
   if (type == 'video_call') {
+    // History / tray tap must NOT open the ringing UI — the call may be long over.
+    // Live ringing comes from SignalR + the Android full-screen incoming-call path only.
     if (d['conversationId'] != null) {
-      NotificationHooks.onConversationCall?.call(d);
-      router.push('/conversations');
+      router.push(Uri(path: '/conversations', queryParameters: {'open': d['conversationId']}).toString());
       return;
     }
     if (d['sessionId'] != null) {
       final flags = await ref.read(featureFlagsProvider.future);
-      router.push(flags.randomChat ? '/chat/${d['sessionId']}?incomingVideoCall=1' : '/conversations');
+      router.push(flags.randomChat ? '/chat/${d['sessionId']}' : '/conversations');
       return;
     }
+    router.push('/conversations');
+    return;
   }
   if (d['sessionId'] != null) router.push('/chat/${d['sessionId']}');
 }

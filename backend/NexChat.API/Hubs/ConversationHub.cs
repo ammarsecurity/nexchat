@@ -412,7 +412,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             };
             if (preview.Length > 80) preview = preview[..80] + "…";
             if (recipientId.HasValue)
-                _ = notificationOutbox.EnqueueAsync(
+                await notificationOutbox.EnqueueAsync(
                     recipientId.Value,
                     "conversation_message",
                     sender?.Name ?? "شخص",
@@ -584,7 +584,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         var caller = conv.User1Id == userId ? conv.User1 : conv.User2;
         // إرسال للمستخدم مباشرة — لا يعتمد على JoinConversation (أي صفحة في التطبيق)
         await Clients.User(recipientId.ToString()).SendAsync("IncomingVideoCall", cid.ToString(), voiceOnly, caller?.Name ?? "", caller?.Avatar ?? "");
-        _ = notificationOutbox.EnqueueAsync(
+        await notificationOutbox.EnqueueAsync(
             recipientId,
             "video_call",
             voiceOnly ? "مكالمة صوتية" : "مكالمة فيديو",

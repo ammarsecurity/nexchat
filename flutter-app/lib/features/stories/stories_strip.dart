@@ -85,34 +85,53 @@ class _StoriesStripState extends ConsumerState<StoriesStrip> {
     final avatar = _face(avatarUrl, name);
     final thumb = st.feed.where((r) => r.isMine).firstOrNull?.latestThumbUrl;
     if (thumb == null || thumb.isEmpty) return avatar;
-    if (isVideoUrl(thumb)) return VideoFramePoster(url: thumb, placeholder: avatar);
-    return CachedNetworkImage(
-      imageUrl: Api.absoluteUrl(thumb)!,
-      fit: BoxFit.cover,
-      memCacheWidth: _thumbPx,
-      errorWidget: (_, _, _) => avatar,
-      placeholder: (_, _) => avatar,
-    );
+    if (isVideoUrl(thumb)) return _fillCircle(VideoFramePoster(url: thumb, placeholder: avatar));
+    return _coverThumb(Api.absoluteUrl(thumb)!, avatar);
   }
 
   Widget _ringThumb(StoryRing ring) {
     final avatar = _face(ring.avatar, ring.name);
     final thumb = ring.latestThumbUrl;
     if (thumb == null || thumb.isEmpty) return avatar;
-    if (isVideoUrl(thumb)) return VideoFramePoster(url: thumb, placeholder: avatar);
-    return CachedNetworkImage(
-        imageUrl: Api.absoluteUrl(thumb)!,
-        fit: BoxFit.cover,
-        memCacheWidth: _thumbPx,
-        errorWidget: (_, _, _) => avatar,
-        placeholder: (_, _) => avatar);
+    if (isVideoUrl(thumb)) return _fillCircle(VideoFramePoster(url: thumb, placeholder: avatar));
+    return _coverThumb(Api.absoluteUrl(thumb)!, avatar);
   }
 
+  /// Force the thumb to paint edge-to-edge inside the ring (avoids letterbox gaps).
+  Widget _coverThumb(String url, Widget fallback) => _fillCircle(
+        CachedNetworkImage(
+          imageUrl: url,
+          width: _ringSize,
+          height: _ringSize,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          fadeInDuration: Duration.zero,
+          fadeOutDuration: Duration.zero,
+          memCacheWidth: _thumbPx,
+          memCacheHeight: _thumbPx,
+          errorWidget: (_, _, _) => fallback,
+          placeholder: (_, _) => fallback,
+          imageBuilder: (_, provider) => DecoratedBox(
+            decoration: BoxDecoration(
+              image: DecorationImage(image: provider, fit: BoxFit.cover, alignment: Alignment.center),
+            ),
+          ),
+        ),
+      );
+
+  Widget _fillCircle(Widget child) => SizedBox(
+        width: _ringSize,
+        height: _ringSize,
+        child: ClipOval(child: child),
+      );
+
+  static const _ringSize = 42.0;
   static const _thumbPx = 240;
 }
 
 class _Ring extends StatelessWidget {
   const _Ring({required this.label, required this.onTap, required this.child, this.unseen = false, this.mine = false, this.onPlus});
+  static const innerSize = 42.0;
   final String label;
   final VoidCallback onTap;
   final VoidCallback? onPlus;
@@ -123,12 +142,12 @@ class _Ring extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inner = Container(
-      width: 42,
-      height: 42,
+      width: _Ring.innerSize,
+      height: _Ring.innerSize,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: mine ? Colors.white.withValues(alpha: 0.12) : const Color(0x33FFFFFF),
+        color: const Color(0xFF0F172A),
         border: mine ? null : Border.all(color: Colors.white.withValues(alpha: 0.92), width: 2),
       ),
       child: mine ? CustomPaint(foregroundPainter: _DashedCircle(), child: child) : child,

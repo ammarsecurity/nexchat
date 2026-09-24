@@ -800,6 +800,15 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _callingVoiceOnly = voiceOnly;
       _callDeclined = false;
     });
+    final partner = ref.read(activeConversationProvider).partner;
+    ref.read(activeCallProvider.notifier).syncMeta(
+          sessionId: _cid,
+          voiceOnly: voiceOnly,
+          isConversation: true,
+          partnerName: partner?.s('name') ?? '',
+          partnerAvatar: partner?.s('avatar'),
+          partnerUserId: partner?.s('id'),
+        );
     _outgoingRing?.cancel();
     _outgoingRing = Timer(kIncomingCallRingTimeout, () {
       if (!mounted || !_callingOut) return;
@@ -809,6 +818,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       await Hubs.conversation.invoke('RequestVideoCall', [_cid, voiceOnly]);
     } catch (_) {
       _outgoingRing?.cancel();
+      if (ref.read(activeCallProvider).sessionId == _cid) ref.read(activeCallProvider.notifier).clear();
       if (mounted) setState(() => _callingOut = false);
     }
   }
@@ -817,6 +827,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (!_callingOut) return;
     _outgoingRing?.cancel();
     setState(() => _callingOut = false);
+    if (ref.read(activeCallProvider).sessionId == _cid) ref.read(activeCallProvider.notifier).clear();
     Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid])).catchError((_) => null);
   }
 
@@ -896,50 +907,97 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       body: Stack(children: [
         Column(children: [
           Container(
-            padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 12),
-            decoration: BoxDecoration(color: c.bgPrimary, border: Border(bottom: BorderSide(color: c.border))),
+            padding: EdgeInsets.fromLTRB(12, pad.top + 8, 12, 10),
+            decoration: BoxDecoration(
+              color: c.bgPrimary,
+              boxShadow: [
+                BoxShadow(color: c.shadow.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 2)),
+              ],
+            ),
             child: Row(children: [
-              GlassIconButton(icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft, onTap: () => context.go('/conversations')),
+              GlassIconButton(
+                icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+                onTap: () => context.go('/conversations'),
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: InkWell(
-                  onTap: _openPartner,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Row(children: [
-                    UserAvatar(url: partner?.s('avatar'), name: partner?.s('name') ?? '', size: 40),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(partner?.s('name') ?? '...',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textPrimary)),
-                        const SizedBox(height: 2),
-                        if (s.partnerTyping)
-                          Text(t('conversationChat.typing'), style: TextStyle(fontSize: 12, color: c.primary))
-                        else if (s.isGroup)
-                          Text(t('groups.members'), style: TextStyle(fontSize: 12, color: c.textMuted))
-                        else
-                          Row(children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(shape: BoxShape.circle, color: online ? c.success : c.textMuted),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(online ? t('profile.online') : t('profile.offline'),
-                                style: TextStyle(fontSize: 12, color: online ? c.success : c.textMuted)),
-                          ]),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _openPartner,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Row(children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            UserAvatar(url: partner?.s('avatar'), name: partner?.s('name') ?? '', size: 44),
+                            if (!s.isGroup)
+                              PositionedDirectional(
+                                end: 0,
+                                bottom: 0,
+                                child: Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: online ? c.success : c.textMuted,
+                                    border: Border.all(color: c.bgPrimary, width: 2),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                partner?.s('name') ?? '…',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: c.textPrimary,
+                                  height: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              if (s.partnerTyping)
+                                Text(
+                                  t('conversationChat.typing'),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary),
+                                )
+                              else if (s.isGroup)
+                                Text(t('groups.members'), style: TextStyle(fontSize: 12, color: c.textMuted))
+                              else
+                                Text(
+                                  online ? t('profile.online') : t('profile.offline'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: online ? c.success : c.textMuted,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ]),
                     ),
-                  ]),
+                  ),
                 ),
               ),
+              const SizedBox(width: 4),
               if (!s.isGroup) ...[
-                _HeaderIcon(icon: LucideIcons.video, color: c.textPrimary, onTap: () => _startCall(voiceOnly: false)),
-                _HeaderIcon(icon: LucideIcons.phone, color: c.textPrimary, onTap: () => _startCall(voiceOnly: true)),
+                _HeaderAction(icon: LucideIcons.video, onTap: () => _startCall(voiceOnly: false)),
+                const SizedBox(width: 6),
+                _HeaderAction(icon: LucideIcons.phone, onTap: () => _startCall(voiceOnly: true)),
+                const SizedBox(width: 6),
               ],
-              _HeaderIcon(icon: LucideIcons.trash2, color: c.danger, onTap: _deleteConversation),
+              _HeaderAction(icon: LucideIcons.trash2, onTap: _deleteConversation, danger: true),
             ]),
           ),
           ActiveCallBar(embeddedFor: _cid),
@@ -1286,20 +1344,29 @@ class _TypingBubbleState extends State<TypingBubble> with SingleTickerProviderSt
   }
 }
 
-class _HeaderIcon extends StatelessWidget {
-  const _HeaderIcon({required this.icon, required this.onTap, this.color});
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({required this.icon, required this.onTap, this.danger = false});
   final IconData icon;
   final VoidCallback onTap;
-  final Color? color;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onTap,
-      icon: Icon(icon, size: 22, color: color),
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.all(8),
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+    final c = context.colors;
+    return Material(
+      color: danger ? c.danger.withValues(alpha: 0.1) : c.bgCard,
+      borderRadius: BorderRadius.circular(14),
+      shadowColor: c.shadow,
+      elevation: 1,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 20, color: danger ? c.danger : c.textSecondary),
+        ),
+      ),
     );
   }
 }

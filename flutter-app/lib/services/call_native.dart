@@ -90,4 +90,20 @@ class CallNative {
       if (Platform.isAndroid || Platform.isIOS) await _channel.invokeMethod('proximity', {'enabled': enabled});
     } catch (_) {}
   }
+
+  static Future<void> clearLockScreen() async {
+    try {
+      if (Platform.isAndroid) await _channel.invokeMethod('clearLockScreen');
+    } catch (_) {}
+  }
+
+  /// Returns a pending incoming-call payload (if any) and clears native storage.
+  static Future<Map<String, dynamic>?> consumePending() async {
+    try {
+      if (!Platform.isAndroid) return null;
+      final raw = await _channel.invokeMethod<dynamic>('consumePending');
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (_) {}
+    return null;
+  }
 }

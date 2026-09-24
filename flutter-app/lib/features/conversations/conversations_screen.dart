@@ -676,7 +676,7 @@ class _MainTabs extends StatelessWidget {
       decoration: BoxDecoration(color: c.bgElevated, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
       child: LayoutBuilder(builder: (context, box) {
         final tabW = (box.maxWidth - gap * (ids.length - 1)) / ids.length;
-        return Stack(children: [
+        return Stack(clipBehavior: Clip.none, children: [
           AnimatedPositionedDirectional(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
@@ -695,7 +695,7 @@ class _MainTabs extends StatelessWidget {
           Row(children: [
             tab('chats', LucideIcons.messageCircle, t('nav.conversations')),
             const SizedBox(width: gap),
-            tab('contacts', LucideIcons.users, t('nav.contacts')),
+            tab('contacts', LucideIcons.users, t('nav.contacts'), pending),
             const SizedBox(width: gap),
             tab('requests', LucideIcons.mail, t('conversations.messageRequestsShort'), pending),
           ]),

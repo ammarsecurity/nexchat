@@ -6,43 +6,60 @@ using NexChat.Infrastructure.Services;
 
 namespace NexChat.API.Services;
 
+/// <summary>
+/// Enqueues push + in-app notification rows on a fresh DI scope so fire-and-forget
+/// from SignalR hubs cannot race the hub's disposed <see cref="AppDbContext"/>.
+/// </summary>
 public class NotificationOutboxService(
-    AppDbContext db,
+    IServiceScopeFactory scopeFactory,
     IOptions<NotificationFeaturesOptions> features,
-    OneSignalService oneSignal)
+    ILogger<NotificationOutboxService> logger)
 {
     public async Task EnqueueAsync(Guid recipientUserId, string type, string title, string body, Dictionary<string, string>? data = null)
     {
-        var payload = data ?? new Dictionary<string, string>();
-        payload["type"] = type;
-        payload["title"] = title;
-        payload["body"] = body;
-
-        if (features.Value.OutboxEnabled)
+        try
         {
-            db.NotificationOutboxItems.Add(new NotificationOutboxItem
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var oneSignal = scope.ServiceProvider.GetRequiredService<OneSignalService>();
+
+            var payload = data != null
+                ? new Dictionary<string, string>(data)
+                : new Dictionary<string, string>();
+            payload["type"] = type;
+            payload["title"] = title;
+            payload["body"] = body;
+
+            if (features.Value.OutboxEnabled)
             {
-                RecipientUserId = recipientUserId,
+                db.NotificationOutboxItems.Add(new NotificationOutboxItem
+                {
+                    RecipientUserId = recipientUserId,
+                    Type = type,
+                    PayloadJson = JsonSerializer.Serialize(payload),
+                    Status = NotificationOutboxStatus.Pending,
+                    NextAttemptAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                await oneSignal.SendToUserAsync(recipientUserId, title, body, payload);
+            }
+
+            db.UserNotifications.Add(new UserNotification
+            {
+                UserId = recipientUserId,
                 Type = type,
-                PayloadJson = JsonSerializer.Serialize(payload),
-                Status = NotificationOutboxStatus.Pending,
-                NextAttemptAt = DateTime.UtcNow
+                Title = title,
+                Body = body,
+                DataJson = JsonSerializer.Serialize(payload)
             });
-        }
-        else
-        {
-            await oneSignal.SendToUserAsync(recipientUserId, title, body, payload);
-        }
 
-        db.UserNotifications.Add(new UserNotification
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
         {
-            UserId = recipientUserId,
-            Type = type,
-            Title = title,
-            Body = body,
-            DataJson = JsonSerializer.Serialize(payload)
-        });
-
-        await db.SaveChangesAsync();
+            logger.LogError(ex, "Failed to enqueue notification. Type={Type} Recipient={Recipient}", type, recipientUserId);
+        }
     }
 }

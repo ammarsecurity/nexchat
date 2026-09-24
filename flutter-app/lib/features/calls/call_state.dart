@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart';
 
-import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../services/call_native.dart';
@@ -101,7 +100,8 @@ class LiveKitService {
       _finishJoin(wait, null);
       return null;
     }
-    unawaited(CallNative.start(video: !voiceOnly, title: t('videoCall.callInBackground'), text: partnerName));
+    // CallNative.start is owned by VideoCallScreen after the first paint — starting FGS mid-join
+    // raced the route transition and left a black window with live mic.
     final lp = newRoom.localParticipant;
     try {
       await lp?.setMicrophoneEnabled(true);

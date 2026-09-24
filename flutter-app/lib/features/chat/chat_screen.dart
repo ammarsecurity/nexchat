@@ -260,7 +260,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         _outgoingRing?.cancel();
         if (mounted) setState(() => _callingOut = false);
         _leavingProgrammatically = true;
-        _router.push('/video/$_sid', extra: {'initiator': true});
+        openVideoRoute(_router, _sid, {'initiator': true, 'voiceOnly': false});
       }),
       h.on('VideoCallDeclined', (_) {
         if (!mounted) return;
@@ -562,7 +562,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (mounted) setState(() => _showVideoConfirm = false);
       if (active.sessionId == _sid) {
         ref.read(activeCallProvider.notifier).expand();
-        _router.push('/video/$_sid', extra: {'initiator': true});
+        openVideoRoute(_router, _sid, {'initiator': true, 'voiceOnly': active.voiceOnly});
       } else {
         showToast(context, t('videoCall.alreadyInCall'), error: true);
       }
