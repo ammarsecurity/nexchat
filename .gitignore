@@ -32,6 +32,14 @@ backend/NexChat.API/appsettings.Development.json
 flutter-app/android/key.properties
 flutter-app/android/local.properties
 
+# Local deploy staging (copied server bundles — do not commit)
+_deploy_nexchat_backend/
+_deploy_nexchat_admin/
+_deploy_nexchat_*.zip
+_deploy_remote.sh
+host.txt
+landing/landing.zip
+
 # Server archives & binaries — never push (GitHub size / ToS)
 *.tar
 *.tar.gz
