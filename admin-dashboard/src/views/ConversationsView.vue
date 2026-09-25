@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import api from '../services/api'
 import { notify } from '../utils/notify'
 import AvatarCircle from '../components/AvatarCircle.vue'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const route = useRoute()
 /** private = محادثات ثنائية، group = مجموعات */
@@ -120,16 +121,11 @@ watch(conversationKind, () => {
 fetchConversations()
 
 function formatTime(dt) {
-  return new Date(dt).toLocaleString('ar-SA', {
-    month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit'
-  })
+  return formatIraqTime(dt)
 }
 
 function formatDate(dt) {
-  return new Date(dt).toLocaleDateString('ar-SA', {
-    weekday: 'short', month: 'short', day: 'numeric'
-  })
+  return formatIraqDate(dt)
 }
 
 function convoTitle(conv) {

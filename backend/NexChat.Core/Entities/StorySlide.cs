@@ -24,6 +24,7 @@ public class StorySlide
 
     public User User { get; set; } = null!;
     public ICollection<StoryView> Views { get; set; } = new List<StoryView>();
+    public ICollection<StoryLike> Likes { get; set; } = new List<StoryLike>();
 }
 
 public class StoryView
@@ -35,4 +36,15 @@ public class StoryView
 
     public StorySlide StorySlide { get; set; } = null!;
     public User Viewer { get; set; } = null!;
+}
+
+public class StoryLike
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StorySlideId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public StorySlide StorySlide { get; set; } = null!;
+    public User User { get; set; } = null!;
 }

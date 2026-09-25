@@ -166,6 +166,8 @@ class StorySlide {
     this.filterId,
     this.videoDurationSeconds,
     this.viewCount = 0,
+    this.likedByMe = false,
+    this.likeCount = 0,
     this.overlayJson,
   });
 
@@ -178,10 +180,27 @@ class StorySlide {
   final String? filterId;
   final num? videoDurationSeconds;
   final int viewCount;
+  final bool likedByMe;
+  final int likeCount;
   final String? overlayJson;
 
   bool get isVideo => mediaType == 'video';
   bool get isText => mediaType == 'text';
+
+  StorySlide copyWith({bool? likedByMe, int? likeCount}) => StorySlide(
+        id: id,
+        userId: userId,
+        mediaUrl: mediaUrl,
+        mediaType: mediaType,
+        caption: caption,
+        backgroundColor: backgroundColor,
+        filterId: filterId,
+        videoDurationSeconds: videoDurationSeconds,
+        viewCount: viewCount,
+        likedByMe: likedByMe ?? this.likedByMe,
+        likeCount: likeCount ?? this.likeCount,
+        overlayJson: overlayJson,
+      );
 
   factory StorySlide.fromJson(Map s) => StorySlide(
         id: s.str('id'),
@@ -193,6 +212,8 @@ class StorySlide {
         filterId: s.s('filterId'),
         videoDurationSeconds: s.v('videoDurationSeconds') as num?,
         viewCount: s.i('viewCount'),
+        likedByMe: s.b('likedByMe'),
+        likeCount: s.i('likeCount'),
         overlayJson: storyOverlayAsString(s.v('overlayJson')),
       );
 }

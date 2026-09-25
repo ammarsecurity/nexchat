@@ -415,6 +415,48 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
     }
   }
 
+  Future<void> _toggleLike() async {
+    final slide = _current;
+    if (slide == null || _sending || _isOwner) return;
+    final prevLiked = slide.likedByMe;
+    final prevCount = slide.likeCount;
+    setState(() {
+      _slides = [
+        for (var i = 0; i < _slides.length; i++)
+          if (i == _index)
+            _slides[i].copyWith(
+              likedByMe: !prevLiked,
+              likeCount: (prevCount + (prevLiked ? -1 : 1)).clamp(0, 1 << 30),
+            )
+          else
+            _slides[i],
+      ];
+    });
+    try {
+      final data = await Api.post('/stories/${slide.id}/like', {});
+      if (data is Map && mounted) {
+        setState(() {
+          _slides = [
+            for (var i = 0; i < _slides.length; i++)
+              if (i == _index)
+                _slides[i].copyWith(likedByMe: data.b('liked'), likeCount: data.i('likeCount'))
+              else
+                _slides[i],
+          ];
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _slides = [
+          for (var i = 0; i < _slides.length; i++)
+            if (i == _index) _slides[i].copyWith(likedByMe: prevLiked, likeCount: prevCount) else _slides[i],
+        ];
+      });
+      _showAlert(Api.errorMessage(e, t('stories.likeFailed')));
+    }
+  }
+
   Future<void> _showAlert(String message) async {
     await showDialog<void>(
       context: context,
@@ -589,7 +631,25 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
+                          Material(
+                            color: Colors.transparent,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: _toggleLike,
+                              child: SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: Icon(
+                                  slide.likedByMe ? Icons.favorite : Icons.favorite_border,
+                                  size: 26,
+                                  color: slide.likedByMe ? const Color(0xFFFF2D55) : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           Opacity(
                             opacity: _sending || _reply.text.trim().isEmpty ? 0.5 : 1,
                             child: Material(

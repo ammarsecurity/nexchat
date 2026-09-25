@@ -9,15 +9,15 @@ let storiesResolved = null
 let shortFilmsInflight = null
 let shortFilmsResolved = null
 
-function parseEnabled(content) {
-  if (content === undefined || content === null || String(content).trim() === '') return true
+function parseEnabled(content, { emptyMeansEnabled = false } = {}) {
+  if (content === undefined || content === null || String(content).trim() === '') return emptyMeansEnabled
   const c = String(content).toLowerCase()
   return c === 'true' || c === '1'
 }
 
-async function fetchSiteContentFlag(api, key) {
+async function fetchSiteContentFlag(api, key, { emptyMeansEnabled = false } = {}) {
   const { data } = await api.get(`SiteContent/${key}`, { skipGlobalLoader: true })
-  return parseEnabled(data?.content)
+  return parseEnabled(data?.content, { emptyMeansEnabled })
 }
 
 /**
@@ -58,8 +58,8 @@ export async function getRandomChatEnabled(api) {
         return enabled
       })
       .catch(() => {
-        randomChatResolved = true
-        return true
+        randomChatInflight = null
+        return false
       })
       .finally(() => {
         randomChatInflight = null
@@ -118,7 +118,7 @@ export async function getStoriesEnabled(api) {
     storiesInflight = api
       .get('SiteContent/stories_enabled', { skipGlobalLoader: true })
       .then(({ data }) => {
-        const enabled = parseEnabled(data?.content)
+        const enabled = parseEnabled(data?.content, { emptyMeansEnabled: true })
         storiesResolved = enabled
         return enabled
       })
@@ -149,8 +149,8 @@ export async function getShortFilmsEnabled(api) {
         return enabled
       })
       .catch(() => {
-        shortFilmsResolved = true
-        return true
+        shortFilmsResolved = false
+        return false
       })
       .finally(() => {
         shortFilmsInflight = null

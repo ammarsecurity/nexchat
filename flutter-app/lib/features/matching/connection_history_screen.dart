@@ -43,14 +43,7 @@ class _ConnectionHistoryScreenState extends State<ConnectionHistoryScreen> {
     }
   }
 
-  String _formatTime(DateTime? d) {
-    if (d == null) return '';
-    final diff = DateTime.now().difference(d);
-    if (diff.inMilliseconds < 60000) return t('connectionHistory.now');
-    if (diff.inMilliseconds < 3600000) return t('connectionHistory.minutesAgo', {'n': diff.inMinutes});
-    if (diff.inMilliseconds < 86400000) return t('connectionHistory.hoursAgo', {'n': diff.inHours});
-    return formatGregorianDateTime(d);
-  }
+  String _formatTime(DateTime? d) => formatRelative(d);
 
   String _statusLabel(String s) => switch (s) {
         'Pending' => t('connectionHistory.statusPending'),

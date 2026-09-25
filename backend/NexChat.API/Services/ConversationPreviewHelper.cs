@@ -45,6 +45,8 @@ public static class ConversationPreviewHelper
         if (m.Type == "video") return "فيديو";
         if (m.Type == "album") return BuildAlbumPreview(decrypt(m.Content ?? ""));
         if (m.Type == "short_film") return BuildShortFilmPreview(decrypt(m.Content ?? ""));
+        if (m.Type == "story_reply") return BuildStoryReplyPreview(decrypt(m.Content ?? ""));
+        if (m.Type == "call") return BuildCallPreview(decrypt(m.Content ?? ""));
         var c = decrypt(m.Content ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
     }
@@ -57,7 +59,50 @@ public static class ConversationPreviewHelper
         if (type == "album") return BuildAlbumPreview(decrypt(encryptedContent ?? ""));
         if (type == "short_film")
             return BuildShortFilmPreview(decrypt(encryptedContent ?? ""));
+        if (type == "story_reply") return BuildStoryReplyPreview(decrypt(encryptedContent ?? ""));
+        if (type == "call") return BuildCallPreview(decrypt(encryptedContent ?? ""));
         var c = decrypt(encryptedContent ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
+    }
+
+    public static string BuildStoryReplyPreview(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var text = doc.RootElement.TryGetProperty("text", out var t) ? t.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var preview = $"↩ {text.Trim()}";
+                return preview.Length > 50 ? preview[..50] + "…" : preview;
+            }
+        }
+        catch { /* invalid payload */ }
+        return "↩ رد على ستوري";
+    }
+
+    public static string BuildCallPreview(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var voiceOnly = root.TryGetProperty("voiceOnly", out var v) && v.ValueKind == JsonValueKind.True;
+            var status = root.TryGetProperty("status", out var s) ? s.GetString() ?? "missed" : "missed";
+            var kind = voiceOnly ? "صوتية" : "فيديو";
+            return status switch
+            {
+                "ended" => $"مكالمة {kind}",
+                "cancelled" => $"مكالمة {kind} ملغاة",
+                "declined" => $"مكالمة {kind} مرفوضة",
+                "busy" => "المستخدم في مكالمة أخرى",
+                "missed" => $"مكالمة {kind} فائتة",
+                _ => $"مكالمة {kind} فائتة",
+            };
+        }
+        catch
+        {
+            return "مكالمة";
+        }
     }
 }

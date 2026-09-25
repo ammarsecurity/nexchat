@@ -3,6 +3,7 @@ import { ref, watch, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
 import UserCell from '../components/UserCell.vue'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const blocks = ref([])
 const total = ref(0)
@@ -61,8 +62,8 @@ function cancelDelete() {
   selectedBlock.value = null
 }
 
-function formatDate(date) {
-  return new Date(date).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+function formatDate(dt) {
+  return formatIraqDate(dt)
 }
 
 let searchTimeout

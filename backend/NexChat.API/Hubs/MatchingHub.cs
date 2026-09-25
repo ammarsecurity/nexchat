@@ -14,7 +14,8 @@ public class MatchingHub(
     MatchingService matching,
     AppDbContext db,
     NotificationOutboxService notificationOutbox,
-    SiteContentFeatureService features) : Hub
+    SiteContentFeatureService features,
+    UserPresenceService presence) : Hub
 {
     private bool TryGetUserId(out Guid userId)
     {
@@ -30,10 +31,7 @@ public class MatchingHub(
             return;
         }
         await matching.SetUserOnlineAsync(userId, Context.ConnectionId);
-
-        await db.Users
-            .Where(u => u.Id == userId)
-            .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsOnline, true));
+        await presence.OnConnectedAsync(userId, Context.ConnectionId);
 
         if (await features.IsCodeConnectEnabledAsync())
         {
@@ -68,10 +66,7 @@ public class MatchingHub(
             return;
         }
         await matching.SetUserOfflineAsync(userId);
-
-        await db.Users
-            .Where(u => u.Id == userId)
-            .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsOnline, false));
+        await presence.OnDisconnectedAsync(userId, Context.ConnectionId);
 
         await base.OnDisconnectedAsync(exception);
     }

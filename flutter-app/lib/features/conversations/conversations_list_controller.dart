@@ -46,6 +46,22 @@ class ConversationsListController extends Notifier<List<Json>> {
       return {...c, 'partnerAvatar': avatar, 'PartnerAvatar': avatar};
     }).toList();
   }
+
+  void updatePartnerOnlineByUserId(String userId, bool isOnline) {
+    state = state.map((c) {
+      if (c.b('isGroup') || c.str('partnerId') != userId) return c;
+      return {...c, 'partnerIsOnline': isOnline, 'PartnerIsOnline': isOnline};
+    }).toList();
+  }
+
+  /// Soft refresh after network restore (keeps current list on failure).
+  Future<void> refreshSilently() async {
+    if (!NetworkStatus.online.value) return;
+    try {
+      final data = await Api.get('/conversations', query: {'filter': 'all'}, skipUnauthorized: true);
+      state = asJsonList(data);
+    } catch (_) {}
+  }
 }
 
 final conversationsListProvider = NotifierProvider<ConversationsListController, List<Json>>(ConversationsListController.new);

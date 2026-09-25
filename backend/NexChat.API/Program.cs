@@ -41,6 +41,7 @@ builder.Services.AddHttpClient<NexChat.Infrastructure.Services.EvolutionWhatsApp
 });
 builder.Services.AddScoped<NexChat.API.Services.OtpService>();
 builder.Services.AddScoped<NotificationOutboxService>();
+builder.Services.AddSingleton<UserPresenceService>();
 builder.Services.AddScoped<StoryAudienceService>();
 builder.Services.AddHostedService<NotificationOutboxDispatcherService>();
 builder.Services.AddHostedService<InactiveSessionCleanupService>();
@@ -187,6 +188,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbCtx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await dbCtx.Database.MigrateAsync();
+    await app.Services.GetRequiredService<UserPresenceService>().ResetStaleOnlineFlagsAsync();
 
     if (!dbCtx.Users.Any(u => u.IsAdmin))
     {

@@ -57,3 +57,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Kotlin incremental compiler sessions
+flutter-app/android/.kotlin/
+

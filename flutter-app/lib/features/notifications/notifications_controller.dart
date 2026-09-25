@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/json.dart';
 import '../../core/storage/prefs.dart';
+import '../../core/time.dart';
 import '../../services/push_service.dart';
 
 /// stores/notifications.js — local notification centre persisted under `nexchat_notifications`.
@@ -23,8 +24,7 @@ class NotificationsController extends Notifier<List<Json>> {
 
   static DateTime? _ts(Json x) {
     final raw = x['timestamp'] ?? x['createdAt'];
-    if (raw == null) return null;
-    return DateTime.tryParse('$raw');
+    return parseApiDate(raw);
   }
 
   static List<Json> _sorted(List<Json> list) {
@@ -37,6 +37,20 @@ class NotificationsController extends Notifier<List<Json>> {
     return copy;
   }
 
+  static String? _fingerprint(Json x) {
+    final sid = x['serverId'] ?? x['notificationId'];
+    if (sid != null && '$sid'.isNotEmpty) return 'srv:$sid';
+    final type = '${x['type'] ?? ''}';
+    final conv = '${x['conversationId'] ?? ''}';
+    final body = '${x['body'] ?? ''}';
+    final title = '${x['title'] ?? ''}';
+    final ts = _ts(x);
+    // Bucket to the minute so FG receive + tap don't create near-duplicates.
+    final bucket = ts == null ? '' : '${ts.toUtc().year}-${ts.toUtc().month}-${ts.toUtc().day}T${ts.toUtc().hour}:${ts.toUtc().minute}';
+    if (type.isEmpty && body.isEmpty && title.isEmpty) return null;
+    return 'fp:$type|$conv|$title|$body|$bucket';
+  }
+
   int get unreadCount => state.where((x) => x['isRead'] != true).length;
 
   void load() {
@@ -44,28 +58,47 @@ class NotificationsController extends Notifier<List<Json>> {
   }
 
   void add(Json n) {
-    final item = {...n, 'id': '${n['id'] ?? DateTime.now().millisecondsSinceEpoch}', 'isRead': n['isRead'] == true};
+    final serverId = n['serverId'] ?? n['notificationId'];
+    final ts = n['timestamp'] ?? n['createdAt'] ?? DateTime.now().toIso8601String();
+      final item = {
+      ...n,
+      'id': '${n['id'] ?? (serverId != null ? 'srv-$serverId' : DateTime.now().millisecondsSinceEpoch)}',
+      'serverId': ?serverId,
+      'timestamp': ts,
+      'isRead': n['isRead'] == true,
+    };
     if (state.any((x) => '${x['id']}' == item['id'])) return;
-    final serverId = item['serverId'];
     if (serverId != null && state.any((x) => '${x['serverId']}' == '$serverId')) return;
+    final fp = _fingerprint(item);
+    if (fp != null && state.any((x) => _fingerprint(x) == fp)) return;
     state = _sorted([item, ...state]).take(100).toList();
     _save();
   }
 
-  /// دمج إشعارات السيرفر مع المحلي، مع حذف ما لم يعد موجوداً على السيرفر.
+  /// دمج إشعارات السيرفر مع المحلي. القائمة الفارغة من السيرفر تُسقط المحلي المطابق فقط.
   void mergeServer(List<Json> serverItems) {
-    final localOnly = state.where((x) => x['serverId'] == null).toList();
+    final serverIds = <String>{};
+    final merged = <Json>[];
     final prevByServer = <String, Json>{
       for (final x in state)
         if (x['serverId'] != null) '${x['serverId']}': x,
     };
 
-    final merged = <Json>[];
     for (final n in serverItems) {
       final sid = '${n['serverId'] ?? n['id']}';
+      serverIds.add(sid);
       final prev = prevByServer[sid];
-      merged.add(prev == null ? n : {...prev, ...n, 'id': prev['id'] ?? n['id']});
+      merged.add(prev == null ? n : {...prev, ...n, 'id': prev['id'] ?? n['id'], 'serverId': sid});
     }
+
+    // Keep local-only rows that are not duplicates of a server row (by fingerprint).
+    final serverFps = merged.map(_fingerprint).whereType<String>().toSet();
+    final localOnly = state.where((x) {
+      if (x['serverId'] != null) return false;
+      final fp = _fingerprint(x);
+      if (fp != null && serverFps.contains(fp)) return false;
+      return true;
+    });
 
     state = _sorted([...merged, ...localOnly]).take(100).toList();
     _save();
@@ -114,7 +147,7 @@ Json normalizeServerNotification(Json x) {
     'type': x['type'] ?? nav['type'],
     'title': x['title'],
     'body': x['body'],
-    'timestamp': x['createdAt'],
+    'timestamp': x['createdAt'] ?? extra['createdAt'],
     'isRead': x['isRead'] == true,
     'avatar': nav['callerAvatar'] ?? nav['requesterAvatar'] ?? extra['avatar'] ?? extra['senderAvatar'] ?? extra['publisherAvatar'],
     'actorName': nav['callerName'] ?? nav['requesterName'] ?? extra['senderName'] ?? extra['publisherName'] ?? x['title'],

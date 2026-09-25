@@ -212,6 +212,10 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 GlassIconButton(icon: LucideIcons.userPlus, color: c.primary, onTap: () => _contactsKey.currentState?.openAddModal()),
                 const SizedBox(width: 8),
               ],
+              if (_section == 'chats') ...[
+                GlassIconButton(icon: LucideIcons.phone, color: c.primary, onTap: () => context.push('/calls')),
+                const SizedBox(width: 8),
+              ],
               GlassIconButton(icon: LucideIcons.bell, badgeDot: notifCount > 0, onTap: () => context.push('/notifications')),
             ]),
           ),
@@ -697,9 +701,9 @@ class _MainTabs extends StatelessWidget {
           Row(children: [
             tab('chats', LucideIcons.messageCircle, t('nav.conversations')),
             const SizedBox(width: gap),
-            tab('contacts', LucideIcons.users, t('nav.contacts'), pending),
+            tab('contacts', LucideIcons.users, t('nav.contacts')),
             const SizedBox(width: gap),
-            tab('requests', LucideIcons.mail, t('conversations.messageRequestsShort'), pending),
+            tab('requests', LucideIcons.userPlus, t('conversations.messageRequestsShort'), pending),
           ]),
         ]);
       }),

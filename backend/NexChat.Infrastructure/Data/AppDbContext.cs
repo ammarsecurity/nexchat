@@ -30,6 +30,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
     public DbSet<StorySlide> StorySlides => Set<StorySlide>();
     public DbSet<StoryView> StoryViews => Set<StoryView>();
+    public DbSet<StoryLike> StoryLikes => Set<StoryLike>();
     public DbSet<ShortFilm> ShortFilms => Set<ShortFilm>();
     public DbSet<ShortFilmSection> ShortFilmSections => Set<ShortFilmSection>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
@@ -371,6 +372,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(x => x.ViewerUserId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.StorySlideId, x.ViewerUserId }).IsUnique();
+        });
+
+        modelBuilder.Entity<StoryLike>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.StorySlide)
+                .WithMany(s => s.Likes)
+                .HasForeignKey(x => x.StorySlideId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.StorySlideId, x.UserId }).IsUnique();
         });
 
         modelBuilder.Entity<ShortFilmSection>(e =>

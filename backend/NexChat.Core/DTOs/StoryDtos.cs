@@ -25,7 +25,9 @@ public record StorySlideDto(
     DateTime CreatedAt,
     DateTime ExpiresAt,
     bool ViewedByMe,
-    int ViewCount
+    int ViewCount,
+    bool LikedByMe,
+    int LikeCount
 );
 
 public record CreateStorySlideRequest(
@@ -58,3 +60,5 @@ public record StoryViewerDto(
 public record StoryReplyRequest(string Text);
 
 public record StoryReplyResponse(Guid ConversationId, Guid MessageId);
+
+public record StoryLikeResponse(bool Liked, int LikeCount);

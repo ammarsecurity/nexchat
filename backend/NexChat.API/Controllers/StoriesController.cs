@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -24,6 +25,7 @@ public class StoriesController(
     IProfanityMasker profanity,
     NotificationOutboxService notificationOutbox,
     IHubContext<StoryHub> storyHub,
+    IHubContext<ConversationHub> conversationHub,
     IServiceScopeFactory scopeFactory) : ControllerBase
 {
     private static readonly string[] AllowedMediaTypes = [StoryMediaType.Image, StoryMediaType.Video, StoryMediaType.Text];
@@ -53,7 +55,7 @@ public class StoriesController(
             return Ok(Array.Empty<StoryRingDto>());
 
         var publisherIds = activeByUser.Select(x => x.UserId).ToList();
-        var visibleIds = await GetVisiblePublisherIdsAsync(viewerId, publisherIds);
+        var visibleIds = await audience.FilterVisiblePublishersAsync(viewerId, publisherIds);
         var filtered = activeByUser.Where(x => visibleIds.Contains(x.UserId)).ToList();
         if (filtered.Count == 0)
             return Ok(Array.Empty<StoryRingDto>());
@@ -150,7 +152,7 @@ public class StoriesController(
         db.StorySlides.Add(slide);
         await db.SaveChangesAsync();
 
-        var dto = MapSlide(slide, true, 0);
+        var dto = MapSlide(slide, viewedByMe: true, viewCount: 0, likedByMe: false, likeCount: 0);
 
         var publisherId = CurrentUserId;
         var slideId = slide.Id;
@@ -184,7 +186,8 @@ public class StoriesController(
         await db.SaveChangesAsync();
 
         var viewCount = await db.StoryViews.CountAsync(v => v.StorySlideId == slide.Id);
-        return Ok(MapSlide(slide, true, viewCount));
+        var likeCount = await db.StoryLikes.CountAsync(l => l.StorySlideId == slide.Id);
+        return Ok(MapSlide(slide, viewedByMe: true, viewCount, likedByMe: false, likeCount));
     }
 
     [HttpDelete("{slideId:guid}")]
@@ -263,6 +266,55 @@ public class StoriesController(
         return Ok(viewers);
     }
 
+    [HttpPost("{slideId:guid}/like")]
+    public async Task<ActionResult<StoryLikeResponse>> ToggleLike(Guid slideId)
+    {
+        var slide = await db.StorySlides
+            .FirstOrDefaultAsync(s => s.Id == slideId && s.ExpiresAt > DateTime.UtcNow);
+        if (slide == null) return NotFound();
+        if (!await audience.CanViewAsync(CurrentUserId, slide.UserId))
+            return NotFound();
+        if (slide.UserId == CurrentUserId)
+            return BadRequest(new { message = "لا يمكن الإعجاب بستوريته" });
+
+        var existing = await db.StoryLikes
+            .FirstOrDefaultAsync(l => l.StorySlideId == slideId && l.UserId == CurrentUserId);
+        bool liked;
+        if (existing != null)
+        {
+            db.StoryLikes.Remove(existing);
+            liked = false;
+        }
+        else
+        {
+            db.StoryLikes.Add(new StoryLike
+            {
+                StorySlideId = slideId,
+                UserId = CurrentUserId,
+                CreatedAt = DateTime.UtcNow
+            });
+            liked = true;
+        }
+
+        await db.SaveChangesAsync();
+        var likeCount = await db.StoryLikes.CountAsync(l => l.StorySlideId == slideId);
+
+        if (liked)
+        {
+            var liker = await db.Users.FindAsync(CurrentUserId);
+            await storyHub.Clients.User(slide.UserId.ToString())
+                .SendAsync("StoryLiked", new
+                {
+                    slideId,
+                    userId = CurrentUserId,
+                    userName = liker?.Name ?? "—",
+                    likeCount
+                });
+        }
+
+        return Ok(new StoryLikeResponse(liked, likeCount));
+    }
+
     [HttpPost("{slideId:guid}/reply")]
     public async Task<ActionResult<StoryReplyResponse>> Reply(Guid slideId, [FromBody] StoryReplyRequest req)
     {
@@ -282,14 +334,23 @@ public class StoriesController(
         if (conv == null)
             return BadRequest(new { message = "لا يمكن فتح محادثة مع هذا المستخدم" });
 
-        var replyPrefix = $"↩ ستوري: ";
-        var body = profanity.Mask($"{replyPrefix}{req.Text.Trim()}");
+        var text = profanity.Mask(req.Text.Trim());
+        var payload = JsonSerializer.Serialize(new
+        {
+            text,
+            slideId = slide.Id,
+            mediaUrl = slide.MediaUrl,
+            mediaType = slide.MediaType,
+            backgroundColor = slide.BackgroundColor,
+            caption = slide.Caption
+        });
+
         var msg = new ConversationMessage
         {
             ConversationId = conv.Id,
             SenderId = CurrentUserId,
-            Content = messageCrypto.EncryptForStorage(body),
-            Type = "text"
+            Content = messageCrypto.EncryptForStorage(payload),
+            Type = "story_reply"
         };
         db.ConversationMessages.Add(msg);
 
@@ -299,6 +360,51 @@ public class StoriesController(
             db.UserConversationDeletions.Remove(recipientDeletion);
 
         await db.SaveChangesAsync();
+
+        var preview = ConversationPreviewHelper.BuildStoryReplyPreview(payload);
+        var sender = await db.Users.FindAsync(CurrentUserId);
+        var receivePayload = new
+        {
+            msg.Id,
+            msg.SenderId,
+            Content = payload,
+            msg.Type,
+            msg.SentAt,
+            msg.DeletedForEveryone,
+            ReplyToMessageId = (Guid?)null,
+            ReplyToContent = (string?)null,
+            ReplyToSenderName = (string?)null,
+            IsRead = false,
+            Reactions = Array.Empty<object>(),
+            MyReaction = (string?)null
+        };
+
+        await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ReceiveMessage", receivePayload);
+        await conversationHub.Clients.User(slide.UserId.ToString()).SendAsync("ReceiveMessage", receivePayload);
+
+        var listUpdate = new
+        {
+            ConversationId = conv.Id,
+            LastMessagePreview = preview,
+            LastMessageType = "story_reply",
+            LastMessageAt = msg.SentAt,
+            SenderId = CurrentUserId
+        };
+        await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+        await conversationHub.Clients.User(slide.UserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+
+        await notificationOutbox.EnqueueAsync(
+            slide.UserId,
+            "conversation_message",
+            sender?.Name ?? "شخص",
+            preview,
+            new Dictionary<string, string>
+            {
+                ["conversationId"] = conv.Id.ToString(),
+                ["userId"] = CurrentUserId.ToString(),
+                ["senderName"] = sender?.Name ?? "",
+                ["senderAvatar"] = sender?.Avatar ?? ""
+            });
 
         return Ok(new StoryReplyResponse(conv.Id, msg.Id));
     }
@@ -327,12 +433,19 @@ public class StoriesController(
                 s.CreatedAt,
                 s.ExpiresAt,
                 db.StoryViews.Any(v => v.ViewerUserId == viewerId && v.StorySlideId == s.Id),
-                isOwner ? db.StoryViews.Count(v => v.StorySlideId == s.Id) : 0
+                isOwner ? db.StoryViews.Count(v => v.StorySlideId == s.Id) : 0,
+                db.StoryLikes.Any(l => l.UserId == viewerId && l.StorySlideId == s.Id),
+                db.StoryLikes.Count(l => l.StorySlideId == s.Id)
             ))
             .ToListAsync();
     }
 
-    private static StorySlideDto MapSlide(StorySlide s, bool viewedByMe, int viewCount) =>
+    private static StorySlideDto MapSlide(
+        StorySlide s,
+        bool viewedByMe,
+        int viewCount,
+        bool likedByMe,
+        int likeCount) =>
         new(
             s.Id,
             s.UserId,
@@ -347,7 +460,9 @@ public class StoriesController(
             s.CreatedAt,
             s.ExpiresAt,
             viewedByMe,
-            viewCount
+            viewCount,
+            likedByMe,
+            likeCount
         );
 
     private static string? GetThumbUrl(StorySlide s)
@@ -355,56 +470,6 @@ public class StoriesController(
         if (!string.IsNullOrEmpty(s.MediaUrl))
             return s.MediaUrl;
         return null;
-    }
-
-    private async Task<HashSet<Guid>> GetVisiblePublisherIdsAsync(Guid viewerId, List<Guid> publisherIds)
-    {
-        var blocked = await db.UserBlocks
-            .Where(b => b.BlockerId == viewerId || b.BlockedUserId == viewerId)
-            .Select(b => b.BlockerId == viewerId ? b.BlockedUserId : b.BlockerId)
-            .ToListAsync();
-        var blockedSet = blocked.ToHashSet();
-
-        var eligible = publisherIds
-            .Where(id => id == viewerId || !blockedSet.Contains(id))
-            .ToList();
-
-        var fromContacts = await db.Contacts
-            .Where(c =>
-                (c.UserId == viewerId && eligible.Contains(c.ContactUserId)) ||
-                (c.ContactUserId == viewerId && eligible.Contains(c.UserId)))
-            .Select(c => c.UserId == viewerId ? c.ContactUserId : c.UserId)
-            .Distinct()
-            .ToListAsync();
-
-        var privatePeers = await db.Conversations
-            .Where(c => c.Type == ConversationType.Private &&
-                        ((c.User1Id == viewerId && c.User2Id != null && eligible.Contains(c.User2Id.Value)) ||
-                         (c.User2Id == viewerId && c.User1Id != null && eligible.Contains(c.User1Id.Value))))
-            .Select(c => c.User1Id == viewerId ? c.User2Id!.Value : c.User1Id!.Value)
-            .ToListAsync();
-
-        var myConvIds = await db.ConversationMembers
-            .Where(m => m.UserId == viewerId)
-            .Select(m => m.ConversationId)
-            .ToListAsync();
-
-        var groupPeers = await db.ConversationMembers
-            .Where(m => myConvIds.Contains(m.ConversationId) &&
-                        m.UserId != viewerId &&
-                        eligible.Contains(m.UserId))
-            .Select(m => m.UserId)
-            .Distinct()
-            .ToListAsync();
-
-        var visible = new HashSet<Guid> { viewerId };
-        foreach (var id in fromContacts.Concat(privatePeers).Concat(groupPeers))
-        {
-            if (eligible.Contains(id))
-                visible.Add(id);
-        }
-
-        return visible;
     }
 
     private async Task<Conversation?> FindOrCreatePrivateConversationAsync(Guid userId, Guid partnerId)
@@ -415,6 +480,10 @@ public class StoriesController(
             (b.BlockerId == userId && b.BlockedUserId == partnerId) ||
             (b.BlockerId == partnerId && b.BlockedUserId == userId));
         if (blocked) return null;
+
+        // Stories are friends-only: require mutual contacts (accepted friendship).
+        if (!await audience.AreMutualFriendsAsync(userId, partnerId))
+            return null;
 
         var u1 = userId;
         var u2 = partnerId;
@@ -430,23 +499,6 @@ public class StoriesController(
             if (deletion != null)
                 db.UserConversationDeletions.Remove(deletion);
             return conv;
-        }
-
-        var isContact = await db.Contacts.AnyAsync(c =>
-            c.UserId == userId && c.ContactUserId == partnerId);
-
-        var hasPrivateConv = await db.Conversations.AnyAsync(c =>
-            c.Type == ConversationType.Private &&
-            ((c.User1Id == userId && c.User2Id == partnerId) ||
-             (c.User2Id == userId && c.User1Id == partnerId)));
-
-        if (!isContact && !hasPrivateConv)
-        {
-            var accepted = await db.MessageRequests.AnyAsync(r =>
-                r.Status == MessageRequestStatus.Accepted &&
-                ((r.RequesterId == userId && r.TargetId == partnerId) ||
-                 (r.RequesterId == partnerId && r.TargetId == userId)));
-            if (!accepted) return null;
         }
 
         conv = new Conversation { Type = ConversationType.Private, User1Id = u1, User2Id = u2 };

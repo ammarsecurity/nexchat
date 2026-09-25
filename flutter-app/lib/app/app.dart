@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/feature_flags.dart';
 import '../core/i18n/i18n.dart';
+import '../core/json.dart';
 import '../core/network/api_client.dart';
 import '../core/network/hubs.dart';
 import '../core/network/network_status.dart';
@@ -15,6 +16,7 @@ import '../features/auth/auth_controller.dart';
 import '../features/calls/call_state.dart';
 import '../features/conversations/conversations_list_controller.dart';
 import '../features/matching/matching_controller.dart';
+import '../features/notifications/notifications_controller.dart';
 import '../services/call_native.dart';
 import '../services/push_service.dart';
 import '../services/ring_sound.dart';
@@ -66,10 +68,11 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
         unawaited(RingSound.start());
       }
       _runUpdateCheck();
-      if (ref.read(networkProvider)) unawaited(Hubs.resumeAll());
+      if (ref.read(networkProvider)) unawaited(Hubs.forceReconnectAll());
       if (ref.read(authProvider).isLoggedIn) {
         unawaited(PushService.instance.refreshRegistration());
         unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
+        unawaited(_refreshNotifications());
       }
       return;
     }
@@ -90,6 +93,14 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
     }
   }
 
+  Future<void> _refreshNotifications() async {
+    try {
+      final data = await Api.get('/user-notifications', query: {'take': 60});
+      final normalized = asJsonList(data).map(normalizeServerNotification).toList();
+      ref.read(notificationsProvider.notifier).mergeServer(normalized);
+    } catch (_) {}
+  }
+
   Future<void> _runUpdateCheck() async {
     if (!_online) return;
     await ref.read(appUpdateProvider.notifier).refresh();
@@ -99,11 +110,18 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
     await _runUpdateCheck();
     unawaited(ref.read(featureFlagsProvider.notifier).refresh());
     if (!ref.read(authProvider).isLoggedIn) return;
-    unawaited(Hubs.resumeAll());
+
+    // Always rebuild SignalR sockets — stop()/auto-reconnect leaves them half-dead.
+    await Hubs.forceReconnectAll();
     unawaited(Hubs.conversation.start());
     unawaited(Hubs.story.start());
     final flags = ref.read(featureFlagsProvider).value;
     if (flags?.connectHub ?? false) unawaited(Hubs.matching.start());
+
+    unawaited(PushService.instance.refreshRegistration());
+    unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
+    unawaited(_refreshNotifications());
+    unawaited(ref.read(conversationsListProvider.notifier).refreshSilently());
   }
 
   void _onWentOffline() {
@@ -117,7 +135,8 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
 
   Future<void> _retryConnection() async {
     final ok = await ref.read(networkProvider.notifier).recheck();
-    if (ok) await _onCameOnline();
+    if (!ok) return;
+    await _onCameOnline();
   }
 
   Future<void> _handleUnauthorized() async {
@@ -170,7 +189,9 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
                 Positioned.fill(child: NoConnectionView(onRetry: _retryConnection))
               else ...[
                 Padding(
-                  padding: EdgeInsets.only(top: !_online ? MediaQuery.paddingOf(context).top + 52 : 0),
+                  padding: EdgeInsets.only(
+                    top: !_online ? MediaQuery.paddingOf(context).top + OfflineBanner.contentHeight : 0,
+                  ),
                   child: child ?? const SizedBox.shrink(),
                 ),
                 if (!_online) Positioned(top: 0, left: 0, right: 0, child: OfflineBanner(onRetry: _retryConnection)),

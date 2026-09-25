@@ -3,19 +3,23 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 
 import 'i18n/i18n.dart';
+import 'time.dart';
+
+export 'time.dart' show asUtc, toIraq, iraqNow, parseApiDate, iraqOffset;
 
 String _tag() => I18n.current == 'ar' ? 'ar' : 'en_US';
 
-/// formatTime12() — `hh:mm AM/PM` in the current locale.
-String formatTime12(DateTime d) => DateFormat('hh:mm a', _tag()).format(d);
+/// formatTime12() — `hh:mm AM/PM` in Iraq (UTC+3).
+String formatTime12(DateTime d) => DateFormat('hh:mm a', _tag()).format(toIraq(d));
 
-/// formatGregorianDateTime()
-String formatGregorianDateTime(DateTime d) => '${DateFormat('d/M/yyyy', _tag()).format(d)} ${formatTime12(d)}';
+/// formatGregorianDateTime() — date + time in Iraq.
+String formatGregorianDateTime(DateTime d) =>
+    '${DateFormat('d/M/yyyy', _tag()).format(toIraq(d))} ${formatTime12(d)}';
 
-/// Relative time used in the conversations list.
+/// Relative time used in the conversations list (UTC duration; absolute in Iraq).
 String formatRelative(DateTime? d) {
   if (d == null) return '';
-  final diff = DateTime.now().difference(d);
+  final diff = DateTime.now().toUtc().difference(asUtc(d));
   if (diff.inSeconds < 60) return t('connectionHistory.now');
   if (diff.inMinutes < 60) return t('connectionHistory.minutesAgo', {'n': diff.inMinutes});
   if (diff.inHours < 24) return t('connectionHistory.hoursAgo', {'n': diff.inHours});
@@ -71,8 +75,48 @@ String? _previewFromType(String? type, String? preview) {
     case 'short_film':
       if (preview == null || preview.isEmpty) return '🎬 ${t('shortFilms.title')}';
       return formatConversationListPreview(preview);
+    case 'story_reply':
+      return parseStoryReplyMessage('story_reply', preview ?? '')?.listPreview ?? t('stories.storyReplyPreview');
+    case 'call':
+      if (preview != null && preview.isNotEmpty && !preview.trim().startsWith('{')) return preview;
+      return formatCallMessagePreview(preview, mine: false);
   }
   return null;
+}
+
+/// WhatsApp-style call history label for list + bubbles.
+String formatCallMessagePreview(String? content, {required bool mine}) {
+  Map<String, dynamic>? data;
+  if (content != null && content.trim().startsWith('{')) {
+    try {
+      final decoded = jsonDecode(content);
+      if (decoded is Map) data = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+  }
+  final status = '${data?['status'] ?? 'missed'}';
+  final voiceOnly = data?['voiceOnly'] == true || data?['voiceOnly'] == 'true';
+  final durationSec = int.tryParse('${data?['durationSec'] ?? 0}') ?? 0;
+  final kind = voiceOnly ? t('conversationChat.voiceCallKind') : t('conversationChat.videoCallKind');
+  switch (status) {
+    case 'ended':
+      final time = durationSec > 0 ? ' · ${_fmtCallDur(durationSec)}' : '';
+      return mine ? '${t('conversationChat.outgoingCall')} ($kind)$time' : '${t('conversationChat.incomingCall')} ($kind)$time';
+    case 'cancelled':
+      return mine ? '${t('conversationChat.cancelledCall')} ($kind)' : '${t('conversationChat.missedCall')} ($kind)';
+    case 'declined':
+      return mine ? '${t('conversationChat.declinedCall')} ($kind)' : '${t('conversationChat.missedCall')} ($kind)';
+    case 'busy':
+      return mine ? t('conversationChat.userBusy') : '${t('conversationChat.missedCall')} ($kind)';
+    case 'missed':
+    default:
+      return mine ? '${t('conversationChat.noAnswerCall')} ($kind)' : '${t('conversationChat.missedCall')} ($kind)';
+  }
+}
+
+String _fmtCallDur(int sec) {
+  final m = (sec ~/ 60).toString().padLeft(2, '0');
+  final s = (sec % 60).toString().padLeft(2, '0');
+  return '$m:$s';
 }
 
 String formatConversationListPreview(String? preview, {String? type}) {
@@ -130,3 +174,52 @@ ShortFilmRef? parseShortFilmMessage(String type, String content) {
 
 String buildShortFilmShareContent(String id, String title, String? thumbnailUrl) =>
     jsonEncode({'id': id, 'title': title, 'thumbnailUrl': thumbnailUrl});
+
+class StoryReplyRef {
+  const StoryReplyRef({
+    required this.text,
+    this.slideId,
+    this.mediaUrl,
+    this.mediaType = 'image',
+    this.backgroundColor,
+    this.caption,
+  });
+
+  final String text;
+  final String? slideId;
+  final String? mediaUrl;
+  final String mediaType;
+  final String? backgroundColor;
+  final String? caption;
+
+  bool get isVideo =>
+      mediaType == 'video' ||
+      (mediaUrl != null && _videoRe.hasMatch(mediaUrl!.toLowerCase()));
+  bool get isText => mediaType == 'text' || mediaUrl == null || mediaUrl!.isEmpty;
+
+  String get listPreview {
+    final t0 = text.trim();
+    if (t0.isEmpty) return t('stories.storyReplyPreview');
+    final out = '↩ $t0';
+    return out.length > 50 ? '${out.substring(0, 50)}…' : out;
+  }
+}
+
+StoryReplyRef? parseStoryReplyMessage(String type, String content) {
+  if (type != 'story_reply' || content.isEmpty || !content.trim().startsWith('{')) return null;
+  try {
+    final data = jsonDecode(content);
+    if (data is! Map) return null;
+    final text = '${data['text'] ?? data['Text'] ?? ''}'.trim();
+    return StoryReplyRef(
+      text: text,
+      slideId: data['slideId']?.toString() ?? data['SlideId']?.toString(),
+      mediaUrl: (data['mediaUrl'] ?? data['MediaUrl']) as String?,
+      mediaType: '${data['mediaType'] ?? data['MediaType'] ?? 'image'}'.toLowerCase(),
+      backgroundColor: (data['backgroundColor'] ?? data['BackgroundColor']) as String?,
+      caption: (data['caption'] ?? data['Caption']) as String?,
+    );
+  } catch (_) {
+    return null;
+  }
+}

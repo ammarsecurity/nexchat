@@ -83,12 +83,16 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
   void _bindPush() {
     Json storeItem(Map<String, dynamic> data, String? title, String? body, bool isRead) {
       final nav = parseNotificationData(data);
+      final serverId = data['notificationId'] ?? data['NotificationId'] ?? nav['notificationId'];
+      final createdAt = data['createdAt'] ?? data['CreatedAt'] ?? nav['createdAt'];
       return {
         ...nav,
+        'serverId': ?serverId,
+        if (serverId != null) 'id': 'srv-$serverId',
         'type': nav['type'] ?? data['type'] ?? 'message',
         'title': (title?.isNotEmpty ?? false) ? title : (data['title'] ?? 'إشعار'),
         'body': (body?.isNotEmpty ?? false) ? body : (data['body'] ?? ''),
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': createdAt ?? DateTime.now().toIso8601String(),
         'isRead': isRead,
         'avatar': nav['callerAvatar'] ?? nav['requesterAvatar'] ?? data['avatar'] ?? data['senderAvatar'] ?? data['publisherAvatar'],
         'actorName': nav['callerName'] ?? nav['requesterName'] ?? data['senderName'] ?? data['publisherName'] ?? title,
@@ -97,6 +101,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
 
     PushService.instance
       ..onOpen = (data, title, body) {
+        if ('${data['type'] ?? ''}' == 'call_cancel') return;
         final item = storeItem(data, title, body, true);
         ref.read(notificationsProvider.notifier).add(item);
         final d = parseNotificationData(data);
@@ -106,6 +111,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         navigateFromNotification(ref, item);
       }
       ..onForeground = (data, title, body) {
+        if ('${data['type'] ?? ''}' == 'call_cancel') return;
         ref.read(notificationsProvider.notifier).add(storeItem(data, title, body, false));
         final d = parseNotificationData(data);
         if (d['type'] == 'message_request') {
@@ -122,7 +128,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       final id = d['conversationId'];
       if (id == null || id.isEmpty) return;
       if (isInAnotherCall(ref, exceptId: id)) {
-        Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [id])).catchError((_) => null);
+        declineBusyConversationCall(id);
         return;
       }
       ref.read(incomingConvCallProvider.notifier).setIncoming(IncomingConvCall(
@@ -202,17 +208,20 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
       if (path == '/video/$cid') return;
       if (isInAnotherCall(ref, exceptId: cid)) {
-        Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [cid])).catchError((_) => null);
+        declineBusyConversationCall(cid);
         return;
       }
       final prev = ref.read(incomingConvCallProvider);
       if (prev.visible && prev.conversationId != null && prev.conversationId != cid) {
-        Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [prev.conversationId!])).catchError((_) => null);
+        declineBusyConversationCall(cid);
+        return;
       }
       ref.read(incomingConvCallProvider.notifier).setIncoming(parsed);
+      notifyOutgoingCallRinging(cid);
     }));
 
     _disposers.add(h.on('VideoCallDeclined', (a) {
+      unawaited(RingSound.stop());
       final cid = '${a.firstOrNull ?? ''}';
       final incoming = ref.read(incomingConvCallProvider);
       if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
@@ -221,7 +230,25 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       }
     }));
 
+    _disposers.add(h.on('VideoCallBusy', (a) {
+      final cid = '${a.firstOrNull ?? ''}';
+      final active = ref.read(activeCallProvider);
+      final mine = active.sessionId != null &&
+          active.sessionId!.isNotEmpty &&
+          (cid.isEmpty || cid == 'null' || cid == active.sessionId);
+      if (mine) {
+        unawaited(RingSound.playBusy());
+        ref.read(activeCallProvider.notifier).clear();
+      }
+      final incoming = ref.read(incomingConvCallProvider);
+      if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
+        ref.read(incomingConvCallProvider.notifier).clear();
+        unawaited(CallNative.dismissIncoming());
+      }
+    }));
+
     _disposers.add(h.on('VideoCallAccepted', (a) {
+      unawaited(RingSound.stop());
       final parsed = parseVideoCallAcceptedPayload(a);
       if (parsed == null) return;
       final cid = parsed.conversationId;
@@ -257,6 +284,14 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       ref.read(matchingProvider.notifier)
         ..patchIncomingRequesterAvatar(userId, avatar)
         ..patchPendingRandomPartnerAvatar(userId, avatar, uniqueCode);
+    }));
+    _disposers.add(h.on('UserPresenceChanged', (a) {
+      final p = a.isNotEmpty && a[0] is Map ? a[0] as Map : null;
+      final userId = p?.s('userId');
+      if (userId == null || userId.isEmpty) return;
+      final online = p!.b('isOnline');
+      ref.read(conversationsListProvider.notifier).updatePartnerOnlineByUserId(userId, online);
+      ref.read(activeConversationProvider.notifier).patchPartnerOnline(userId, online);
     }));
   }
 

@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
+import '../../core/network/hubs.dart';
 import '../../services/call_native.dart';
 import '../../shared/widgets.dart';
 import '../conversations/active_conversation.dart';
@@ -286,8 +287,30 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _timer?.cancel();
     _peerWait?.cancel();
     if (mounted) setState(() => _initializing = false);
+    _notifyServerCallCleanup();
     unawaited(_lk.leave());
     _goBackAfterCall();
+  }
+
+  /// Clears server busy/pending: End if Media connected, else Decline (cancel).
+  void _notifyServerCallCleanup() {
+    if (!_isConversationContext) return;
+    final secs = _duration.value;
+    if (_connected) {
+      unawaited(
+        Hubs.conversation
+            .ensureConnected()
+            .then((_) => Hubs.conversation.invoke('EndVideoCall', [_sid, secs]))
+            .catchError((_) => null),
+      );
+    } else {
+      unawaited(
+        Hubs.conversation
+            .ensureConnected()
+            .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_sid]))
+            .catchError((_) => null),
+      );
+    }
   }
 
   void _goBackAfterCall() {
@@ -386,6 +409,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     HapticFeedback.mediumImpact();
     _suppressDisconnectNavigate = true;
     _peerWait?.cancel();
+    _notifyServerCallCleanup();
     unawaited(_lk.leave());
     _goBackAfterCall();
   }

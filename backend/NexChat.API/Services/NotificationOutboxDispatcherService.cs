@@ -24,10 +24,26 @@ public class NotificationOutboxDispatcherService(IServiceProvider sp, ILogger<No
                     continue;
                 }
 
+                // Reclaim items stuck in Processing (crash mid-send).
+                var stuckBefore = DateTime.UtcNow.AddMinutes(-2);
+                var stuck = await db.NotificationOutboxItems
+                    .Where(x => x.Status == NotificationOutboxStatus.Processing && x.LastAttemptAt != null && x.LastAttemptAt < stuckBefore)
+                    .Take(50)
+                    .ToListAsync(stoppingToken);
+                foreach (var s in stuck)
+                {
+                    s.Status = NotificationOutboxStatus.Pending;
+                    s.NextAttemptAt = DateTime.UtcNow;
+                }
+                if (stuck.Count > 0)
+                    await db.SaveChangesAsync(stoppingToken);
+
+                // Prefer urgent call items so ringing is not stuck behind chat/story pushes.
                 var batch = await db.NotificationOutboxItems
                     .Where(x => (x.Status == NotificationOutboxStatus.Pending || x.Status == NotificationOutboxStatus.Failed) &&
                                 x.NextAttemptAt <= DateTime.UtcNow)
-                    .OrderBy(x => x.CreatedAt)
+                    .OrderByDescending(x => x.Type == "video_call" || x.Type == "call_cancel")
+                    .ThenBy(x => x.CreatedAt)
                     .Take(20)
                     .ToListAsync(stoppingToken);
 

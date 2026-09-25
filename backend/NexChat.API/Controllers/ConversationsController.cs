@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using NexChat.Core;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -114,6 +115,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             string? partnerAvatar;
             string? partnerPhone = null;
             string? partnerUniqueCode = null;
+            var partnerIsOnline = false;
             if (c.Type == ConversationType.Group)
             {
                 partnerId = c.Id;
@@ -129,6 +131,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 partnerAvatar = partner.Avatar;
                 partnerPhone = partner.PhoneNumber;
                 partnerUniqueCode = partner.UniqueCode;
+                partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner);
             }
             lastMsgDict.TryGetValue(c.Id, out var lastMsgObj);
             var lastMsg = lastMsgObj;
@@ -167,7 +170,8 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 unreadCount,
                 state?.IsPinned ?? false,
                 state?.IsArchived ?? false,
-                c.Type == ConversationType.Group
+                c.Type == ConversationType.Group,
+                partnerIsOnline
             ));
         }
 
@@ -195,7 +199,15 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             return Ok(new { id = conv.Id, type = "group", groupName = conv.Name ?? "مجموعة", groupImageUrl = conv.ImageUrl });
         var partner = conv.User1Id == CurrentUserId ? conv.User2 : conv.User1;
         if (partner == null) return NotFound();
-        return Ok(new { id = conv.Id, type = "private", partnerId = partner.Id, partnerName = partner.Name, partnerAvatar = partner.Avatar });
+        return Ok(new
+        {
+            id = conv.Id,
+            type = "private",
+            partnerId = partner.Id,
+            partnerName = partner.Name,
+            partnerAvatar = partner.Avatar,
+            partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner)
+        });
     }
 
     [HttpPost]

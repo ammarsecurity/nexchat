@@ -28,7 +28,10 @@ class Hub {
         )
         .withAutomaticReconnect()
         .build();
-    conn.onreconnected(({connectionId}) => _reconnected.add(null));
+    conn.onreconnected(({connectionId}) {
+      _restartAttempt = 0;
+      _reconnected.add(null);
+    });
     conn.onclose(({error}) => _scheduleRestart());
     _bound.clear();
     for (final name in _handlers.keys) {
@@ -55,6 +58,31 @@ class Hub {
   Timer? _restartTimer;
   int _restartAttempt = 0;
 
+  Future<void> _disposeConn() async {
+    _restartTimer?.cancel();
+    final c = _conn;
+    _conn = null;
+    _bound.clear();
+    if (c == null) return;
+    try {
+      await c.stop();
+    } catch (_) {}
+  }
+
+  /// Tear down any half-dead socket and open a fresh one (needed after network loss).
+  Future<void> forceReconnect() async {
+    if (!_wanted) return;
+    _restartAttempt = 0;
+    await _disposeConn();
+    if (!NetworkStatus.online.value || (Prefs.instance.token ?? '').isEmpty) return;
+    try {
+      await start();
+      _reconnected.add(null);
+    } catch (_) {
+      _scheduleRestart();
+    }
+  }
+
   /// withAutomaticReconnect gives up after ~40 s; keep retrying with backoff while the hub is wanted.
   void _scheduleRestart() {
     if (!_wanted || !NetworkStatus.online.value || (Prefs.instance.token ?? '').isEmpty) return;
@@ -62,10 +90,9 @@ class Hub {
     final delay = Duration(seconds: [2, 5, 10, 20, 30][_restartAttempt.clamp(0, 4)]);
     _restartAttempt++;
     _restartTimer = Timer(delay, () async {
-      if (!_wanted) return;
+      if (!_wanted || !NetworkStatus.online.value) return;
       try {
-        await start();
-        _reconnected.add(null);
+        await forceReconnect();
       } catch (_) {
         _scheduleRestart();
       }
@@ -75,7 +102,13 @@ class Hub {
   Future<void> start() async {
     _wanted = true;
     if (!NetworkStatus.online.value) return;
+    if ((Prefs.instance.token ?? '').isEmpty) return;
     _conn ??= _build();
+    if (_conn!.state == HubConnectionState.Connected) {
+      _restartAttempt = 0;
+      _restartTimer?.cancel();
+      return;
+    }
     if (_conn!.state == HubConnectionState.Disconnected) {
       try {
         await _conn!.start();
@@ -85,53 +118,58 @@ class Hub {
         _scheduleRestart();
         rethrow;
       }
+      return;
     }
+    // Connecting / Reconnecting / Disconnecting — don't leave the socket stuck.
+    await forceReconnect();
   }
 
   /// App resumed / network back: reconnect now instead of waiting for the backoff timer.
   Future<void> resume() async {
-    if (!_wanted || !NetworkStatus.online.value || state != HubConnectionState.Disconnected) return;
-    _restartAttempt = 0;
-    try {
-      await start();
+    if (!_wanted || !NetworkStatus.online.value) return;
+    if (state == HubConnectionState.Connected) {
+      // Still notify listeners so chat can re-join / flush outbox.
       _reconnected.add(null);
-    } catch (_) {
-      _scheduleRestart();
+      return;
     }
+    await forceReconnect();
   }
 
   Future<void> ensureConnected({Duration timeout = const Duration(seconds: 15)}) async {
     if (!NetworkStatus.online.value) throw TimeoutException(I18n.t('noConnection.title'));
     _wanted = true;
-    _conn ??= _build();
-    if (_conn!.state == HubConnectionState.Connected) return;
-    if (_conn!.state == HubConnectionState.Disconnected) {
-      await _conn!.start();
-      return;
+    if ((Prefs.instance.token ?? '').isEmpty) throw TimeoutException(I18n.t('noConnection.title'));
+
+    if (_conn == null || state == HubConnectionState.Disconnected) {
+      await start();
+      if (state == HubConnectionState.Connected) return;
     }
+    if (state == HubConnectionState.Connected) return;
+
     final started = DateTime.now();
-    while (_conn!.state != HubConnectionState.Connected) {
-      if (DateTime.now().difference(started) > timeout) throw TimeoutException('انتهت مهلة الاتصال');
+    while (state != HubConnectionState.Connected) {
+      if (DateTime.now().difference(started) > timeout) {
+        await forceReconnect();
+        if (state == HubConnectionState.Connected) return;
+        throw TimeoutException('انتهت مهلة الاتصال');
+      }
+      if (state == HubConnectionState.Disconnected) {
+        try {
+          await start();
+        } catch (_) {}
+      }
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
   }
 
   Future<void> stop() async {
     _wanted = false;
-    _restartTimer?.cancel();
-    final c = _conn;
-    if (c != null && c.state != HubConnectionState.Disconnected) await c.stop();
+    await _disposeConn();
   }
 
   /// Drop the socket but keep the hub wanted so resume() can bring it back.
   Future<void> pause() async {
-    _restartTimer?.cancel();
-    final c = _conn;
-    if (c != null && c.state != HubConnectionState.Disconnected) {
-      try {
-        await c.stop();
-      } catch (_) {}
-    }
+    await _disposeConn();
   }
 
   /// Registers a listener; returns a disposer. Listeners survive reconnects and restarts.
@@ -165,5 +203,15 @@ class Hubs {
 
   static Future<void> resumeAll() async {
     await Future.wait([matching.resume(), chat.resume(), conversation.resume(), story.resume()]);
+  }
+
+  /// Hard reconnect after network restore / retry tap.
+  static Future<void> forceReconnectAll() async {
+    await Future.wait([
+      matching.forceReconnect(),
+      chat.forceReconnect(),
+      conversation.forceReconnect(),
+      story.forceReconnect(),
+    ]);
   }
 }

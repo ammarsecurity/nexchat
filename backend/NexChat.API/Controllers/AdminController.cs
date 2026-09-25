@@ -28,7 +28,7 @@ public class AdminController(
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats()
     {
-        var today = DateTime.UtcNow.Date;
+        var today = IraqTime.TodayUtcStart;
 
         var stats = new AdminStatsDto(
             TotalUsers: await db.Users.CountAsync(),
@@ -506,31 +506,33 @@ public class AdminController(
     [HttpGet("stats/chart")]
     public async Task<ActionResult<IEnumerable<ChartPointDto>>> GetChartData()
     {
+        var iraqToday = IraqTime.Now.Date;
+        var rangeStartUtc = IraqTime.TodayUtcStart.AddDays(-6);
         var days = Enumerable.Range(0, 7)
-            .Select(i => DateTime.UtcNow.Date.AddDays(-6 + i))
+            .Select(i => iraqToday.AddDays(-6 + i))
             .ToList();
 
         var sessionCounts = await db.ChatSessions
-            .Where(s => s.StartedAt >= days[0])
-            .GroupBy(s => s.StartedAt.Date)
+            .Where(s => s.StartedAt >= rangeStartUtc)
+            .GroupBy(s => s.StartedAt.AddHours(3).Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var userCounts = await db.Users
-            .Where(u => u.CreatedAt >= days[0])
-            .GroupBy(u => u.CreatedAt.Date)
+            .Where(u => u.CreatedAt >= rangeStartUtc)
+            .GroupBy(u => u.CreatedAt.AddHours(3).Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var conversationCounts = await db.Conversations
-            .Where(c => c.CreatedAt >= days[0])
-            .GroupBy(c => c.CreatedAt.Date)
+            .Where(c => c.CreatedAt >= rangeStartUtc)
+            .GroupBy(c => c.CreatedAt.AddHours(3).Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var contactCounts = await db.Contacts
-            .Where(c => c.CreatedAt >= days[0])
-            .GroupBy(c => c.CreatedAt.Date)
+            .Where(c => c.CreatedAt >= rangeStartUtc)
+            .GroupBy(c => c.CreatedAt.AddHours(3).Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
 

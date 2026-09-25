@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
 import { fullMediaUrl, hasAvatarImage, userInitial } from '../utils/media'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const users = ref([])
 const total = ref(0)
@@ -150,8 +151,8 @@ async function executePasswordChange() {
   }
 }
 
-function formatDate(date) {
-  return new Date(date).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric' })
+function formatDate(dt) {
+  return formatIraqDate(dt)
 }
 
 function getAge(birthDate) {

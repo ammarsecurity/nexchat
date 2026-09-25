@@ -81,7 +81,7 @@ public class UserController(
         if (!DateOnly.TryParse(req.BirthDate, out var birthDate))
             return BadRequest(new { message = "تاريخ الميلاد غير صالح" });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(IraqTime.Now);
         var age = today.Year - birthDate.Year;
         if (birthDate > today.AddYears(-age)) age--;
         if (age < 18)

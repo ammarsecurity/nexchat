@@ -65,7 +65,7 @@ class PushService {
         _onForeground?.call(data, n.title, n.body);
         // Video calls use the custom incoming-call UI — suppress the system banner.
         // Text/message pushes must still show in the tray (explicit display for OneSignal 5).
-        if (type == 'video_call') {
+        if (type == 'video_call' || type == 'call_cancel') {
           event.preventDefault();
         } else {
           try {
@@ -252,5 +252,7 @@ Map<String, String?> parseNotificationData(Map<String, dynamic> raw) {
     'requesterGender': pick(['requesterGender', 'RequesterGender']),
     'requesterAvatar': pick(['requesterAvatar', 'RequesterAvatar']),
     'requesterIsFeatured': pick(['requesterIsFeatured', 'RequesterIsFeatured']),
+    'notificationId': pick(['notificationId', 'NotificationId']),
+    'createdAt': pick(['createdAt', 'CreatedAt']),
   };
 }

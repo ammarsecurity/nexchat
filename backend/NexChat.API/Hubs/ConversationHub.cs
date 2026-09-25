@@ -13,12 +13,18 @@ using System.Security.Claims;
 namespace NexChat.API.Hubs;
 
 [Authorize]
-public class ConversationHub(AppDbContext db, NotificationOutboxService notificationOutbox, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto, IProfanityMasker profanity) : Hub
+public class ConversationHub(AppDbContext db, NotificationOutboxService notificationOutbox, UserPresenceService presence, ILogger<ConversationHub> logger, IWebHostEnvironment env, IConversationMessageCrypto messageCrypto, IProfanityMasker profanity) : Hub
 {
     private static readonly HashSet<string> AllowedReactionEmojis = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
+    private const int MessagePageSize = 60;
 
     /// <summary>مكالمة فيديو/صوت قيد الانتظار — لإعلام المتصل بـ voiceOnly عند القبول حتى لو لم يعد في مجموعة SignalR.</summary>
-    private static readonly ConcurrentDictionary<Guid, bool> PendingConversationCallVoiceOnly = new();
+    private static readonly ConcurrentDictionary<Guid, PendingConversationCall> PendingConversationCalls = new();
+
+    /// <summary>userId → conversationId للمستخدمين المشغولين (رنين صادر أو مكالمة جارية).</summary>
+    private static readonly ConcurrentDictionary<Guid, Guid> UsersBusyInCall = new();
+
+    private sealed record PendingConversationCall(Guid CallerId, bool VoiceOnly, bool Accepted);
 
     /// <summary>تشخيص: التأكد أن استدعاءات الـ Hub تصل للـ backend.</summary>
     public Task<string> Ping() => Task.FromResult($"pong-{DateTime.UtcNow:HHmmss}");
@@ -63,95 +69,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
 
         var partner = conv.Type == ConversationType.Private ? (conv.User1Id == userId ? conv.User2 : conv.User1) : null;
         var partnerId = conv.Type == ConversationType.Private ? (conv.User1Id == userId ? conv.User2Id : conv.User1Id) : null;
-        var messagesRaw = await db.ConversationMessages
-            .Where(m => m.ConversationId == cid &&
-                !m.DeletedForEveryone &&
-                !db.UserMessageDeletions.Any(d => d.UserId == userId && d.MessageId == m.Id))
-            .OrderBy(m => m.SentAt)
-            .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId })
-            .ToListAsync();
 
-        var messageIds = messagesRaw.Select(m => m.Id).ToList();
-        var reactionsByMessage = messageIds.Count > 0
-            ? (await db.MessageReactions
-                .Where(r => messageIds.Contains(r.MessageId))
-                .Select(r => new { r.MessageId, r.UserId, r.Emoji })
-                .ToListAsync())
-                .GroupBy(r => r.MessageId)
-                .ToDictionary(g => g.Key, g => g.Select(r => (r.UserId, r.Emoji)).ToList())
-            : new Dictionary<Guid, List<(Guid UserId, string Emoji)>>();
-
-        var replyIds = messagesRaw.Where(m => m.ReplyToMessageId != null).Select(m => m.ReplyToMessageId!.Value).Distinct().ToList();
-        Dictionary<Guid, (string Content, string Type, string? SenderName)> replyData;
-        if (replyIds.Count > 0)
-        {
-            var replyList = await db.ConversationMessages
-                .Where(m => replyIds.Contains(m.Id))
-                .Select(m => new { m.Id, m.Content, m.Type, SenderName = m.Sender.Name })
-                .ToListAsync();
-            replyData = replyList.ToDictionary(
-                m => m.Id,
-                m => (messageCrypto.DecryptFromStorage(m.Content ?? ""), m.Type ?? "text", (string?)m.SenderName));
-        }
-        else
-        {
-            replyData = new Dictionary<Guid, (string Content, string Type, string? SenderName)>();
-        }
-
-        Dictionary<Guid, (string Name, string? Avatar)>? senderNames = null;
-        if (conv.Type == ConversationType.Group && messagesRaw.Count > 0)
-        {
-            var senderIds = messagesRaw.Select(m => m.SenderId).Distinct().ToList();
-            var senders = await db.Users.Where(u => senderIds.Contains(u.Id)).Select(u => new { u.Id, u.Name, u.Avatar }).ToListAsync();
-            senderNames = senders.ToDictionary(u => u.Id, u => (u.Name ?? "—", u.Avatar));
-        }
-
-        var messages = messagesRaw.Select(m =>
-        {
-            var decryptedContent = messageCrypto.DecryptFromStorage(m.Content ?? "");
-            var replyToContent = (string?)null;
-            var replyToSenderName = (string?)null;
-            if (m.ReplyToMessageId != null && replyData.TryGetValue(m.ReplyToMessageId.Value, out var rd))
-            {
-                replyToContent = GetReplyPreview(rd.Content, rd.Type);
-                replyToSenderName = rd.SenderName ?? "—";
-            }
-            var senderName = (string?)null;
-            var senderAvatar = (string?)null;
-            if (senderNames != null && senderNames.TryGetValue(m.SenderId, out var sn))
-            {
-                senderName = sn.Name;
-                senderAvatar = sn.Avatar;
-            }
-            string? myReaction = null;
-            var reactions = new List<object>();
-            if (reactionsByMessage.TryGetValue(m.Id, out var rlist))
-            {
-                myReaction = rlist.FirstOrDefault(r => r.UserId == userId).Emoji;
-                reactions = rlist
-                    .GroupBy(r => r.Emoji)
-                    .Select(gg => new { emoji = gg.Key, count = gg.Count(), userIds = gg.Select(x => x.UserId).ToList() })
-                    .Cast<object>()
-                    .ToList();
-            }
-            return new
-            {
-                m.Id,
-                m.SenderId,
-                Content = decryptedContent,
-                m.Type,
-                m.SentAt,
-                m.DeletedForEveryone,
-                m.IsRead,
-                m.ReplyToMessageId,
-                ReplyToContent = replyToContent,
-                ReplyToSenderName = replyToSenderName,
-                SenderName = senderName,
-                SenderAvatar = senderAvatar,
-                Reactions = reactions,
-                MyReaction = myReaction
-            };
-        }).ToList();
+        var page = await LoadMessagePageAsync(cid, userId, beforeSentAt: null, beforeId: null, take: MessagePageSize);
+        var messages = page.Messages;
 
         await Clients.Caller.SendAsync("ConversationJoined", new
         {
@@ -160,7 +80,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsOnline = UserOnlineVisibility.VisibleToOthers(partner) } : null,
             GroupName = conv.Type == ConversationType.Group ? conv.Name : null,
             GroupImageUrl = conv.Type == ConversationType.Group ? conv.ImageUrl : null,
-            Messages = messages
+            Messages = messages,
+            HasMore = page.HasMore
         });
 
         var state = await db.UserConversationStates
@@ -209,6 +130,30 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 await Clients.Group(cid.ToString()).SendAsync("MessagesRead", readPayload);
             }
         }
+    }
+
+    /// <summary>تحميل رسائل أقدم من رسالة معيّنة (ترقيم صفحات للشات الطويل).</summary>
+    public async Task GetOlderMessages(string conversationId, string beforeMessageId, int take = MessagePageSize)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid) || !Guid.TryParse(beforeMessageId, out var beforeId))
+            return;
+        if (!await IsParticipant(cid, userId)) return;
+        if (await db.UserConversationDeletions.AnyAsync(d => d.UserId == userId && d.ConversationId == cid))
+            return;
+
+        var before = await db.ConversationMessages.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == beforeId && m.ConversationId == cid);
+        if (before == null) return;
+
+        var pageSize = Math.Clamp(take <= 0 ? MessagePageSize : take, 10, 100);
+        var page = await LoadMessagePageAsync(cid, userId, before.SentAt, before.Id, pageSize);
+        await Clients.Caller.SendAsync("OlderMessages", new
+        {
+            ConversationId = cid,
+            Messages = page.Messages,
+            HasMore = page.HasMore,
+            BeforeMessageId = beforeId
+        });
     }
 
     public async Task MarkAsRead(string conversationId)
@@ -584,9 +529,44 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (await db.UserConversationDeletions.AnyAsync(d => d.UserId == userId && d.ConversationId == cid))
             return;
 
-        PendingConversationCallVoiceOnly[cid] = voiceOnly;
-
         var recipientId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
+
+        // المتصل مشغول بمكالمة أخرى → لا نبدأ طلباً جديداً.
+        if (UsersBusyInCall.TryGetValue(userId, out var callerBusy) && callerBusy != cid)
+        {
+            await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
+            return;
+        }
+
+        // الطرف الآخر مشغول بمكالمة أخرى → لا نرنّ، نُبلغ المتصل ونسجّل في السجل.
+        if (UsersBusyInCall.TryGetValue(recipientId, out var busyConv) && busyConv != cid)
+        {
+            await PersistCallSystemMessageAsync(cid, userId, recipientId, voiceOnly, "busy", durationSec: 0);
+            await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
+            return;
+        }
+
+        // مكالمة قائمة على نفس المحادثة (رنين أو جارية) → لا تعِد الكتابة ولا ترسل رنين/دفع جديد.
+        if (PendingConversationCalls.TryGetValue(cid, out var existingPending))
+        {
+            if (existingPending.Accepted ||
+                UsersBusyInCall.TryGetValue(recipientId, out var sameBusy) && sameBusy == cid)
+            {
+                // الطرفان أصلاً في هذه المكالمة، أو المستلم مشغول بها بعد القبول.
+                if (existingPending.CallerId != userId)
+                    await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
+                return;
+            }
+            // نفس المتصل يعيد الطلب أثناء الرنين → تجاهل بصمت (يتجنب دفع مزدوج).
+            if (existingPending.CallerId == userId)
+                return;
+            // طرف آخر يحاول الاستيلاء على pending نادر — تجاهل.
+            return;
+        }
+
+        PendingConversationCalls[cid] = new PendingConversationCall(userId, voiceOnly, Accepted: false);
+        UsersBusyInCall[userId] = cid;
+
         var caller = conv.User1Id == userId ? conv.User1 : conv.User2;
         // إرسال للمستخدم مباشرة — لا يعتمد على JoinConversation (أي صفحة في التطبيق)
         await Clients.User(recipientId.ToString()).SendAsync("IncomingVideoCall", cid.ToString(), voiceOnly, caller?.Name ?? "", caller?.Avatar ?? "");
@@ -604,13 +584,28 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             });
     }
 
+    /// يُستدعى من جهاز المستلم عندما يبدأ الرنين فعلياً → يحوّل شاشة المتصل من «جاري الاتصال» إلى «رنين».
+    public async Task NotifyVideoCallRinging(string conversationId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
+            return;
+        if (!PendingConversationCalls.TryGetValue(cid, out var pending)) return;
+        if (pending.CallerId == userId) return;
+        if (!await CanPrivateConversationVideoCall(cid, userId)) return;
+
+        await Clients.User(pending.CallerId.ToString()).SendAsync("VideoCallRinging", conversationId);
+    }
+
     public async Task AcceptVideoCall(string conversationId)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
             return;
         if (!await CanPrivateConversationVideoCall(cid, userId)) return;
 
-        PendingConversationCallVoiceOnly.TryRemove(cid, out var pendingVoiceOnly);
+        if (PendingConversationCalls.TryGetValue(cid, out var existing))
+            PendingConversationCalls[cid] = existing with { Accepted = true };
+        PendingConversationCalls.TryGetValue(cid, out var pending);
+        var pendingVoiceOnly = pending?.VoiceOnly ?? false;
 
         var conv = await db.Conversations.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
@@ -618,16 +613,20 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (conv == null) return;
 
         var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
+        UsersBusyInCall[userId] = cid;
+        UsersBusyInCall[otherUserId] = cid;
+        // Stop ringing on the callee device (and collapse any duplicate pushes).
+        await notificationOutbox.CancelCallPushAsync(userId, cid);
         await Clients.User(otherUserId.ToString()).SendAsync("VideoCallAccepted", conversationId, pendingVoiceOnly);
     }
 
-    public async Task DeclineVideoCall(string conversationId)
+    public async Task DeclineVideoCall(string conversationId, bool busy = false, string? outcome = null)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
             return;
         if (!await CanPrivateConversationVideoCall(cid, userId)) return;
 
-        PendingConversationCallVoiceOnly.TryRemove(cid, out _);
+        PendingConversationCalls.TryRemove(cid, out var pending);
 
         var conv = await db.Conversations.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
@@ -635,7 +634,141 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (conv == null) return;
 
         var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
-        await Clients.User(otherUserId.ToString()).SendAsync("VideoCallDeclined", conversationId);
+        var callerId = pending?.CallerId ?? userId;
+        var voiceOnly = pending?.VoiceOnly ?? false;
+        // Explicit outcome (e.g. missed/no_answer) wins; else infer from busy / who declined.
+        var normalized = (outcome ?? "").Trim().ToLowerInvariant();
+        string status;
+        if (busy)
+            status = "busy";
+        else if (normalized is "missed" or "no_answer" or "noanswer")
+            status = "missed";
+        else if (normalized is "cancelled" or "declined" or "ended")
+            status = normalized;
+        else
+            status = pending == null || pending.CallerId == userId ? "cancelled" : "declined";
+
+        var peerId = callerId == userId ? otherUserId : userId;
+
+        ClearBusyForConversation(cid, userId, otherUserId);
+
+        // Skip history if the call was already accepted (hangup uses EndVideoCall).
+        if (pending is not { Accepted: true })
+            await PersistCallSystemMessageAsync(cid, callerId, peerId, voiceOnly, status, durationSec: 0);
+
+        await notificationOutbox.CancelCallPushAsync(otherUserId, cid);
+        await notificationOutbox.CancelCallPushAsync(userId, cid);
+        if (busy && pending != null && pending.CallerId != userId)
+            await Clients.User(callerId.ToString()).SendAsync("VideoCallBusy", conversationId);
+        else
+            await Clients.User(otherUserId.ToString()).SendAsync("VideoCallDeclined", conversationId);
+    }
+
+    /// <summary>يُستدعى عند إنهاء مكالمة ناجحة (بعد القبول) لحفظ مدة المكالمة في الدردشة.</summary>
+    public async Task EndVideoCall(string conversationId, int durationSec = 0)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
+            return;
+        if (!await CanPrivateConversationVideoCall(cid, userId)) return;
+
+        var conv = await db.Conversations.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
+                (c.User1Id == userId || c.User2Id == userId));
+        if (conv == null) return;
+
+        var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
+        ClearBusyForConversation(cid, userId, otherUserId);
+
+        // First hangup wins — avoids duplicate "ended" rows from both sides.
+        if (!PendingConversationCalls.TryRemove(cid, out var pending))
+        {
+            await notificationOutbox.CancelCallPushAsync(otherUserId, cid);
+            await notificationOutbox.CancelCallPushAsync(userId, cid);
+            return;
+        }
+
+        var callerId = pending.CallerId;
+        var peerId = callerId == userId ? otherUserId : userId;
+        var voiceOnly = pending.VoiceOnly;
+        var secs = Math.Max(0, durationSec);
+        await PersistCallSystemMessageAsync(cid, callerId, peerId, voiceOnly, "ended", secs);
+        await notificationOutbox.CancelCallPushAsync(otherUserId, cid);
+        await notificationOutbox.CancelCallPushAsync(userId, cid);
+        await Clients.User(otherUserId.ToString()).SendAsync("VideoCallEnded", conversationId, secs);
+    }
+
+    private static void ClearBusyForConversation(Guid cid, Guid a, Guid b)
+    {
+        if (UsersBusyInCall.TryGetValue(a, out var ca) && ca == cid)
+            UsersBusyInCall.TryRemove(a, out _);
+        if (UsersBusyInCall.TryGetValue(b, out var cb) && cb == cid)
+            UsersBusyInCall.TryRemove(b, out _);
+    }
+
+    private async Task PersistCallSystemMessageAsync(
+        Guid cid,
+        Guid callerId,
+        Guid otherUserId,
+        bool voiceOnly,
+        string status,
+        int durationSec)
+    {
+        try
+        {
+            // Ensure otherUserId is the non-caller participant.
+            if (otherUserId == callerId)
+                return;
+
+            var plain = JsonSerializer.Serialize(new
+            {
+                status,
+                voiceOnly,
+                durationSec,
+            });
+            var msg = new ConversationMessage
+            {
+                ConversationId = cid,
+                SenderId = callerId,
+                Content = messageCrypto.EncryptForStorage(plain),
+                Type = "call",
+            };
+            db.ConversationMessages.Add(msg);
+            await db.SaveChangesAsync();
+
+            var receivePayload = new
+            {
+                msg.Id,
+                msg.SenderId,
+                Content = plain,
+                msg.Type,
+                msg.SentAt,
+                msg.DeletedForEveryone,
+                ReplyToMessageId = (Guid?)null,
+                ReplyToContent = (string?)null,
+                ReplyToSenderName = (string?)null,
+                IsRead = false,
+                Reactions = Array.Empty<object>(),
+                MyReaction = (string?)null
+            };
+            await Clients.User(callerId.ToString()).SendAsync("ReceiveMessage", receivePayload);
+            await Clients.User(otherUserId.ToString()).SendAsync("ReceiveMessage", receivePayload);
+
+            var preview = ConversationPreviewHelper.BuildCallPreview(plain);
+            var listUpdate = new
+            {
+                ConversationId = cid,
+                LastMessagePreview = preview,
+                LastMessageType = "call",
+                LastMessageAt = msg.SentAt,
+                SenderId = callerId
+            };
+            await Clients.User(callerId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+            await Clients.User(otherUserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PersistCallSystemMessage failed conv={Conv} status={Status}", cid, status);
+        }
     }
 
     private async Task<bool> CanPrivateConversationVideoCall(Guid cid, Guid userId)
@@ -717,8 +850,19 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         await Clients.Group(conversationId.ToString()).SendAsync("ReactionUpdated", payload);
     }
 
+    public override async Task OnConnectedAsync()
+    {
+        if (TryGetUserId(out var userId))
+            await presence.OnConnectedAsync(userId, Context.ConnectionId);
+        await base.OnConnectedAsync();
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        // لا تمسح UsersBusyInCall هنا — انقطاع SignalR أثناء LiveKit يجب ألا يظهر المستخدم متاحاً.
+        // التنظيف فقط عبر DeclineVideoCall / EndVideoCall / ClearBusyForConversation.
+        if (TryGetUserId(out var userId))
+            await presence.OnDisconnectedAsync(userId, Context.ConnectionId);
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -774,6 +918,124 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         }
     }
 
+    private async Task<(List<object> Messages, bool HasMore)> LoadMessagePageAsync(
+        Guid cid,
+        Guid userId,
+        DateTime? beforeSentAt,
+        Guid? beforeId,
+        int take)
+    {
+        var q = db.ConversationMessages.AsNoTracking()
+            .Where(m => m.ConversationId == cid &&
+                        !m.DeletedForEveryone &&
+                        !db.UserMessageDeletions.Any(d => d.UserId == userId && d.MessageId == m.Id));
+
+        if (beforeSentAt.HasValue && beforeId.HasValue)
+        {
+            var at = beforeSentAt.Value;
+            var bid = beforeId.Value;
+            // Cursor: strictly older than the anchor message (same-second peers excluded by id).
+            q = q.Where(m => m.SentAt < at || (m.SentAt == at && m.Id != bid));
+        }
+
+        var rawDesc = await q
+            .OrderByDescending(m => m.SentAt)
+            .ThenByDescending(m => m.Id)
+            .Take(take + 1)
+            .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId })
+            .ToListAsync();
+
+        var hasMore = rawDesc.Count > take;
+        if (hasMore) rawDesc = rawDesc.Take(take).ToList();
+        var messagesRaw = rawDesc;
+        messagesRaw.Reverse();
+
+        var messageIds = messagesRaw.Select(m => m.Id).ToList();
+        var reactionsByMessage = messageIds.Count > 0
+            ? (await db.MessageReactions
+                .Where(r => messageIds.Contains(r.MessageId))
+                .Select(r => new { r.MessageId, r.UserId, r.Emoji })
+                .ToListAsync())
+                .GroupBy(r => r.MessageId)
+                .ToDictionary(g => g.Key, g => g.Select(r => (r.UserId, r.Emoji)).ToList())
+            : new Dictionary<Guid, List<(Guid UserId, string Emoji)>>();
+
+        var replyIds = messagesRaw.Where(m => m.ReplyToMessageId != null).Select(m => m.ReplyToMessageId!.Value).Distinct().ToList();
+        Dictionary<Guid, (string Content, string Type, string? SenderName)> replyData;
+        if (replyIds.Count > 0)
+        {
+            var replyList = await db.ConversationMessages
+                .Where(m => replyIds.Contains(m.Id))
+                .Select(m => new { m.Id, m.Content, m.Type, SenderName = m.Sender.Name })
+                .ToListAsync();
+            replyData = replyList.ToDictionary(
+                m => m.Id,
+                m => (messageCrypto.DecryptFromStorage(m.Content ?? ""), m.Type ?? "text", (string?)m.SenderName));
+        }
+        else
+        {
+            replyData = new();
+        }
+
+        Dictionary<Guid, (string Name, string? Avatar)>? senderNames = null;
+        var isGroup = await db.Conversations.AsNoTracking().AnyAsync(c => c.Id == cid && c.Type == ConversationType.Group);
+        if (isGroup && messagesRaw.Count > 0)
+        {
+            var senderIds = messagesRaw.Select(m => m.SenderId).Distinct().ToList();
+            var senders = await db.Users.Where(u => senderIds.Contains(u.Id)).Select(u => new { u.Id, u.Name, u.Avatar }).ToListAsync();
+            senderNames = senders.ToDictionary(u => u.Id, u => (u.Name ?? "—", u.Avatar));
+        }
+
+        var messages = messagesRaw.Select(m =>
+        {
+            var decryptedContent = messageCrypto.DecryptFromStorage(m.Content ?? "");
+            string? replyToContent = null;
+            string? replyToSenderName = null;
+            if (m.ReplyToMessageId != null && replyData.TryGetValue(m.ReplyToMessageId.Value, out var rd))
+            {
+                replyToContent = GetReplyPreview(rd.Content, rd.Type);
+                replyToSenderName = rd.SenderName ?? "—";
+            }
+            string? senderName = null;
+            string? senderAvatar = null;
+            if (senderNames != null && senderNames.TryGetValue(m.SenderId, out var sn))
+            {
+                senderName = sn.Name;
+                senderAvatar = sn.Avatar;
+            }
+            string? myReaction = null;
+            var reactions = new List<object>();
+            if (reactionsByMessage.TryGetValue(m.Id, out var rlist))
+            {
+                myReaction = rlist.FirstOrDefault(r => r.UserId == userId).Emoji;
+                reactions = rlist
+                    .GroupBy(r => r.Emoji)
+                    .Select(gg => new { emoji = gg.Key, count = gg.Count(), userIds = gg.Select(x => x.UserId).ToList() })
+                    .Cast<object>()
+                    .ToList();
+            }
+            return (object)new
+            {
+                m.Id,
+                m.SenderId,
+                Content = decryptedContent,
+                m.Type,
+                m.SentAt,
+                m.DeletedForEveryone,
+                m.IsRead,
+                m.ReplyToMessageId,
+                ReplyToContent = replyToContent,
+                ReplyToSenderName = replyToSenderName,
+                SenderName = senderName,
+                SenderAvatar = senderAvatar,
+                Reactions = reactions,
+                MyReaction = myReaction
+            };
+        }).ToList();
+
+        return (messages, hasMore);
+    }
+
     private static string GetReplyPreview(string? content, string type)
     {
         if (type == "audio") return "رسالة صوتية";
@@ -781,6 +1043,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (type == "video") return "فيديو";
         if (type == "album") return ConversationPreviewHelper.BuildAlbumPreview(content ?? "");
         if (type == "short_film") return "فيلم قصير";
+        if (type == "story_reply") return ConversationPreviewHelper.BuildStoryReplyPreview(content ?? "");
+        if (type == "call") return ConversationPreviewHelper.BuildCallPreview(content ?? "");
         if (string.IsNullOrEmpty(content)) return "";
         return content.Length > 80 ? content[..80] + "…" : content;
     }

@@ -1,4 +1,6 @@
-/// The API mixes camelCase and PascalCase depending on the serializer; read both like the Vue code does.
+// The API mixes camelCase and PascalCase depending on the serializer; read both like the Vue code does.
+import 'time.dart';
+
 typedef Json = Map<String, dynamic>;
 
 extension JsonPick on Map<dynamic, dynamic> {
@@ -27,12 +29,11 @@ extension JsonPick on Map<dynamic, dynamic> {
     return int.tryParse('$x') ?? 0;
   }
 
+  /// UTC instant from API (display via format.dart → Iraq UTC+3).
   DateTime? date(String key) {
     final x = s(key);
     if (x == null) return null;
-    final d = DateTime.tryParse(x);
-    if (d == null) return null;
-    return (d.isUtc || x.endsWith('Z') || x.contains('+')) ? d.toLocal() : DateTime.utc(d.year, d.month, d.day, d.hour, d.minute, d.second, d.millisecond).toLocal();
+    return parseApiDate(x);
   }
 }
 

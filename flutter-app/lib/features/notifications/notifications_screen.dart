@@ -34,7 +34,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       final data = await Api.get('/user-notifications', query: {'take': 60});
       if (!mounted) return;
       final normalized = asJsonList(data).map(normalizeServerNotification).toList();
-      if (normalized.isNotEmpty) ctrl.mergeServer(normalized);
+      ctrl.mergeServer(normalized);
     } catch (_) {
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -42,13 +42,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   String _formatTime(Object? ts) {
-    final d = ts == null ? null : DateTime.tryParse('$ts')?.toLocal();
-    if (d == null) return '';
-    final diff = DateTime.now().difference(d);
-    if (diff.inMilliseconds < 60000) return t('connectionHistory.now');
-    if (diff.inMilliseconds < 3600000) return t('connectionHistory.minutesAgo', {'n': '${diff.inMinutes}'});
-    if (diff.inMilliseconds < 86400000) return t('connectionHistory.hoursAgo', {'n': '${diff.inHours}'});
-    return formatGregorianDateTime(d);
+    final d = parseApiDate(ts);
+    return formatRelative(d);
   }
 
   String _typeLabel(Object? type) => switch (type) {

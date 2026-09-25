@@ -11,9 +11,17 @@ class IncomingCallNotificationExtension : INotificationServiceExtension {
     override fun onNotificationReceived(event: INotificationReceivedEvent) {
         try {
             val data = event.notification.additionalData ?: return
-            if (data.optString("type") != "video_call") return
-
+            val type = data.optString("type")
             val context = event.context.applicationContext
+
+            if (type == "call_cancel") {
+                event.preventDefault()
+                IncomingCallNotifier.cancel(context)
+                IncomingCallStore.clear(context)
+                return
+            }
+            if (type != "video_call") return
+
             val conversationId = data.stringOrNull("conversationId")
             val sessionId = data.stringOrNull("sessionId")
             if (conversationId.isNullOrBlank() && sessionId.isNullOrBlank()) return
@@ -33,7 +41,11 @@ class IncomingCallNotificationExtension : INotificationServiceExtension {
             )
             event.preventDefault()
 
-            if (IncomingCallStore.isForeground(context)) {
+            // Never trust a sticky prefs flag alone — if Flutter isn't alive, always show FSI.
+            // Stale app_foreground=true after process kill previously silenced ringing.
+            val flutterAliveAndForeground =
+                IncomingCallPlugin.flutterReady && IncomingCallStore.isForeground(context)
+            if (flutterAliveAndForeground) {
                 IncomingCallPlugin.notifyFlutterIfReady(context)
                 return
             }

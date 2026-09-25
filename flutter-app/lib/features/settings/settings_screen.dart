@@ -509,6 +509,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onSelect: (v) => v ? _enableNotifications() : _disableNotifications(),
               ),
               _LinkRow(onTap: () => context.push('/notifications'), icon: LucideIcons.bell, title: t('settings.notificationCenter'), trailing: _arrow(c, 16)),
+              _LinkRow(onTap: () => context.push('/calls'), icon: LucideIcons.phone, title: t('calls.title'), trailing: _arrow(c, 16)),
               if (cc)
                 _LinkRow(
                     onTap: () => context.push('/connection-history'),

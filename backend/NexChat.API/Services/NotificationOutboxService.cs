@@ -30,7 +30,32 @@ public class NotificationOutboxService(
             payload["title"] = title;
             payload["body"] = body;
 
-            if (features.Value.OutboxEnabled)
+            // Cancel pushes must not create history rows — they only collapse the ringing UI.
+            var skipHistory = type is "call_cancel";
+            UserNotification? notif = null;
+            if (!skipHistory)
+            {
+                notif = new UserNotification
+                {
+                    UserId = recipientUserId,
+                    Type = type,
+                    Title = title,
+                    Body = body,
+                    DataJson = null,
+                };
+                payload["notificationId"] = notif.Id.ToString();
+                payload["createdAt"] = notif.CreatedAt.ToUniversalTime().ToString("o");
+                notif.DataJson = JsonSerializer.Serialize(payload);
+                db.UserNotifications.Add(notif);
+            }
+
+            // Incoming calls (and cancels) must leave immediately — outbox lag kills ringing.
+            var immediate = type is "video_call" or "call_cancel" || !features.Value.OutboxEnabled;
+            if (immediate)
+            {
+                await oneSignal.SendToUserAsync(recipientUserId, title, body, payload);
+            }
+            else
             {
                 db.NotificationOutboxItems.Add(new NotificationOutboxItem
                 {
@@ -41,19 +66,6 @@ public class NotificationOutboxService(
                     NextAttemptAt = DateTime.UtcNow
                 });
             }
-            else
-            {
-                await oneSignal.SendToUserAsync(recipientUserId, title, body, payload);
-            }
-
-            db.UserNotifications.Add(new UserNotification
-            {
-                UserId = recipientUserId,
-                Type = type,
-                Title = title,
-                Body = body,
-                DataJson = JsonSerializer.Serialize(payload)
-            });
 
             await db.SaveChangesAsync();
         }
@@ -62,4 +74,15 @@ public class NotificationOutboxService(
             logger.LogError(ex, "Failed to enqueue notification. Type={Type} Recipient={Recipient}", type, recipientUserId);
         }
     }
+
+    public Task CancelCallPushAsync(Guid recipientUserId, Guid conversationId) =>
+        EnqueueAsync(
+            recipientUserId,
+            "call_cancel",
+            " ",
+            " ",
+            new Dictionary<string, string>
+            {
+                ["conversationId"] = conversationId.ToString(),
+            });
 }

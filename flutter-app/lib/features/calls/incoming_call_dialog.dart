@@ -26,7 +26,29 @@ Map<String, dynamic>? _pendingNativeIncoming;
 
 bool isInAnotherCall(WidgetRef ref, {String? exceptId}) {
   final id = ref.read(activeCallProvider).sessionId;
-  return id != null && id.isNotEmpty && id != exceptId;
+  if (id != null && id.isNotEmpty && id != exceptId) return true;
+  final incoming = ref.read(incomingConvCallProvider);
+  if (incoming.visible &&
+      incoming.conversationId != null &&
+      incoming.conversationId != exceptId) {
+    return true;
+  }
+  return false;
+}
+
+void declineBusyConversationCall(String conversationId) {
+  Hubs.conversation
+      .ensureConnected()
+      .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [conversationId, true]))
+      .catchError((_) => null);
+}
+
+/// Tell the caller their call is actually ringing on this device.
+void notifyOutgoingCallRinging(String conversationId) {
+  Hubs.conversation
+      .ensureConnected()
+      .then((_) => Hubs.conversation.invoke('NotifyVideoCallRinging', [conversationId]))
+      .catchError((_) => null);
 }
 
 Future<void> acceptIncomingCall(WidgetRef ref, {BuildContext? context}) async {
@@ -44,7 +66,10 @@ Future<void> acceptIncomingCall(WidgetRef ref, {BuildContext? context}) async {
     return;
   }
   if (isInAnotherCall(ref, exceptId: id)) {
-    declineIncomingCall(ref);
+    declineBusyConversationCall(id);
+    ref.read(incomingConvCallProvider.notifier).clear();
+    unawaited(CallNative.dismissIncoming());
+    unawaited(RingSound.stop());
     if (context != null && context.mounted) showToast(context, t('videoCall.alreadyInCall'), error: true);
     return;
   }
@@ -83,13 +108,17 @@ Future<void> acceptIncomingCall(WidgetRef ref, {BuildContext? context}) async {
   }
 }
 
-void declineIncomingCall(WidgetRef ref) {
+void declineIncomingCall(WidgetRef ref, {bool missed = false}) {
   unawaited(CallNative.dismissIncoming());
   unawaited(RingSound.stop());
   final id = ref.read(incomingConvCallProvider).conversationId;
   ref.read(incomingConvCallProvider.notifier).clear();
   if (id == null) return;
-  Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [id])).catchError((_) => null);
+  final outcome = missed ? 'missed' : 'declined';
+  Hubs.conversation
+      .ensureConnected()
+      .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [id, false, outcome]))
+      .catchError((_) => null);
 }
 
 void applyIncomingCallEvent(WidgetRef ref, Map<String, dynamic> e) {
@@ -101,12 +130,17 @@ void applyIncomingCallEvent(WidgetRef ref, Map<String, dynamic> e) {
   final action = e['action']?.toString() ?? 'ring';
 
   if (conversationId != null && conversationId.isNotEmpty) {
+    if (isInAnotherCall(ref, exceptId: conversationId)) {
+      if (action != 'decline') declineBusyConversationCall(conversationId);
+      return;
+    }
     ref.read(incomingConvCallProvider.notifier).setIncoming(IncomingConvCall(
           conversationId: conversationId,
           voiceOnly: voiceOnly,
           callerName: callerName,
           callerAvatar: callerAvatar,
         ));
+    notifyOutgoingCallRinging(conversationId);
     if (action == 'accept') {
       unawaited(acceptIncomingCall(ref));
     } else if (action == 'decline') {
@@ -182,8 +216,10 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay> {
     _expire = null;
     if (v) {
       final s = ref.read(incomingConvCallProvider);
+      final cid = s.conversationId;
+      if (cid != null) notifyOutgoingCallRinging(cid);
       if (_resumed) {
-        unawaited(RingSound.start());
+        unawaited(RingSound.start(RingKind.incoming));
         unawaited(CallNative.dismissIncoming());
       } else {
         unawaited(CallNative.showIncoming(
@@ -195,7 +231,7 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay> {
       }
       _expire = Timer(kIncomingCallRingTimeout, () {
         unawaited(RingSound.stop());
-        declineIncomingCall(ref);
+        declineIncomingCall(ref, missed: true);
       });
     } else {
       unawaited(RingSound.stop());

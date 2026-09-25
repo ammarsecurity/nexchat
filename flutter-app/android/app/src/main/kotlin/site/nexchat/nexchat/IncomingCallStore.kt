@@ -86,6 +86,7 @@ object IncomingCallStore {
             .apply()
     }
 
+    /** Defaults to false so a killed process never inherits a stale true flag. */
     fun isForeground(context: Context): Boolean =
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getBoolean("app_foreground", false)
 

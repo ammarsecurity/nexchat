@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
 import UserCell from '../components/UserCell.vue'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const sessions = ref([])
 const total = ref(0)
@@ -32,11 +33,8 @@ async function fetchSessions() {
   }
 }
 
-function formatTime(date) {
-  return new Date(date).toLocaleString('ar', {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  })
+function formatTime(dt) {
+  return formatIraqTime(dt)
 }
 
 function getDuration(start, end) {

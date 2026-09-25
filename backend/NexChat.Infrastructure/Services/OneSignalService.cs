@@ -127,7 +127,7 @@ public class OneSignalService
         if (dataDict != null && dataDict.Count > 0)
             payload["data"] = dataDict;
 
-        if (type is "video_call" or "code_connected")
+        if (type is "video_call" or "call_cancel" or "code_connected")
             AddUrgencyOptions(payload, dataDict);
 
         return payload;

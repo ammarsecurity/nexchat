@@ -29,7 +29,7 @@ public class MessageRequestsController(AppDbContext db, NotificationOutboxServic
         return Ok(n);
     }
 
-    /// <summary>الطلبات الواردة المعلقة فقط.</summary>
+    /// <summary>الطلبات الواردة المعلقة فقط (من يريد إضافتك صديقاً).</summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<MessageRequestListItemDto>>> GetIncomingPending()
     {
@@ -44,6 +44,26 @@ public class MessageRequestsController(AppDbContext db, NotificationOutboxServic
                 r.Requester.Name ?? "",
                 r.Requester.Avatar,
                 r.Requester.UniqueCode,
+                r.CreatedAt))
+            .ToListAsync();
+        return Ok(list);
+    }
+
+    /// <summary>الطلبات الصادرة المعلقة (بانتظار موافقة الطرف الآخر).</summary>
+    [HttpGet("outgoing")]
+    public async Task<ActionResult<IEnumerable<OutgoingMessageRequestDto>>> GetOutgoingPending()
+    {
+        var list = await db.MessageRequests
+            .AsNoTracking()
+            .Where(r => r.RequesterId == CurrentUserId && r.Status == MessageRequestStatus.Pending)
+            .Include(r => r.Target)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new OutgoingMessageRequestDto(
+                r.Id,
+                r.TargetId,
+                r.Target.Name ?? "",
+                r.Target.Avatar,
+                r.Target.UniqueCode,
                 r.CreatedAt))
             .ToListAsync();
         return Ok(list);
@@ -113,8 +133,8 @@ public class MessageRequestsController(AppDbContext db, NotificationOutboxServic
         await notificationOutbox.EnqueueAsync(
             targetId,
             "message_request",
-            "طلب مراسلة",
-            $"{name} يريد مراسلتك",
+            "طلب صداقة",
+            $"{name} يريد إضافتك صديقاً",
             new Dictionary<string, string>
             {
                 ["messageRequestId"] = messageRequestId.ToString(),
@@ -178,5 +198,21 @@ public class MessageRequestsController(AppDbContext db, NotificationOutboxServic
         req.RespondedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return Ok(new { message = "تم الرفض" });
+    }
+
+    /// <summary>إلغاء طلب صداقة أرسله المستخدم الحالي وما زال معلقاً.</summary>
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<ActionResult<object>> Cancel(Guid id)
+    {
+        var req = await db.MessageRequests.FirstOrDefaultAsync(r => r.Id == id);
+        if (req == null) return NotFound();
+        if (req.RequesterId != CurrentUserId)
+            return Forbid();
+        if (req.Status != MessageRequestStatus.Pending)
+            return BadRequest(new { message = "الطلب لم يعد معلقاً" });
+
+        db.MessageRequests.Remove(req);
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم إلغاء الطلب" });
     }
 }

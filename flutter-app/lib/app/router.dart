@@ -11,6 +11,7 @@ import '../features/auth/complete_profile_screen.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
+import '../features/calls/calls_screen.dart';
 import '../features/calls/video_call_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/conversations/conversation_chat_screen.dart';
@@ -169,6 +170,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       page('/saved-codes', (_) => const SavedCodesScreen()),
       page('/connection-history', (_) => const ConnectionHistoryScreen()),
       page('/blocked', (_) => const BlockedScreen()),
+      page('/calls', (_) => const CallsScreen()),
       page('/matching', (_) => const MatchingScreen(), swipeBack: false),
       page('/chat/:sessionId', (s) {
         final e = s.extra is Map ? s.extra as Map : const {};

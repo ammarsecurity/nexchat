@@ -22,6 +22,16 @@ class MainActivity : FlutterActivity() {
         applyLockScreen(intentHasIncoming(intent))
     }
 
+    override fun onResume() {
+        super.onResume()
+        IncomingCallStore.setForeground(applicationContext, true)
+    }
+
+    override fun onPause() {
+        IncomingCallStore.setForeground(applicationContext, false)
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -101,6 +111,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        IncomingCallStore.setForeground(applicationContext, false)
         IncomingCallPlugin.detach()
         setProximity(false)
         super.onDestroy()

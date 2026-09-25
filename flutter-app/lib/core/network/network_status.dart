@@ -19,6 +19,7 @@ class NetworkStatus {
 class NetworkNotifier extends Notifier<bool> {
   StreamSubscription<List<ConnectivityResult>>? _sub;
   Timer? _reprobe;
+  Timer? _offlinePoll;
 
   static bool hasLink(List<ConnectivityResult> r) => r.any((x) => x != ConnectivityResult.none);
 
@@ -30,6 +31,7 @@ class NetworkNotifier extends Notifier<bool> {
     ref.onDispose(() {
       _sub?.cancel();
       _reprobe?.cancel();
+      _offlinePoll?.cancel();
       if (NetworkStatus.onTransportFailure == reportTransportFailure) NetworkStatus.onTransportFailure = null;
       if (NetworkStatus.onTransportSuccess == reportTransportSuccess) NetworkStatus.onTransportSuccess = null;
     });
@@ -46,9 +48,22 @@ class NetworkNotifier extends Notifier<bool> {
   }
 
   void _set(bool v) {
-    if (state == v && NetworkStatus.online.value == v) return;
-    state = v;
-    NetworkStatus.online.value = v;
+    final changed = state != v || NetworkStatus.online.value != v;
+    if (changed) {
+      state = v;
+      NetworkStatus.online.value = v;
+    }
+    _syncOfflinePoll(v);
+  }
+
+  /// While offline, keep probing — connectivity events often don't fire again on the same Wi‑Fi.
+  void _syncOfflinePoll(bool online) {
+    if (online) {
+      _offlinePoll?.cancel();
+      _offlinePoll = null;
+      return;
+    }
+    _offlinePoll ??= Timer.periodic(const Duration(seconds: 3), (_) => unawaited(recheck()));
   }
 
   Future<bool> recheck() async {
@@ -76,8 +91,6 @@ class NetworkNotifier extends Notifier<bool> {
       return;
     }
     _set(false);
-    _reprobe?.cancel();
-    _reprobe = Timer(const Duration(seconds: 4), () => unawaited(recheck()));
   }
 
   void reportTransportSuccess() {

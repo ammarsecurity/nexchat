@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
 import UserCell from '../components/UserCell.vue'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const reports = ref([])
 const total = ref(0)
@@ -38,10 +39,8 @@ async function reviewReport(id) {
   fetchReports()
 }
 
-function formatDate(date) {
-  return new Date(date).toLocaleDateString('ar', {
-    year: 'numeric', month: 'short', day: 'numeric'
-  })
+function formatDate(dt) {
+  return formatIraqDate(dt)
 }
 
 onMounted(fetchReports)

@@ -54,7 +54,13 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
 
   void setMessages(List<Json> msgs) => state = state.copyWith(messages: List.of(msgs));
 
-  void prependMessages(List<Json> older) => state = state.copyWith(messages: [...older, ...state.messages]);
+  void prependMessages(List<Json> older) {
+    if (older.isEmpty) return;
+    final existing = {for (final m in state.messages) msgId(m)};
+    final fresh = [for (final m in older) if (!existing.contains(msgId(m))) m];
+    if (fresh.isEmpty) return;
+    state = state.copyWith(messages: [...fresh, ...state.messages]);
+  }
 
   void addMessage(Json m) => state = state.copyWith(messages: [...state.messages, m]);
 
@@ -149,6 +155,13 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     if (p == null || state.isGroup) return;
     final byCode = uniqueCode != null && uniqueCode.isNotEmpty && p.s('uniqueCode') == uniqueCode;
     if ((p.s('id') ?? p.s('userId')) == userId || byCode) state = state.copyWith(partner: {...p, 'avatar': avatar});
+  }
+
+  void patchPartnerOnline(String userId, bool isOnline) {
+    final p = state.partner;
+    if (p == null || state.isGroup) return;
+    if ((p.s('id') ?? p.s('userId')) != userId) return;
+    state = state.copyWith(partner: {...p, 'isOnline': isOnline});
   }
 }
 

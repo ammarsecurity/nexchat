@@ -68,6 +68,8 @@ object IncomingCallNotifier {
 
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, builder.build())
+        // Ring even if the full-screen Activity is delayed / blocked by OEM policies.
+        IncomingCallRinger.start(app)
         scheduleTimeout(app)
     }
 

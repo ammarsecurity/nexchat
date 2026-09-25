@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const banners = ref([])
 const loading = ref(false)
@@ -114,8 +115,8 @@ async function executeDelete() {
   fetchBanners()
 }
 
-function formatDate(date) {
-  return new Date(date).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric' })
+function formatDate(dt) {
+  return formatIraqDate(dt)
 }
 
 onMounted(fetchBanners)

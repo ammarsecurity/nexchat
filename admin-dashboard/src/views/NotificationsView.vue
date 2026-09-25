@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
+import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const form = ref({
   title: '',
@@ -138,10 +139,7 @@ function fullImageUrl(url) {
 }
 
 function formatDate(dt) {
-  return new Date(dt).toLocaleString('ar-SA', {
-    dateStyle: 'short',
-    timeStyle: 'short'
-  })
+  return formatIraqDate(dt)
 }
 </script>
 

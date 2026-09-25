@@ -40,7 +40,8 @@ public record ConversationListItemDto(
     int UnreadCount,
     bool IsPinned,
     bool IsArchived,
-    bool IsGroup = false
+    bool IsGroup = false,
+    bool PartnerIsOnline = false
 );
 
 public record CreateConversationRequest(Guid ContactUserId);
@@ -70,4 +71,29 @@ public record MessageRequestListItemDto(
     string? RequesterAvatar,
     string? RequesterUniqueCode,
     DateTime CreatedAt
+);
+
+/// <summary>طلب صداقة أرسله المستخدم الحالي وبانتظار الرد.</summary>
+public record OutgoingMessageRequestDto(
+    Guid Id,
+    Guid TargetId,
+    string TargetName,
+    string? TargetAvatar,
+    string? TargetUniqueCode,
+    DateTime CreatedAt
+);
+
+/// <summary>سجل مكالمة (رسالة نوع call) لصفحة المكالمات.</summary>
+public record CallHistoryItemDto(
+    Guid MessageId,
+    Guid ConversationId,
+    Guid PartnerId,
+    string PartnerName,
+    string? PartnerAvatar,
+    Guid CallerId,
+    bool IsOutgoing,
+    bool VoiceOnly,
+    string Status,
+    int DurationSec,
+    DateTime SentAt
 );

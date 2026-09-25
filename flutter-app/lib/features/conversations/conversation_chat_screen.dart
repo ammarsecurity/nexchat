@@ -17,6 +17,7 @@ import '../../core/network/network_status.dart';
 import '../../core/storage/prefs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/media.dart';
+import '../../services/ring_sound.dart';
 import '../../shared/media_widgets.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
@@ -24,6 +25,7 @@ import '../calls/active_call_bar.dart';
 import '../calls/call_state.dart';
 import '../calls/video_call_screen.dart';
 import '../calls/whatsapp_call_ui.dart';
+import '../stories/stories_controller.dart';
 import 'active_conversation.dart';
 import 'conversations_list_controller.dart';
 
@@ -54,6 +56,8 @@ String replyPreviewText(String? content, String? type) {
   if (type == 'album') return t('conversationChat.replyPreviewAlbum');
   if (type == 'audio') return t('conversationChat.voiceMessage');
   if (type == 'image') return t('conversationChat.replyPreviewImage');
+  if (type == 'story_reply') return parseStoryReplyMessage('story_reply', content ?? '')?.listPreview ?? t('stories.storyReplyPreview');
+  if (type == 'call') return formatCallMessagePreview(content, mine: false);
   if (content == null || content.isEmpty) return '';
   if (parseAlbumMessage(content) != null) return t('conversationChat.replyPreviewAlbum');
   final lower = content.toLowerCase();
@@ -94,8 +98,17 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   final _keys = <String, GlobalKey>{};
   bool _callingOut = false;
   bool _callingVoiceOnly = false;
+  /// `calling` = جاري الاتصال · `ringing` = يرن عنده
+  String _callPhase = 'calling';
   bool _callDeclined = false;
+  bool _callBusy = false;
   Timer? _outgoingRing;
+  bool _hasMore = true;
+  bool _loadingOlder = false;
+  bool _showJumpFab = false;
+  int _unreadWhileAway = 0;
+  bool _flushingOutbox = false;
+  Timer? _typingExpire;
 
   final _recorder = AudioRecorder();
   bool _recording = false;
@@ -125,6 +138,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   String get _cacheKey => 'nexchat_msgs_$_cid';
+  String get _outboxKey => 'nexchat_outbox_$_cid';
 
   void _saveDebounced() {
     _saveTimer?.cancel();
@@ -134,14 +148,37 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       final list = active.messages.where((m) => m['status'] != 'pending' && m['status'] != 'failed').toList();
       final tail = list.length > 150 ? list.sublist(list.length - 150) : list;
       Prefs.instance.setString(_cacheKey, jsonEncode(tail));
+      _persistOutbox();
     });
+  }
+
+  void _persistOutbox() {
+    final active = ref.read(activeConversationProvider);
+    if (active.conversationId != _cid) return;
+    final pending = active.messages
+        .where((m) => (m['status'] == 'pending' || m['status'] == 'failed') && (m.s('type') ?? 'text') == 'text')
+        .toList();
+    Prefs.instance.setString(_outboxKey, pending.isEmpty ? null : jsonEncode(pending));
+  }
+
+  List<Json> _readOutbox() {
+    try {
+      return asJsonList(jsonDecode(Prefs.instance.getString(_outboxKey) ?? '[]'));
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> _init() async {
     final fromList = ref.read(conversationsListProvider).where((c) => c.str('id') == _cid).firstOrNull;
     Json? partner = fromList == null
         ? null
-        : {'id': fromList.s('partnerId'), 'name': fromList.s('partnerName'), 'avatar': fromList.s('partnerAvatar')};
+        : {
+            'id': fromList.s('partnerId'),
+            'name': fromList.s('partnerName'),
+            'avatar': fromList.s('partnerAvatar'),
+            'isOnline': fromList.b('partnerIsOnline'),
+          };
     var isGroup = fromList?.b('isGroup') ?? false;
     if (fromList == null && ref.read(networkProvider)) {
       try {
@@ -161,26 +198,40 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final cached = Prefs.instance.getString(_cacheKey);
     if (cached != null) {
       try {
-        _store.setMessages(asJsonList(jsonDecode(cached)));
-        _scrollToBottom();
+        final msgs = asJsonList(jsonDecode(cached));
+        final outbox = _readOutbox();
+        final ids = msgs.map((m) => m['tempId'] ?? m['id']).toSet();
+        final merged = [...msgs, ...outbox.where((m) => !ids.contains(m['tempId'] ?? m['id']))];
+        _store.setMessages(merged);
+        _scrollToBottom(force: true);
       } catch (_) {}
     }
     setState(() => _loading = false);
+    _scroll.addListener(_onScroll);
 
     final h = Hubs.conversation;
     _disposers.addAll([
       h.on('ConversationListUpdated', (a) => _onListUpdated(a.firstOrNull)),
       h.on('ReceiveMessage', (a) => _onReceive(a.firstOrNull)),
-      h.on('UserTyping', (_) => _store.setTyping(true)),
-      h.on('UserStoppedTyping', (_) => _store.setTyping(false)),
+      h.on('UserTyping', (_) {
+        _store.setTyping(true);
+        _typingExpire?.cancel();
+        _typingExpire = Timer(const Duration(seconds: 3), () => _store.setTyping(false));
+      }),
+      h.on('UserStoppedTyping', (_) {
+        _typingExpire?.cancel();
+        _store.setTyping(false);
+      }),
       h.on('MessageDeletedForMe', (a) => _store.removeMessage('${a.firstOrNull}')),
       h.on('MessageDeletedForEveryone', (a) => _store.setDeletedForEveryone('${a.firstOrNull}')),
       h.on('ConversationDeletedForMe', (_) {
         ref.read(conversationsListProvider.notifier).removeConversation(_cid);
         Prefs.instance.setString(_cacheKey, null);
+        Prefs.instance.setString(_outboxKey, null);
         if (mounted) context.go('/conversations');
       }),
       h.on('ConversationJoined', (a) => _onJoined(a.firstOrNull)),
+      h.on('OlderMessages', (a) => _onOlderMessages(a.firstOrNull)),
       h.on('PartnerReadUpTo', (a) {
         final p = a.firstOrNull;
         if (p is! Map || p.str('readerId') == _me) return;
@@ -208,25 +259,58 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         final cid = '${a.firstOrNull ?? ''}';
         if (cid.isNotEmpty && cid != _cid) return;
         if (!mounted) return;
-        _outgoingRing?.cancel();
+        _stopOutgoingRingUi();
+        if (ref.read(activeCallProvider).sessionId == _cid) {
+          ref.read(activeCallProvider.notifier).clear();
+        }
         setState(() {
           _callingOut = false;
           _callDeclined = true;
+          _callBusy = false;
         });
         Timer(const Duration(seconds: 3), () {
           if (mounted) setState(() => _callDeclined = false);
         });
       }),
+      h.on('VideoCallBusy', (a) {
+        final cid = '${a.firstOrNull ?? ''}';
+        if (cid.isNotEmpty && cid != _cid) return;
+        if (!mounted) return;
+        _stopOutgoingRingUi();
+        if (ref.read(activeCallProvider).sessionId == _cid) {
+          ref.read(activeCallProvider.notifier).clear();
+        }
+        setState(() {
+          _callingOut = false;
+          _callDeclined = false;
+          _callBusy = true;
+        });
+        Timer(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _callBusy = false);
+        });
+      }),
+      h.on('VideoCallRinging', (a) {
+        final cid = '${a.firstOrNull ?? ''}';
+        if (cid.isNotEmpty && cid != _cid) return;
+        if (!mounted || !_callingOut) return;
+        if (_callPhase == 'ringing') return;
+        setState(() => _callPhase = 'ringing');
+        unawaited(RingSound.start(RingKind.outgoing));
+      }),
       h.on('VideoCallAccepted', (_) {
-        _outgoingRing?.cancel();
+        _stopOutgoingRingUi();
         if (mounted) setState(() => _callingOut = false);
       }),
     ]);
-    _reconnectSub = h.onReconnected.listen((_) => h.invoke('JoinConversation', [_cid]).catchError((_) => null));
+    _reconnectSub = h.onReconnected.listen((_) async {
+      await h.invoke('JoinConversation', [_cid]).catchError((_) => null);
+      await _flushOutbox();
+    });
 
     if (!ref.read(networkProvider)) return;
     try {
       await h.invoke('JoinConversation', [_cid]);
+      await _flushOutbox();
     } catch (_) {}
     if (!mounted) return;
     _markReadInterval = Timer.periodic(const Duration(seconds: 4), (_) {
@@ -257,13 +341,14 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   void _onReceive(Object? raw) {
     if (raw is! Map) return;
     final m = normalizeMsg(raw);
-    if (m['senderId'] == _me) {
+    final fromMe = m['senderId'] == _me;
+    if (fromMe) {
       if (!_store.updatePendingMessage(m)) _store.addMessage({...m, 'status': 'sent'});
     } else {
       _store.addMessage({...m, 'status': 'sent'});
       _markReadDebounced();
     }
-    _scrollToBottom();
+    _maybeScrollOrFab(fromOwnSend: fromMe);
     _saveDebounced();
   }
 
@@ -289,10 +374,147 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final merged = [...server, ...pending.where((m) => !ids.contains(m['id']))]
       ..sort((a, b) => (a.date('sentAt') ?? DateTime(0)).compareTo(b.date('sentAt') ?? DateTime(0)));
     _store.setConversationAndMessages(_cid, partner, isGroup: isGroup, messages: merged);
-    if (mounted) setState(() => _loading = false);
-    _scrollToBottom();
+    final hasMore = raw.b('hasMore') || raw.v('HasMore') == true;
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _hasMore = hasMore;
+      });
+    } else {
+      _hasMore = hasMore;
+    }
+    _scrollToBottom(force: true);
     _saveDebounced();
     if (isGroup) _fetchGroupSenders();
+  }
+
+  void _onOlderMessages(Object? raw) {
+    if (raw is! Map) return;
+    if (raw.str('conversationId') != _cid && raw.str('ConversationId') != _cid) {
+      // tolerate missing id
+    }
+    final server = [for (final m in (raw.v('messages') as List? ?? const [])) if (m is Map) {...normalizeMsg(m), 'status': 'sent'}];
+    final hasMore = raw.b('hasMore') || raw.v('HasMore') == true;
+    _store.prependMessages(server);
+    if (mounted) {
+      setState(() {
+        _loadingOlder = false;
+        _hasMore = hasMore;
+      });
+    } else {
+      _loadingOlder = false;
+      _hasMore = hasMore;
+    }
+    _saveDebounced();
+  }
+
+  bool _isNearBottom() {
+    if (!_scroll.hasClients) return true;
+    // reverse:true → bottom is offset ≈ 0
+    return _scroll.offset <= 80;
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final near = _isNearBottom();
+    if (near && (_showJumpFab || _unreadWhileAway > 0) && mounted) {
+      setState(() {
+        _showJumpFab = false;
+        _unreadWhileAway = 0;
+      });
+    } else if (!near && !_showJumpFab && mounted && _unreadWhileAway == 0) {
+      // keep fab hidden until a new message arrives while away
+    }
+    // Load older when approaching the "top" of a reverse list (maxScrollExtent).
+    if (_hasMore && !_loadingOlder && _scroll.position.maxScrollExtent > 0 && _scroll.offset >= _scroll.position.maxScrollExtent - 240) {
+      unawaited(_loadOlder());
+    }
+  }
+
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || !_hasMore || !ref.read(networkProvider)) return;
+    final msgs = ref.read(activeConversationProvider).messages;
+    String? beforeId;
+    for (final m in msgs) {
+      final id = m.s('id');
+      if (m['tempId'] == null && id != null && id.isNotEmpty) {
+        beforeId = id;
+        break;
+      }
+    }
+    if (beforeId == null) return;
+    setState(() => _loadingOlder = true);
+    try {
+      await Hubs.conversation.invoke('GetOlderMessages', [_cid, beforeId, 60]);
+    } catch (_) {
+      if (mounted) setState(() => _loadingOlder = false);
+    }
+  }
+
+  void _maybeScrollOrFab({required bool fromOwnSend}) {
+    if (fromOwnSend || _isNearBottom()) {
+      _scrollToBottom(force: fromOwnSend);
+      if (_showJumpFab || _unreadWhileAway > 0) {
+        setState(() {
+          _showJumpFab = false;
+          _unreadWhileAway = 0;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _showJumpFab = true;
+        _unreadWhileAway += 1;
+      });
+    }
+  }
+
+  void _jumpToLatest() {
+    setState(() {
+      _showJumpFab = false;
+      _unreadWhileAway = 0;
+    });
+    _scrollToBottom(force: true);
+  }
+
+  Future<void> _flushOutbox() async {
+    if (_flushingOutbox || !ref.read(networkProvider)) return;
+    _flushingOutbox = true;
+    try {
+      final items = ref
+          .read(activeConversationProvider)
+          .messages
+          .where((m) => (m['status'] == 'pending' || m['status'] == 'failed') && (m.s('type') ?? 'text') == 'text' && m['tempId'] != null)
+          .toList();
+      for (final msg in items) {
+        final tempId = '${msg['tempId']}';
+        _store.updateByTempId(tempId, {'status': 'pending'});
+        try {
+          await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 15));
+          await Hubs.conversation.invoke('SendMessage', [_cid, msg.str('content'), 'text', msg.s('replyToMessageId') ?? '']);
+          _armPendingTimeout(tempId);
+        } catch (_) {
+          _store.updateByTempId(tempId, {'status': 'failed'});
+        }
+      }
+      _persistOutbox();
+    } finally {
+      _flushingOutbox = false;
+    }
+  }
+
+  Future<void> _recoverAfterOnline() async {
+    if (!mounted) return;
+    try {
+      await Hubs.conversation.forceReconnect();
+      await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 20));
+      await Hubs.conversation.invoke('JoinConversation', [_cid]);
+      await _flushOutbox();
+      if (ref.read(activeConversationProvider).isGroup) await _fetchGroupSenders();
+    } catch (_) {
+      // Will retry on next hub onReconnected / network poll.
+    }
   }
 
   Future<void> _fetchGroupSenders() async {
@@ -307,7 +529,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     } catch (_) {}
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool force = false}) {
+    if (!force && !_isNearBottom()) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) _scroll.jumpTo(0);
     });
@@ -324,8 +547,24 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _markReadTimer?.cancel();
     _markReadInterval?.cancel();
     _saveTimer?.cancel();
+    _typingExpire?.cancel();
     _outgoingRing?.cancel();
     _recordTimer?.cancel();
+    if (_callingOut) {
+      _callingOut = false;
+      // Don't cancel if Accept already opened the LiveKit screen for this call.
+      if (videoScreenMounts(_cid) == 0) {
+        if (ref.read(activeCallProvider).sessionId == _cid) {
+          ref.read(activeCallProvider.notifier).clear();
+        }
+        Hubs.conversation
+            .ensureConnected()
+            .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid]))
+            .catchError((_) => null);
+      }
+    }
+    unawaited(RingSound.stop());
+    _scroll.removeListener(_onScroll);
     if (_recording) _recorder.cancel();
     _recorder.dispose();
     _text.dispose();
@@ -371,14 +610,14 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   Future<void> _send() async {
     final text = _text.text.trim();
     if (text.isEmpty) return;
-    if (!_requireOnline(send: true)) return;
+    final online = ref.read(networkProvider);
     final reply = _replyingTo;
     _text.clear();
     setState(() => _replyingTo = null);
     if (_typingTimer != null) {
       _typingTimer!.cancel();
       _typingTimer = null;
-      Hubs.conversation.invoke('StopTyping', [_cid]).catchError((_) => null);
+      if (online) Hubs.conversation.invoke('StopTyping', [_cid]).catchError((_) => null);
     }
     final tempId = 'temp-${DateTime.now().microsecondsSinceEpoch}';
     _store.addMessage({
@@ -393,12 +632,18 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       'replyToSenderName': reply?['senderName'],
       'replyToType': reply?['type'],
     });
-    _scrollToBottom();
+    _scrollToBottom(force: true);
+    _persistOutbox();
+    if (!online) {
+      if (mounted) showToast(context, t('conversationChat.queuedOffline'));
+      return;
+    }
     try {
       await Hubs.conversation.invoke('SendMessage', [_cid, text, 'text', reply?['id'] ?? '']);
       _armPendingTimeout(tempId);
     } catch (_) {
       _store.updateByTempId(tempId, {'status': 'failed'});
+      _persistOutbox();
     }
   }
 
@@ -426,7 +671,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       'replyToSenderName': reply?['senderName'],
       'replyToType': reply?['type'],
     });
-    _scrollToBottom();
+    _scrollToBottom(force: true);
     try {
       await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 25));
       await Hubs.conversation.invoke('SendMessage', [_cid, content, type, reply?['id'] ?? '']);
@@ -544,7 +789,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       'replyToContent': reply?['content'],
       'replyToSenderName': reply?['senderName'],
     });
-    _scrollToBottom();
+    _scrollToBottom(force: true);
     await _uploadVoice(tempId, path);
   }
 
@@ -587,6 +832,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       return;
     }
     try {
+      await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 20));
       await Hubs.conversation.invoke('SendMessage', [_cid, msg.str('content'), msg.s('type') ?? 'text', msg.s('replyToMessageId') ?? '']);
       _armPendingTimeout(newTemp);
     } catch (_) {
@@ -608,6 +854,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       preview = t('conversationChat.replyPreviewVideo');
     } else if (type == 'album' || album != null) {
       preview = t('conversationChat.replyPreviewAlbum');
+    } else if (type == 'story_reply') {
+      preview = parseStoryReplyMessage(type, msg.str('content'))?.listPreview ?? t('stories.storyReplyPreview');
     } else if (type == 'text') {
       final s = msg.str('content');
       preview = s.length > 50 ? s.substring(0, 50) : s;
@@ -798,7 +1046,9 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     setState(() {
       _callingOut = true;
       _callingVoiceOnly = voiceOnly;
+      _callPhase = 'calling';
       _callDeclined = false;
+      _callBusy = false;
     });
     final partner = ref.read(activeConversationProvider).partner;
     ref.read(activeCallProvider.notifier).syncMeta(
@@ -812,23 +1062,32 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _outgoingRing?.cancel();
     _outgoingRing = Timer(kIncomingCallRingTimeout, () {
       if (!mounted || !_callingOut) return;
-      _cancelOutgoing();
+      _cancelOutgoing(noAnswer: true);
     });
     try {
       await Hubs.conversation.invoke('RequestVideoCall', [_cid, voiceOnly]);
     } catch (_) {
-      _outgoingRing?.cancel();
+      _stopOutgoingRingUi();
       if (ref.read(activeCallProvider).sessionId == _cid) ref.read(activeCallProvider.notifier).clear();
       if (mounted) setState(() => _callingOut = false);
     }
   }
 
-  void _cancelOutgoing() {
-    if (!_callingOut) return;
+  void _stopOutgoingRingUi() {
     _outgoingRing?.cancel();
+    unawaited(RingSound.stop());
+  }
+
+  void _cancelOutgoing({bool noAnswer = false}) {
+    if (!_callingOut) return;
+    _stopOutgoingRingUi();
     setState(() => _callingOut = false);
     if (ref.read(activeCallProvider).sessionId == _cid) ref.read(activeCallProvider.notifier).clear();
-    Hubs.conversation.ensureConnected().then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid])).catchError((_) => null);
+    final outcome = noAnswer ? 'missed' : 'cancelled';
+    Hubs.conversation
+        .ensureConnected()
+        .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid, false, outcome]))
+        .catchError((_) => null);
   }
 
   Future<void> _deleteConversation() async {
@@ -889,10 +1148,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   Widget build(BuildContext context) {
     ref.watch(localeProvider);
     ref.listen(networkProvider, (prev, next) {
-      if (prev == false && next == true) {
-        Hubs.conversation.invoke('JoinConversation', [_cid]).catchError((_) => null);
-        if (ref.read(activeConversationProvider).isGroup) _fetchGroupSenders();
-      }
+      if (prev == false && next == true) unawaited(_recoverAfterOnline());
     });
     final c = context.colors;
     final s = ref.watch(activeConversationProvider);
@@ -1006,35 +1262,81 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
               color: c.bgPrimary,
               child: s.messages.isEmpty && !s.partnerTyping
                   ? Center(child: Text(t('conversationChat.empty'), style: TextStyle(color: c.textMuted, fontSize: 13)))
-                  : ListView.builder(
-                      controller: _scroll,
-                      reverse: true,
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      itemCount: s.messages.length + (s.partnerTyping ? 1 : 0),
-                      itemBuilder: (context, i) {
-                        final typing = s.partnerTyping ? 1 : 0;
-                        if (i < typing) return const TypingBubble();
-                        final msg = s.messages[s.messages.length - 1 - (i - typing)];
-                        final key = _keys.putIfAbsent(msgKey(msg), GlobalKey.new);
-                        return KeyedSubtree(
-                          key: key,
-                          child: MessageItem(
-                            msg: msg,
-                            mine: msg['senderId'] == _me,
-                            me: _me,
-                            isGroup: s.isGroup,
-                            sender: _groupSenders[msg.str('senderId')],
-                            highlighted: _highlighted == msgKey(msg),
-                            read: _isRead(msg, s.partnerLastReadAt, isGroup: s.isGroup),
-                            onMenu: () => _openMenu(msg),
-                            onLongPress: () => _openReactionPicker(msg),
-                            onReaction: (e) => _pickReaction(msg, e),
-                            onRetry: () => _retry(msg),
-                            onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
-                            onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
+                  : Stack(
+                      children: [
+                        ListView.builder(
+                          controller: _scroll,
+                          reverse: true,
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          itemCount: s.messages.length + (s.partnerTyping ? 1 : 0) + (_loadingOlder ? 1 : 0),
+                          itemBuilder: (context, i) {
+                            final typing = s.partnerTyping ? 1 : 0;
+                            if (i < typing) return const TypingBubble();
+                            final msgIndexFromEnd = i - typing;
+                            if (_loadingOlder && msgIndexFromEnd == s.messages.length) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Center(
+                                  child: Text(t('conversationChat.loadingOlder'), style: TextStyle(fontSize: 12, color: c.textMuted)),
+                                ),
+                              );
+                            }
+                            final msg = s.messages[s.messages.length - 1 - msgIndexFromEnd];
+                            final key = _keys.putIfAbsent(msgKey(msg), GlobalKey.new);
+                            return KeyedSubtree(
+                              key: key,
+                              child: MessageItem(
+                                msg: msg,
+                                mine: msg['senderId'] == _me,
+                                me: _me,
+                                isGroup: s.isGroup,
+                                sender: _groupSenders[msg.str('senderId')],
+                                highlighted: _highlighted == msgKey(msg),
+                                read: _isRead(msg, s.partnerLastReadAt, isGroup: s.isGroup),
+                                onMenu: () => _openMenu(msg),
+                                onLongPress: () => _openReactionPicker(msg),
+                                onReaction: (e) => _pickReaction(msg, e),
+                                onRetry: () => _retry(msg),
+                                onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
+                                onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
+                              ),
+                            );
+                          },
+                        ),
+                        if (_showJumpFab)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 12,
+                            child: Center(
+                              child: Material(
+                                color: c.bgElevated,
+                                elevation: 3,
+                                borderRadius: BorderRadius.circular(20),
+                                child: InkWell(
+                                  onTap: _jumpToLatest,
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(LucideIcons.chevronsDown, size: 16, color: c.primary),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _unreadWhileAway > 0
+                                              ? '${t('conversationChat.newMessages')} ($_unreadWhileAway)'
+                                              : t('conversationChat.newMessages'),
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textPrimary),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        );
-                      },
+                      ],
                     ),
             ),
           ),
@@ -1053,9 +1355,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
             name: partner?.s('name') ?? '',
             avatar: partner?.s('avatar'),
             voiceOnly: _callingVoiceOnly,
+            ringing: _callPhase == 'ringing',
             onCancel: _cancelOutgoing,
           ),
-        if (_callDeclined)
+        if (_callDeclined || _callBusy)
           Positioned(
             left: 32,
             right: 32,
@@ -1066,7 +1369,9 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Text(
-                  t('conversationChat.callDeclined', {'name': partner?.s('name') ?? '…'}),
+                  _callBusy
+                      ? t('conversationChat.userBusy')
+                      : t('conversationChat.callDeclined', {'name': partner?.s('name') ?? '…'}),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
                 ),
@@ -1372,21 +1677,30 @@ class _HeaderAction extends StatelessWidget {
 }
 
 class _CallingOverlay extends StatelessWidget {
-  const _CallingOverlay({required this.name, this.avatar, required this.voiceOnly, required this.onCancel});
+  const _CallingOverlay({
+    required this.name,
+    this.avatar,
+    required this.voiceOnly,
+    required this.ringing,
+    required this.onCancel,
+  });
   final String name;
   final String? avatar;
   final bool voiceOnly;
+  final bool ringing;
   final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
+    final phase = ringing ? t('conversationChat.ringingCall') : t('conversationChat.connectingCall');
+    final kind = voiceOnly ? t('conversationChat.incomingVoiceCall') : t('conversationChat.incomingVideoCall');
     return Positioned.fill(
       child: Material(
         color: WaCall.bgTop,
         child: WhatsAppRingingLayout(
           avatarUrl: avatar,
           name: name,
-          status: '${t('conversationChat.connectingCall')}\n${voiceOnly ? t('conversationChat.incomingVoiceCall') : t('conversationChat.incomingVideoCall')}',
+          status: '$phase\n$kind',
           actions: [
             CallCircleButton(
               icon: LucideIcons.phoneOff,
@@ -1443,6 +1757,7 @@ class MessageItem extends StatelessWidget {
     final deleted = msg.b('deletedForEveryone');
     final album = type == 'album' ? parseAlbumMessage(content) : null;
     final sf = parseShortFilmMessage(type, content);
+    final storyReply = parseStoryReplyMessage(type, content);
     final fg = mine ? Colors.white : c.msgTheirsColor;
     final reactions = (msg['reactions'] as List? ?? const []).whereType<Map>().toList();
     String? myReaction;
@@ -1452,11 +1767,15 @@ class MessageItem extends StatelessWidget {
     }
     myReaction ??= msg.s('myReaction');
 
-    final isMediaBubble = type == 'image' || album != null || type == 'video' || sf != null;
+    final isMediaBubble = type == 'image' || album != null || type == 'video' || sf != null || storyReply != null;
 
     Widget body;
     if (deleted) {
       body = Text(t('conversationChat.messageDeleted'), style: TextStyle(fontStyle: FontStyle.italic, color: fg.withValues(alpha: 0.7), fontSize: 14));
+    } else if (type == 'call') {
+      return _CallHistoryRow(msg: msg, mine: mine, me: me);
+    } else if (storyReply != null) {
+      body = _StoryReplyBubble(reply: storyReply, mine: mine, fg: fg);
     } else if (type == 'image') {
       body = GestureDetector(
         onTap: () => showImageViewer(context, [content]),
@@ -1615,6 +1934,149 @@ class MessageItem extends StatelessWidget {
                 ]),
               ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _StoryReplyBubble extends StatelessWidget {
+  const _StoryReplyBubble({required this.reply, required this.mine, required this.fg});
+
+  final StoryReplyRef reply;
+  final bool mine;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 72,
+        height: 96,
+        child: reply.isText
+            ? DecoratedBox(
+                decoration: storyBackgroundDecoration(reply.backgroundColor),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      (reply.caption ?? '').trim().isEmpty ? t('stories.allStory') : reply.caption!,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, height: 1.25),
+                    ),
+                  ),
+                ),
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image(
+                    image: mediaImage(reply.mediaUrl!, cacheWidth: bubbleImageCacheWidth),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => ColoredBox(
+                      color: Colors.black26,
+                      child: Icon(reply.isVideo ? LucideIcons.video : LucideIcons.image, color: Colors.white70, size: 22),
+                    ),
+                  ),
+                  if (reply.isVideo)
+                    const Center(child: Icon(LucideIcons.play, color: Colors.white, size: 22)),
+                ],
+              ),
+      ),
+    );
+
+    final text = reply.text.trim().isEmpty
+        ? t('stories.storyReplyPreview')
+        : reply.text.trim();
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 260),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          thumb,
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t('stories.storyReplyPreview'),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg.withValues(alpha: 0.75)),
+                ),
+                const SizedBox(height: 4),
+                LinkifiedText(
+                  text,
+                  style: TextStyle(color: fg, fontSize: 15, height: 1.45),
+                  linkColor: mine ? Colors.white : context.colors.primary,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// WhatsApp-style call history chip in the chat transcript.
+class _CallHistoryRow extends StatelessWidget {
+  const _CallHistoryRow({required this.msg, required this.mine, required this.me});
+
+  final Json msg;
+  final bool mine;
+  final String me;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final content = msg.str('content');
+    Map<String, dynamic>? data;
+    try {
+      final decoded = jsonDecode(content);
+      if (decoded is Map) data = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    final status = '${data?['status'] ?? 'missed'}';
+    final voiceOnly = data?['voiceOnly'] == true || data?['voiceOnly'] == 'true';
+    final missed = status == 'missed' || status == 'declined' || status == 'cancelled' || status == 'busy';
+    final label = formatCallMessagePreview(content, mine: mine);
+    final icon = missed
+        ? (voiceOnly ? LucideIcons.phoneOff : LucideIcons.videoOff)
+        : (voiceOnly ? LucideIcons.phone : LucideIcons.video);
+    final color = missed ? c.danger : c.primary;
+    final sentAt = msg.date('sentAt');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: c.bgElevated,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: c.border.withValues(alpha: 0.6)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textPrimary),
+                ),
+              ),
+              if (sentAt != null) ...[
+                const SizedBox(width: 8),
+                Text(formatTime12(sentAt), style: TextStyle(fontSize: 11, color: c.textMuted)),
+              ],
+            ],
+          ),
         ),
       ),
     );
