@@ -25,6 +25,7 @@ bool incomingCallAsBool(Object? v) => v == true || v == 'true' || v == '1';
 Map<String, dynamic>? _pendingNativeIncoming;
 
 bool isInAnotherCall(WidgetRef ref, {String? exceptId}) {
+  clearGhostActiveCall(ref);
   final id = ref.read(activeCallProvider).sessionId;
   if (id != null && id.isNotEmpty && id != exceptId) return true;
   final incoming = ref.read(incomingConvCallProvider);
@@ -34,6 +35,25 @@ bool isInAnotherCall(WidgetRef ref, {String? exceptId}) {
     return true;
   }
   return false;
+}
+
+/// Drops leftover [activeCallProvider] after decline/end when LiveKit/UI are already gone,
+/// and asks the server to release stuck busy so the user can place a new call.
+void clearGhostActiveCall(WidgetRef ref) {
+  final active = ref.read(activeCallProvider);
+  final sid = active.sessionId;
+  if (sid == null || sid.isEmpty) return;
+  if (videoScreenMounts(sid) > 0) return;
+  if (LiveKitService.instance.isInSession(sid)) return;
+
+  ref.read(activeCallProvider.notifier).clear();
+  unawaited(LiveKitService.instance.leave());
+  if (active.isConversation) {
+    Hubs.conversation
+        .ensureConnected()
+        .then((_) => Hubs.conversation.invoke('ReleaseVideoCallBusy', [sid]))
+        .catchError((_) => null);
+  }
 }
 
 void declineBusyConversationCall(String conversationId) {
@@ -103,8 +123,11 @@ Future<void> acceptIncomingCall(WidgetRef ref, {BuildContext? context}) async {
       await Future<void>.delayed(Duration(milliseconds: 350 * (i + 1)));
     }
   }
-  if (!accepted && context != null && context.mounted) {
-    showToast(context, t('common.error'), error: true);
+  if (!accepted) {
+    ref.read(activeCallProvider.notifier).clear();
+    if (context != null && context.mounted) {
+      showToast(context, t('common.error'), error: true);
+    }
   }
 }
 
@@ -114,6 +137,9 @@ void declineIncomingCall(WidgetRef ref, {bool missed = false}) {
   final id = ref.read(incomingConvCallProvider).conversationId;
   ref.read(incomingConvCallProvider.notifier).clear();
   if (id == null) return;
+  if (ref.read(activeCallProvider).sessionId == id) {
+    ref.read(activeCallProvider.notifier).clear();
+  }
   final outcome = missed ? 'missed' : 'declined';
   Hubs.conversation
       .ensureConnected()

@@ -228,6 +228,30 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         ref.read(incomingConvCallProvider.notifier).clear();
         unawaited(CallNative.dismissIncoming());
       }
+      final active = ref.read(activeCallProvider);
+      if (active.sessionId != null &&
+          (cid.isEmpty || cid == 'null' || cid == active.sessionId) &&
+          videoScreenMounts(active.sessionId!) == 0 &&
+          !LiveKitService.instance.isInSession(active.sessionId!)) {
+        ref.read(activeCallProvider.notifier).clear();
+      }
+    }));
+
+    _disposers.add(h.on('VideoCallEnded', (a) {
+      unawaited(RingSound.stop());
+      final cid = '${a.firstOrNull ?? ''}';
+      final active = ref.read(activeCallProvider);
+      if (active.sessionId != null && (cid.isEmpty || cid == 'null' || cid == active.sessionId)) {
+        ref.read(activeCallProvider.notifier).clear();
+        if (!LiveKitService.instance.isInSession(active.sessionId!)) {
+          unawaited(LiveKitService.instance.leave());
+        }
+      }
+      final incoming = ref.read(incomingConvCallProvider);
+      if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
+        ref.read(incomingConvCallProvider.notifier).clear();
+        unawaited(CallNative.dismissIncoming());
+      }
     }));
 
     _disposers.add(h.on('VideoCallBusy', (a) {

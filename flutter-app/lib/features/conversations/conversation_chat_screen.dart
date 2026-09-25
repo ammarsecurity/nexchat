@@ -23,6 +23,7 @@ import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../calls/active_call_bar.dart';
 import '../calls/call_state.dart';
+import '../calls/incoming_call_dialog.dart';
 import '../calls/video_call_screen.dart';
 import '../calls/whatsapp_call_ui.dart';
 import '../stories/stories_controller.dart';
@@ -1033,6 +1034,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   Future<void> _startCall({required bool voiceOnly}) async {
     if (_callingOut) return;
     if (!_requireOnline()) return;
+    clearGhostActiveCall(ref);
     final active = ref.read(activeCallProvider);
     if (active.sessionId == _cid) {
       ref.read(activeCallProvider.notifier).expand();
@@ -2023,7 +2025,7 @@ class _StoryReplyBubble extends StatelessWidget {
   }
 }
 
-/// WhatsApp-style call history chip in the chat transcript.
+/// System-style call event in the chat transcript (NexChat soft tokens).
 class _CallHistoryRow extends StatelessWidget {
   const _CallHistoryRow({required this.msg, required this.mine, required this.me});
 
@@ -2042,40 +2044,90 @@ class _CallHistoryRow extends StatelessWidget {
     } catch (_) {}
     final status = '${data?['status'] ?? 'missed'}';
     final voiceOnly = data?['voiceOnly'] == true || data?['voiceOnly'] == 'true';
-    final missed = status == 'missed' || status == 'declined' || status == 'cancelled' || status == 'busy';
-    final label = formatCallMessagePreview(content, mine: mine);
-    final icon = missed
+    final durationSec = int.tryParse('${data?['durationSec'] ?? 0}') ?? 0;
+    final failed = status == 'missed' || status == 'declined' || status == 'cancelled' || status == 'busy';
+    final accent = failed ? c.danger : c.primary;
+    final title = formatCallMessagePreview(content, mine: mine)
+        .replaceAll(RegExp(r'\s*\([^)]*\)'), '')
+        .replaceAll(RegExp(r'\s·\s.*$'), '')
+        .trim();
+    final kind = voiceOnly ? t('conversationChat.voiceCallKind') : t('conversationChat.videoCallKind');
+    final sentAt = msg.date('sentAt');
+    final metaParts = <String>[kind];
+    if (status == 'ended' && durationSec > 0) {
+      final m = (durationSec ~/ 60).toString().padLeft(2, '0');
+      final s = (durationSec % 60).toString().padLeft(2, '0');
+      metaParts.add('$m:$s');
+    }
+    if (sentAt != null) metaParts.add(formatTime12(sentAt));
+
+    final icon = failed
         ? (voiceOnly ? LucideIcons.phoneOff : LucideIcons.videoOff)
         : (voiceOnly ? LucideIcons.phone : LucideIcons.video);
-    final color = missed ? c.danger : c.primary;
-    final sentAt = msg.date('sentAt');
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: c.bgElevated,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: c.border.withValues(alpha: 0.6)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textPrimary),
-                ),
-              ),
-              if (sentAt != null) ...[
-                const SizedBox(width: 8),
-                Text(formatTime12(sentAt), style: TextStyle(fontSize: 11, color: c.textMuted)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: failed ? accent.withValues(alpha: 0.08) : c.systemMsgBg,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: accent.withValues(alpha: failed ? 0.14 : 0.10)),
+              boxShadow: [
+                BoxShadow(color: c.shadow.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
               ],
-            ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 9, 14, 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 16, color: accent),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                            color: c.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          metaParts.join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            height: 1.3,
+                            color: c.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -22,6 +22,7 @@ import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../calls/active_call_bar.dart';
 import '../calls/call_state.dart';
+import '../calls/incoming_call_dialog.dart';
 import '../calls/video_call_screen.dart';
 import '../conversations/conversation_chat_screen.dart' show TypingBubble;
 import '../matching/matching_controller.dart';
@@ -557,6 +558,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (mounted) setState(() => _showVideoConfirm = false);
       return;
     }
+    clearGhostActiveCall(ref);
     final active = ref.read(activeCallProvider);
     if (active.sessionId != null) {
       if (mounted) setState(() => _showVideoConfirm = false);

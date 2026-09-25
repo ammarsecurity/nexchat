@@ -2,7 +2,7 @@ name: nexchat
 description: "NexChat – نيكس شات"
 publish_to: 'none'
 
-version: 1.0.20+21
+version: 1.0.23+24
 
 environment:
   sdk: ^3.13.2

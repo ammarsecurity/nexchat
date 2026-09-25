@@ -21,10 +21,18 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
     /// <summary>مكالمة فيديو/صوت قيد الانتظار — لإعلام المتصل بـ voiceOnly عند القبول حتى لو لم يعد في مجموعة SignalR.</summary>
     private static readonly ConcurrentDictionary<Guid, PendingConversationCall> PendingConversationCalls = new();
 
-    /// <summary>userId → conversationId للمستخدمين المشغولين (رنين صادر أو مكالمة جارية).</summary>
-    private static readonly ConcurrentDictionary<Guid, Guid> UsersBusyInCall = new();
+    /// <summary>userId → busy entry للمستخدمين المشغولين (رنين صادر أو مكالمة جارية).</summary>
+    private static readonly ConcurrentDictionary<Guid, BusyCall> UsersBusyInCall = new();
 
-    private sealed record PendingConversationCall(Guid CallerId, bool VoiceOnly, bool Accepted);
+    /// <summary>رنين العميل ~60ث — نسمح بهامش ثم نعتبر الحالة عالقة.</summary>
+    private static readonly TimeSpan RingingStaleAfter = TimeSpan.FromSeconds(75);
+
+    /// <summary>سقف أمان لمكالمة مقبولة بلا EndVideoCall (انقطاع/قتل التطبيق).</summary>
+    private static readonly TimeSpan InCallStaleAfter = TimeSpan.FromMinutes(45);
+
+    private sealed record PendingConversationCall(Guid CallerId, bool VoiceOnly, bool Accepted, DateTime StartedUtc);
+
+    private sealed record BusyCall(Guid ConversationId, DateTime SinceUtc);
 
     /// <summary>تشخيص: التأكد أن استدعاءات الـ Hub تصل للـ backend.</summary>
     public Task<string> Ping() => Task.FromResult($"pong-{DateTime.UtcNow:HHmmss}");
@@ -531,41 +539,52 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
 
         var recipientId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
 
-        // المتصل مشغول بمكالمة أخرى → لا نبدأ طلباً جديداً.
-        if (UsersBusyInCall.TryGetValue(userId, out var callerBusy) && callerBusy != cid)
+        PurgeStaleCallState();
+        ReleaseGhostBusy(userId);
+        ReleaseGhostBusy(recipientId);
+
+        // المتصل مشغول بمكالمة أخرى حقيقية → لا نبدأ طلباً جديداً.
+        if (UsersBusyInCall.TryGetValue(userId, out var callerBusy) && callerBusy.ConversationId != cid)
         {
             await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
             return;
         }
 
-        // الطرف الآخر مشغول بمكالمة أخرى → لا نرنّ، نُبلغ المتصل ونسجّل في السجل.
-        if (UsersBusyInCall.TryGetValue(recipientId, out var busyConv) && busyConv != cid)
+        // الطرف الآخر مشغول بمكالمة أخرى حقيقية → لا نرنّ.
+        if (UsersBusyInCall.TryGetValue(recipientId, out var busyConv) && busyConv.ConversationId != cid)
         {
             await PersistCallSystemMessageAsync(cid, userId, recipientId, voiceOnly, "busy", durationSec: 0);
             await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
             return;
         }
 
-        // مكالمة قائمة على نفس المحادثة (رنين أو جارية) → لا تعِد الكتابة ولا ترسل رنين/دفع جديد.
+        // مكالمة قائمة على نفس المحادثة.
         if (PendingConversationCalls.TryGetValue(cid, out var existingPending))
         {
-            if (existingPending.Accepted ||
-                UsersBusyInCall.TryGetValue(recipientId, out var sameBusy) && sameBusy == cid)
+            // مكالمة مقبولة عالقة (بدون End) — أي طلب جديد من أحد الطرفين يستبدلها.
+            if (existingPending.Accepted)
             {
-                // الطرفان أصلاً في هذه المكالمة، أو المستلم مشغول بها بعد القبول.
-                if (existingPending.CallerId != userId)
-                    await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
+                logger.LogInformation(
+                    "Replacing accepted stuck call state conv={Conv} requester={User}",
+                    cid, userId);
+                ClearCallState(cid);
+            }
+            else if (existingPending.CallerId == userId)
+            {
+                // نفس المتصل يعيد الطلب أثناء الرنين → تجاهل بصمت (يتجنب دفع مزدوج).
                 return;
             }
-            // نفس المتصل يعيد الطلب أثناء الرنين → تجاهل بصمت (يتجنب دفع مزدوج).
-            if (existingPending.CallerId == userId)
+            else
+            {
+                // الطرف الآخر يحاول الاتصال أثناء رنين وارد لنفس المحادثة.
+                await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
                 return;
-            // طرف آخر يحاول الاستيلاء على pending نادر — تجاهل.
-            return;
+            }
         }
 
-        PendingConversationCalls[cid] = new PendingConversationCall(userId, voiceOnly, Accepted: false);
-        UsersBusyInCall[userId] = cid;
+        var now = DateTime.UtcNow;
+        PendingConversationCalls[cid] = new PendingConversationCall(userId, voiceOnly, Accepted: false, now);
+        UsersBusyInCall[userId] = new BusyCall(cid, now);
 
         var caller = conv.User1Id == userId ? conv.User1 : conv.User2;
         // إرسال للمستخدم مباشرة — لا يعتمد على JoinConversation (أي صفحة في التطبيق)
@@ -603,7 +622,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (!await CanPrivateConversationVideoCall(cid, userId)) return;
 
         if (PendingConversationCalls.TryGetValue(cid, out var existing))
-            PendingConversationCalls[cid] = existing with { Accepted = true };
+            PendingConversationCalls[cid] = existing with { Accepted = true, StartedUtc = DateTime.UtcNow };
         PendingConversationCalls.TryGetValue(cid, out var pending);
         var pendingVoiceOnly = pending?.VoiceOnly ?? false;
 
@@ -613,8 +632,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (conv == null) return;
 
         var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
-        UsersBusyInCall[userId] = cid;
-        UsersBusyInCall[otherUserId] = cid;
+        var now = DateTime.UtcNow;
+        UsersBusyInCall[userId] = new BusyCall(cid, now);
+        UsersBusyInCall[otherUserId] = new BusyCall(cid, now);
         // Stop ringing on the callee device (and collapse any duplicate pushes).
         await notificationOutbox.CancelCallPushAsync(userId, cid);
         await Clients.User(otherUserId.ToString()).SendAsync("VideoCallAccepted", conversationId, pendingVoiceOnly);
@@ -697,12 +717,121 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         await Clients.User(otherUserId.ToString()).SendAsync("VideoCallEnded", conversationId, secs);
     }
 
+    /// <summary>
+    /// يحرّر busy/pending العالق من جهة العميل بدون كتابة سجل مكالمة
+    /// (بعد رفض/إنهاء محلي فشل إشعاره للسيرفر، أو activeCall شبح).
+    /// </summary>
+    public async Task ReleaseVideoCallBusy(string conversationId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
+            return;
+        if (!await CanPrivateConversationVideoCall(cid, userId)) return;
+
+        PurgeStaleCallState();
+
+        if (PendingConversationCalls.TryGetValue(cid, out var pending) && pending.Accepted)
+        {
+            UsersBusyInCall.TryRemove(userId, out _);
+            var anyoneBusy = UsersBusyInCall.Any(kv => kv.Value.ConversationId == cid);
+            if (!anyoneBusy)
+                PendingConversationCalls.TryRemove(cid, out _);
+            return;
+        }
+
+        if (UsersBusyInCall.TryGetValue(userId, out var busy) && busy.ConversationId == cid)
+        {
+            ClearCallState(cid);
+            return;
+        }
+
+        if (PendingConversationCalls.TryGetValue(cid, out var ringing) &&
+            !ringing.Accepted &&
+            ringing.CallerId == userId)
+        {
+            ClearCallState(cid);
+        }
+    }
+
     private static void ClearBusyForConversation(Guid cid, Guid a, Guid b)
     {
-        if (UsersBusyInCall.TryGetValue(a, out var ca) && ca == cid)
+        if (UsersBusyInCall.TryGetValue(a, out var ca) && ca.ConversationId == cid)
             UsersBusyInCall.TryRemove(a, out _);
-        if (UsersBusyInCall.TryGetValue(b, out var cb) && cb == cid)
+        if (UsersBusyInCall.TryGetValue(b, out var cb) && cb.ConversationId == cid)
             UsersBusyInCall.TryRemove(b, out _);
+    }
+
+    private static void ClearCallState(Guid cid)
+    {
+        PendingConversationCalls.TryRemove(cid, out _);
+        foreach (var kv in UsersBusyInCall)
+        {
+            if (kv.Value.ConversationId == cid)
+                UsersBusyInCall.TryRemove(kv.Key, out _);
+        }
+    }
+
+    /// <summary>يحذف حالات busy/pending العالقة بعد مهلة الرنين أو سقف المكالمة.</summary>
+    private void PurgeStaleCallState()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var kv in PendingConversationCalls.ToArray())
+        {
+            var limit = kv.Value.Accepted ? InCallStaleAfter : RingingStaleAfter;
+            if (now - kv.Value.StartedUtc <= limit) continue;
+            logger.LogInformation(
+                "Purging stale call state conv={Conv} accepted={Accepted} ageSec={Age}",
+                kv.Key, kv.Value.Accepted, (now - kv.Value.StartedUtc).TotalSeconds);
+            ClearCallState(kv.Key);
+        }
+
+        foreach (var kv in UsersBusyInCall.ToArray())
+        {
+            var hasPending = PendingConversationCalls.TryGetValue(kv.Value.ConversationId, out var p);
+            var limit = hasPending && p!.Accepted ? InCallStaleAfter : RingingStaleAfter;
+            if (now - kv.Value.SinceUtc <= limit) continue;
+            UsersBusyInCall.TryRemove(kv.Key, out _);
+        }
+    }
+
+    /// <summary>
+    /// إن كان المستخدم معلّماً كمشغول لكنه غير متصل بـ SignalR، فحالته ghost
+    /// (انقطع بدون Decline/End) — نحرّره فوراً.
+    /// </summary>
+    private void ReleaseGhostBusy(Guid userId)
+    {
+        if (presence.IsConnected(userId)) return;
+        if (!UsersBusyInCall.TryRemove(userId, out var busy)) return;
+
+        if (PendingConversationCalls.TryGetValue(busy.ConversationId, out var pending))
+        {
+            // رنين بلا قبول: إن كان المتصل أوفلاين امسح الـ pending كاملاً.
+            if (!pending.Accepted && pending.CallerId == userId)
+            {
+                ClearCallState(busy.ConversationId);
+                return;
+            }
+            // مكالمة مقبولة: امسح busy لهذا المستخدم فقط؛ الطرف الآخر يبقى حتى End أو TTL.
+        }
+    }
+
+    /// <summary>عند انقطاع آخر اتصال SignalR: امسح رنين صادر عالق للمتصل.</summary>
+    private void ReleaseRingingOnCallerOffline(Guid userId)
+    {
+        if (presence.IsConnected(userId)) return;
+
+        foreach (var kv in PendingConversationCalls.ToArray())
+        {
+            if (kv.Value.Accepted || kv.Value.CallerId != userId) continue;
+            logger.LogInformation("Clearing ringing call after caller offline conv={Conv}", kv.Key);
+            ClearCallState(kv.Key);
+        }
+
+        // busy بلا pending (حالة يتيمة) — امسحه.
+        if (UsersBusyInCall.TryGetValue(userId, out var busy) &&
+            !PendingConversationCalls.ContainsKey(busy.ConversationId))
+        {
+            UsersBusyInCall.TryRemove(userId, out _);
+        }
     }
 
     private async Task PersistCallSystemMessageAsync(
@@ -859,10 +988,13 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        // لا تمسح UsersBusyInCall هنا — انقطاع SignalR أثناء LiveKit يجب ألا يظهر المستخدم متاحاً.
-        // التنظيف فقط عبر DeclineVideoCall / EndVideoCall / ClearBusyForConversation.
+        // لا نمسح busy لمكالمة مقبولة فوراً (LiveKit قد يستمر مع انقطاع SignalR قصير).
+        // نمسح فقط رنين صادر عالق عندما يختفي آخر اتصال للمستخدم، + TTL/ghost عند RequestVideoCall.
         if (TryGetUserId(out var userId))
+        {
             await presence.OnDisconnectedAsync(userId, Context.ConnectionId);
+            ReleaseRingingOnCallerOffline(userId);
+        }
         await base.OnDisconnectedAsync(exception);
     }
 

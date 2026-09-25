@@ -164,7 +164,7 @@ class _MessageRequestsPanelState extends ConsumerState<MessageRequestsPanel> {
                 onDecline: () => _act(r.str('id'), 'decline', incoming: true),
                 onOpenProfile: () {
                   final uid = r.s('requesterId');
-                  if (uid != null && uid.isNotEmpty) context.push('/user/$uid');
+                  if (uid != null && uid.isNotEmpty) context.push('/profile/$uid');
                 },
               )
           else
@@ -175,7 +175,7 @@ class _MessageRequestsPanelState extends ConsumerState<MessageRequestsPanel> {
                 onCancel: () => _act(r.str('id'), 'cancel', incoming: false),
                 onOpenProfile: () {
                   final uid = r.s('targetId');
-                  if (uid != null && uid.isNotEmpty) context.push('/user/$uid');
+                  if (uid != null && uid.isNotEmpty) context.push('/profile/$uid');
                 },
               ),
         ],

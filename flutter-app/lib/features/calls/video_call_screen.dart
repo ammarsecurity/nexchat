@@ -372,6 +372,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         ..onReconnecting = null
         ..onTracksChanged = null;
     } else if (owns) {
+      // Leaving call UI without hangup button (back/system) — clear server busy.
+      _notifyServerCallCleanup();
       unawaited(_lk.leave());
       if (ac.sessionId == _sid) Future.microtask(_activeCtrl.clear);
     }
