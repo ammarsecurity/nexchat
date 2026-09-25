@@ -514,6 +514,53 @@ namespace NexChat.Infrastructure.Migrations
                     b.ToTable("NotificationOutboxItems");
                 });
 
+            modelBuilder.Entity("NexChat.Core.Entities.OtpChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<bool>("Consumed")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PendingCountry")
+                        .HasMaxLength(2)
+                        .HasColumnType("varchar(2)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PhoneNumber", "Purpose", "Consumed", "CreatedAt");
+
+                    b.ToTable("OtpChallenges");
+                });
+
             modelBuilder.Entity("NexChat.Core.Entities.Report", b =>
                 {
                     b.Property<Guid>("Id")
@@ -824,6 +871,9 @@ namespace NexChat.Infrastructure.Migrations
                         .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsOnline")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsPhoneVerified")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<string>("Name")

@@ -18,20 +18,31 @@ const vuetify = createVuetify({
     fallback: 'en',
     messages: { ar, en }
   },
+  defaults: {
+    VBtn: { rounded: 'lg' },
+    VCard: { rounded: 'lg', elevation: 0 },
+    VChip: { rounded: 'lg' },
+    VTextField: { rounded: 'lg', variant: 'outlined', color: 'primary' },
+    VSelect: { rounded: 'lg', variant: 'outlined', color: 'primary' },
+    VTextarea: { rounded: 'lg', variant: 'outlined', color: 'primary' },
+  },
   theme: {
-    defaultTheme: 'nexchatDark',
+    defaultTheme: 'nexchatLight',
     themes: {
-      nexchatDark: {
-        dark: true,
+      nexchatLight: {
+        dark: false,
         colors: {
-          background: '#0D0D1A',
-          surface: '#13132A',
-          primary: '#6C63FF',
-          secondary: '#FF6584',
-          accent: '#00D4FF',
-          error: '#FF5252',
-          warning: '#FFB74D',
-          success: '#4CAF50',
+          background: '#F4F7FC',
+          surface: '#FFFFFF',
+          primary: '#2E86FB',
+          secondary: '#0EA5E9',
+          accent: '#22D3EE',
+          error: '#EF4444',
+          warning: '#F59E0B',
+          success: '#22C55E',
+          info: '#2E86FB',
+          'on-background': '#0B1220',
+          'on-surface': '#0B1220',
         }
       }
     }

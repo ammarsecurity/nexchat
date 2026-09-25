@@ -21,6 +21,8 @@ public class User
     public string? Country { get; set; } = null;
     /// <summary>رقم الهاتف مع مفتاح الدولة (مثل 9647712345678)</summary>
     public string? PhoneNumber { get; set; } = null;
+    /// <summary>تم التحقق من الرقم عبر واتساب OTP.</summary>
+    public bool IsPhoneVerified { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<ChatSession> SessionsAsUser1 { get; set; } = new List<ChatSession>();

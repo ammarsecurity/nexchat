@@ -207,6 +207,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 child: Text(t('conversations.title'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.textPrimary)),
               ),
               if (_section == 'contacts') ...[
+                GlassIconButton(icon: LucideIcons.contact, color: c.primary, onTap: () => _contactsKey.currentState?.openPhoneBookSync()),
+                const SizedBox(width: 8),
                 GlassIconButton(icon: LucideIcons.userPlus, color: c.primary, onTap: () => _contactsKey.currentState?.openAddModal()),
                 const SizedBox(width: 8),
               ],

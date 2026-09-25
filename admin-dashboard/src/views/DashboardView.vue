@@ -19,16 +19,16 @@ const chartData = ref({
     {
       label: 'جلسات',
       data: [],
-      borderColor: '#6C63FF',
-      backgroundColor: 'rgba(108,99,255,0.1)',
+      borderColor: '#2E86FB',
+      backgroundColor: 'rgba(46,134,251,0.12)',
       fill: true,
       tension: 0.4,
     },
     {
       label: 'مستخدمين جدد',
       data: [],
-      borderColor: '#FF6584',
-      backgroundColor: 'rgba(255,101,132,0.1)',
+      borderColor: '#0EA5E9',
+      backgroundColor: 'rgba(14,165,233,0.1)',
       fill: true,
       tension: 0.4,
     }
@@ -40,32 +40,32 @@ const chartOptions = {
   maintainAspectRatio: false,
   plugins: {
     legend: {
-      labels: { color: '#B0B0C3', font: { size: 12 } }
+      labels: { color: '#5B6577', font: { family: 'Cairo', size: 12, weight: '600' } }
     }
   },
   scales: {
     x: {
-      ticks: { color: '#B0B0C3' },
-      grid: { color: 'rgba(255,255,255,0.05)' }
+      ticks: { color: '#94A3B8' },
+      grid: { color: 'rgba(15,23,42,0.06)' }
     },
     y: {
-      ticks: { color: '#B0B0C3' },
-      grid: { color: 'rgba(255,255,255,0.05)' }
+      ticks: { color: '#94A3B8' },
+      grid: { color: 'rgba(15,23,42,0.06)' }
     }
   }
 }
 
 const statCards = [
-  { key: 'totalUsers', label: 'إجمالي المستخدمين', icon: 'mdi-account-group', color: '#6C63FF', suffix: '' },
-  { key: 'onlineUsers', label: 'متصل الآن', icon: 'mdi-circle', color: '#4ade80', suffix: '' },
-  { key: 'activeSessions', label: 'جلسات نشطة', icon: 'mdi-chat-processing', color: '#00D4FF', suffix: '' },
-  { key: 'totalSessionsToday', label: 'جلسات اليوم', icon: 'mdi-calendar-today', color: '#FF6584', suffix: '' },
-  { key: 'totalMessagesToday', label: 'رسائل اليوم', icon: 'mdi-message', color: '#FFB74D', suffix: '' },
-  { key: 'pendingReports', label: 'بلاغات معلقة', icon: 'mdi-flag', color: '#FF5252', suffix: '' },
-  { key: 'totalConversations', label: 'المحادثات', icon: 'mdi-forum', color: '#9C27B0', suffix: '' },
-  { key: 'totalConversationMessagesToday', label: 'رسائل المحادثات اليوم', icon: 'mdi-message-reply-text', color: '#E040FB', suffix: '' },
-  { key: 'totalContacts', label: 'جهات الاتصال', icon: 'mdi-account-multiple', color: '#00BCD4', suffix: '' },
-  { key: 'totalBlocks', label: 'المحظورون', icon: 'mdi-block-helper', color: '#FF5722', suffix: '' },
+  { key: 'totalUsers', label: 'إجمالي المستخدمين', icon: 'mdi-account-group', color: '#2E86FB', suffix: '' },
+  { key: 'onlineUsers', label: 'متصل الآن', icon: 'mdi-circle', color: '#22C55E', suffix: '' },
+  { key: 'activeSessions', label: 'جلسات نشطة', icon: 'mdi-chat-processing', color: '#22D3EE', suffix: '' },
+  { key: 'totalSessionsToday', label: 'جلسات اليوم', icon: 'mdi-calendar-today', color: '#8B5CF6', suffix: '' },
+  { key: 'totalMessagesToday', label: 'رسائل اليوم', icon: 'mdi-message', color: '#F59E0B', suffix: '' },
+  { key: 'pendingReports', label: 'بلاغات معلقة', icon: 'mdi-flag', color: '#EF4444', suffix: '' },
+  { key: 'totalConversations', label: 'المحادثات', icon: 'mdi-forum', color: '#6366F1', suffix: '' },
+  { key: 'totalConversationMessagesToday', label: 'رسائل المحادثات اليوم', icon: 'mdi-message-reply-text', color: '#0EA5E9', suffix: '' },
+  { key: 'totalContacts', label: 'جهات الاتصال', icon: 'mdi-account-multiple', color: '#06B6D4', suffix: '' },
+  { key: 'totalBlocks', label: 'المحظورون', icon: 'mdi-block-helper', color: '#F97316', suffix: '' },
 ]
 
 onMounted(async () => {
@@ -93,32 +93,32 @@ onMounted(async () => {
         {
           label: 'جلسات',
           data: points.map(p => p.sessions),
-          borderColor: '#6C63FF',
-          backgroundColor: 'rgba(108,99,255,0.1)',
+          borderColor: '#2E86FB',
+          backgroundColor: 'rgba(46,134,251,0.12)',
           fill: true,
           tension: 0.4,
         },
         {
           label: 'مستخدمين جدد',
           data: points.map(p => p.newUsers),
-          borderColor: '#FF6584',
-          backgroundColor: 'rgba(255,101,132,0.1)',
+          borderColor: '#0EA5E9',
+          backgroundColor: 'rgba(14,165,233,0.1)',
           fill: true,
           tension: 0.4,
         },
         {
           label: 'محادثات',
           data: points.map(p => p.conversations ?? 0),
-          borderColor: '#9C27B0',
-          backgroundColor: 'rgba(156,39,176,0.1)',
+          borderColor: '#8B5CF6',
+          backgroundColor: 'rgba(139,92,246,0.1)',
           fill: true,
           tension: 0.4,
         },
         {
           label: 'جهات اتصال جديدة',
           data: points.map(p => p.newContacts ?? 0),
-          borderColor: '#00BCD4',
-          backgroundColor: 'rgba(0,188,212,0.1)',
+          borderColor: '#22D3EE',
+          backgroundColor: 'rgba(34,211,238,0.1)',
           fill: true,
           tension: 0.4,
         }
@@ -132,8 +132,8 @@ onMounted(async () => {
 <template>
   <div class="dashboard-view">
     <div class="mb-4 mb-sm-6">
-      <div class="text-h5 font-weight-bold dashboard-title">مرحباً بك 👋</div>
-      <div class="text-body-2 text-medium-emphasis">هنا ملخص نشاط NexChat اليوم</div>
+      <div class="page-title">مرحباً بك</div>
+      <div class="page-subtitle mt-1">هنا ملخص نشاط نيكس شات اليوم</div>
     </div>
 
     <!-- Stats Grid -->
@@ -193,8 +193,6 @@ onMounted(async () => {
 }
 
 .stat-card {
-  background: rgba(255,255,255,0.04) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
   position: relative;
   overflow: hidden;
 }

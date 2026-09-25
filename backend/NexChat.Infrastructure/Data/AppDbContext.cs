@@ -32,6 +32,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<StoryView> StoryViews => Set<StoryView>();
     public DbSet<ShortFilm> ShortFilms => Set<ShortFilm>();
     public DbSet<ShortFilmSection> ShortFilmSections => Set<ShortFilmSection>();
+    public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -401,6 +402,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.IsActive, x.SortOrder });
             e.HasIndex(x => new { x.IsFeatured, x.IsActive });
             e.HasIndex(x => new { x.SectionId, x.IsActive, x.SortOrder });
+        });
+
+        modelBuilder.Entity<OtpChallenge>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PhoneNumber).HasMaxLength(20);
+            e.Property(x => x.Purpose).HasMaxLength(32);
+            e.Property(x => x.CodeHash).HasMaxLength(64);
+            e.Property(x => x.PendingCountry).HasMaxLength(2);
+            e.HasIndex(x => new { x.PhoneNumber, x.Purpose, x.Consumed, x.CreatedAt });
         });
     }
 }

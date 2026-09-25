@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.SignalR;
 using NexChat.API.Hubs;
@@ -33,6 +35,11 @@ builder.Services.Configure<NotificationFeaturesOptions>(
 builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(
     builder.Configuration.GetSection("OneSignal"));
 builder.Services.AddHttpClient<NexChat.Infrastructure.Services.OneSignalService>();
+builder.Services.AddHttpClient<NexChat.Infrastructure.Services.EvolutionWhatsAppService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<NexChat.API.Services.OtpService>();
 builder.Services.AddScoped<NotificationOutboxService>();
 builder.Services.AddScoped<StoryAudienceService>();
 builder.Services.AddHostedService<NotificationOutboxDispatcherService>();
@@ -73,7 +80,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ClockSkew = TimeSpan.Zero
         };
 
-        // Allow JWT in SignalR WebSocket query string
+        // Allow JWT in SignalR WebSocket query string + إبطال التوكن بعد تغيير كلمة المرور
         opt.Events = new JwtBearerEvents
         {
             OnMessageReceived = ctx =>
@@ -83,6 +90,44 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
                     ctx.Token = accessToken;
                 return Task.CompletedTask;
+            },
+            OnTokenValidated = async ctx =>
+            {
+                var principal = ctx.Principal;
+                if (principal?.Identity?.IsAuthenticated != true) return;
+
+                var idStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!Guid.TryParse(idStr, out var userId))
+                {
+                    ctx.Fail("invalid user");
+                    return;
+                }
+
+                var presented = principal.FindFirstValue(JwtService.AuthStampClaim);
+                var cache = ctx.HttpContext.RequestServices.GetRequiredService<IMemoryCache>();
+                var cacheKey = $"avs:{userId}";
+                if (!cache.TryGetValue(cacheKey, out string? expected) || string.IsNullOrEmpty(expected))
+                {
+                    var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                    var hash = await db.Users.AsNoTracking()
+                        .Where(u => u.Id == userId)
+                        .Select(u => u.PasswordHash)
+                        .FirstOrDefaultAsync();
+                    if (hash == null)
+                    {
+                        ctx.Fail("user not found");
+                        return;
+                    }
+                    expected = JwtService.AuthStamp(hash);
+                    cache.Set(cacheKey, expected, TimeSpan.FromMinutes(2));
+                }
+
+                // توكنات قديمة بلا بصمة تُرفض بعد النشر — يُعاد تسجيل الدخول مرة واحدة
+                if (string.IsNullOrEmpty(presented) ||
+                    !string.Equals(presented, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Fail("credentials changed");
+                }
             }
         };
     });

@@ -115,7 +115,13 @@ public class MessageRequestsController(AppDbContext db, NotificationOutboxServic
             "message_request",
             "طلب مراسلة",
             $"{name} يريد مراسلتك",
-            new Dictionary<string, string> { ["messageRequestId"] = messageRequestId.ToString() });
+            new Dictionary<string, string>
+            {
+                ["messageRequestId"] = messageRequestId.ToString(),
+                ["requesterId"] = CurrentUserId.ToString(),
+                ["requesterName"] = name,
+                ["requesterAvatar"] = requester?.Avatar ?? ""
+            });
     }
 
     /// <summary>قبول الطلب: إنشاء جهات اتصال متبادلة حتى يعمل CreateOrGetConversation لكلا الطرفين.</summary>

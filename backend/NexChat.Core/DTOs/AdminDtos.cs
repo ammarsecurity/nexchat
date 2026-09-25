@@ -23,7 +23,8 @@ public record AdminUserDto(
     bool IsFeatured,
     DateTime CreatedAt,
     DateOnly? BirthDate,
-    string? PhoneNumber
+    string? PhoneNumber,
+    string? Avatar
 );
 
 public record AdminSessionDto(
@@ -33,7 +34,9 @@ public record AdminSessionDto(
     string Type,
     DateTime StartedAt,
     DateTime? EndedAt,
-    int MessageCount
+    int MessageCount,
+    string? User1Avatar = null,
+    string? User2Avatar = null
 );
 
 public record AdminReportDto(
@@ -42,7 +45,9 @@ public record AdminReportDto(
     string ReportedName,
     string Reason,
     bool IsReviewed,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? ReporterAvatar = null,
+    string? ReportedAvatar = null
 );
 
 public record PagedResult<T>(IEnumerable<T> Items, int Total, int Page, int PageSize);
@@ -55,7 +60,8 @@ public record AdminMessageDto(
     string SessionId,
     string Content,
     string Type,
-    DateTime SentAt
+    DateTime SentAt,
+    string? SenderAvatar = null
 );
 
 public record BannerDto(
@@ -85,6 +91,8 @@ public record AdminBroadcastNotificationDto(Guid Id, string Title, string Body, 
 
 public record SetFeaturedRequest(bool Featured);
 
+public record AdminSetPasswordRequest(string Password);
+
 public record DeleteUsersRequest(IEnumerable<Guid> Ids);
 
 /// <summary>عنصر قائمة المحادثات للإدارة. Type: 0 ثنائية، 1 مجموعة.</summary>
@@ -96,10 +104,12 @@ public record AdminConversationDto(
     string? GroupName,
     DateTime CreatedAt,
     int MessageCount,
-    DateTime? LastMessageAt);
-public record AdminConversationMessageDto(Guid Id, string SenderName, string Content, string Type, DateTime SentAt);
-public record AdminBlockDto(Guid Id, string BlockerName, string BlockedUserName, DateTime CreatedAt);
-public record AdminContactDto(Guid Id, string UserName, string ContactUserName, DateTime CreatedAt);
+    DateTime? LastMessageAt,
+    string? User1Avatar = null,
+    string? User2Avatar = null);
+public record AdminConversationMessageDto(Guid Id, string SenderName, string Content, string Type, DateTime SentAt, string? SenderAvatar = null);
+public record AdminBlockDto(Guid Id, string BlockerName, string BlockedUserName, DateTime CreatedAt, string? BlockerAvatar = null, string? BlockedUserAvatar = null);
+public record AdminContactDto(Guid Id, string UserName, string ContactUserName, DateTime CreatedAt, string? UserAvatar = null, string? ContactUserAvatar = null);
 
 public record DeleteConversationsRequest(IEnumerable<Guid> Ids);
 public record DeleteMessagesRequest(IEnumerable<Guid> Ids);

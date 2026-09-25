@@ -23,7 +23,8 @@ public class UserController(
     IHubContext<ConversationHub> conversationHub,
     IHubContext<MatchingHub> matchingHub,
     IHubContext<ChatHub> chatHub,
-    SiteContentFeatureService features) : ControllerBase
+    SiteContentFeatureService features,
+    EvolutionWhatsAppService evolution) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -96,6 +97,10 @@ public class UserController(
     [HttpPut("profile-contact")]
     public async Task<IActionResult> UpdateProfileContact([FromBody] UpdateProfileContactRequest req)
     {
+        var otpStatus = await evolution.GetStatusAsync();
+        if (otpStatus.Enabled && otpStatus.Configured)
+            return BadRequest(new { message = "يجب تأكيد الرقم عبر رمز واتساب", requireOtp = true });
+
         var country = (req.Country ?? "").Trim().ToUpperInvariant();
         var countryCode = (req.CountryCode ?? "").Trim().TrimStart('+');
         var phone = (req.PhoneNumber ?? "").Trim().Replace(" ", "").Replace("-", "");
@@ -115,7 +120,8 @@ public class UserController(
             .Where(u => u.Id == CurrentUserId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(u => u.Country, country)
-                .SetProperty(u => u.PhoneNumber, fullPhone));
+                .SetProperty(u => u.PhoneNumber, fullPhone)
+                .SetProperty(u => u.IsPhoneVerified, false));
 
         return Ok();
     }

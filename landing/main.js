@@ -12,11 +12,20 @@
   const IDB_KEY = 'stats.db';
   const IDB_VERSION = 2;
 
+  const DOWNLOAD_BASE = 1000000;
+  const VISITOR_BASE = 1000;
+
   function getEl(id) { return document.getElementById(id); }
 
   function formatNum(n) {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    if (n >= 1000000) {
+      const m = n / 1000000;
+      return (Number.isInteger(m) ? m.toFixed(0) : m.toFixed(1)) + 'M+';
+    }
+    if (n >= 1000) {
+      const k = n / 1000;
+      return (Number.isInteger(k) ? k.toFixed(0) : k.toFixed(1)) + 'K+';
+    }
     return String(n);
   }
 
@@ -92,9 +101,19 @@
     const vEl = getEl('statVisitors');
     const dEl = getEl('statDownloads');
     const row = getEl('statsRow');
-    if (vEl) vEl.textContent = formatNum(visitors);
-    if (dEl) dEl.textContent = formatNum(downloads);
+    if (vEl) vEl.textContent = formatNum(VISITOR_BASE + visitors);
+    if (dEl) dEl.textContent = formatNum(DOWNLOAD_BASE + downloads);
     if (row) row.removeAttribute('aria-hidden');
+  }
+
+  function bindDownload(btn, db) {
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      increment(db, 'downloads');
+      const s = getStats(db);
+      await saveDb(db);
+      updateUI(s.visitors, s.downloads);
+    });
   }
 
   document.addEventListener('DOMContentLoaded', async function () {
@@ -104,8 +123,8 @@
     if (typeof initSqlJs === 'undefined') {
       const vEl = getEl('statVisitors');
       const dEl = getEl('statDownloads');
-      if (vEl) vEl.textContent = '0';
-      if (dEl) dEl.textContent = '0';
+      if (vEl) vEl.textContent = formatNum(VISITOR_BASE);
+      if (dEl) dEl.textContent = formatNum(DOWNLOAD_BASE);
       row.removeAttribute('aria-hidden');
       return;
     }
@@ -124,15 +143,8 @@
       await saveDb(db);
       updateUI(visitors, downloads);
 
-      const btn = getEl('downloadBtn');
-      if (btn) {
-        btn.addEventListener('click', async function () {
-          increment(db, 'downloads');
-          const s = getStats(db);
-          await saveDb(db);
-          updateUI(s.visitors, s.downloads);
-        });
-      }
+      bindDownload(getEl('downloadBtn'), db);
+      bindDownload(getEl('downloadBtnNav'), db);
     } catch (e) {
       console.warn('SQLite init failed:', e);
       updateUI(0, 0);

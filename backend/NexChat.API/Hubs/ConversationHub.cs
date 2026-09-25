@@ -417,7 +417,13 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     "conversation_message",
                     sender?.Name ?? "شخص",
                     preview,
-                    new Dictionary<string, string> { ["conversationId"] = cid.ToString() });
+                    new Dictionary<string, string>
+                    {
+                        ["conversationId"] = cid.ToString(),
+                        ["userId"] = userId.ToString(),
+                        ["senderName"] = sender?.Name ?? "",
+                        ["senderAvatar"] = sender?.Avatar ?? ""
+                    });
 
             var listUpdate = new
             {

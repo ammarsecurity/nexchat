@@ -2,7 +2,7 @@ name: nexchat
 description: "NexChat – نيكس شات"
 publish_to: 'none'
 
-version: 1.0.18+19
+version: 1.0.19+20
 
 environment:
   sdk: ^3.13.2
@@ -40,6 +40,7 @@ dependencies:
   wakelock_plus: ^1.8.0
   image: ^4.10.1
   connectivity_plus: ^7.3.1
+  flutter_contacts: ^2.5.0
 
 dev_dependencies:
   flutter_test:

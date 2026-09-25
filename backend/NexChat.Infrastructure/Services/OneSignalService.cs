@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -23,17 +24,20 @@ public class OneSignalService
     private readonly HttpClient _http;
     private readonly OneSignalOptions _opts;
     private readonly AppDbContext _db;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OneSignalService> _logger;
 
     public OneSignalService(
         HttpClient http,
         IOptions<OneSignalOptions> opts,
         AppDbContext db,
+        IServiceScopeFactory scopeFactory,
         ILogger<OneSignalService> logger)
     {
         _http = http;
         _opts = opts.Value;
         _db = db;
+        _scopeFactory = scopeFactory;
         _logger = logger;
         _http.BaseAddress = new Uri("https://api.onesignal.com/");
         _http.DefaultRequestHeaders.Add("Authorization", $"Key {_opts.RestApiKey}");
@@ -412,7 +416,7 @@ public class OneSignalService
                 providerMessageId = TryExtractProviderId(resBody);
                 var errors = TryExtractErrors(resBody);
 
-                // HTTP 200 with empty id = no subscribed recipients matched (not a real delivery).
+                // نجاح: HTTP 2xx مع معرّف رسالة OneSignal فقط (recipients بدون id ≠ إرسال ناجح)
                 if (res.IsSuccessStatusCode && !string.IsNullOrWhiteSpace(providerMessageId))
                 {
                     await PersistDeliveryLogAsync(channel, type, recipientUserId, recipientSubscriptionId, true, lastStatus, attempt, providerMessageId, errors, payloadJson);
@@ -420,11 +424,11 @@ public class OneSignalService
                 }
 
                 lastError = res.IsSuccessStatusCode
-                    ? (errors ?? "OneSignal accepted request but matched zero subscribers (empty id)")
-                    : $"HTTP {(int)res.StatusCode}: {resBody}";
+                    ? Truncate(errors ?? "OneSignal accepted request but did not create a message (empty id)", 1000)
+                    : Truncate($"HTTP {(int)res.StatusCode}: {resBody}", 1000);
                 await PersistDeliveryLogAsync(channel, type, recipientUserId, recipientSubscriptionId, false, lastStatus, attempt, providerMessageId, lastError, payloadJson);
 
-                // Empty-audience responses won't improve with the same payload — stop early.
+                // Empty-audience / no-message responses won't improve with the same payload — stop early.
                 if (res.IsSuccessStatusCode && string.IsNullOrWhiteSpace(providerMessageId))
                     break;
             }
@@ -454,27 +458,36 @@ public class OneSignalService
         string? error,
         string payloadJson)
     {
+        // DbContext منفصل حتى لا يلوّث ChangeTracker لطلب الـ API (سبب شائع لـ 500 بعد إرسال ناجح)
         try
         {
-            _db.NotificationDeliveryLogs.Add(new NotificationDeliveryLog
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.NotificationDeliveryLogs.Add(new NotificationDeliveryLog
             {
-                Channel = channel,
-                Type = type,
+                Channel = Truncate(channel, 20) ?? "push",
+                Type = Truncate(type, 50) ?? "generic",
                 RecipientUserId = recipientUserId,
-                RecipientSubscriptionId = recipientSubscriptionId,
+                RecipientSubscriptionId = Truncate(recipientSubscriptionId, 128),
                 Success = success,
                 HttpStatusCode = statusCode,
                 Attempt = attempt,
-                ProviderMessageId = providerMessageId,
-                Error = error,
-                PayloadPreview = payloadJson.Length > 1900 ? payloadJson[..1900] : payloadJson
+                ProviderMessageId = Truncate(providerMessageId, 100),
+                Error = Truncate(error, 1000),
+                PayloadPreview = Truncate(payloadJson, 2000)
             });
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to persist notification delivery log");
         }
+    }
+
+    private static string? Truncate(string? value, int max)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return value.Length <= max ? value : value[..max];
     }
 
     private static string? TryExtractProviderId(string? body)

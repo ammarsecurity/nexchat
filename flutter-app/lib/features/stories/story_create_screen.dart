@@ -368,7 +368,7 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
     final pad = MediaQuery.paddingOf(context);
     return Scaffold(
       backgroundColor: c.bgPrimary,
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       body: Column(children: [
         Padding(
           padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 12),
@@ -412,24 +412,27 @@ class _StoryCreateScreenState extends ConsumerState<StoryCreateScreen> {
             initialFilterId: _editingFilterId,
             initialOverlayJson: _editingOverlay,
             onBackgroundChanged: (bg) => setState(() => _background = bg),
-          ),
-        ),
-        Container(
-          padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + pad.bottom),
-          decoration: BoxDecoration(color: c.bgCard, border: Border(top: BorderSide(color: c.border))),
-          child: TextField(
-            controller: _caption,
-            style: TextStyle(fontSize: 14, color: c.textPrimary),
-            decoration: InputDecoration(
-              hintText: t('stories.captionPlaceholder'),
-              hintStyle: TextStyle(color: c.textMuted),
-              filled: true,
-              fillColor: c.bgElevated,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: c.border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: c.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: c.primary)),
+            footer: Container(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: c.border))),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: TextField(
+                  controller: _caption,
+                  style: TextStyle(fontSize: 14, color: c.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: t('stories.captionPlaceholder'),
+                    hintStyle: TextStyle(color: c.textMuted),
+                    filled: true,
+                    fillColor: c.bgElevated,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: c.border)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: c.border)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: c.primary)),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

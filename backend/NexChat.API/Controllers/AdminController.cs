@@ -20,6 +20,7 @@ public class AdminController(
     IHubContext<StoryHub> storyHub,
     StoryAudienceService storyAudience,
     OneSignalService oneSignal,
+    EvolutionWhatsAppService evolution,
     IWebHostEnvironment env,
     IConfiguration config,
     IConversationMessageCrypto messageCrypto) : ControllerBase
@@ -60,7 +61,7 @@ public class AdminController(
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt, u.BirthDate, u.PhoneNumber))
+            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt, u.BirthDate, u.PhoneNumber, u.Avatar))
             .ToListAsync();
 
         return Ok(new PagedResult<AdminUserDto>(users, total, page, pageSize));
@@ -142,6 +143,31 @@ public class AdminController(
     }
 
     /// <summary>
+    /// تعيين كلمة مرور جديدة لمستخدم (من لوحة الأدمن).
+    /// </summary>
+    [HttpPut("users/{id}/password")]
+    public async Task<IActionResult> SetUserPassword(Guid id, [FromBody] AdminSetPasswordRequest req)
+    {
+        var password = (req.Password ?? string.Empty).Trim();
+        if (password.Length < 6)
+            return BadRequest(new { message = "كلمة المرور يجب أن تكون 6 أحرف على الأقل" });
+        if (password.Length > 72)
+            return BadRequest(new { message = "كلمة المرور طويلة جداً" });
+
+        var user = await db.Users.FindAsync(id);
+        if (user == null) return NotFound();
+        if (user.IsAdmin)
+            return BadRequest(new { message = "لا يمكن تغيير كلمة مرور الأدمن من هنا" });
+
+        var hash = BCrypt.Net.BCrypt.HashPassword(password);
+        await db.Users
+            .Where(u => u.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.PasswordHash, hash));
+
+        return Ok(new { message = "تم تحديث كلمة المرور بنجاح" });
+    }
+
+    /// <summary>
     /// حذف مستخدم واحد. لا يمكن حذف الأدمن.
     /// </summary>
     [HttpDelete("users/{id}")]
@@ -185,48 +211,157 @@ public class AdminController(
 
     private async Task DeleteUserCascade(Guid userId)
     {
-        // 1. إيقاف جميع الجلسات أولاً (تعيين EndedAt)
+        // 1. إيقاف الجلسات وإشعار العملاء قبل الحذف
         var sessions = await db.ChatSessions
             .Where(s => s.User1Id == userId || s.User2Id == userId)
             .Select(s => s.Id)
             .ToListAsync();
 
-        await db.ChatSessions
-            .Where(s => s.User1Id == userId || s.User2Id == userId)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
+        if (sessions.Count > 0)
+        {
+            await db.ChatSessions
+                .Where(s => sessions.Contains(s.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
 
-        // إشعار العملاء بأن الجلسة انتهت
-        foreach (var sid in sessions)
-            await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", userId);
+            foreach (var sid in sessions)
+                await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", userId);
+        }
 
-        // 2. حذف الرسائل ثم كل ما يتعلق بالمستخدم
-        using var transaction = await db.Database.BeginTransactionAsync();
+        // 2. حذف كل ما يرتبط بالمستخدم (ترتيب يحترم Restrict FKs)
+        await using var transaction = await db.Database.BeginTransactionAsync();
         try
         {
-            await db.Messages.Where(m => sessions.Contains(m.SessionId)).ExecuteDeleteAsync();
-            await db.ChatSessions.Where(s => s.User1Id == userId || s.User2Id == userId).ExecuteDeleteAsync();
-            await db.Reports.Where(r => r.ReporterId == userId || r.ReportedId == userId).ExecuteDeleteAsync();
+            // طلبات الرسائل / الاتصال بالكود / البلاغات
+            await db.MessageRequests
+                .Where(r => r.RequesterId == userId || r.TargetId == userId)
+                .ExecuteDeleteAsync();
+            await db.CodeConnectionAttempts
+                .Where(a => a.RequesterId == userId || a.TargetId == userId)
+                .ExecuteDeleteAsync();
+            await db.Reports
+                .Where(r => r.ReporterId == userId || r.ReportedId == userId)
+                .ExecuteDeleteAsync();
 
-            var userConversations = await db.Conversations
+            // تفاعلات ورسائل المحادثات التي أرسلها المستخدم (SenderId = Restrict)
+            await db.MessageReactions.Where(r => r.UserId == userId).ExecuteDeleteAsync();
+            await db.ConversationMessages.Where(m => m.SenderId == userId).ExecuteDeleteAsync();
+
+            // محادثات خاصة يكون طرفاً فيها + مجموعات أنشأها أو عضو فيها
+            var privateConvIds = await db.Conversations
                 .Where(c => c.User1Id == userId || c.User2Id == userId)
                 .Select(c => c.Id)
                 .ToListAsync();
-            var convMessageIds = await db.ConversationMessages
-                .Where(m => userConversations.Contains(m.ConversationId))
-                .Select(m => m.Id)
+
+            var memberConvIds = await db.ConversationMembers
+                .Where(m => m.UserId == userId)
+                .Select(m => m.ConversationId)
                 .ToListAsync();
-            await db.UserMessageDeletions
-                .Where(d => d.UserId == userId || convMessageIds.Contains(d.MessageId))
+
+            var allRelatedConvIds = privateConvIds
+                .Concat(memberConvIds)
+                .Distinct()
+                .ToList();
+
+            if (allRelatedConvIds.Count > 0)
+            {
+                var relatedMessageIds = await db.ConversationMessages
+                    .Where(m => allRelatedConvIds.Contains(m.ConversationId))
+                    .Select(m => m.Id)
+                    .ToListAsync();
+
+                if (relatedMessageIds.Count > 0)
+                {
+                    await db.MessageReactions
+                        .Where(r => relatedMessageIds.Contains(r.MessageId))
+                        .ExecuteDeleteAsync();
+                    await db.UserMessageDeletions
+                        .Where(d => relatedMessageIds.Contains(d.MessageId))
+                        .ExecuteDeleteAsync();
+                }
+
+                await db.UserConversationDeletions
+                    .Where(d => allRelatedConvIds.Contains(d.ConversationId))
+                    .ExecuteDeleteAsync();
+                await db.UserConversationStates
+                    .Where(s => allRelatedConvIds.Contains(s.ConversationId))
+                    .ExecuteDeleteAsync();
+            }
+
+            // حذف ما تبقى من سجلات خاصة بالمستخدم حتى لو خارج المحادثات أعلاه
+            await db.UserMessageDeletions.Where(d => d.UserId == userId).ExecuteDeleteAsync();
+            await db.UserConversationDeletions.Where(d => d.UserId == userId).ExecuteDeleteAsync();
+            await db.UserConversationStates.Where(s => s.UserId == userId).ExecuteDeleteAsync();
+            await db.ConversationMembers.Where(m => m.UserId == userId).ExecuteDeleteAsync();
+
+            // للخاص: احذف الرسائل المتبقية ثم المحادثة بالكامل
+            if (privateConvIds.Count > 0)
+            {
+                await db.ConversationMessages
+                    .Where(m => privateConvIds.Contains(m.ConversationId))
+                    .ExecuteDeleteAsync();
+                await db.Conversations
+                    .Where(c => privateConvIds.Contains(c.Id))
+                    .ExecuteDeleteAsync();
+            }
+
+            // للمجموعات: أزل مرجع المنشئ بدل كسر Restrict
+            await db.Conversations
+                .Where(c => c.CreatedById == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.CreatedById, (Guid?)null));
+
+            // جلسات الدردشة العشوائية ورسائلها (SenderId = Restrict)
+            if (sessions.Count > 0)
+            {
+                await db.Messages
+                    .Where(m => sessions.Contains(m.SessionId) || m.SenderId == userId)
+                    .ExecuteDeleteAsync();
+                await db.ChatSessions
+                    .Where(s => sessions.Contains(s.Id))
+                    .ExecuteDeleteAsync();
+            }
+            else
+            {
+                await db.Messages.Where(m => m.SenderId == userId).ExecuteDeleteAsync();
+            }
+
+            await db.UserBlocks
+                .Where(b => b.BlockerId == userId || b.BlockedUserId == userId)
                 .ExecuteDeleteAsync();
-            await db.UserConversationDeletions.Where(d => userConversations.Contains(d.ConversationId)).ExecuteDeleteAsync();
-            await db.UserConversationStates.Where(s => userConversations.Contains(s.ConversationId)).ExecuteDeleteAsync();
-            await db.ConversationMessages.Where(m => userConversations.Contains(m.ConversationId)).ExecuteDeleteAsync();
-            await db.Conversations.Where(c => c.User1Id == userId || c.User2Id == userId).ExecuteDeleteAsync();
-            await db.UserBlocks.Where(b => b.BlockerId == userId || b.BlockedUserId == userId).ExecuteDeleteAsync();
-            await db.Contacts.Where(c => c.UserId == userId || c.ContactUserId == userId).ExecuteDeleteAsync();
-            await db.CodeConnectionAttempts.Where(a => a.RequesterId == userId || a.TargetId == userId).ExecuteDeleteAsync();
+            await db.Contacts
+                .Where(c => c.UserId == userId || c.ContactUserId == userId)
+                .ExecuteDeleteAsync();
             await db.SavedCodes.Where(s => s.UserId == userId).ExecuteDeleteAsync();
             await db.DeviceSubscriptions.Where(d => d.UserId == userId).ExecuteDeleteAsync();
+            await db.UserNotifications.Where(n => n.UserId == userId).ExecuteDeleteAsync();
+            var userPhone = await db.Users.AsNoTracking()
+                .Where(u => u.Id == userId)
+                .Select(u => u.PhoneNumber)
+                .FirstOrDefaultAsync();
+            await db.OtpChallenges
+                .Where(o => o.UserId == userId || (userPhone != null && o.PhoneNumber == userPhone))
+                .ExecuteDeleteAsync();
+
+            // الستوريز (المشاهدات Cascade من السلايد، لكن نمسح مشاهداته أيضاً)
+            await db.StoryViews.Where(v => v.ViewerUserId == userId).ExecuteDeleteAsync();
+            var slideIds = await db.StorySlides
+                .Where(s => s.UserId == userId)
+                .Select(s => s.Id)
+                .ToListAsync();
+            if (slideIds.Count > 0)
+            {
+                await db.StoryViews.Where(v => slideIds.Contains(v.StorySlideId)).ExecuteDeleteAsync();
+                await db.StorySlides.Where(s => slideIds.Contains(s.Id)).ExecuteDeleteAsync();
+            }
+
+            await db.NotificationDeliveryLogs
+                .Where(l => l.RecipientUserId == userId)
+                .ExecuteDeleteAsync();
+
+            // أفلام قصيرة أنشأها كأدمن — SetNull على المستوى المنطقي احتياطاً
+            await db.ShortFilms
+                .Where(f => f.CreatedByAdminId == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(f => f.CreatedByAdminId, (Guid?)null));
+
             await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync();
             await transaction.CommitAsync();
         }
@@ -261,7 +396,9 @@ public class AdminController(
             .Select(s => new AdminSessionDto(
                 s.Id, s.User1.Name, s.User2.Name, s.Type,
                 s.StartedAt, s.EndedAt,
-                s.Messages.Count
+                s.Messages.Count,
+                s.User1.Avatar,
+                s.User2.Avatar
             ))
             .ToListAsync();
 
@@ -348,7 +485,8 @@ public class AdminController(
             .Take(pageSize)
             .Select(r => new AdminReportDto(
                 r.Id, r.Reporter.Name, r.Reported.Name,
-                r.Reason, r.IsReviewed, r.CreatedAt
+                r.Reason, r.IsReviewed, r.CreatedAt,
+                r.Reporter.Avatar, r.Reported.Avatar
             ))
             .ToListAsync();
 
@@ -454,7 +592,9 @@ public class AdminController(
             .Select(s => new AdminSessionDto(
                 s.Id, s.User1.Name, s.User2.Name, s.Type,
                 s.StartedAt, s.EndedAt,
-                s.Messages.Count
+                s.Messages.Count,
+                s.User1.Avatar,
+                s.User2.Avatar
             ))
             .ToListAsync();
 
@@ -545,7 +685,8 @@ public class AdminController(
                 m.SessionId.ToString(),
                 m.Content,
                 m.Type,
-                m.SentAt
+                m.SentAt,
+                m.Sender.Avatar
             ))
             .ToListAsync();
 
@@ -597,7 +738,9 @@ public class AdminController(
                 c.Type == ConversationType.Group ? c.Name : null,
                 c.CreatedAt,
                 c.Messages.Count,
-                c.Messages.Any() ? c.Messages.Max(m => m.SentAt) : (DateTime?)null
+                c.Messages.Any() ? c.Messages.Max(m => m.SentAt) : (DateTime?)null,
+                c.User1 != null ? c.User1.Avatar : null,
+                c.User2 != null ? c.User2.Avatar : null
             ))
             .ToListAsync();
 
@@ -619,7 +762,7 @@ public class AdminController(
             .OrderBy(m => m.SentAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(m => new { m.Id, SenderName = m.Sender.Name, m.Content, m.Type, m.SentAt })
+            .Select(m => new { m.Id, SenderName = m.Sender.Name, SenderAvatar = m.Sender.Avatar, m.Content, m.Type, m.SentAt })
             .ToListAsync();
 
         var messages = rows
@@ -628,7 +771,8 @@ public class AdminController(
                 m.SenderName,
                 messageCrypto.DecryptFromStorage(m.Content ?? ""),
                 m.Type,
-                m.SentAt))
+                m.SentAt,
+                m.SenderAvatar))
             .ToList();
 
         return Ok(new PagedResult<AdminConversationMessageDto>(messages, total, page, pageSize));
@@ -746,7 +890,9 @@ public class AdminController(
                 b.Id,
                 b.Blocker.Name,
                 b.BlockedUser.Name,
-                b.CreatedAt
+                b.CreatedAt,
+                b.Blocker.Avatar,
+                b.BlockedUser.Avatar
             ))
             .ToListAsync();
 
@@ -788,7 +934,9 @@ public class AdminController(
                 c.Id,
                 c.User.Name,
                 c.ContactUser.Name,
-                c.CreatedAt
+                c.CreatedAt,
+                c.User.Avatar,
+                c.ContactUser.Avatar
             ))
             .ToListAsync();
 
@@ -875,6 +1023,60 @@ public class AdminController(
         return Ok();
     }
 
+    [HttpGet("evolution-whatsapp")]
+    public async Task<ActionResult<object>> GetEvolutionWhatsApp()
+    {
+        var cfg = await evolution.GetConfigAsync();
+        var maskedKey = string.IsNullOrEmpty(cfg.ApiKey)
+            ? ""
+            : (cfg.ApiKey.Length <= 4
+                ? "••••••••"
+                : $"{new string('•', Math.Min(8, cfg.ApiKey.Length - 4))}{cfg.ApiKey[^Math.Min(4, cfg.ApiKey.Length)..]}");
+        return Ok(new
+        {
+            cfg.Enabled,
+            cfg.BaseUrl,
+            ApiKey = maskedKey,
+            cfg.InstanceName,
+            cfg.MessageTemplate,
+            cfg.OtpExpiryMinutes,
+            cfg.OtpLength,
+            HasApiKey = !string.IsNullOrWhiteSpace(cfg.ApiKey)
+        });
+    }
+
+    [HttpPut("evolution-whatsapp")]
+    public async Task<IActionResult> UpdateEvolutionWhatsApp([FromBody] EvolutionWhatsAppConfigDto dto)
+    {
+        if (dto == null)
+            return BadRequest(new { message = "بيانات غير صالحة" });
+
+        var current = await evolution.GetConfigAsync();
+        // الإبقاء على المفتاح القديم إذا أُرسل فارغاً أو مقنّعاً
+        if (string.IsNullOrWhiteSpace(dto.ApiKey) || dto.ApiKey.Contains('\u2022') || dto.ApiKey.StartsWith("****"))
+            dto.ApiKey = current.ApiKey;
+
+        await evolution.SaveConfigAsync(dto);
+        return Ok(new { message = "تم حفظ إعدادات واتساب Evolution" });
+    }
+
+    [HttpPost("evolution-whatsapp/test")]
+    public async Task<IActionResult> TestEvolutionWhatsApp([FromBody] EvolutionTestMessageRequest req)
+    {
+        if (!PhoneValidationService.TryValidate(req.CountryCode, req.PhoneNumber, out var fullPhone, out var phoneError))
+            return BadRequest(new { message = phoneError });
+
+        var cfg = await evolution.GetConfigAsync();
+        if (!cfg.Enabled || !EvolutionWhatsAppService.IsConfigured(cfg))
+            return BadRequest(new { message = "فعّل الإعدادات وأكمل Base URL و Instance و API Key أولاً" });
+
+        var text = $"اختبار NexChat Evolution — {DateTime.UtcNow:HH:mm} UTC";
+        var (ok, error) = await evolution.SendTextAsync(fullPhone, text);
+        if (!ok)
+            return StatusCode(502, new { message = error });
+        return Ok(new { message = "تم إرسال رسالة الاختبار عبر واتساب" });
+    }
+
     [HttpPost("notifications/upload-image")]
     public async Task<IActionResult> UploadNotificationImage(IFormFile file)
     {
@@ -935,17 +1137,30 @@ public class AdminController(
 
         if (success)
         {
-            db.BroadcastNotificationHistory.Add(new BroadcastNotificationHistory
+            try
             {
-                Title = dto.Title.Trim(),
-                Body = dto.Body.Trim(),
-                ImageUrl = dto.ImageUrl?.Trim(),
-                RecipientsCount = recipientsCount
-            });
-            await db.SaveChangesAsync();
+                db.BroadcastNotificationHistory.Add(new BroadcastNotificationHistory
+                {
+                    Title = TruncateRequired(dto.Title.Trim(), 100),
+                    Body = TruncateRequired(dto.Body.Trim(), 500),
+                    ImageUrl = TruncateOptional(dto.ImageUrl?.Trim(), 500),
+                    RecipientsCount = recipientsCount
+                });
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // الإرسال نجح — لا نُرجع 500 بسبب فشل حفظ السجل فقط
+                return Ok(new
+                {
+                    message = "تم إرسال الإشعار بنجاح (تعذر حفظ السجل)",
+                    recipientsCount,
+                    historyError = ex.Message
+                });
+            }
             return Ok(new { message = "تم إرسال الإشعار بنجاح", recipientsCount });
         }
-        return StatusCode(500, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
+        return StatusCode(502, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
     }
 
     [HttpGet("notifications/broadcast-history")]
@@ -985,11 +1200,13 @@ public class AdminController(
     [HttpPost("notifications/broadcast/{id}/resend")]
     public async Task<IActionResult> ResendBroadcastNotification(Guid id)
     {
-        var notification = await db.BroadcastNotificationHistory.FindAsync(id);
+        var notification = await db.BroadcastNotificationHistory.AsNoTracking()
+            .FirstOrDefaultAsync(n => n.Id == id);
         if (notification == null) return NotFound();
 
         var subscriptionIds = await db.DeviceSubscriptions
             .Select(d => d.OneSignalPlayerId)
+            .Distinct()
             .ToListAsync();
 
         var (success, recipientsCount, error) = await oneSignal.SendBroadcastAsync(
@@ -1000,17 +1217,42 @@ public class AdminController(
 
         if (success)
         {
-            db.BroadcastNotificationHistory.Add(new BroadcastNotificationHistory
+            try
             {
-                Title = notification.Title,
-                Body = notification.Body,
-                ImageUrl = notification.ImageUrl,
-                RecipientsCount = recipientsCount
-            });
-            await db.SaveChangesAsync();
+                db.BroadcastNotificationHistory.Add(new BroadcastNotificationHistory
+                {
+                    Title = TruncateRequired(notification.Title, 100),
+                    Body = TruncateRequired(notification.Body, 500),
+                    ImageUrl = TruncateOptional(notification.ImageUrl, 500),
+                    RecipientsCount = recipientsCount
+                });
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                return Ok(new
+                {
+                    message = "تم إعادة الإرسال بنجاح (تعذر حفظ السجل)",
+                    recipientsCount,
+                    historyError = ex.Message
+                });
+            }
             return Ok(new { message = "تم إعادة الإرسال بنجاح", recipientsCount });
         }
-        return StatusCode(500, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
+        return StatusCode(502, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
+    }
+
+    private static string TruncateRequired(string? value, int max)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.Length <= max ? value : value[..max];
+    }
+
+    private static string? TruncateOptional(string? value, int max)
+    {
+        if (value == null) return null;
+        if (value.Length <= max) return value;
+        return value[..max];
     }
 
     [HttpPut("banners/reorder")]

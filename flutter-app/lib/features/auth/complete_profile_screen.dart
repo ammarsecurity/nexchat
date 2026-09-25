@@ -1,5 +1,5 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -26,21 +26,40 @@ class CompleteProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
-  String? _country;
+  String? _country = 'IQ';
   final _phone = TextEditingController();
+  final _otp = TextEditingController();
   bool _loading = false;
   String _error = '';
+  bool? _otpEnabled;
+  bool _otpSent = false;
+  int _resendIn = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadOtpStatus();
   }
 
   @override
   void dispose() {
     _phone.dispose();
+    _otp.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadOtpStatus() async {
+    try {
+      final data = await Api.get('otp/status', skipUnauthorized: true);
+      if (!mounted) return;
+      final map = data is Map ? data : <String, dynamic>{};
+      final enabled = map['enabled'] == true || map['Enabled'] == true;
+      final configured = map['configured'] == true || map['Configured'] == true;
+      setState(() => _otpEnabled = enabled && configured);
+    } catch (_) {
+      if (mounted) setState(() => _otpEnabled = false);
+    }
   }
 
   Future<void> _load() async {
@@ -74,7 +93,17 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   PhoneResult? get _validation =>
       _dial.isEmpty || _phone.text.trim().isEmpty ? null : validatePhone(_dial, _phone.text);
 
-  Future<void> _submit() async {
+  Future<void> _finishSuccess() async {
+    ref.read(authProvider.notifier).setNeedsProfileContact(false);
+    if (!mounted) return;
+    if (widget.fromSettings) {
+      _leave();
+      return;
+    }
+    await navigateDefaultForSession(GoRouter.of(context), ref);
+  }
+
+  Future<void> _submitDirect() async {
     final r = _validation;
     if (r == null || !r.valid) {
       setState(() => _error = r?.message ?? t('phoneValidation.required'));
@@ -86,17 +115,102 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     });
     try {
       await Api.put('/user/profile-contact', {'country': _country, 'countryCode': _dial, 'phoneNumber': r.normalized});
-      ref.read(authProvider.notifier).setNeedsProfileContact(false);
-      if (!mounted) return;
-      if (widget.fromSettings) {
-        _leave();
+      await _finishSuccess();
+    } catch (e) {
+      final msg = Api.errorMessage(e, t('common.error'));
+      final requireOtp = e is DioException && e.response?.data is Map && (e.response!.data as Map)['requireOtp'] == true;
+      if (msg.contains('واتساب') || requireOtp) {
+        setState(() {
+          _otpEnabled = true;
+          _loading = false;
+        });
+        await _sendOtp();
         return;
       }
-      await navigateDefaultForSession(GoRouter.of(context), ref);
+      if (mounted) setState(() => _error = msg);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendOtp() async {
+    final r = _validation;
+    if (r == null || !r.valid) {
+      setState(() => _error = r?.message ?? t('phoneValidation.required'));
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      await Api.post('/otp/send', {
+        'purpose': 'verify_phone',
+        'countryCode': _dial,
+        'phoneNumber': r.normalized,
+        'country': _country,
+      });
+      if (!mounted) return;
+      setState(() {
+        _otpSent = true;
+        _resendIn = 45;
+        _otp.clear();
+      });
+      _tickResend();
     } catch (e) {
       if (mounted) setState(() => _error = Api.errorMessage(e, t('common.error')));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _tickResend() async {
+    while (mounted && _resendIn > 0) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      setState(() => _resendIn--);
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final r = _validation;
+    final code = _otp.text.trim();
+    if (r == null || !r.valid) {
+      setState(() => _error = r?.message ?? t('phoneValidation.required'));
+      return;
+    }
+    if (code.length < 4) {
+      setState(() => _error = t('otp.invalidCode'));
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      await Api.post('/otp/verify-phone', {
+        'countryCode': _dial,
+        'phoneNumber': r.normalized,
+        'country': _country,
+        'code': code,
+      });
+      await _finishSuccess();
+    } catch (e) {
+      if (mounted) setState(() => _error = Api.errorMessage(e, t('common.error')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_otpEnabled == true) {
+      if (_otpSent) {
+        await _verifyOtp();
+      } else {
+        await _sendOtp();
+      }
+    } else {
+      await _submitDirect();
     }
   }
 
@@ -109,7 +223,13 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     final pad = MediaQuery.paddingOf(context);
     final validation = _validation;
     final phoneError = validation != null && !validation.valid ? validation.message : '';
-    final canSubmit = _country != null && (validation?.valid ?? false) && !_loading;
+    final otpLoading = _otpEnabled == null;
+    final otpMode = _otpEnabled == true;
+    final canSubmit = !otpLoading &&
+        _country != null &&
+        (validation?.valid ?? false) &&
+        !_loading &&
+        (!otpMode || !_otpSent || _otp.text.trim().length >= 4);
 
     Widget label(IconData icon, String text) => Row(children: [
           Icon(icon, size: 16, color: c.primary),
@@ -117,7 +237,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
           Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSecondary)),
         ]);
 
-    final fieldBorder = BorderRadius.circular(AppRadius.sm);
+    final submitLabel = otpLoading
+        ? t('common.loading')
+        : (!otpMode ? t('completeProfile.submit') : (_otpSent ? t('otp.verify') : t('otp.sendWhatsApp')));
 
     final page = PopScope(
       canPop: widget.fromSettings,
@@ -180,8 +302,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                   Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 300),
-                      child: Text(t('completeProfile.subtitle'),
-                          textAlign: TextAlign.center, style: TextStyle(fontSize: 15, height: 1.55, color: c.textSecondary)),
+                      child: Text(
+                          otpMode ? t('otp.completeSubtitle') : t('completeProfile.subtitle'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 15, height: 1.55, color: c.textSecondary)),
                     ),
                   ),
                   const SizedBox(height: 22),
@@ -190,71 +314,52 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        label(LucideIcons.globe, t('completeProfile.country')),
-                        const SizedBox(height: 8),
-                        CountryPickerField(
-                          value: _country,
-                          onChanged: (x) => setState(() => _country = x.code),
-                        ),
-                        const SizedBox(height: 18),
                         label(LucideIcons.phone, t('completeProfile.phone')),
                         const SizedBox(height: 8),
-                        Container(
-                          height: 50,
-                          clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
-                            color: c.bgElevated,
-                            borderRadius: fieldBorder,
-                            border: Border.all(color: phoneError.isNotEmpty ? c.danger : c.border),
-                          ),
-                          child: Directionality(
-                            textDirection: TextDirection.ltr,
-                            child: Row(children: [
-                              Container(
-                                constraints: const BoxConstraints(minWidth: 68),
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: c.primarySoft,
-                                  border: BorderDirectional(end: BorderSide(color: c.border)),
-                                ),
-                                child: Text('+${_dial.isEmpty ? '…' : _dial}',
-                                    style: TextStyle(color: c.primary, fontSize: 15, fontWeight: FontWeight.w700)),
-                              ),
-                              Expanded(
-                                child: TextField(
-                                  controller: _phone,
-                                  keyboardType: TextInputType.phone,
-                                  maxLength: 15,
-                                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                  onChanged: (_) => setState(() {}),
-                                  style: TextStyle(color: c.textPrimary, fontSize: 16),
-                                  decoration: InputDecoration(
-                                    counterText: '',
-                                    hintText: t('completeProfile.phonePlaceholder'),
-                                    hintStyle: TextStyle(color: c.textMuted),
-                                    border: InputBorder.none,
-                                    enabledBorder: InputBorder.none,
-                                    focusedBorder: InputBorder.none,
-                                    filled: false,
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-                                  ),
-                                ),
-                              ),
-                            ]),
-                          ),
+                        PhoneAuthField(
+                          countryCode: _country,
+                          controller: _phone,
+                          error: phoneError.isNotEmpty,
+                          onCountryChanged: (x) => setState(() {
+                            _country = x.code;
+                            _otpSent = false;
+                          }),
+                          onChanged: (_) => setState(() => _otpSent = false),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           phoneError.isNotEmpty ? phoneError : t('completeProfile.phoneHint'),
                           style: TextStyle(fontSize: 12, height: 1.45, color: phoneError.isNotEmpty ? c.danger : c.textMuted),
                         ),
+                        if (otpMode && _otpSent) ...[
+                          const SizedBox(height: 18),
+                          label(LucideIcons.shieldCheck, t('otp.code')),
+                          const SizedBox(height: 8),
+                          AuthField(
+                            controller: _otp,
+                            hint: t('otp.codeHint'),
+                            keyboardType: TextInputType.number,
+                            maxLength: 8,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: TextButton(
+                              onPressed: _resendIn > 0 || _loading ? null : _sendOtp,
+                              child: Text(
+                                _resendIn > 0 ? t('otp.resendIn', {'s': _resendIn}) : t('otp.resend'),
+                                style: TextStyle(color: c.primary, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ],
                         if (_error.isNotEmpty) ...[const SizedBox(height: 18), AuthError(_error)],
                         const SizedBox(height: 22),
                         GradientButton(
-                          label: t('completeProfile.submit'),
+                          label: submitLabel,
                           height: 52,
-                          onPressed: canSubmit && !_loading ? _submit : null,
+                          onPressed: canSubmit ? _submit : null,
                         ),
                       ],
                     ),

@@ -15,7 +15,6 @@ async function handleLogin() {
   error.value = ''
   try {
     const res = await api.post('/auth/login', { name: name.value, password: password.value })
-    // Verify admin claim
     const payload = JSON.parse(atob(res.data.token.split('.')[1]))
     if (payload.role !== 'admin') {
       error.value = 'ليس لديك صلاحيات الأدمن'
@@ -35,21 +34,22 @@ async function handleLogin() {
   <v-container class="login-page fill-height" fluid>
     <div class="bg-orb orb-1"></div>
     <div class="bg-orb orb-2"></div>
+    <div class="bg-orb orb-3"></div>
 
     <v-row justify="center" align="center" class="fill-height">
       <v-col cols="12" sm="8" md="5" lg="4">
         <div class="text-center mb-8">
           <div class="logo-wrap">
-            <img src="/logo.png" alt="NexChat" class="logo-img" />
+            <img src="/logo-light.png" alt="نيكس شات" class="logo-img" />
           </div>
-          <div class="text-h5 font-weight-bold mt-3">
-            <span class="gradient-text">NexChat</span> Admin
-          </div>
-          <div class="text-body-2 text-medium-emphasis mt-1">لوحة تحكم المشرفين</div>
+          <div class="brand-title mt-4">نيكس شات</div>
+          <div class="brand-caption mt-1">لوحة تحكم المشرفين</div>
         </div>
 
-        <v-card class="pa-8" rounded="xl" elevation="0">
-          <v-card-title class="login-title text-h6 font-weight-bold mb-6 pa-0">تسجيل الدخول 🔐</v-card-title>
+        <v-card class="login-card pa-6 pa-sm-8" rounded="xl" variant="flat" elevation="0">
+          <v-card-title class="login-title text-h6 font-weight-bold mb-6 pa-0">
+            تسجيل الدخول
+          </v-card-title>
 
           <v-form @submit.prevent="handleLogin">
             <v-text-field
@@ -60,6 +60,7 @@ async function handleLogin() {
               prepend-inner-icon="mdi-account"
               class="mb-4"
               hide-details
+              flat
             />
 
             <v-text-field
@@ -73,6 +74,7 @@ async function handleLogin() {
               @click:append-inner="showPass = !showPass"
               class="mb-4"
               hide-details
+              flat
             />
 
             <v-alert v-if="error" type="error" variant="tonal" rounded="lg" class="mb-4" density="compact">
@@ -83,9 +85,11 @@ async function handleLogin() {
               type="submit"
               size="large"
               block
-              rounded="xl"
+              rounded="lg"
               :loading="loading"
-              class="gradient-btn text-white font-weight-bold"
+              color="primary"
+              variant="flat"
+              class="login-btn font-weight-bold"
               elevation="0"
             >
               دخول
@@ -110,22 +114,69 @@ async function handleLogin() {
   position: absolute;
   pointer-events: none;
 }
-.orb-1 { background: rgba(108,99,255,0.2); width:400px; height:400px; top:-100px; right:-100px; }
-.orb-2 { background: rgba(255,101,132,0.15); width:300px; height:300px; bottom:-80px; left:-80px; }
+.orb-1 {
+  background: rgba(46, 134, 251, 0.22);
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  right: -100px;
+}
+.orb-2 {
+  background: rgba(34, 211, 238, 0.16);
+  width: 320px;
+  height: 320px;
+  bottom: -100px;
+  left: -80px;
+}
+.orb-3 {
+  background: rgba(139, 92, 246, 0.1);
+  width: 240px;
+  height: 240px;
+  top: 40%;
+  left: 50%;
+}
 
 .logo-wrap { display: inline-block; }
 .logo-img {
-  height: 72px;
+  height: 80px;
   width: auto;
   object-fit: contain;
 }
 
-.gradient-btn {
-  background: var(--gradient) !important;
+.brand-title {
+  font-size: 1.75rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.brand-caption {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.login-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.login-card :deep(.v-field) {
+  box-shadow: none !important;
+}
+
+.login-card :deep(.v-field__outline) {
+  --v-field-border-opacity: 1;
+}
+
+.login-btn {
+  min-height: 48px;
+  box-shadow: none !important;
 }
 
 .login-title {
-  font-family: 'Cairo', sans-serif !important;
   letter-spacing: -0.02em;
+  color: var(--text);
 }
 </style>

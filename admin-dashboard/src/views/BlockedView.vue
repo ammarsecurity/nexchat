@@ -2,6 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
+import UserCell from '../components/UserCell.vue'
 
 const blocks = ref([])
 const total = ref(0)
@@ -14,8 +15,8 @@ const selectedBlock = ref(null)
 const deleteLoading = ref(false)
 
 const headers = [
-  { title: 'الحاظر', key: 'blockerName', sortable: false },
-  { title: 'المحظور', key: 'blockedUserName', sortable: false },
+  { title: 'الحاظر', key: 'blockerName', sortable: false, minWidth: '160px' },
+  { title: 'المحظور', key: 'blockedUserName', sortable: false, minWidth: '160px' },
   { title: 'التاريخ', key: 'createdAt', sortable: false },
   { title: 'إجراءات', key: 'actions', sortable: false, align: 'center' },
 ]
@@ -85,7 +86,7 @@ onMounted(fetchBlocks)
       </div>
     </div>
 
-    <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+    <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
       <div class="d-flex flex-column flex-sm-row gap-3 mb-4">
         <v-text-field
           v-model="search"
@@ -96,7 +97,6 @@ onMounted(fetchBlocks)
           rounded="lg"
           hide-details
           clearable
-          bg-color="rgba(255,255,255,0.04)"
           style="max-width: 280px;"
           @input="onSearch"
         />
@@ -106,44 +106,44 @@ onMounted(fetchBlocks)
         :headers="headers"
         :items="blocks"
         :loading="loading"
-        :items-per-page="pageSize"
+        :items-per-page="-1"
         hide-default-footer
         class="blocks-table"
         no-data-text="لا توجد سجلات حظر"
         loading-text="جاري التحميل..."
       >
         <template #item.blockerName="{ item }">
-          <span class="font-weight-medium">{{ item.blockerName }}</span>
+          <UserCell :name="item.blockerName" :avatar="item.blockerAvatar" />
         </template>
         <template #item.blockedUserName="{ item }">
-          <span class="font-weight-medium">{{ item.blockedUserName }}</span>
+          <UserCell :name="item.blockedUserName" :avatar="item.blockedUserAvatar" color="error" />
         </template>
         <template #item.createdAt="{ item }">
-          {{ formatDate(item.createdAt) }}
+          <span class="text-medium-emphasis text-body-2">{{ formatDate(item.createdAt) }}</span>
         </template>
         <template #item.actions="{ item }">
-          <v-btn
-            color="success"
-            variant="tonal"
-            size="small"
-            icon="mdi-lock-open"
-            @click="confirmUnblock(item)"
-            title="فك الحظر"
-          />
-        </template>
-
-        <template #bottom>
-          <div v-if="total > pageSize" class="d-flex justify-center pt-4">
-            <v-pagination
-              v-model="page"
-              :length="Math.ceil(total / pageSize)"
-              @update:model-value="fetchBlocks"
-              active-color="primary"
+          <div class="action-btns">
+            <v-btn
+              icon="mdi-lock-open"
               size="small"
+              variant="tonal"
+              color="success"
+              title="فك الحظر"
+              @click="confirmUnblock(item)"
             />
           </div>
         </template>
       </v-data-table>
+      <div v-if="total > 0" class="pagination-bar">
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / pageSize))"
+          :total-visible="7"
+          density="comfortable"
+          active-color="primary"
+          @update:model-value="fetchBlocks"
+        />
+      </div>
     </v-card>
 
     <v-dialog v-model="deleteDialog" max-width="400" persistent>

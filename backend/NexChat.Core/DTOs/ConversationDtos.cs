@@ -2,6 +2,21 @@ namespace NexChat.Core.DTOs;
 
 public record AddContactByPhoneRequest(string CountryCode, string PhoneNumber);
 
+public record PhoneLookupItemDto(string Phone, string? Name = null);
+
+public record PhoneLookupRequest(IEnumerable<PhoneLookupItemDto>? Contacts);
+
+public record PhoneLookupMatchDto(
+    Guid UserId,
+    string Name,
+    string? Avatar,
+    string? PhoneNumber,
+    string? UniqueCode,
+    string? DeviceName,
+    bool IsContact,
+    bool HasOutgoingRequest
+);
+
 public record ContactDto(
     Guid Id,
     Guid ContactUserId,

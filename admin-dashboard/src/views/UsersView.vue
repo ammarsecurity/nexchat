@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
+import { fullMediaUrl, hasAvatarImage, userInitial } from '../utils/media'
 
 const users = ref([])
 const total = ref(0)
@@ -14,18 +15,25 @@ const banAction = ref(true)
 const featuredLoading = ref(null)
 const selectedIds = ref([])
 const deleteDialog = ref(false)
-const deleteTarget = ref(null) // single user or 'bulk'
+const deleteTarget = ref(null)
 const deleteLoading = ref(false)
 
+const passwordDialog = ref(false)
+const passwordUser = ref(null)
+const newPassword = ref('')
+const confirmPassword = ref('')
+const showPassword = ref(false)
+const passwordLoading = ref(false)
+
 const headers = [
-  { title: 'المستخدم', key: 'name', sortable: false },
+  { title: 'المستخدم', key: 'name', sortable: false, minWidth: '220px' },
   { title: 'الكود', key: 'uniqueCode', sortable: false },
   { title: 'الجنس', key: 'gender', sortable: false },
   { title: 'العمر', key: 'age', sortable: false },
-  { title: 'رقم الهاتف', key: 'phoneNumber', sortable: false },
+  { title: 'الهاتف', key: 'phoneNumber', sortable: false },
   { title: 'الحالة', key: 'isOnline', sortable: false },
-  { title: 'تاريخ الانضمام', key: 'createdAt', sortable: false },
-  { title: 'إجراءات', key: 'actions', sortable: false, align: 'center' },
+  { title: 'الانضمام', key: 'createdAt', sortable: false },
+  { title: 'إجراءات', key: 'actions', sortable: false, align: 'center', minWidth: '200px' },
 ]
 
 const genderLabel = { male: 'ذكر', female: 'أنثى', other: 'آخر' }
@@ -104,6 +112,44 @@ async function toggleFeatured(user) {
   }
 }
 
+function openPasswordDialog(user) {
+  passwordUser.value = user
+  newPassword.value = ''
+  confirmPassword.value = ''
+  showPassword.value = false
+  passwordDialog.value = true
+}
+
+function closePasswordDialog() {
+  passwordDialog.value = false
+  passwordUser.value = null
+  newPassword.value = ''
+  confirmPassword.value = ''
+}
+
+async function executePasswordChange() {
+  const pwd = newPassword.value.trim()
+  if (pwd.length < 6) {
+    notify.error('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
+    return
+  }
+  if (pwd !== confirmPassword.value.trim()) {
+    notify.error('كلمتا المرور غير متطابقتين')
+    return
+  }
+
+  passwordLoading.value = true
+  try {
+    await api.put(`/admin/users/${passwordUser.value.id}/password`, { password: pwd })
+    notify.success('تم تحديث كلمة المرور بنجاح')
+    closePasswordDialog()
+  } catch (e) {
+    notify.error(e.response?.data?.message || 'فشل تحديث كلمة المرور')
+  } finally {
+    passwordLoading.value = false
+  }
+}
+
 function formatDate(date) {
   return new Date(date).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric' })
 }
@@ -139,15 +185,18 @@ onMounted(fetchUsers)
         <div class="text-h5 font-weight-bold">المستخدمين</div>
         <div class="text-body-2 text-medium-emphasis">إجمالي {{ total.toLocaleString() }} مستخدم</div>
       </div>
-      <v-btn
-        v-if="selectedIds.length"
-        color="error"
-        variant="tonal"
-        :loading="deleteLoading"
-        @click="confirmBulkDelete"
-      >
-        حذف المحدد ({{ selectedIds.length }})
-      </v-btn>
+      <div v-if="selectedIds.length" class="page-actions">
+        <v-btn
+          color="error"
+          variant="tonal"
+          prepend-icon="mdi-delete"
+          size="small"
+          :loading="deleteLoading"
+          @click="confirmBulkDelete"
+        >
+          حذف المحدد ({{ selectedIds.length }})
+        </v-btn>
+      </div>
     </div>
 
     <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
@@ -169,24 +218,53 @@ onMounted(fetchUsers)
         :headers="headers"
         :items="users"
         :loading="loading"
-        :items-per-page="20"
+        :items-per-page="-1"
         hide-default-footer
         item-value="id"
-        color="transparent"
         show-select
+        class="users-table"
       >
         <template #item.name="{ item }">
-          <div class="d-flex align-center gap-3 py-2">
-            <v-avatar size="36" :color="item.isBanned ? 'error' : item.isFeatured ? 'warning' : 'primary'" variant="tonal">
-              <span class="font-weight-bold">{{ item.name[0].toUpperCase() }}</span>
+          <div class="user-cell">
+            <v-avatar
+              size="42"
+              :color="hasAvatarImage(item.avatar) ? undefined : (item.isBanned ? 'error' : item.isFeatured ? 'warning' : 'primary')"
+              :variant="hasAvatarImage(item.avatar) ? undefined : 'tonal'"
+              class="user-avatar"
+            >
+              <v-img
+                v-if="hasAvatarImage(item.avatar)"
+                :src="fullMediaUrl(item.avatar)"
+                cover
+                alt=""
+              >
+                <template #error>
+                  <div class="avatar-fallback">{{ userInitial(item.name) }}</div>
+                </template>
+              </v-img>
+              <span v-else class="font-weight-bold">{{ userInitial(item.name) }}</span>
             </v-avatar>
-            <div>
-              <div class="d-flex align-center gap-1">
-                <span class="font-weight-medium">{{ item.name }}</span>
-                <v-icon v-if="item.isFeatured" size="18" color="warning">mdi-crown</v-icon>
+            <div class="user-meta">
+              <div class="user-name-row">
+                <span class="user-name">{{ item.name }}</span>
+                <v-icon v-if="item.isFeatured" size="16" color="warning" title="مميز">mdi-crown</v-icon>
               </div>
-              <div v-if="item.isBanned" class="text-caption text-error">محظور</div>
-              <div v-else-if="item.isFeatured" class="text-caption text-warning">مميز</div>
+              <div class="user-sub">
+                <span class="user-code">{{ item.uniqueCode }}</span>
+                <span v-if="item.phoneNumber" class="user-dot">·</span>
+                <span v-if="item.phoneNumber" class="user-phone">{{ formatPhone(item.phoneNumber) }}</span>
+              </div>
+              <div class="user-badges">
+                <v-chip
+                  size="x-small"
+                  :color="item.isOnline ? 'success' : 'default'"
+                  variant="tonal"
+                >
+                  {{ item.isOnline ? 'متصل' : 'غير متصل' }}
+                </v-chip>
+                <v-chip v-if="item.isBanned" size="x-small" color="error" variant="tonal">محظور</v-chip>
+                <v-chip v-if="item.isFeatured" size="x-small" color="warning" variant="tonal">مميز</v-chip>
+              </div>
             </div>
           </div>
         </template>
@@ -199,7 +277,7 @@ onMounted(fetchUsers)
 
         <template #item.gender="{ item }">
           <v-chip size="small" :color="genderColor[item.gender]" variant="tonal">
-            {{ genderLabel[item.gender] }}
+            {{ genderLabel[item.gender] || item.gender || '—' }}
           </v-chip>
         </template>
 
@@ -227,52 +305,114 @@ onMounted(fetchUsers)
         </template>
 
         <template #item.actions="{ item }">
-          <v-btn
-            icon="mdi-crown"
-            size="small"
-            :variant="item.isFeatured ? 'flat' : 'tonal'"
-            :color="item.isFeatured ? 'warning' : 'default'"
-            :loading="featuredLoading === item.id"
-            @click="toggleFeatured(item)"
-          ></v-btn>
-          <v-btn
-            v-if="!item.isFeatured && !item.isBanned"
-            icon="mdi-account-cancel"
-            size="small"
-            variant="tonal"
-            color="error"
-            @click="confirmBan(item, true)"
-          ></v-btn>
-          <v-btn
-            v-else-if="!item.isFeatured && item.isBanned"
-            icon="mdi-account-check"
-            size="small"
-            variant="tonal"
-            color="success"
-            @click="confirmBan(item, false)"
-          ></v-btn>
-          <v-btn
-            icon="mdi-delete"
-            size="small"
-            variant="tonal"
-            color="error"
-            @click="confirmDelete(item)"
-          ></v-btn>
-        </template>
-
-        <template #bottom>
-          <div class="d-flex justify-center pt-4">
-            <v-pagination
-              v-model="page"
-              :length="Math.ceil(total / 20)"
-              @update:model-value="fetchUsers"
-              active-color="primary"
+          <div class="action-btns">
+            <v-btn
+              icon="mdi-lock-reset"
               size="small"
-            ></v-pagination>
+              variant="tonal"
+              color="primary"
+              title="تغيير كلمة المرور"
+              @click="openPasswordDialog(item)"
+            />
+            <v-btn
+              icon="mdi-crown"
+              size="small"
+              variant="tonal"
+              :color="item.isFeatured ? 'warning' : undefined"
+              :loading="featuredLoading === item.id"
+              title="تمييز"
+              @click="toggleFeatured(item)"
+            />
+            <v-btn
+              v-if="!item.isFeatured && !item.isBanned"
+              icon="mdi-account-cancel"
+              size="small"
+              variant="tonal"
+              color="error"
+              title="حظر"
+              @click="confirmBan(item, true)"
+            />
+            <v-btn
+              v-else-if="!item.isFeatured && item.isBanned"
+              icon="mdi-account-check"
+              size="small"
+              variant="tonal"
+              color="success"
+              title="إلغاء الحظر"
+              @click="confirmBan(item, false)"
+            />
+            <v-btn
+              icon="mdi-delete"
+              size="small"
+              variant="tonal"
+              color="error"
+              title="حذف"
+              @click="confirmDelete(item)"
+            />
           </div>
         </template>
       </v-data-table>
+
+      <div v-if="total > 0" class="pagination-bar">
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / 20))"
+          :total-visible="7"
+          density="comfortable"
+          active-color="primary"
+          @update:model-value="fetchUsers"
+        />
+      </div>
     </v-card>
+
+    <!-- Password Dialog -->
+    <v-dialog v-model="passwordDialog" max-width="440" persistent>
+      <v-card rounded="xl" elevation="0" class="pa-4">
+        <v-card-title class="font-weight-bold pa-0 mb-1">
+          تغيير كلمة المرور
+        </v-card-title>
+        <div class="text-body-2 text-medium-emphasis mb-4">
+          للمستخدم <strong>{{ passwordUser?.name }}</strong>
+          <span v-if="passwordUser?.uniqueCode"> · {{ passwordUser.uniqueCode }}</span>
+        </div>
+
+        <v-text-field
+          v-model="newPassword"
+          label="كلمة المرور الجديدة"
+          :type="showPassword ? 'text' : 'password'"
+          variant="outlined"
+          rounded="lg"
+          prepend-inner-icon="mdi-lock"
+          :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+          class="mb-3"
+          hide-details="auto"
+          @click:append-inner="showPassword = !showPassword"
+        />
+        <v-text-field
+          v-model="confirmPassword"
+          label="تأكيد كلمة المرور"
+          :type="showPassword ? 'text' : 'password'"
+          variant="outlined"
+          rounded="lg"
+          prepend-inner-icon="mdi-lock-check"
+          class="mb-2"
+          hide-details="auto"
+        />
+
+        <v-card-actions class="px-0 pt-4">
+          <v-spacer />
+          <v-btn variant="text" @click="closePasswordDialog">إلغاء</v-btn>
+          <v-btn
+            color="primary"
+            variant="flat"
+            :loading="passwordLoading"
+            @click="executePasswordChange"
+          >
+            حفظ
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Delete Dialog -->
     <v-dialog v-model="deleteDialog" max-width="420" persistent>
@@ -302,7 +442,7 @@ onMounted(fetchUsers)
     <v-dialog v-model="banDialog" max-width="400">
       <v-card rounded="xl" elevation="0" class="pa-4">
         <v-card-title class="font-weight-bold">
-          {{ banAction ? '🚫 حظر المستخدم' : '✅ رفع الحظر' }}
+          {{ banAction ? 'حظر المستخدم' : 'رفع الحظر' }}
         </v-card-title>
         <v-card-text>
           هل أنت متأكد من {{ banAction ? 'حظر' : 'رفع حظر' }}
@@ -323,3 +463,83 @@ onMounted(fetchUsers)
     </v-dialog>
   </div>
 </template>
+
+<style scoped>
+.user-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+  min-width: 200px;
+}
+
+.user-avatar {
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: rgba(46, 134, 251, 0.12);
+  color: #2E86FB;
+  font-weight: 700;
+}
+
+.user-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.user-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #0B1220;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.user-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: #5B6577;
+  font-weight: 600;
+}
+
+.user-code {
+  color: #2E86FB;
+}
+
+.user-dot {
+  opacity: 0.5;
+}
+
+.user-phone {
+  font-family: ui-monospace, monospace;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.user-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.users-table :deep(.v-data-table__td) {
+  vertical-align: middle;
+}
+</style>

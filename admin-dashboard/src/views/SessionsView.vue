@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
+import UserCell from '../components/UserCell.vue'
 
 const sessions = ref([])
 const total = ref(0)
@@ -10,8 +11,8 @@ const loading = ref(false)
 const closingInactive = ref(false)
 
 const headers = [
-  { title: 'المستخدم 1', key: 'user1Name' },
-  { title: 'المستخدم 2', key: 'user2Name' },
+  { title: 'المستخدم 1', key: 'user1Name', sortable: false, minWidth: '160px' },
+  { title: 'المستخدم 2', key: 'user2Name', sortable: false, minWidth: '160px' },
   { title: 'النوع', key: 'type' },
   { title: 'الرسائل', key: 'messageCount', align: 'center' },
   { title: 'البداية', key: 'startedAt' },
@@ -71,7 +72,7 @@ onMounted(fetchSessions)
         <div class="text-h5 font-weight-bold">الجلسات</div>
         <div class="text-body-2 text-medium-emphasis">{{ total.toLocaleString() }} جلسة إجمالاً</div>
       </div>
-      <div class="d-flex gap-2 flex-shrink-0 flex-wrap">
+      <div class="page-actions flex-shrink-0">
         <v-btn
           prepend-icon="mdi-clock-off-outline"
           variant="tonal"
@@ -103,19 +104,15 @@ onMounted(fetchSessions)
         :headers="headers"
         :items="sessions"
         :loading="loading"
-        :items-per-page="20"
+        :items-per-page="-1"
         hide-default-footer
       >
         <template #item.user1Name="{ item }">
-          <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-account">
-            {{ item.user1Name }}
-          </v-chip>
+          <UserCell :name="item.user1Name" :avatar="item.user1Avatar" />
         </template>
 
         <template #item.user2Name="{ item }">
-          <v-chip size="small" variant="tonal" color="secondary" prepend-icon="mdi-account">
-            {{ item.user2Name }}
-          </v-chip>
+          <UserCell :name="item.user2Name" :avatar="item.user2Avatar" color="secondary" />
         </template>
 
         <template #item.type="{ item }">
@@ -154,20 +151,17 @@ onMounted(fetchSessions)
             </div>
           </div>
         </template>
-
-        <template #bottom>
-          <div class="d-flex justify-center pt-4">
-            <v-pagination
-              v-model="page"
-              :length="Math.ceil(total / 20)"
-              @update:model-value="fetchSessions"
-              active-color="primary"
-              size="small"
-            ></v-pagination>
-          </div>
-        </template>
       </v-data-table>
+      <div v-if="total > 0" class="pagination-bar">
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / 20))"
+          :total-visible="7"
+          density="comfortable"
+          active-color="primary"
+          @update:model-value="fetchSessions"
+        />
+      </div>
     </v-card>
-
   </div>
 </template>

@@ -554,15 +554,14 @@ onMounted(async () => {
           إدارة محتوى الفيديو القصير — يظهر للمستخدمين في التطبيق فقط
         </div>
       </div>
-      <div class="d-flex flex-wrap gap-2">
-        <v-btn color="secondary" prepend-icon="mdi-cloud-download" rounded="lg" size="large" variant="tonal" @click="openImport">
+      <div class="page-actions">
+        <v-btn color="primary" variant="tonal" prepend-icon="mdi-cloud-download" size="small" @click="openImport">
           استيراد من Stock
         </v-btn>
         <v-btn
           color="primary"
           prepend-icon="mdi-movie-open"
-          rounded="lg"
-          size="large"
+          size="small"
           :disabled="formBusy || deletingFilm"
           @click="openAdd"
         >
@@ -595,7 +594,7 @@ onMounted(async () => {
     <v-card rounded="xl" elevation="0" class="pa-4 mb-4">
       <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-4">
         <div class="text-subtitle-1 font-weight-bold">أقسام الأفلام</div>
-        <v-btn size="small" color="primary" variant="tonal" prepend-icon="mdi-folder-plus" rounded="lg" @click="openAddSection">
+        <v-btn size="small" color="primary" variant="tonal" prepend-icon="mdi-folder-plus" @click="openAddSection">
           قسم جديد
         </v-btn>
       </div>
@@ -614,22 +613,27 @@ onMounted(async () => {
           <v-list-item-subtitle>{{ section.filmCount }} فيلم · ترتيب {{ section.sortOrder }}</v-list-item-subtitle>
           <template #append>
             <v-chip v-if="!section.isActive" size="x-small" variant="tonal" class="me-2">معطل</v-chip>
-            <v-btn
-              icon="mdi-pencil"
-              size="small"
-              variant="text"
-              :disabled="deletingSection || savingSection"
-              @click="openEditSection(section)"
-            />
-            <v-btn
-              icon="mdi-delete"
-              size="small"
-              variant="text"
-              color="error"
-              :loading="deletingSection && sectionToDelete?.id === section.id"
-              :disabled="deletingSection || savingSection"
-              @click="confirmDeleteSection(section)"
-            />
+            <div class="action-btns">
+              <v-btn
+                icon="mdi-pencil"
+                size="small"
+                variant="tonal"
+                color="primary"
+                title="تعديل"
+                :disabled="deletingSection || savingSection"
+                @click="openEditSection(section)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="small"
+                variant="tonal"
+                color="error"
+                title="حذف"
+                :loading="deletingSection && sectionToDelete?.id === section.id"
+                :disabled="deletingSection || savingSection"
+                @click="confirmDeleteSection(section)"
+              />
+            </div>
           </template>
         </v-list-item>
       </v-list>
@@ -684,9 +688,11 @@ onMounted(async () => {
           />
         </v-col>
         <v-col cols="12" md="2" class="d-flex justify-end">
-          <v-btn variant="tonal" prepend-icon="mdi-refresh" rounded="lg" :loading="loading" @click="fetchFilms">
-            تحديث
-          </v-btn>
+          <div class="page-actions">
+            <v-btn variant="tonal" color="primary" prepend-icon="mdi-refresh" size="small" :loading="loading" @click="fetchFilms">
+              تحديث
+            </v-btn>
+          </div>
         </v-col>
       </v-row>
     </v-card>
@@ -727,24 +733,29 @@ onMounted(async () => {
             <div class="text-caption text-medium-emphasis">{{ formatDate(film.createdAt) }} · {{ film.viewCount }} مشاهدة</div>
           </v-card-text>
           <v-card-actions class="pt-0 px-4 pb-4">
-            <v-btn size="small" variant="tonal" prepend-icon="mdi-eye" @click="openPreview(film)">معاينة</v-btn>
+            <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-eye" rounded="lg" @click="openPreview(film)">معاينة</v-btn>
             <v-spacer />
-            <v-btn
-              icon="mdi-pencil"
-              size="small"
-              variant="text"
-              :disabled="deletingFilm || formBusy"
-              @click="openEdit(film)"
-            />
-            <v-btn
-              icon="mdi-delete"
-              size="small"
-              variant="text"
-              color="error"
-              :loading="deletingFilm && toDelete?.id === film.id"
-              :disabled="deletingFilm || formBusy"
-              @click="confirmDelete(film)"
-            />
+            <div class="action-btns">
+              <v-btn
+                icon="mdi-pencil"
+                size="small"
+                variant="tonal"
+                color="primary"
+                title="تعديل"
+                :disabled="deletingFilm || formBusy"
+                @click="openEdit(film)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="small"
+                variant="tonal"
+                color="error"
+                title="حذف"
+                :loading="deletingFilm && toDelete?.id === film.id"
+                :disabled="deletingFilm || formBusy"
+                @click="confirmDelete(film)"
+              />
+            </div>
           </v-card-actions>
         </v-card>
       </v-col>
@@ -754,8 +765,14 @@ onMounted(async () => {
       لا توجد أفلام. اضغط «إضافة فيلم» للبدء.
     </v-alert>
 
-    <div v-if="pageCount > 1" class="d-flex justify-center mt-6">
-      <v-pagination v-model="page" :length="pageCount" rounded="circle" color="primary" />
+    <div v-if="total > 0" class="pagination-bar mt-6">
+      <v-pagination
+        v-model="page"
+        :length="pageCount"
+        :total-visible="7"
+        density="comfortable"
+        active-color="primary"
+      />
     </div>
 
     <!-- Stock import (Pexels / Pixabay) -->
@@ -1136,17 +1153,17 @@ onMounted(async () => {
 
 <style scoped>
 .stat-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 .film-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 .film-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(108, 99, 255, 0.35);
+  border-color: rgba(46, 134, 251, 0.35);
 }
 .film-card--busy {
   opacity: 0.55;
@@ -1163,7 +1180,7 @@ onMounted(async () => {
 }
 .thumb-placeholder {
   aspect-ratio: 16 / 9;
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.2), rgba(255, 101, 132, 0.15));
+  background: linear-gradient(135deg, rgba(46, 134, 251, 0.2), rgba(14, 165, 233, 0.15));
 }
 .thumb-overlay {
   position: absolute;
@@ -1187,7 +1204,7 @@ onMounted(async () => {
   display: block;
 }
 .stock-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 </style>

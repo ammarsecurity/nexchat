@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDisplay } from 'vuetify'
 
-const logoUrl = '/logo.png'
+const logoUrl = '/logo-light.png'
 const router = useRouter()
 const route = useRoute()
 const { mobile } = useDisplay()
@@ -14,12 +14,10 @@ onMounted(() => {
   if (mobile.value) drawer.value = false
 })
 
-// على الجوال: إغلاق الدرج عند تغيير الصفحة
 watch(route, () => {
   if (mobile.value) drawer.value = false
 })
 
-// عند الانتقال من سطح المكتب للجوال: إغلاق الدرج
 watch(mobile, (isMobile) => {
   if (isMobile) {
     drawer.value = false
@@ -54,7 +52,7 @@ const navItems = [
 ]
 
 const currentTitle = computed(() => {
-  return navItems.find(n => route.path.startsWith(n.to))?.title || 'NexChat Admin'
+  return navItems.find(n => route.path.startsWith(n.to))?.title || 'لوحة التحكم'
 })
 
 function logout() {
@@ -64,92 +62,79 @@ function logout() {
 </script>
 
 <template>
-  <div>
-    <!-- Navigation Drawer -->
+  <div class="layout-root">
     <v-navigation-drawer
       v-model="drawer"
       :rail="rail && !mobile"
       :permanent="!mobile"
       :temporary="mobile"
-      color="#0D0D1A"
-      border="end"
-      style="border-color: rgba(255,255,255,0.06) !important"
-      class="mobile-drawer"
+      class="side-drawer"
+      width="280"
     >
-      <!-- Logo -->
-      <v-list-item
-        class="py-5"
-        :prepend-icon="rail ? undefined : undefined"
-      >
-        <template #prepend>
-          <img :src="logoUrl" alt="NexChat" class="logo-img" :class="{ 'logo-img-sm': rail }" />
-        </template>
+      <div class="drawer-brand" :class="{ 'drawer-brand-rail': rail && !mobile }">
+        <img :src="logoUrl" alt="نيكس شات" class="logo-img" :class="{ 'logo-img-sm': rail && !mobile }" />
+        <div v-if="!(rail && !mobile)" class="brand-text">
+          <div class="brand-name">نيكس شات</div>
+          <div class="brand-sub">لوحة التحكم</div>
+        </div>
+        <v-btn
+          v-if="!rail && !mobile"
+          icon="mdi-chevron-left"
+          variant="text"
+          density="comfortable"
+          class="rail-toggle"
+          @click="rail = true"
+        />
+      </div>
 
-        <template #append>
-          <v-btn
-            v-if="!rail && !mobile"
-            :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-            variant="text"
-            density="compact"
-            @click="rail = !rail"
-          ></v-btn>
-        </template>
-      </v-list-item>
+      <v-divider class="mx-4 my-1" />
 
-      <v-divider style="border-color: rgba(255,255,255,0.06)"></v-divider>
-
-      <v-list density="compact" nav class="mt-2">
+      <v-list density="compact" nav class="nav-list px-2 mt-2">
         <v-list-item
           v-for="item in navItems"
           :key="item.to"
           :prepend-icon="item.icon"
-          :title="!rail ? item.title : ''"
+          :title="!(rail && !mobile) ? item.title : ''"
           :to="item.to"
-          rounded="xl"
+          rounded="lg"
           active-class="nav-active"
-          class="mb-1"
-        ></v-list-item>
+          class="mb-1 nav-item"
+        />
       </v-list>
 
       <template #append>
-        <v-divider style="border-color: rgba(255,255,255,0.06)" class="mb-2"></v-divider>
-        <v-list density="compact" nav>
+        <v-divider class="mx-4 mb-2" />
+        <v-list density="compact" nav class="px-2">
           <v-list-item
             prepend-icon="mdi-logout"
-            :title="!rail ? 'تسجيل الخروج' : ''"
-            rounded="xl"
-            class="mb-2"
+            :title="!(rail && !mobile) ? 'تسجيل الخروج' : ''"
+            rounded="lg"
+            class="mb-2 logout-item"
             @click="logout"
-            color="error"
-          ></v-list-item>
+          />
         </v-list>
         <v-btn
           v-if="rail && !mobile"
           icon="mdi-chevron-right"
           variant="text"
-          density="compact"
+          density="comfortable"
           block
-          class="mb-2"
+          class="mb-3"
           @click="rail = false"
-        ></v-btn>
+        />
       </template>
     </v-navigation-drawer>
 
-    <!-- Main Content -->
-    <v-main style="background: #0D0D1A; min-height: 100vh;">
-      <!-- Top App Bar -->
-      <v-app-bar
-        color="#0D0D1A"
-        elevation="0"
-        border="b"
-        style="border-color: rgba(255,255,255,0.06) !important"
-      >
+    <v-main class="main-area">
+      <v-app-bar elevation="0" class="top-bar" height="64">
         <v-app-bar-nav-icon
           v-if="mobile"
           @click="drawer = !drawer"
           aria-label="القائمة"
         />
-        <v-app-bar-title class="font-weight-bold" :class="{ 'text-h6': mobile }">{{ currentTitle }}</v-app-bar-title>
+        <v-app-bar-title class="bar-title" :class="{ 'text-h6': mobile }">
+          {{ currentTitle }}
+        </v-app-bar-title>
         <template #append>
           <div class="toolbar-append">
             <v-chip
@@ -174,24 +159,117 @@ function logout() {
 </template>
 
 <style scoped>
+.layout-root {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.side-drawer {
+  border-inline-end: 1px solid var(--border) !important;
+  box-shadow: none !important;
+}
+
+.drawer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px 16px;
+}
+
+.drawer-brand-rail {
+  justify-content: center;
+  padding-inline: 8px;
+}
+
 .logo-img {
-  height: 36px;
+  height: 40px;
   width: auto;
   object-fit: contain;
   flex-shrink: 0;
 }
+
 .logo-img-sm {
-  height: 30px;
+  height: 32px;
+}
+
+.brand-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.brand-name {
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.brand-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.rail-toggle {
+  flex-shrink: 0;
+}
+
+.nav-list {
+  padding-bottom: 8px;
+}
+
+.nav-item {
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .nav-active {
-  background: rgba(108, 99, 255, 0.15) !important;
-  color: #6C63FF !important;
+  background: rgba(46, 134, 251, 0.12) !important;
+  color: var(--blue) !important;
+  font-weight: 700 !important;
 }
 
-:deep(.v-list-item--active .v-icon) { color: #6C63FF !important; }
+:deep(.nav-active .v-icon) {
+  color: var(--blue) !important;
+}
 
-/* تحسينات الجوال */
+:deep(.nav-item .v-icon) {
+  opacity: 0.85;
+}
+
+.logout-item {
+  color: #EF4444 !important;
+}
+
+.main-area {
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+.top-bar {
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.bar-title {
+  font-weight: 800 !important;
+  letter-spacing: -0.02em;
+}
+
+.toolbar-append {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding-inline-start: 12px;
+}
+
+.status-chip {
+  flex-shrink: 0;
+}
+
+.status-chip .status-dot {
+  opacity: 0.9;
+}
+
 @media (max-width: 600px) {
   .main-container {
     padding-left: 16px !important;
@@ -199,21 +277,7 @@ function logout() {
   }
 }
 
-.mobile-drawer :deep(.v-list-item) {
-  min-height: 48px;
-}
-
-/* شريط التطبيق - منطقة «نشط» */
-.toolbar-append {
-  display: flex;
-  align-items: center;
-  min-height: 48px;
-  padding-inline-start: 12px;
-}
-.status-chip {
-  flex-shrink: 0;
-}
-.status-chip .status-dot {
-  opacity: 0.9;
+.side-drawer :deep(.v-list-item) {
+  min-height: 44px;
 }
 </style>

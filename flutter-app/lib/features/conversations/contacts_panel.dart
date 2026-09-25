@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -21,6 +20,7 @@ import '../auth/auth_widgets.dart';
 import 'avatar_overrides.dart';
 import 'conversations_list_controller.dart';
 import 'open_private.dart';
+import 'phone_book_sync_sheet.dart';
 
 /// components/ContactsPanel.vue
 class ContactsPanel extends ConsumerStatefulWidget {
@@ -169,6 +169,12 @@ class ContactsPanelState extends ConsumerState<ContactsPanel> {
     });
   }
 
+  void openPhoneBookSync() {
+    showAppSheet<bool>(context, builder: (ctx) => const PhoneBookSyncSheet()).then((added) {
+      if (added == true) fetchContacts();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -195,6 +201,38 @@ class ContactsPanelState extends ConsumerState<ContactsPanel> {
               ),
             ]),
           ),
+        if (!_needPhone && _loaded)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: c.bgCard,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg), side: BorderSide(color: c.border)),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                onTap: openPhoneBookSync,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(color: c.primarySoft, borderRadius: BorderRadius.circular(12)),
+                      child: Icon(LucideIcons.contact, size: 20, color: c.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(t('contacts.findFromPhoneBook'), style: TextStyle(fontWeight: FontWeight.w700, color: c.textPrimary)),
+                        const SizedBox(height: 2),
+                        Text(t('contacts.findFromPhoneBookHint'), style: TextStyle(fontSize: 12, color: c.textSecondary)),
+                      ]),
+                    ),
+                    Icon(LucideIcons.chevronLeft, size: 18, color: c.textMuted),
+                  ]),
+                ),
+              ),
+            ),
+          ),
         if (_contacts.isNotEmpty) ...[
           SearchField(controller: _search, hint: t('contacts.searchPlaceholder'), onChanged: (_) => setState(() {})),
           const SizedBox(height: 12),
@@ -209,9 +247,17 @@ class ContactsPanelState extends ConsumerState<ContactsPanel> {
               const SizedBox(height: 12),
               Text(t('contacts.empty'), style: TextStyle(color: c.textMuted, fontSize: 15)),
               const SizedBox(height: 6),
-              Text(t('contacts.addFirst'), style: TextStyle(color: c.textMuted, fontSize: 13)),
+              Text(t('contacts.addFirst'), style: TextStyle(color: c.textMuted, fontSize: 13), textAlign: TextAlign.center),
               const SizedBox(height: 16),
               SizedBox(width: 240, child: PillButton(label: t('contacts.addContact'), onPressed: openAddModal)),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: 240,
+                child: SoftButton(
+                  label: t('contacts.findFromPhoneBook'),
+                  onPressed: _needPhone ? null : openPhoneBookSync,
+                ),
+              ),
             ]),
           )
         else if (list.isEmpty)
@@ -299,7 +345,6 @@ class _AddContactSheetState extends State<_AddContactSheet> {
           const SizedBox(width: 6),
           Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSecondary)),
         ]);
-    final box = BoxDecoration(color: c.bgElevated, borderRadius: BorderRadius.circular(AppRadius.sm), border: Border.all(color: c.border));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
@@ -307,49 +352,14 @@ class _AddContactSheetState extends State<_AddContactSheet> {
         Text(t('contacts.addByPhone'),
             textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.textPrimary)),
         const SizedBox(height: 16),
-        label(LucideIcons.globe, t('completeProfile.country')),
-        const SizedBox(height: 8),
-        CountryPickerField(
-          value: _country,
-          onChanged: (x) => setState(() => _country = x.code),
-        ),
-        const SizedBox(height: 16),
         label(LucideIcons.phone, t('completeProfile.phone')),
         const SizedBox(height: 8),
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: Container(
-            height: 50,
-            decoration: box,
-            clipBehavior: Clip.antiAlias,
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                alignment: Alignment.center,
-                color: c.primarySoft,
-                child: Text('+${_dial.isEmpty ? '964' : _dial}', style: TextStyle(color: c.primary, fontWeight: FontWeight.w700)),
-              ),
-              Expanded(
-                child: TextField(
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 15,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  style: TextStyle(color: c.textPrimary, fontSize: 16),
-                  onSubmitted: (_) => _add(),
-                  decoration: InputDecoration(
-                    counterText: '',
-                    hintText: t('contacts.phonePlaceholder'),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    filled: false,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-                  ),
-                ),
-              ),
-            ]),
-          ),
+        PhoneAuthField(
+          countryCode: _country,
+          controller: _phone,
+          hint: t('contacts.phonePlaceholder'),
+          onCountryChanged: (x) => setState(() => _country = x.code),
+          onChanged: (_) => setState(() {}),
         ),
         if (_error.isNotEmpty) ...[const SizedBox(height: 12), AuthError(_error)],
         const SizedBox(height: 20),

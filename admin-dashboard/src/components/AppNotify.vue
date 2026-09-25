@@ -61,58 +61,46 @@ const icon = computed(() => {
   width: 100%;
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(19, 19, 42, 0.96);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #FFFFFF;
+  box-shadow: 0 12px 32px rgba(15, 35, 80, 0.12);
 }
 
 .app-notify--success .app-notify__inner {
-  border-color: rgba(76, 175, 80, 0.45);
-  background: linear-gradient(135deg, rgba(76, 175, 80, 0.18), rgba(19, 19, 42, 0.96));
+  border-color: rgba(34, 197, 94, 0.35);
+  background: #F0FDF4;
 }
 
 .app-notify--error .app-notify__inner {
-  border-color: rgba(255, 101, 132, 0.45);
-  background: linear-gradient(135deg, rgba(255, 101, 132, 0.16), rgba(19, 19, 42, 0.96));
+  border-color: rgba(239, 68, 68, 0.35);
+  background: #FEF2F2;
 }
 
 .app-notify--warning .app-notify__inner {
-  border-color: rgba(255, 183, 77, 0.45);
-  background: linear-gradient(135deg, rgba(255, 183, 77, 0.14), rgba(19, 19, 42, 0.96));
+  border-color: rgba(245, 158, 11, 0.4);
+  background: #FFFBEB;
 }
 
 .app-notify--info .app-notify__inner {
-  border-color: rgba(108, 99, 255, 0.45);
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.16), rgba(19, 19, 42, 0.96));
+  border-color: rgba(46, 134, 251, 0.35);
+  background: #EFF6FF;
 }
 
-.app-notify--success .app-notify__icon {
-  color: #4caf50;
-}
-
-.app-notify--error .app-notify__icon {
-  color: #ff6584;
-}
-
-.app-notify--warning .app-notify__icon {
-  color: #ffb74d;
-}
-
-.app-notify--info .app-notify__icon {
-  color: #6c63ff;
-}
+.app-notify--success .app-notify__icon { color: #22C55E; }
+.app-notify--error .app-notify__icon { color: #EF4444; }
+.app-notify--warning .app-notify__icon { color: #F59E0B; }
+.app-notify--info .app-notify__icon { color: #2E86FB; }
 
 .app-notify__text {
   flex: 1;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.4;
-  color: #fff;
+  color: #0B1220;
 }
 
 .app-notify__close {
   opacity: 0.7;
-  color: #b0b0c3 !important;
+  color: #5B6577 !important;
 }
 </style>

@@ -3,83 +3,200 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="نيكس شات - تطبيق دردشة مجاني للتعارف والتواصل مع أشخاص جدد من خلال الكود" />
-  <meta name="theme-color" content="#0D0D1A" />
-  <title>NexChat – نيكس شات | دردشة مجانية للتعارف</title>
+  <meta name="description" content="نيكس شات — دردشة مجانية، مكالمات فيديو، وستوريز. تواصل مع أشخاص جدد بأمان." />
+  <meta name="theme-color" content="#F4F7FC" />
+  <title>NexChat – نيكس شات | دردشة ومكالمات فيديو</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="logo-light.png" type="image/png" />
 </head>
 <body>
-  <main class="hero" role="main">
-    <div class="hero-content">
-      <img src="logo.png" alt="نيكس شات" class="logo-img" />
-      <h1>نيكس شات</h1>
-      <p class="tagline">تواصل مع أشخاص جدد عبر كود بسيط. دردشة مجانية وآمنة.</p>
-      <div class="stats-row" id="statsRow" aria-hidden="true">
-        <span class="stat-item"><span id="statVisitors">-</span> زائر</span>
-        <span class="stat-divider">•</span>
-        <span class="stat-item"><span id="statDownloads">-</span> تحميل</span>
+  <div class="page-bg" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="nav-brand" href="#top" aria-label="نيكس شات">
+      <img src="logo-light.png" alt="" class="nav-logo" width="40" height="40" />
+      <span class="nav-wordmark">نيكس شات</span>
+    </a>
+    <nav class="nav-links" aria-label="القائمة الرئيسية">
+      <a href="#screens">التطبيق</a>
+      <a href="#features">المميزات</a>
+      <a href="privacy.html">الخصوصية</a>
+      <a href="safety.html">السلامة</a>
+    </nav>
+    <a href="nexChat.apk" class="nav-cta" id="downloadBtnNav" download="nexChat.apk">حمّل مجاناً</a>
+  </header>
+
+  <main id="top">
+    <section class="hero" role="main">
+      <div class="hero-copy">
+        <img src="logo-light.png" alt="نيكس شات" class="hero-logo" width="120" height="120" />
+        <p class="hero-brand">نيكس شات</p>
+        <h1>تواصل مع من يهمّك<br />في الوقت الحقيقي</h1>
+        <p class="hero-lead">دردشة، ستوريز، ومكالمات فيديو — كلّها في تطبيق واحد بسيط وآمن.</p>
+        <div class="cta-group">
+          <a href="nexChat.apk" class="btn btn-primary" id="downloadBtn" download="nexChat.apk">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            تحميل للأندرويد
+          </a>
+          <span class="btn btn-ghost" aria-disabled="true">iOS قريباً</span>
+        </div>
       </div>
-      <div class="cta-group">
-        <a href="nexChat.apk" class="btn btn-primary btn-download" id="downloadBtn" download="nexChat.apk">
-          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          تحميل التطبيق للأندرويد
-        </a>
-        <a href="#" class="btn btn-outline btn-disabled" aria-disabled="true" onclick="return false;">
-          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          تحميل iOS قريباً
-        </a>
-        <a href="privacy.html" class="btn btn-outline btn-ghost">سياسة الخصوصية</a>
-        <a href="safety.html" class="btn btn-outline btn-ghost">معايير السلامة</a>
+
+      <div class="hero-stage" aria-hidden="true">
+        <div class="hero-orb"></div>
+        <div class="hero-ring hero-ring-a"></div>
+        <div class="hero-ring hero-ring-b"></div>
+
+        <figure class="phone phone-back">
+          <img src="screens/56f85da9-c003-45a5-b72d-89d2e551c2b0.png" alt="" loading="eager" />
+        </figure>
+        <figure class="phone phone-mid">
+          <img src="screens/e5ee476f-0c34-426a-9a4c-c2920c787e3e.png" alt="" loading="eager" />
+        </figure>
+        <figure class="phone phone-front">
+          <img src="screens/3a8a440f-375b-4f54-a292-73cc3da68495.png" alt="" loading="eager" />
+        </figure>
+
+        <div class="float-card float-card-a">
+          <span class="float-avatar" style="--c:#2E86FB">س</span>
+          <div>
+            <strong>سارة</strong>
+            <p>وينك؟ المكالمة جاهزة ✨</p>
+          </div>
+        </div>
+        <div class="float-card float-card-b">
+          <span class="float-dot"></span>
+          <div>
+            <strong>محمد جابر</strong>
+            <p>متصل الآن · محادثة جديدة</p>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
+
+    <section class="proof" aria-label="إحصائيات">
+      <div class="proof-inner" id="statsRow" aria-hidden="true">
+        <div class="proof-item">
+          <span class="proof-num" id="statVisitors">1K+</span>
+          <span class="proof-label">زائر للصفحة</span>
+        </div>
+        <div class="proof-divider"></div>
+        <div class="proof-item">
+          <span class="proof-num" id="statDownloads">1M+</span>
+          <span class="proof-label">تحميل</span>
+        </div>
+        <div class="proof-divider"></div>
+        <div class="proof-item">
+          <span class="proof-num">مجاني</span>
+          <span class="proof-label">بدون اشتراكات</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="screens" id="screens">
+      <div class="section-head">
+        <p class="eyebrow">شاهد التطبيق</p>
+        <h2>واجهة نظيفة… تجربة تشبه التطبيقات اللي تحبها</h2>
+        <p class="section-lead">محادثات، أصدقاء، طلبات، إشعارات، وإعدادات — كلها بتصميم عربي أنيق.</p>
+      </div>
+      <div class="screens-rail" tabindex="0" aria-label="لقطات من التطبيق">
+        <figure class="shot">
+          <img src="screens/e5ee476f-0c34-426a-9a4c-c2920c787e3e.png" alt="شاشة المحادثات" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/56f85da9-c003-45a5-b72d-89d2e551c2b0.png" alt="شاشة الأصدقاء" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/26264c33-ec2d-47c0-ac48-1fad8ee3ace5.png" alt="شاشة الطلبات" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/3a8a440f-375b-4f54-a292-73cc3da68495.png" alt="المحادثات بالوضع الداكن" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/a3a45780-fb69-46ce-90ee-2217236f221e.png" alt="الطلبات بالوضع الداكن" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/e162539b-8066-4153-b8ec-82c775df6845.png" alt="شاشة الإشعارات" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/f1e4d310-21ea-46df-8d6f-2813ce6bcfac.png" alt="شاشة الإعدادات" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <img src="screens/e991a1eb-8638-48a8-9c16-9d2b682fad16.png" alt="إكمال الملف الشخصي" loading="lazy" />
+        </figure>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="section-head">
+        <p class="eyebrow">لماذا نيكس شات؟</p>
+        <h2>مميزات لتجربة أفضل</h2>
+      </div>
+      <div class="feature-row">
+        <article class="feature">
+          <div class="feature-icon feature-icon-blue" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </div>
+          <h3>مكالمات فيديو</h3>
+          <p>اتصال مباشر داخل التطبيق بجودة واضحة وواجهة بسيطة.</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon feature-icon-cyan" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <h3>اتصال سريع</h3>
+          <p>شارك كودك أو أضف صديقك وابدأ المحادثة فوراً.</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon feature-icon-violet" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>خصوصية محمية</h3>
+          <p>بياناتك محفوظة، وما نشاركها مع أي طرف ثالث.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="closing-inner">
+        <div class="closing-glow" aria-hidden="true"></div>
+        <div class="closing-grid" aria-hidden="true"></div>
+        <div class="closing-phones" aria-hidden="true">
+          <img class="closing-phone closing-phone-a" src="screens/e5ee476f-0c34-426a-9a4c-c2920c787e3e.png" alt="" loading="lazy" />
+          <img class="closing-phone closing-phone-b" src="screens/3a8a440f-375b-4f54-a292-73cc3da68495.png" alt="" loading="lazy" />
+        </div>
+        <div class="closing-content">
+          <img src="logo.png" alt="" class="closing-logo" width="72" height="72" />
+          <p class="closing-eyebrow">جاهز للتجربة؟</p>
+          <h2>حمّل نيكس شات وابدأ أول محادثة خلال ثوانٍ</h2>
+          <p>دردشة، ستوريز، ومكالمات فيديو — مجاناً بالكامل.</p>
+          <div class="closing-actions">
+            <a href="nexChat.apk" class="btn btn-primary btn-lg" download="nexChat.apk">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              تحميل التطبيق مجاناً
+            </a>
+            <a href="#screens" class="btn closing-btn-secondary">عرض الشاشات</a>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <section class="features">
-    <h2>لماذا نيكس شات؟</h2>
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-        <div>
-          <h3>خصوصية محمية</h3>
-          <p>بياناتك محمية ولا نشاركها مع طرف ثالث.</p>
-        </div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-        <div>
-          <h3>اتصال سريع</h3>
-          <p>شارك كودك وابدأ المحادثة فوراً.</p>
-        </div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>
-        <div>
-          <h3>مكالمات فيديو</h3>
-          <p>مكالمات فيديو مباشرة داخل التطبيق.</p>
-        </div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
-        <div>
-          <h3>مجاني بالكامل</h3>
-          <p>بدون اشتراكات أو رسوم خفية.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <footer class="footer">
+    <div class="footer-brand">
+      <img src="logo.png" alt="نيكس شات" width="36" height="36" />
+      <span>nexchat</span>
+    </div>
     <div class="footer-links">
       <a href="privacy.html">سياسة الخصوصية</a>
       <a href="safety.html">معايير السلامة</a>
       <a href="delete-account.html">طلب حذف الحساب</a>
       <a href="mailto:info@nexchat.site">تواصل معنا</a>
     </div>
-    <p class="email">البريد: <a href="mailto:info@nexchat.site">info@nexchat.site</a></p>
-    <p class="email" style="margin-top: 0.5rem;">nexchat.site</p>
+    <p class="footer-meta">info@nexchat.site · nexchat.site</p>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>

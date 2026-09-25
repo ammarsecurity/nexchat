@@ -122,20 +122,38 @@ onMounted(fetchOnboarding)
         v-for="(slide, i) in slides"
         :key="i"
         class="slide-card mb-4 pa-4"
-        style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;"
+        style="border: 1px solid rgba(15,23,42,0.08); border-radius: 12px;"
       >
         <div class="d-flex align-center justify-space-between mb-3">
           <span class="text-body-2 text-medium-emphasis">شريحة {{ i + 1 }}</span>
-          <div class="d-flex gap-1">
-            <v-btn icon size="small" variant="text" :disabled="i === 0" @click="moveUp(i)">
-              <v-icon>mdi-chevron-up</v-icon>
-            </v-btn>
-            <v-btn icon size="small" variant="text" :disabled="i === slides.length - 1" @click="moveDown(i)">
-              <v-icon>mdi-chevron-down</v-icon>
-            </v-btn>
-            <v-btn icon size="small" variant="text" color="error" :disabled="slides.length <= 1" @click="removeSlide(i)">
-              <v-icon>mdi-delete</v-icon>
-            </v-btn>
+          <div class="action-btns">
+            <v-btn
+              icon="mdi-chevron-up"
+              size="small"
+              variant="tonal"
+              color="primary"
+              :disabled="i === 0"
+              title="أعلى"
+              @click="moveUp(i)"
+            />
+            <v-btn
+              icon="mdi-chevron-down"
+              size="small"
+              variant="tonal"
+              color="primary"
+              :disabled="i === slides.length - 1"
+              title="أسفل"
+              @click="moveDown(i)"
+            />
+            <v-btn
+              icon="mdi-delete"
+              size="small"
+              variant="tonal"
+              color="error"
+              :disabled="slides.length <= 1"
+              title="حذف"
+              @click="removeSlide(i)"
+            />
           </div>
         </div>
         <v-text-field

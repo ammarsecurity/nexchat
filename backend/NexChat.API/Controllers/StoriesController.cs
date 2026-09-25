@@ -480,7 +480,10 @@ public class StoriesController(
                     new Dictionary<string, string>
                     {
                         ["userId"] = publisherId.ToString(),
-                        ["slideId"] = slideId.ToString()
+                        ["slideId"] = slideId.ToString(),
+                        ["publisherName"] = publisherName,
+                        ["publisherAvatar"] = publisherAvatar ?? "",
+                        ["avatar"] = publisherAvatar ?? ""
                     });
             }
 

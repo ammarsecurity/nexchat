@@ -90,6 +90,8 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         'body': (body?.isNotEmpty ?? false) ? body : (data['body'] ?? ''),
         'timestamp': DateTime.now().toIso8601String(),
         'isRead': isRead,
+        'avatar': nav['callerAvatar'] ?? nav['requesterAvatar'] ?? data['avatar'] ?? data['senderAvatar'] ?? data['publisherAvatar'],
+        'actorName': nav['callerName'] ?? nav['requesterName'] ?? data['senderName'] ?? data['publisherName'] ?? title,
       };
     }
 

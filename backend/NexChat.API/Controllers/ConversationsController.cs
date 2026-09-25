@@ -407,7 +407,13 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             "message_request",
             "طلب مراسلة",
             $"{name} يريد مراسلتك",
-            new Dictionary<string, string> { ["messageRequestId"] = messageRequestId.ToString() });
+            new Dictionary<string, string>
+            {
+                ["messageRequestId"] = messageRequestId.ToString(),
+                ["requesterId"] = CurrentUserId.ToString(),
+                ["requesterName"] = name,
+                ["requesterAvatar"] = requester?.Avatar ?? ""
+            });
     }
 
     [HttpPut("{id:guid}/pin")]

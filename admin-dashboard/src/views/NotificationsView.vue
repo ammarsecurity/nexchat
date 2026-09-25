@@ -268,7 +268,7 @@ function formatDate(dt) {
           hide-details
           clearable
           class="search-field"
-          bg-color="rgba(255,255,255,0.04)"
+          bg-color="#F8FAFC"
           style="max-width: 240px"
         />
       </div>
@@ -313,13 +313,13 @@ function formatDate(dt) {
               إعادة الإرسال
             </v-btn>
           </div>
-          <div v-if="historyTotal > historyPageSize" class="d-flex justify-center pt-4">
+          <div v-if="historyTotal > 0" class="pagination-bar">
             <v-pagination
               v-model="historyPage"
-              :length="Math.ceil(historyTotal / historyPageSize)"
-              :total-visible="5"
-              density="compact"
-              size="small"
+              :length="Math.max(1, Math.ceil(historyTotal / historyPageSize))"
+              :total-visible="7"
+              density="comfortable"
+              active-color="primary"
             />
           </div>
         </div>
@@ -335,7 +335,7 @@ function formatDate(dt) {
 }
 
 .border-b {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .image-preview-wrap {
@@ -343,7 +343,7 @@ function formatDate(dt) {
   height: 80px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(15, 23, 42, 0.1);
 }
 .image-preview {
   width: 100%;
@@ -357,7 +357,7 @@ function formatDate(dt) {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 .history-item:last-of-type {
   border-bottom: none;
@@ -380,7 +380,7 @@ function formatDate(dt) {
 }
 .history-item-body {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #5B6577;
   line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -390,7 +390,7 @@ function formatDate(dt) {
 }
 .history-item-meta {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #94A3B8;
   margin-top: 6px;
 }
 

@@ -92,8 +92,27 @@ class AuthController extends Notifier<AuthState> {
     );
   }
 
-  Future<void> register(String name, String password, String gender, String birthDate) async {
-    final data = await Api.post('/auth/register', {'name': name, 'password': password, 'gender': gender, 'birthDate': birthDate});
+  Future<void> register(
+    String name,
+    String password,
+    String gender,
+    String birthDate, {
+    required String country,
+    required String countryCode,
+    required String phoneNumber,
+    String? otpCode,
+  }) async {
+    final body = <String, dynamic>{
+      'name': name,
+      'password': password,
+      'gender': gender,
+      'birthDate': birthDate,
+      'country': country,
+      'countryCode': countryCode,
+      'phoneNumber': phoneNumber,
+    };
+    if (otpCode != null && otpCode.isNotEmpty) body['otpCode'] = otpCode;
+    final data = await Api.post('/auth/register', body);
     await _setAuth(data as Map<String, dynamic>);
   }
 

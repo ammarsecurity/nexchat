@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../services/api'
+import UserCell from '../components/UserCell.vue'
 
 const reports = ref([])
 const total = ref(0)
@@ -9,8 +10,8 @@ const loading = ref(false)
 const showPending = ref(true)
 
 const headers = [
-  { title: 'المُبلِّغ', key: 'reporterName' },
-  { title: 'المُبلَّغ عنه', key: 'reportedName' },
+  { title: 'المُبلِّغ', key: 'reporterName', sortable: false, minWidth: '160px' },
+  { title: 'المُبلَّغ عنه', key: 'reportedName', sortable: false, minWidth: '160px' },
   { title: 'السبب', key: 'reason' },
   { title: 'التاريخ', key: 'createdAt' },
   { title: 'الحالة', key: 'isReviewed', align: 'center' },
@@ -34,11 +35,6 @@ async function fetchReports() {
 
 async function reviewReport(id) {
   await api.put(`/admin/reports/${id}/review`)
-  fetchReports()
-}
-
-async function banReported(userId) {
-  await api.put(`/admin/users/${userId}/ban`, true)
   fetchReports()
 }
 
@@ -74,19 +70,15 @@ onMounted(fetchReports)
         :headers="headers"
         :items="reports"
         :loading="loading"
-        :items-per-page="20"
+        :items-per-page="-1"
         hide-default-footer
       >
         <template #item.reporterName="{ item }">
-          <v-chip size="small" variant="tonal" prepend-icon="mdi-account" color="info">
-            {{ item.reporterName }}
-          </v-chip>
+          <UserCell :name="item.reporterName" :avatar="item.reporterAvatar" color="info" />
         </template>
 
         <template #item.reportedName="{ item }">
-          <v-chip size="small" variant="tonal" prepend-icon="mdi-account-alert" color="error">
-            {{ item.reportedName }}
-          </v-chip>
+          <UserCell :name="item.reportedName" :avatar="item.reportedAvatar" color="error" />
         </template>
 
         <template #item.reason="{ item }">
@@ -114,37 +106,36 @@ onMounted(fetchReports)
         </template>
 
         <template #item.actions="{ item }">
-          <div class="d-flex gap-1 justify-center">
+          <div class="action-btns">
             <v-btn
               v-if="!item.isReviewed"
               icon="mdi-check-circle"
               size="small"
               variant="tonal"
               color="success"
+              title="تمت المراجعة"
               @click="reviewReport(item.id)"
-            ></v-btn>
+            />
             <v-btn
               icon="mdi-account-cancel"
               size="small"
               variant="tonal"
               color="error"
               title="حظر المُبلَّغ عنه"
-            ></v-btn>
-          </div>
-        </template>
-
-        <template #bottom>
-          <div class="d-flex justify-center pt-4">
-            <v-pagination
-              v-model="page"
-              :length="Math.ceil(total / 20)"
-              @update:model-value="fetchReports"
-              active-color="primary"
-              size="small"
-            ></v-pagination>
+            />
           </div>
         </template>
       </v-data-table>
+      <div v-if="total > 0" class="pagination-bar">
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / 20))"
+          :total-visible="7"
+          density="comfortable"
+          active-color="primary"
+          @update:model-value="fetchReports"
+        />
+      </div>
     </v-card>
   </div>
 </template>

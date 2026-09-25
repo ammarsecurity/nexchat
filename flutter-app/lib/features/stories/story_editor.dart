@@ -92,6 +92,7 @@ class StoryEditor extends StatefulWidget {
     this.initialOverlayJson,
     required this.onBackgroundChanged,
     this.onInteractingChanged,
+    this.footer,
   });
 
   /// Local file path or remote url.
@@ -105,6 +106,9 @@ class StoryEditor extends StatefulWidget {
 
   /// True while the draw tool is selected or a pointer is down on the stage (parent should stop scrolling).
   final ValueChanged<bool>? onInteractingChanged;
+
+  /// شريط سفلي ثابت (مثل الكابشن) يُعرض تحت لوحة الأدوات ويرتفع مع الكيبورد.
+  final Widget? footer;
 
   @override
   State<StoryEditor> createState() => StoryEditorState();
@@ -481,48 +485,85 @@ class StoryEditorState extends State<StoryEditor> {
         if (mounted) _notifyInteracting();
       });
     }
-    final toolsMax = math.min(300.0, MediaQuery.sizeOf(context).height * 0.36);
-    return Column(children: [
-      Expanded(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Center(
-            child: AspectRatio(
-              aspectRatio: 9 / 16,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 28, offset: Offset(0, 10))],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Listener(
-                  onPointerDown: (_) => _setStagePointers(_stagePointers + 1),
-                  onPointerUp: (_) => _setStagePointers(_stagePointers - 1),
-                  onPointerCancel: (_) => _setStagePointers(_stagePointers - 1),
-                  child: ClipRRect(borderRadius: BorderRadius.circular(22), child: _stage()),
+    final kb = MediaQuery.viewInsetsOf(context).bottom;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    // عند فتح الكيبورد نضيّق لوحة الأدوات؛ الستيج يبقى بحجمه عبر Stack
+    final toolsMax = kb > 0
+        ? math.min(240.0, MediaQuery.sizeOf(context).height * 0.32)
+        : math.min(300.0, MediaQuery.sizeOf(context).height * 0.36);
+
+    final toolsPanel = Material(
+      color: c.bgCard,
+      elevation: 8,
+      shadowColor: const Color(0x14000000),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: toolsMax),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                _toolTabs(c),
+                ..._options(c),
+                if (widget.textOnly) _bgCard(c),
+              ]),
+            ),
+          ),
+          if (widget.footer != null) widget.footer!,
+        ],
+      ),
+    );
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final footerReserve = widget.footer != null ? 64.0 : 0.0;
+      final reserve = kb > 0
+          ? math.min(toolsMax + footerReserve + 8, constraints.maxHeight * 0.48)
+          : math.min(toolsMax + footerReserve + 8, constraints.maxHeight * 0.42);
+      return Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: kb > 0 ? kb + reserve : reserve,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: 9 / 16,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 28, offset: Offset(0, 10))],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Listener(
+                      onPointerDown: (_) => _setStagePointers(_stagePointers + 1),
+                      onPointerUp: (_) => _setStagePointers(_stagePointers - 1),
+                      onPointerCancel: (_) => _setStagePointers(_stagePointers - 1),
+                      child: ClipRRect(borderRadius: BorderRadius.circular(22), child: _stage()),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
-      Material(
-        color: c.bgCard,
-        elevation: 8,
-        shadowColor: const Color(0x14000000),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: toolsMax),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _toolTabs(c),
-              ..._options(c),
-              if (widget.textOnly) _bgCard(c),
-            ]),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: kb,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: kb > 0 ? 0 : safeBottom),
+              child: toolsPanel,
+            ),
           ),
-        ),
-      ),
-    ]);
+        ],
+      );
+    });
   }
 
   void _onEmptyTap(TapUpDetails d) {
@@ -660,7 +701,14 @@ class StoryEditorState extends State<StoryEditor> {
         onScaleStart: _tool == 'draw'
             ? null
             : (d) {
-                _selectText(l);
+                // تحديد الطبقة بدون فتح الكيبورد أثناء السحب
+                _textFocus.unfocus();
+                setState(() {
+                  _selectedText = l.id;
+                  _selectedSticker = null;
+                  _tool = 'text';
+                  _textInput.text = l.text;
+                });
                 _gestureStartPct = Offset(l.x, l.y);
                 _gestureStartFocal = d.focalPoint;
                 _gestureStartScale = l.scale;
@@ -692,48 +740,18 @@ class StoryEditorState extends State<StoryEditor> {
           }),
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: stageW * 0.88, minWidth: 96),
-            child: selected
-                ? TextField(
-                    controller: _textInput,
-                    focusNode: _textFocus,
-                    autofocus: true,
-                    maxLines: null,
-                    textAlign: TextAlign.center,
-                    textCapitalization: TextCapitalization.sentences,
-                    textInputAction: TextInputAction.done,
-                    cursorColor: Colors.white,
-                    onChanged: (v) => setState(() => l.text = v),
-                    onSubmitted: (_) => _textFocus.unfocus(),
-                    style: TextStyle(
-                      color: l.color,
-                      fontSize: l.fontSize * l.scale,
-                      fontWeight: FontWeight.w800,
-                      height: 1.25,
-                      shadows: const [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
-                    ),
-                    decoration: InputDecoration(
-                      isCollapsed: true,
-                      border: InputBorder.none,
-                      hintText: t('stories.defaultText'),
-                      hintStyle: TextStyle(
-                        color: l.color.withValues(alpha: 0.45),
-                        fontSize: l.fontSize * l.scale,
-                        fontWeight: FontWeight.w800,
-                        height: 1.25,
-                      ),
-                    ),
-                  )
-                : Text(
-                    l.text.isEmpty ? t('stories.defaultText') : l.text,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: l.text.isEmpty ? l.color.withValues(alpha: 0.45) : l.color,
-                      fontSize: l.fontSize * l.scale,
-                      fontWeight: FontWeight.w800,
-                      height: 1.25,
-                      shadows: const [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
-                    ),
-                  ),
+            // النص دائماً Text — الكتابة من لوحة الأدوات حتى لا يتخبّط التخطيط مع الكيبورد/السحب
+            child: Text(
+              l.text.isEmpty ? t('stories.defaultText') : l.text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: l.text.isEmpty ? l.color.withValues(alpha: 0.45) : l.color,
+                fontSize: l.fontSize * l.scale,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+                shadows: const [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
+              ),
+            ),
           ),
         ),
       ),
@@ -903,6 +921,30 @@ class StoryEditorState extends State<StoryEditor> {
       return [
         _card(c, [
           _label(c, t('stories.textEdit')),
+          TextField(
+            controller: _textInput,
+            focusNode: _textFocus,
+            maxLines: 3,
+            minLines: 1,
+            textAlign: TextAlign.center,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.done,
+            onChanged: (v) => setState(() => sel.text = v),
+            onSubmitted: (_) => _textFocus.unfocus(),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary, height: 1.35),
+            decoration: InputDecoration(
+              hintText: t('stories.defaultText'),
+              hintStyle: TextStyle(color: c.textMuted, fontWeight: FontWeight.w600),
+              filled: true,
+              fillColor: c.bgCard,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.primary, width: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 12),
           _sublabel(c, t('stories.textColor')),
           _swatches(c, sel.color, (col) => setState(() => sel.color = col)),
           Padding(

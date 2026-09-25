@@ -1,17 +1,22 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
-  --bg: #0D0D1A;
-  --surface: #13132A;
-  --card: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.08);
-  --purple: #6C63FF;
-  --pink: #FF6584;
-  --cyan: #00D4FF;
-  --gradient: linear-gradient(135deg, #6C63FF, #FF6584);
-  --text: #FFFFFF;
-  --text-secondary: #B0B0C3;
-  --text-muted: #6B6B8A;
+  --bg: #F4F7FC;
+  --bg-soft: #EEF3FA;
+  --surface: #FFFFFF;
+  --card: #FFFFFF;
+  --border: rgba(15, 23, 42, 0.08);
+  --blue: #2E86FB;
+  --blue-deep: #1B6AE8;
+  --cyan: #22D3EE;
+  --violet: #8B5CF6;
+  --gradient: linear-gradient(135deg, #3B93FF 0%, #2E86FB 50%, #1A5FE0 100%);
+  --text: #0B1220;
+  --text-secondary: #5B6577;
+  --text-muted: #94A3B8;
+  --shadow: 0 8px 24px rgba(15, 35, 80, 0.06);
+  --shadow-soft: 0 4px 14px rgba(15, 35, 80, 0.05);
+  --radius: 16px;
 }
 
 html, body, #app {
@@ -24,7 +29,6 @@ html, body, #app {
   color: var(--text);
 }
 
-/* إجبار خط Cairo على كل عناصر Vuetify - منع الخط المائل/المختلف */
 #app,
 #app *,
 .v-application,
@@ -37,39 +41,60 @@ html, body, #app {
   font-style: normal !important;
 }
 
-/* Override Vuetify for dark theme */
+.v-application {
+  background: var(--bg) !important;
+}
+
+.v-card {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-soft) !important;
+  border-radius: var(--radius) !important;
+}
+
+.v-app-bar {
+  background: rgba(244, 247, 252, 0.85) !important;
+  backdrop-filter: blur(12px);
+}
+
 .v-app-bar .v-toolbar-title,
 .v-app-bar .v-app-bar-title {
-  color: #FFFFFF !important;
+  color: var(--text) !important;
+  font-weight: 800 !important;
+}
+
+.v-navigation-drawer {
+  background: #FFFFFF !important;
+  border-inline-end: 1px solid var(--border) !important;
 }
 
 .v-snackbar .v-snackbar__content {
   color: #FFFFFF !important;
 }
 
-.v-card {
-  background: var(--card) !important;
-  backdrop-filter: blur(20px) !important;
-  border: 1px solid var(--border) !important;
-}
-
 .gradient-text {
-  background: var(--gradient);
+  background: linear-gradient(100deg, #0B1220 15%, #2E86FB 55%, #8B5CF6 95%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .stat-card {
   background: var(--card) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
-  backdrop-filter: blur(20px);
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-soft) !important;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow) !important;
 }
 
 .online-dot {
-  background: #4ade80;
+  background: #22C55E;
   border-radius: 50%;
   display: inline-block;
   height: 8px;
@@ -78,14 +103,194 @@ html, body, #app {
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-/* ========== تحسينات الجوال ========== */
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.page-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* —— Unified action buttons —— */
+.action-btns {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.action-btns .v-btn.v-btn--icon {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.action-btns .v-btn .v-icon {
+  font-size: 18px !important;
+  opacity: 1 !important;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-actions .v-btn {
+  border-radius: 999px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  min-height: 36px;
+  box-shadow: none !important;
+  text-transform: none !important;
+}
+
+.page-actions .v-btn .v-icon {
+  opacity: 1 !important;
+}
+
+.table-card {
+  overflow: visible;
+}
+
+.table-card .v-table {
+  overflow-x: auto;
+}
+
+.pagination-bar {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 16px 8px 8px;
+  border-top: 1px solid var(--border);
+  background: #FFFFFF;
+  position: relative;
+  z-index: 2;
+}
+
+.pagination-bar .v-pagination {
+  display: flex !important;
+  width: auto;
+  max-width: 100%;
+}
+
+.pagination-bar .v-pagination__list {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.pagination-bar .v-pagination .v-btn {
+  min-width: 36px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  color: #0B1220 !important;
+  background: #F1F5F9 !important;
+  opacity: 1 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.pagination-bar .v-pagination .v-btn .v-icon {
+  color: #0B1220 !important;
+  opacity: 1 !important;
+}
+
+.pagination-bar .v-pagination .v-btn--active,
+.pagination-bar .v-pagination .v-pagination__item--is-active .v-btn {
+  background: #2E86FB !important;
+  color: #FFFFFF !important;
+}
+
+.pagination-bar .v-pagination .v-btn--active .v-icon,
+.pagination-bar .v-pagination .v-pagination__item--is-active .v-btn .v-icon {
+  color: #FFFFFF !important;
+}
+
+.pagination-bar .v-pagination .v-btn--disabled {
+  opacity: 0.4 !important;
+}
+
+.conversation-list .pagination-bar,
+.messages-layout .pagination-bar {
+  flex-shrink: 0;
+  margin-top: 0;
+  border-radius: 0;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  min-width: 140px;
+}
+
+.user-cell .user-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.user-cell .user-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.user-cell .user-sub {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.convo-avatar-stack {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 36px;
+  position: relative;
+}
+
+.convo-avatar-stack .avatar-circle:last-child {
+  margin-inline-start: -12px;
+}
+
+html, body {
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
 @media (max-width: 600px) {
   .v-app-bar .v-toolbar__content {
     padding-left: 8px;
     padding-right: 12px;
   }
 
-  .table-card,
+  .table-card .v-table,
   .v-card .v-card-text {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -93,6 +298,9 @@ html, body, #app {
 
   .v-data-table {
     font-size: 0.8125rem;
+  }
+
+  .v-data-table .v-table {
     min-width: 600px;
   }
 
@@ -105,27 +313,16 @@ html, body, #app {
   }
 
   .v-card {
-    border-radius: 12px !important;
+    border-radius: 14px !important;
   }
 
-  .v-pagination {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .v-pagination .v-btn {
-    min-width: 32px !important;
-    padding: 0 6px !important;
+  .pagination-bar .v-pagination .v-btn {
+    min-width: 34px !important;
+    min-height: 34px !important;
+    height: 34px !important;
   }
 }
 
-/* منع التمرير الأفقي على الجوال */
-html, body {
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* تحسين اللمس على الجوال */
 @media (hover: none) and (pointer: coarse) {
   .v-btn, .v-list-item, .v-chip {
     min-height: 44px;

@@ -75,21 +75,33 @@ class SoftButton extends StatelessWidget {
     final c = context.colors;
     final fg = color ?? c.textPrimary;
     return SizedBox(
+      width: double.infinity,
       height: height,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: fg,
-          backgroundColor: c.bgElevated,
-          side: BorderSide(color: c.border),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[Icon(icon, size: 18), const SizedBox(width: 8)],
-            Flexible(child: Text(label, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
-          ],
+      child: Material(
+        color: c.bgElevated,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: c.border),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
+                Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: kAppFont, fontWeight: FontWeight.w700, fontSize: 15, color: fg),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -382,7 +394,7 @@ class PillButton extends StatelessWidget {
             alignment: Alignment.center,
             child: loading
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text(label, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                : Text(label, style: const TextStyle(fontFamily: kAppFont, color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
           ),
         ),
       ),
@@ -444,11 +456,12 @@ class ModernListRow extends StatelessWidget {
 
 /// `.modern-search-bar`
 class SearchField extends StatelessWidget {
-  const SearchField({super.key, required this.controller, required this.hint, this.onChanged, this.trailing});
+  const SearchField({super.key, required this.controller, required this.hint, this.onChanged, this.trailing, this.autofocus = false});
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
   final Widget? trailing;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
@@ -469,10 +482,11 @@ class SearchField extends StatelessWidget {
           child: TextField(
             controller: controller,
             onChanged: onChanged,
-            style: TextStyle(color: c.textPrimary, fontSize: 14),
+            autofocus: autofocus,
+            style: TextStyle(fontFamily: kAppFont, color: c.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: TextStyle(color: c.textMuted),
+              hintStyle: TextStyle(fontFamily: kAppFont, color: c.textMuted, fontWeight: FontWeight.w500),
               border: InputBorder.none,
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,

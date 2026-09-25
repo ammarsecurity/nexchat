@@ -78,4 +78,24 @@ public class UserNotificationsController(AppDbContext db, IOptions<NotificationF
                 .SetProperty(x => x.ReadAt, DateTime.UtcNow));
         return Ok(new { updated = rows });
     }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        if (!FeatureEnabled) return Ok(new { deleted = 0 });
+        var rows = await db.UserNotifications
+            .Where(x => x.Id == id && x.UserId == CurrentUserId)
+            .ExecuteDeleteAsync();
+        return Ok(new { deleted = rows });
+    }
+
+    [HttpDelete]
+    public async Task<IActionResult> DeleteAll()
+    {
+        if (!FeatureEnabled) return Ok(new { deleted = 0 });
+        var rows = await db.UserNotifications
+            .Where(x => x.UserId == CurrentUserId)
+            .ExecuteDeleteAsync();
+        return Ok(new { deleted = rows });
+    }
 }

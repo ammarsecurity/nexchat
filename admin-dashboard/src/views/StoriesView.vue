@@ -2,6 +2,8 @@
 import { ref, watch, onMounted } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
+import { fullMediaUrl } from '../utils/media'
+import UserCell from '../components/UserCell.vue'
 
 const stories = ref([])
 const total = ref(0)
@@ -16,8 +18,6 @@ const deleteLoading = ref(false)
 const previewItem = ref(null)
 const previewDialog = ref(false)
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-
 const statusOptions = [
   { title: 'الكل', value: 'all' },
   { title: 'نشطة', value: 'active' },
@@ -26,7 +26,7 @@ const statusOptions = [
 
 const headers = [
   { title: 'معاينة', key: 'preview', sortable: false, width: 88 },
-  { title: 'الناشر', key: 'userName', sortable: false },
+  { title: 'الناشر', key: 'userName', sortable: false, minWidth: '160px' },
   { title: 'النوع', key: 'mediaType', sortable: false },
   { title: 'النص', key: 'caption', sortable: false },
   { title: 'المشاهدات', key: 'viewCount', sortable: false, align: 'center' },
@@ -38,13 +38,6 @@ const headers = [
 
 const mediaTypeLabel = { image: 'صورة', video: 'فيديو', text: 'نص' }
 const mediaTypeColor = { image: 'primary', video: 'secondary', text: 'info' }
-
-function fullMediaUrl(url) {
-  if (!url) return ''
-  if (url.startsWith('http')) return url
-  const base = API_BASE.replace('/api', '')
-  return url.startsWith('/') ? base + url : base + '/' + url
-}
 
 async function fetchStories() {
   loading.value = true
@@ -148,7 +141,7 @@ onMounted(fetchStories)
           rounded="lg"
           hide-details
           clearable
-          bg-color="rgba(255,255,255,0.04)"
+          bg-color="#F8FAFC"
           style="max-width: 280px;"
           @input="onSearch"
         />
@@ -162,20 +155,22 @@ onMounted(fetchStories)
           density="compact"
           rounded="lg"
           hide-details
-          bg-color="rgba(255,255,255,0.04)"
+          bg-color="#F8FAFC"
           style="max-width: 160px;"
         />
         <v-spacer />
-        <v-btn variant="tonal" color="primary" prepend-icon="mdi-refresh" :loading="loading" @click="fetchStories">
-          تحديث
-        </v-btn>
+        <div class="page-actions">
+          <v-btn variant="tonal" color="primary" prepend-icon="mdi-refresh" size="small" :loading="loading" @click="fetchStories">
+            تحديث
+          </v-btn>
+        </div>
       </div>
 
       <v-data-table
         :headers="headers"
         :items="stories"
         :loading="loading"
-        :items-per-page="pageSize"
+        :items-per-page="-1"
         hide-default-footer
         class="stories-table"
         no-data-text="لا توجد ستوريات"
@@ -200,7 +195,7 @@ onMounted(fetchStories)
             <div
               v-else-if="item.mediaType === 'text'"
               class="preview-thumb preview-thumb--text"
-              :style="{ background: item.backgroundColor || 'linear-gradient(135deg,#6c63ff,#ff6584)' }"
+              :style="{ background: item.backgroundColor || 'linear-gradient(135deg,#2E86FB,#0EA5E9)' }"
             >
               <span class="text-preview">{{ (item.caption || 'نص')[0] }}</span>
             </div>
@@ -211,15 +206,7 @@ onMounted(fetchStories)
         </template>
 
         <template #item.userName="{ item }">
-          <div class="d-flex align-center gap-2">
-            <v-avatar v-if="item.userAvatar" size="28">
-              <v-img :src="fullMediaUrl(item.userAvatar)" />
-            </v-avatar>
-            <v-avatar v-else size="28" color="primary" variant="tonal">
-              <span class="text-caption">{{ item.userName?.[0] || '?' }}</span>
-            </v-avatar>
-            <span class="font-weight-medium">{{ item.userName }}</span>
-          </div>
+          <UserCell :name="item.userName" :avatar="item.userAvatar" :size="36" />
         </template>
 
         <template #item.mediaType="{ item }">
@@ -253,27 +240,37 @@ onMounted(fetchStories)
         </template>
 
         <template #item.actions="{ item }">
-          <div class="d-flex justify-center gap-1">
-            <v-btn icon size="small" variant="text" @click="openPreview(item)">
-              <v-icon icon="mdi-eye" />
-            </v-btn>
-            <v-btn icon size="small" variant="text" color="error" @click="confirmDelete(item)">
-              <v-icon icon="mdi-delete" />
-            </v-btn>
-          </div>
-        </template>
-
-        <template #bottom>
-          <div v-if="total > pageSize" class="d-flex justify-center pt-4">
-            <v-pagination
-              v-model="page"
-              :length="Math.ceil(total / pageSize)"
-              active-color="primary"
+          <div class="action-btns">
+            <v-btn
+              icon="mdi-eye"
               size="small"
+              variant="tonal"
+              color="primary"
+              title="معاينة"
+              @click="openPreview(item)"
+            />
+            <v-btn
+              icon="mdi-delete"
+              size="small"
+              variant="tonal"
+              color="error"
+              title="حذف"
+              @click="confirmDelete(item)"
             />
           </div>
         </template>
-      </v-data-table>
+</v-data-table>
+      <div v-if="total > 0" class="pagination-bar">
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / pageSize))"
+          :total-visible="7"
+          density="comfortable"
+          active-color="primary"
+          @update:model-value="fetchStories"
+        />
+      </div>
+
     </v-card>
 
     <v-dialog v-model="previewDialog" max-width="480">
@@ -301,7 +298,7 @@ onMounted(fetchStories)
           <div
             v-else-if="previewItem.mediaType === 'text'"
             class="preview-dialog-text"
-            :style="{ background: previewItem.backgroundColor || 'linear-gradient(135deg,#6c63ff,#ff6584)' }"
+            :style="{ background: previewItem.backgroundColor || 'linear-gradient(135deg,#2E86FB,#0EA5E9)' }"
           >
             {{ previewItem.caption || '—' }}
           </div>
@@ -332,8 +329,8 @@ onMounted(fetchStories)
 
 <style scoped>
 .stories-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .stories-table :deep(.v-data-table__td) {
@@ -370,8 +367,8 @@ onMounted(fetchStories)
 }
 
 .preview-thumb--empty {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.4);
+  background: #F1F5F9;
+  color: #94A3B8;
 }
 
 .text-preview {

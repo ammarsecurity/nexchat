@@ -10,6 +10,8 @@
 	<string>NexChat</string>
 	<key>NSCameraUsageDescription</key>
 	<string>يُستخدم للاتصال المرئي والمكالمات</string>
+	<key>NSContactsUsageDescription</key>
+	<string>للعثور على أصدقائك المسجّلين في NexChat من سجل هاتفك</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>للمكالمات الصوتية والمرئية</string>
 	<key>NSPhotoLibraryUsageDescription</key>

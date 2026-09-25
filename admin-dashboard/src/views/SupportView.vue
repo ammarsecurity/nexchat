@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import api from '../services/api'
+import AvatarCircle from '../components/AvatarCircle.vue'
 
 const conversations = ref([])
 const totalConvos = ref(0)
@@ -178,7 +179,7 @@ const filteredMessages = computed(() => {
             rounded="lg"
             hide-details
             clearable
-            bg-color="rgba(255,255,255,0.04)"
+            bg-color="#F8FAFC"
           />
         </div>
 
@@ -199,9 +200,7 @@ const filteredMessages = computed(() => {
             :class="{ active: selectedSession?.id === c.id }"
             @click="selectConversation(c)"
           >
-            <div class="convo-avatar">
-              {{ c.user2Name?.[0]?.toUpperCase() }}
-            </div>
+            <AvatarCircle :name="c.user2Name" :avatar="c.user2Avatar" :size="40" />
             <div class="convo-info">
               <div class="convo-title">{{ convoTitle(c) }}</div>
               <div class="convo-meta">
@@ -211,13 +210,13 @@ const filteredMessages = computed(() => {
           </div>
         </div>
 
-        <div v-if="totalConvos > convoPageSize" class="pa-2">
+        <div v-if="totalConvos > 0" class="pagination-bar">
           <v-pagination
             v-model="convoPage"
-            :length="Math.ceil(totalConvos / convoPageSize)"
-            :total-visible="4"
-            density="compact"
-            size="small"
+            :length="Math.max(1, Math.ceil(totalConvos / convoPageSize))"
+            :total-visible="5"
+            density="comfortable"
+            active-color="primary"
           />
         </div>
       </div>
@@ -257,7 +256,7 @@ const filteredMessages = computed(() => {
               rounded="lg"
               hide-details
               clearable
-              bg-color="rgba(255,255,255,0.04)"
+              bg-color="#F8FAFC"
             />
           </div>
 
@@ -284,7 +283,10 @@ const filteredMessages = computed(() => {
               class="msg-bubble"
               :class="{ right: isFromUser1(msg), left: !isFromUser1(msg) }"
             >
-              <div class="msg-sender">{{ msg.senderName }}</div>
+              <div class="msg-sender d-flex align-center gap-2">
+                <AvatarCircle :name="msg.senderName" :avatar="msg.senderAvatar" :size="22" />
+                <span>{{ msg.senderName }}</span>
+              </div>
               <template v-if="msg.type === 'image'">
                 <a :href="msg.content" target="_blank" class="msg-image-link">
                   <v-icon size="20">mdi-image</v-icon>
@@ -344,8 +346,8 @@ const filteredMessages = computed(() => {
   display: flex;
   gap: 0;
   height: 100%;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #FFFFFF;
+  border: 1px solid rgba(15,23,42,0.08);
   border-radius: 16px;
   overflow: hidden;
 }
@@ -353,10 +355,10 @@ const filteredMessages = computed(() => {
 .conversation-list {
   width: 320px;
   min-width: 280px;
-  border-left: 1px solid rgba(255,255,255,0.08);
+  border-left: 1px solid rgba(15,23,42,0.08);
   display: flex;
   flex-direction: column;
-  background: rgba(0,0,0,0.2);
+  background: #F8FAFC;
 }
 
 .search-wrap {
@@ -375,20 +377,20 @@ const filteredMessages = computed(() => {
   padding: 14px 16px;
   cursor: pointer;
   transition: background 0.15s;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(15,23,42,0.05);
 }
 .convo-item:hover {
-  background: rgba(108,99,255,0.08);
+  background: rgba(46, 134, 251,0.08);
 }
 .convo-item.active {
-  background: rgba(108,99,255,0.15);
+  background: rgba(46, 134, 251,0.15);
 }
 
 .convo-avatar {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #6C63FF, #FF6584);
+  background: linear-gradient(135deg, #2E86FB, #0EA5E9);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -413,7 +415,7 @@ const filteredMessages = computed(() => {
 
 .convo-meta {
   font-size: 12px;
-  color: rgba(255,255,255,0.5);
+  color: #94A3B8;
   margin-top: 2px;
 }
 
@@ -434,12 +436,12 @@ const filteredMessages = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.4);
+  color: #94A3B8;
 }
 
 .chat-header {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(15,23,42,0.08);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -452,7 +454,7 @@ const filteredMessages = computed(() => {
 
 .chat-search {
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(15,23,42,0.06);
 }
 
 .chat-messages {
@@ -472,22 +474,22 @@ const filteredMessages = computed(() => {
   max-width: 75%;
   border-radius: 16px;
   padding: 12px 16px;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid rgba(15,23,42,0.06);
 }
 .msg-bubble.right {
   align-self: flex-end;
-  background: linear-gradient(135deg, rgba(108,99,255,0.25), rgba(255,101,132,0.2));
-  border-color: rgba(108,99,255,0.3);
+  background: linear-gradient(135deg, rgba(46,134,251,0.16), rgba(14,165,233,0.12));
+  border-color: rgba(46, 134, 251,0.3);
 }
 .msg-bubble.left {
   align-self: flex-start;
-  background: rgba(255,255,255,0.06);
+  background: #F1F5F9;
 }
 
 .msg-sender {
   font-size: 12px;
   font-weight: 600;
-  color: #6C63FF;
+  color: #2E86FB;
   margin-bottom: 4px;
 }
 
@@ -501,7 +503,7 @@ const filteredMessages = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #00D4FF;
+  color: #0EA5E9;
   text-decoration: none;
   font-size: 14px;
 }
@@ -511,13 +513,13 @@ const filteredMessages = computed(() => {
 
 .msg-time {
   font-size: 11px;
-  color: rgba(255,255,255,0.45);
+  color: #94A3B8;
   margin-top: 6px;
 }
 
 .chat-reply {
   flex-shrink: 0;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(15,23,42,0.08);
 }
 
 @media (max-width: 960px) {
@@ -529,7 +531,7 @@ const filteredMessages = computed(() => {
     width: 100%;
     max-height: 40%;
     border-left: none;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    border-bottom: 1px solid rgba(15,23,42,0.08);
   }
 
   .chat-panel {

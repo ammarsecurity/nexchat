@@ -128,9 +128,11 @@ onMounted(fetchBanners)
         <div class="text-h5 font-weight-bold">الإعلانات</div>
         <div class="text-body-2 text-medium-emphasis">إدارة صور الإعلانات في التطبيق</div>
       </div>
-      <v-btn color="primary" prepend-icon="mdi-plus" rounded="lg" @click="openAdd">
-        إضافة إعلان
-      </v-btn>
+      <div class="page-actions">
+        <v-btn color="primary" prepend-icon="mdi-plus" size="small" @click="openAdd">
+          إضافة إعلان
+        </v-btn>
+      </div>
     </div>
 
     <v-card rounded="xl" elevation="0" class="pa-4">
@@ -192,8 +194,24 @@ onMounted(fetchBanners)
             </td>
             <td class="text-medium-emphasis text-body-2">{{ formatDate(b.createdAt) }}</td>
             <td>
-              <v-btn icon="mdi-pencil" size="small" variant="text" @click="openEdit(b)" />
-              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="confirmDelete(b)" />
+              <div class="action-btns">
+                <v-btn
+                  icon="mdi-pencil"
+                  size="small"
+                  variant="tonal"
+                  color="primary"
+                  title="تعديل"
+                  @click="openEdit(b)"
+                />
+                <v-btn
+                  icon="mdi-delete"
+                  size="small"
+                  variant="tonal"
+                  color="error"
+                  title="حذف"
+                  @click="confirmDelete(b)"
+                />
+              </div>
             </td>
           </tr>
         </tbody>
@@ -317,6 +335,6 @@ onMounted(fetchBanners)
 
 <style scoped>
 .banner-thumb {
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(15,23,42,0.08);
 }
 </style>

@@ -1,6 +1,15 @@
 namespace NexChat.Core.DTOs;
 
-public record RegisterRequest(string Name, string Password, string Gender, string BirthDate);
+public record RegisterRequest(
+    string Name,
+    string Password,
+    string Gender,
+    string BirthDate,
+    string? Country = null,
+    string? CountryCode = null,
+    string? PhoneNumber = null,
+    string? OtpCode = null
+);
 
 public record LoginRequest(string Name, string Password);
 
