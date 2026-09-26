@@ -107,6 +107,24 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nexchat/secure").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setSecure" -> {
+                    val enabled = call.argument<Boolean>("enabled") == true
+                    runOnUiThread {
+                        if (enabled) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                    }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         applyIncomingIntent(intent)
     }
 

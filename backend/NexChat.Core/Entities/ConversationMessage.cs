@@ -12,6 +12,11 @@ public class ConversationMessage
     public bool DeletedForEveryone { get; set; } = false;
     public bool IsRead { get; set; } = false;
 
+    /// <summary>Snapshot of conversation disappear mode at send time. See <see cref="DisappearMode"/>.</summary>
+    public int DisappearMode { get; set; } = 0;
+    /// <summary>UTC when clients should hide this message. Null = keep. Admin always sees the row.</summary>
+    public DateTime? ExpiresAt { get; set; }
+
     public Conversation Conversation { get; set; } = null!;
     public User Sender { get; set; } = null!;
 }

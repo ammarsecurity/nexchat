@@ -61,3 +61,7 @@ Thumbs.db
 # Kotlin incremental compiler sessions
 flutter-app/android/.kotlin/
 
+
+# Release binaries
+releases/
+

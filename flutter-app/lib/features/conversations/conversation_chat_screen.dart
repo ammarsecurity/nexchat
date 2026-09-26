@@ -18,6 +18,7 @@ import '../../core/storage/prefs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/media.dart';
 import '../../services/ring_sound.dart';
+import '../../services/secure_screen.dart';
 import '../../shared/media_widgets.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
@@ -48,7 +49,20 @@ Json normalizeMsg(Map<dynamic, dynamic> m) => {
       'senderAvatar': m.s('senderAvatar'),
       'reactions': m.v('reactions') ?? const [],
       'myReaction': m.s('myReaction'),
+      'disappearMode': m.i('disappearMode'),
+      'expiresAt': m.s('expiresAt'),
     };
+
+bool messageIsExpired(Json m, [DateTime? now]) {
+  final at = m.date('expiresAt');
+  if (at == null) return false;
+  return !at.isAfter(now ?? DateTime.now().toUtc());
+}
+
+List<Json> withoutExpiredMessages(List<Json> msgs) {
+  final now = DateTime.now().toUtc();
+  return [for (final m in msgs) if (!messageIsExpired(m, now)) m];
+}
 
 String msgKey(Json m) => '${m['tempId'] ?? m['id']}';
 
@@ -110,6 +124,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   int _unreadWhileAway = 0;
   bool _flushingOutbox = false;
   Timer? _typingExpire;
+  Timer? _expirySweep;
+  int _disappearMode = 0;
 
   final _recorder = AudioRecorder();
   bool _recording = false;
@@ -130,6 +146,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _storeOwner = this;
     _joinCounts.update(_cid, (n) => n + 1, ifAbsent: () => 1);
     WidgetsBinding.instance.addObserver(this);
+    unawaited(SecureScreen.acquire());
     Future.microtask(_init);
   }
 
@@ -146,7 +163,9 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _saveTimer = Timer(const Duration(milliseconds: 400), () {
       final active = ref.read(activeConversationProvider);
       if (active.conversationId != _cid) return;
-      final list = active.messages.where((m) => m['status'] != 'pending' && m['status'] != 'failed').toList();
+      final list = withoutExpiredMessages(
+        active.messages.where((m) => m['status'] != 'pending' && m['status'] != 'failed').toList(),
+      );
       final tail = list.length > 150 ? list.sublist(list.length - 150) : list;
       Prefs.instance.setString(_cacheKey, jsonEncode(tail));
       _persistOutbox();
@@ -199,12 +218,13 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final cached = Prefs.instance.getString(_cacheKey);
     if (cached != null) {
       try {
-        final msgs = asJsonList(jsonDecode(cached));
+        final msgs = withoutExpiredMessages(asJsonList(jsonDecode(cached)));
         final outbox = _readOutbox();
         final ids = msgs.map((m) => m['tempId'] ?? m['id']).toSet();
         final merged = [...msgs, ...outbox.where((m) => !ids.contains(m['tempId'] ?? m['id']))];
         _store.setMessages(merged);
         _scrollToBottom(force: true);
+        _scheduleExpirySweep();
       } catch (_) {}
     }
     setState(() => _loading = false);
@@ -225,6 +245,32 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       }),
       h.on('MessageDeletedForMe', (a) => _store.removeMessage('${a.firstOrNull}')),
       h.on('MessageDeletedForEveryone', (a) => _store.setDeletedForEveryone('${a.firstOrNull}')),
+      h.on('MessagesExpired', (a) {
+        final p = a.firstOrNull;
+        final ids = p is Map ? p.v('messageIds') : null;
+        if (ids is List && ids.isNotEmpty) {
+          _store.removeMessages(ids.map((e) => '$e'));
+          _saveDebounced();
+        }
+      }),
+      h.on('MessagesExpiring', (a) {
+        final p = a.firstOrNull;
+        if (p is! Map) return;
+        final ids = p.v('messageIds');
+        if (ids is! List || ids.isEmpty) return;
+        final expiresAt = p.s('expiresAt') ?? p.v('ExpiresAt')?.toString();
+        _store.setExpiresAt(ids.map((e) => '$e'), expiresAt);
+        _scheduleExpirySweep();
+        _saveDebounced();
+      }),
+      h.on('DisappearModeChanged', (a) {
+        final p = a.firstOrNull;
+        if (p is! Map) return;
+        final cid = '${p.v('conversationId') ?? p.v('ConversationId') ?? ''}';
+        if (cid.isNotEmpty && cid != _cid) return;
+        final mode = p.i('disappearMode');
+        if (mounted) setState(() => _disappearMode = mode);
+      }),
       h.on('ConversationDeletedForMe', (_) {
         ref.read(conversationsListProvider.notifier).removeConversation(_cid);
         Prefs.instance.setString(_cacheKey, null);
@@ -344,6 +390,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   void _onReceive(Object? raw) {
     if (raw is! Map) return;
     final m = normalizeMsg(raw);
+    if (messageIsExpired(m)) return;
     final fromMe = m['senderId'] == _me;
     if (fromMe) {
       if (!_store.updatePendingMessage(m)) _store.addMessage({...m, 'status': 'sent'});
@@ -351,8 +398,36 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _store.addMessage({...m, 'status': 'sent'});
       _markReadDebounced();
     }
+    _scheduleExpirySweep();
     _maybeScrollOrFab(fromOwnSend: fromMe);
     _saveDebounced();
+  }
+
+  void _scheduleExpirySweep() {
+    _expirySweep?.cancel();
+    final msgs = ref.read(activeConversationProvider).messages;
+    DateTime? next;
+    final now = DateTime.now().toUtc();
+    for (final m in msgs) {
+      final at = m.date('expiresAt');
+      if (at == null) continue;
+      if (!at.isAfter(now)) {
+        _store.removeMessage(msgId(m));
+        continue;
+      }
+      if (next == null || at.isBefore(next)) next = at;
+    }
+    if (next == null) return;
+    final wait = next.difference(now);
+    _expirySweep = Timer(wait.isNegative ? Duration.zero : wait + const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      final kept = withoutExpiredMessages(ref.read(activeConversationProvider).messages);
+      if (kept.length != ref.read(activeConversationProvider).messages.length) {
+        _store.setMessages(kept);
+        _saveDebounced();
+      }
+      _scheduleExpirySweep();
+    });
   }
 
   void _onJoined(Object? raw) {
@@ -374,18 +449,23 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     ref.read(conversationsListProvider.notifier).updateConversation(_cid, {'unreadCount': 0, 'UnreadCount': 0, 'partnerAvatar': partner?['avatar']});
     final server = [for (final m in (raw.v('messages') as List? ?? const [])) if (m is Map) {...normalizeMsg(m), 'status': 'sent'}];
     final ids = server.map((m) => m['id']).toSet();
-    final merged = [...server, ...pending.where((m) => !ids.contains(m['id']))]
+    final merged = withoutExpiredMessages([...server, ...pending.where((m) => !ids.contains(m['id']))])
       ..sort((a, b) => (a.date('sentAt') ?? DateTime(0)).compareTo(b.date('sentAt') ?? DateTime(0)));
     _store.setConversationAndMessages(_cid, partner, isGroup: isGroup, messages: merged);
+    final mode = raw.i('disappearMode');
     final hasMore = raw.b('hasMore') || raw.v('HasMore') == true;
+    final effectiveMode = isGroup && mode == 1 ? 0 : mode;
     if (mounted) {
       setState(() {
         _loading = false;
         _hasMore = hasMore;
+        _disappearMode = effectiveMode;
       });
     } else {
       _hasMore = hasMore;
+      _disappearMode = effectiveMode;
     }
+    _scheduleExpirySweep();
     _scrollToBottom(force: true);
     _saveDebounced();
     if (isGroup) _fetchGroupSenders();
@@ -541,6 +621,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   @override
   void dispose() {
+    unawaited(SecureScreen.release());
     WidgetsBinding.instance.removeObserver(this);
     for (final d in _disposers) {
       d();
@@ -551,6 +632,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _markReadInterval?.cancel();
     _saveTimer?.cancel();
     _typingExpire?.cancel();
+    _expirySweep?.cancel();
     _outgoingRing?.cancel();
     _recordTimer?.cancel();
     if (_callingOut) {
@@ -1261,6 +1343,28 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
               _HeaderAction(icon: LucideIcons.trash2, onTap: _deleteConversation, danger: true),
             ]),
           ),
+          if (_disappearMode != 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: c.primary.withValues(alpha: 0.12),
+              child: Row(children: [
+                Icon(LucideIcons.timer, size: 14, color: c.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    switch (_disappearMode) {
+                      1 => t('conversations.disappearAfterRead'),
+                      2 => t('conversations.disappear1h'),
+                      3 => t('conversations.disappear24h'),
+                      4 => t('conversations.disappear1w'),
+                      _ => t('conversations.disappearTitle'),
+                    },
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary),
+                  ),
+                ),
+              ]),
+            ),
           ActiveCallBar(embeddedFor: _cid),
           Expanded(
             child: ColoredBox(

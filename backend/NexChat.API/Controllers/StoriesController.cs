@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NexChat.API.Hubs;
 using NexChat.API.Services;
+using NexChat.Core;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -380,12 +381,17 @@ public class StoriesController(
             caption = slide.Caption
         });
 
+        var sentAt = DateTime.UtcNow;
+        var disappearMode = DisappearingMessagesHelper.EffectiveSendMode(conv.DisappearMode, conv.Type);
         var msg = new ConversationMessage
         {
             ConversationId = conv.Id,
             SenderId = CurrentUserId,
             Content = messageCrypto.EncryptForStorage(payload),
-            Type = "story_reply"
+            Type = "story_reply",
+            SentAt = sentAt,
+            DisappearMode = disappearMode,
+            ExpiresAt = DisappearMode.ExpiresAtOnSend(disappearMode, sentAt)
         };
         db.ConversationMessages.Add(msg);
 
@@ -411,7 +417,9 @@ public class StoriesController(
             ReplyToSenderName = (string?)null,
             IsRead = false,
             Reactions = Array.Empty<object>(),
-            MyReaction = (string?)null
+            MyReaction = (string?)null,
+            msg.DisappearMode,
+            msg.ExpiresAt
         };
 
         await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ReceiveMessage", receivePayload);
@@ -428,18 +436,21 @@ public class StoriesController(
         await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
         await conversationHub.Clients.User(slide.UserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
 
-        await notificationOutbox.EnqueueAsync(
-            slide.UserId,
-            "conversation_message",
-            sender?.Name ?? "شخص",
-            preview,
-            new Dictionary<string, string>
-            {
-                ["conversationId"] = conv.Id.ToString(),
-                ["userId"] = CurrentUserId.ToString(),
-                ["senderName"] = sender?.Name ?? "",
-                ["senderAvatar"] = sender?.Avatar ?? ""
-            });
+        var storyReplyHidden = await db.UserConversationStates.AsNoTracking()
+            .AnyAsync(s => s.UserId == slide.UserId && s.ConversationId == conv.Id && s.IsHidden);
+        if (!storyReplyHidden)
+            await notificationOutbox.EnqueueAsync(
+                slide.UserId,
+                "conversation_message",
+                sender?.Name ?? "شخص",
+                preview,
+                new Dictionary<string, string>
+                {
+                    ["conversationId"] = conv.Id.ToString(),
+                    ["userId"] = CurrentUserId.ToString(),
+                    ["senderName"] = sender?.Name ?? "",
+                    ["senderAvatar"] = sender?.Avatar ?? ""
+                });
 
         return Ok(new StoryReplyResponse(conv.Id, msg.Id));
     }

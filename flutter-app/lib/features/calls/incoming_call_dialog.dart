@@ -12,6 +12,7 @@ import '../../core/json.dart';
 import '../../core/network/hubs.dart';
 import '../../services/call_native.dart';
 import '../../services/ring_sound.dart';
+import '../../services/secure_screen.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../conversations/conversations_list_controller.dart';
@@ -219,6 +220,7 @@ class IncomingCallOverlay extends ConsumerStatefulWidget {
 
 class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay> {
   Timer? _expire;
+  bool _secured = false;
 
   @override
   void initState() {
@@ -232,6 +234,10 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay> {
   void dispose() {
     _expire?.cancel();
     RingSound.stop();
+    if (_secured) {
+      _secured = false;
+      unawaited(SecureScreen.release());
+    }
     super.dispose();
   }
 
@@ -241,6 +247,10 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay> {
     _expire?.cancel();
     _expire = null;
     if (v) {
+      if (!_secured) {
+        _secured = true;
+        unawaited(SecureScreen.acquire());
+      }
       final s = ref.read(incomingConvCallProvider);
       final cid = s.conversationId;
       if (cid != null) notifyOutgoingCallRinging(cid);
@@ -262,6 +272,10 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay> {
     } else {
       unawaited(RingSound.stop());
       unawaited(CallNative.dismissIncoming());
+      if (_secured) {
+        _secured = false;
+        unawaited(SecureScreen.release());
+      }
     }
   }
 

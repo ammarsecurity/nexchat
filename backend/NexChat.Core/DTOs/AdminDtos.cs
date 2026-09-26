@@ -107,7 +107,17 @@ public record AdminConversationDto(
     DateTime? LastMessageAt,
     string? User1Avatar = null,
     string? User2Avatar = null);
-public record AdminConversationMessageDto(Guid Id, string SenderName, string Content, string Type, DateTime SentAt, string? SenderAvatar = null);
+public record AdminConversationMessageDto(
+    Guid Id,
+    string SenderName,
+    string Content,
+    string Type,
+    DateTime SentAt,
+    string? SenderAvatar = null,
+    DateTime? ExpiresAt = null,
+    int DisappearMode = 0,
+    bool IsExpired = false
+);
 public record AdminBlockDto(Guid Id, string BlockerName, string BlockedUserName, DateTime CreatedAt, string? BlockerAvatar = null, string? BlockedUserAvatar = null);
 public record AdminContactDto(Guid Id, string UserName, string ContactUserName, DateTime CreatedAt, string? UserAvatar = null, string? ContactUserAvatar = null);
 

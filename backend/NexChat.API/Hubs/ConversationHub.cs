@@ -88,6 +88,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             Partner = partner != null ? new { partner.Id, partner.Name, partner.Gender, partner.UniqueCode, partner.Avatar, IsOnline = UserOnlineVisibility.VisibleToOthers(partner) } : null,
             GroupName = conv.Type == ConversationType.Group ? conv.Name : null,
             GroupImageUrl = conv.Type == ConversationType.Group ? conv.ImageUrl : null,
+            DisappearMode = conv.DisappearMode,
             Messages = messages,
             HasMore = page.HasMore
         });
@@ -130,7 +131,11 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
         }
 
+        var (expiringOnJoin, joinExpiresAt) = await DisappearingMessagesHelper.ApplyAfterReadExpiryAsync(db, cid, userId, conv.Type);
         await db.SaveChangesAsync();
+
+        if (expiringOnJoin.Count > 0 && joinExpiresAt.HasValue)
+            await Clients.Group(cid.ToString()).SendAsync("MessagesExpiring", new { messageIds = expiringOnJoin, expiresAt = joinExpiresAt });
 
         if (conv.Type == ConversationType.Group)
         {
@@ -220,7 +225,11 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
         }
 
+        var (expiringOnRead, readExpiresAt) = await DisappearingMessagesHelper.ApplyAfterReadExpiryAsync(db, cid, userId, conv.Type);
         await db.SaveChangesAsync();
+
+        if (expiringOnRead.Count > 0 && readExpiresAt.HasValue)
+            await Clients.Group(cid.ToString()).SendAsync("MessagesExpiring", new { messageIds = expiringOnRead, expiresAt = readExpiresAt });
 
         var payload = new { LastReadAt = state.LastReadAt, ReaderId = userId };
         await Clients.Group(cid.ToString()).SendAsync("PartnerReadUpTo", payload);
@@ -276,13 +285,18 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 plainBody = profanity.Mask(plainBody);
             if (type == "album" && !IsValidAlbumPayload(plainBody))
                 return;
+            var sentAt = DateTime.UtcNow;
+            var disappearMode = DisappearingMessagesHelper.EffectiveSendMode(conv.DisappearMode, conv.Type);
             var msg = new ConversationMessage
             {
                 ConversationId = cid,
                 SenderId = userId,
                 Content = messageCrypto.EncryptForStorage(plainBody),
                 Type = type,
-                ReplyToMessageId = replyToId
+                ReplyToMessageId = replyToId,
+                SentAt = sentAt,
+                DisappearMode = disappearMode,
+                ExpiresAt = DisappearMode.ExpiresAtOnSend(disappearMode, sentAt)
             };
             db.ConversationMessages.Add(msg);
             var recipientId = conv.Type == ConversationType.Group ? (Guid?)null : (conv.User1Id == userId ? conv.User2Id : conv.User1Id);
@@ -326,7 +340,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     SenderName = senderUser?.Name ?? "—",
                     SenderAvatar = senderUser?.Avatar,
                     Reactions = Array.Empty<object>(),
-                    MyReaction = (string?)null
+                    MyReaction = (string?)null,
+                    msg.DisappearMode,
+                    msg.ExpiresAt
                 };
             }
             else
@@ -344,7 +360,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     ReplyToSenderName = replyToSenderName,
                     IsRead = false,
                     Reactions = Array.Empty<object>(),
-                    MyReaction = (string?)null
+                    MyReaction = (string?)null,
+                    msg.DisappearMode,
+                    msg.ExpiresAt
                 };
             }
             try
@@ -376,7 +394,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 _ => plainBody
             };
             if (preview.Length > 80) preview = preview[..80] + "…";
-            if (recipientId.HasValue)
+            if (recipientId.HasValue && !await IsHiddenForUserAsync(cid, recipientId.Value))
                 await notificationOutbox.EnqueueAsync(
                     recipientId.Value,
                     "conversation_message",
@@ -592,6 +610,14 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
                 return;
             }
+        }
+
+        // الطرف الآخر أخفى هذه المحادثة → لا رنين ولا إشعار (مثل واتساب).
+        if (await IsHiddenForUserAsync(cid, recipientId))
+        {
+            await PersistCallSystemMessageAsync(cid, userId, recipientId, voiceOnly, "busy", durationSec: 0);
+            await Clients.Caller.SendAsync("VideoCallBusy", cid.ToString());
+            return;
         }
 
         var now = DateTime.UtcNow;
@@ -1039,6 +1065,10 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         await base.OnDisconnectedAsync(exception);
     }
 
+    private async Task<bool> IsHiddenForUserAsync(Guid conversationId, Guid userId) =>
+        await db.UserConversationStates.AsNoTracking()
+            .AnyAsync(s => s.UserId == userId && s.ConversationId == conversationId && s.IsHidden);
+
     private async Task<bool> IsParticipant(Guid conversationId, Guid userId) =>
         await db.Conversations.AnyAsync(c => c.Id == conversationId &&
             (c.Type == ConversationType.Private && (c.User1Id == userId || c.User2Id == userId)
@@ -1047,11 +1077,13 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
     /// <summary>آخر رسالة يظهر معاينتها لهذا المستخدم (تجاهل المحذوفة للجميع ولـ «حذف لي»).</summary>
     private async Task<(string? Preview, DateTime? SentAt, string? SenderId, string? Type)> GetLastListPreviewForUserAsync(Guid conversationId, Guid viewerUserId)
     {
+        var now = DateTime.UtcNow;
         var lastMsg = await db.ConversationMessages
             .AsNoTracking()
             .Where(m => m.ConversationId == conversationId &&
                 !m.DeletedForEveryone &&
-                !db.UserMessageDeletions.Any(d => d.UserId == viewerUserId && d.MessageId == m.Id))
+                !db.UserMessageDeletions.Any(d => d.UserId == viewerUserId && d.MessageId == m.Id) &&
+                (m.ExpiresAt == null || m.ExpiresAt > now))
             .OrderByDescending(m => m.SentAt)
             .FirstOrDefaultAsync();
         if (lastMsg == null) return (null, null, null, null);
@@ -1101,7 +1133,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         var q = db.ConversationMessages.AsNoTracking()
             .Where(m => m.ConversationId == cid &&
                         !m.DeletedForEveryone &&
-                        !db.UserMessageDeletions.Any(d => d.UserId == userId && d.MessageId == m.Id));
+                        !db.UserMessageDeletions.Any(d => d.UserId == userId && d.MessageId == m.Id) &&
+                        (m.ExpiresAt == null || m.ExpiresAt > DateTime.UtcNow));
 
         if (beforeSentAt.HasValue && beforeId.HasValue)
         {
@@ -1115,7 +1148,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             .OrderByDescending(m => m.SentAt)
             .ThenByDescending(m => m.Id)
             .Take(take + 1)
-            .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId })
+            .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId, m.DisappearMode, m.ExpiresAt })
             .ToListAsync();
 
         var hasMore = rawDesc.Count > take;
@@ -1202,7 +1235,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 SenderName = senderName,
                 SenderAvatar = senderAvatar,
                 Reactions = reactions,
-                MyReaction = myReaction
+                MyReaction = myReaction,
+                m.DisappearMode,
+                m.ExpiresAt
             };
         }).ToList();
 

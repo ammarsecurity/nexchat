@@ -63,17 +63,29 @@ class ConversationsListController extends Notifier<List<Json>> {
   }
 
   /// Soft refresh after network restore (keeps current list on failure).
-  /// Omits `page` so API returns the full list (legacy shape) and does not drop loaded pages.
+  /// Uses the screen's active filter so an unlocked vault is not replaced by the main inbox.
   Future<void> refreshSilently() async {
     if (!NetworkStatus.online.value) return;
     try {
-      final data = await Api.get('/conversations', query: {'filter': 'all'}, skipUnauthorized: true);
+      final filter = ref.read(conversationsListFilterProvider);
+      final data = await Api.get('/conversations', query: {'filter': filter}, skipUnauthorized: true);
       state = asJsonList(data);
     } catch (_) {}
   }
 }
 
 final conversationsListProvider = NotifierProvider<ConversationsListController, List<Json>>(ConversationsListController.new);
+
+/// Active list filter on the conversations screen (`all` / `unread` / `archived` / `hidden`).
+class ConversationsListFilterController extends Notifier<String> {
+  @override
+  String build() => 'all';
+
+  void setFilter(String value) => state = value;
+}
+
+final conversationsListFilterProvider =
+    NotifierProvider<ConversationsListFilterController, String>(ConversationsListFilterController.new);
 
 final totalUnreadProvider = Provider<int>((ref) => ref.watch(conversationsListProvider).fold(0, (sum, c) => sum + c.i('unreadCount')));
 

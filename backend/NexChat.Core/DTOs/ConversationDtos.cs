@@ -41,7 +41,8 @@ public record ConversationListItemDto(
     bool IsPinned,
     bool IsArchived,
     bool IsGroup = false,
-    bool PartnerIsOnline = false
+    bool PartnerIsOnline = false,
+    bool IsHidden = false
 );
 
 public record CreateConversationRequest(Guid ContactUserId);

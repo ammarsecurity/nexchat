@@ -12,6 +12,7 @@ import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
 import '../../services/call_native.dart';
+import '../../services/secure_screen.dart';
 import '../../shared/widgets.dart';
 import '../conversations/active_conversation.dart';
 import 'call_partner.dart';
@@ -103,6 +104,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _router = GoRouter.of(context);
     // Voice defaults to earpiece (Vue). Emulator keeps speaker so proximity never blacks the screen.
     _speakerOn = !_voiceOnly;
+    unawaited(SecureScreen.acquire());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _syncMeta();
@@ -338,6 +340,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   @override
   void dispose() {
+    unawaited(SecureScreen.release());
     _suppressDisconnectNavigate = true;
     _timer?.cancel();
     _peerWait?.cancel();

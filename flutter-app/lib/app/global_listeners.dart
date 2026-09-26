@@ -195,7 +195,10 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       if (updated) {
         Prefs.instance.setString('nexchat_conversations_cache', jsonEncode(ref.read(conversationsListProvider)));
       } else {
-        Api.get('/conversations', query: {'filter': 'all'}).then((data) {
+        // Don't replace an unlocked vault list with the main inbox.
+        final filter = ref.read(conversationsListFilterProvider);
+        if (filter == 'hidden') return;
+        Api.get('/conversations', query: {'filter': filter}).then((data) {
           ref.read(conversationsListProvider.notifier).setList(asJsonList(data));
         }).catchError((_) => null);
       }

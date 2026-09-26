@@ -459,7 +459,10 @@ async function confirmDeleteMsgs() {
                 </a>
               </template>
               <div v-else class="msg-text">{{ msg.content }}</div>
-              <div class="msg-time">{{ formatTime(msg.sentAt) }}</div>
+              <div class="msg-time">
+                {{ formatTime(msg.sentAt) }}
+                <v-chip v-if="msg.isExpired" size="x-small" color="warning" variant="tonal" class="ms-2">مختفية عند المستخدم</v-chip>
+              </div>
               </div>
             </div>
           </div>

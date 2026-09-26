@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NexChat.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using NexChat.Infrastructure.Data;
 namespace NexChat.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926181739_AddIsHiddenToUserConversationState")]
+    partial class AddIsHiddenToUserConversationState
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -189,9 +192,6 @@ namespace NexChat.Infrastructure.Migrations
                     b.Property<Guid?>("CreatedById")
                         .HasColumnType("char(36)");
 
-                    b.Property<int>("DisappearMode")
-                        .HasColumnType("int");
-
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)");
@@ -267,12 +267,6 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.Property<bool>("DeletedForEveryone")
                         .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("DisappearMode")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsRead")
                         .HasColumnType("tinyint(1)");

@@ -17,6 +17,7 @@ import '../../core/network/hubs.dart';
 import '../../core/network/network_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/media.dart';
+import '../../services/secure_screen.dart';
 import '../../shared/media_widgets.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
@@ -117,6 +118,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     super.initState();
     (_router, _chat, _matching);
     WidgetsBinding.instance.addObserver(this);
+    unawaited(SecureScreen.acquire());
     _input.addListener(() {
       if (_input.hasFocus && _showEmojiPicker) setState(() => _showEmojiPicker = false);
     });
@@ -345,6 +347,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   @override
   void dispose() {
     _mounted = false;
+    unawaited(SecureScreen.release());
     WidgetsBinding.instance.removeObserver(this);
     _clearPartnerWait();
     _timer?.cancel();

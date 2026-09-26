@@ -764,9 +764,10 @@ public class AdminController(
             .OrderBy(m => m.SentAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(m => new { m.Id, SenderName = m.Sender.Name, SenderAvatar = m.Sender.Avatar, m.Content, m.Type, m.SentAt })
+            .Select(m => new { m.Id, SenderName = m.Sender.Name, SenderAvatar = m.Sender.Avatar, m.Content, m.Type, m.SentAt, m.ExpiresAt, m.DisappearMode })
             .ToListAsync();
 
+        var now = DateTime.UtcNow;
         var messages = rows
             .Select(m => new AdminConversationMessageDto(
                 m.Id,
@@ -774,7 +775,10 @@ public class AdminController(
                 messageCrypto.DecryptFromStorage(m.Content ?? ""),
                 m.Type,
                 m.SentAt,
-                m.SenderAvatar))
+                m.SenderAvatar,
+                m.ExpiresAt,
+                m.DisappearMode,
+                m.ExpiresAt != null && m.ExpiresAt <= now))
             .ToList();
 
         return Ok(new PagedResult<AdminConversationMessageDto>(messages, total, page, pageSize));

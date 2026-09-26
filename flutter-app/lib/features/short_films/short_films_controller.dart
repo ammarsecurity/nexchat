@@ -195,7 +195,7 @@ class ShortFilmsState {
 
   List<ShortFilm> get visibleFeatured {
     if (isSearching || selectedSectionId != null) return const [];
-    return featured;
+    return featured.where((f) => !f.isEpisode).toList();
   }
 
   /// Feed order: featured → section browse → uncategorized → paged list (deduped).

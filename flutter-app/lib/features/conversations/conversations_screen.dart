@@ -26,6 +26,7 @@ import 'active_conversation.dart';
 import 'avatar_overrides.dart';
 import 'contacts_panel.dart';
 import 'conversations_list_controller.dart';
+import 'hidden_chats_vault.dart';
 import 'message_requests_panel.dart';
 
 const _cacheKey = 'nexchat_conversations_cache';
@@ -53,6 +54,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   bool _needPhone = false;
   bool _markingAll = false;
   bool _fabOpen = false;
+  bool _vaultUnlocked = false;
   final _contactsKey = GlobalKey<ContactsPanelState>();
   final _listScroll = ScrollController();
   void Function()? _removeReturnListener;
@@ -111,6 +113,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
 
   Future<void> _fetch({bool background = false}) async {
     if (!background) setState(() => _loading = true);
+    ref.read(conversationsListFilterProvider.notifier).setFilter(_filter);
     final list = ref.read(conversationsListProvider.notifier);
     if (!background) {
       final cached = Prefs.instance.getString(_cacheKey);
@@ -181,6 +184,39 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
+  }
+
+  Future<void> _onSearchChanged(String value) async {
+    final pin = value.trim();
+    if (pin.length >= HiddenChatsVault.minPinLength && await HiddenChatsVault.instance.hasPin) {
+      if (await HiddenChatsVault.instance.verify(pin)) {
+        if (!mounted) return;
+        _search.clear();
+        setState(() {
+          _vaultUnlocked = true;
+          _filter = 'hidden';
+        });
+        showToast(context, t('conversations.hiddenUnlocked'));
+        await _fetch();
+        return;
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _lockVault() async {
+    setState(() {
+      _vaultUnlocked = false;
+      _filter = 'all';
+    });
+    showToast(context, t('conversations.hiddenLocked'));
+    await _fetch();
+  }
+
+  Future<void> _setFilter(String f) async {
+    if (f == 'hidden' && !_vaultUnlocked) return;
+    setState(() => _filter = f);
+    await _fetch();
   }
 
   /// Pushed chats may come back via pop or `context.go('/conversations')`, so watch the router location.
@@ -294,7 +330,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 x.str('partnerUniqueCode').toLowerCase().contains(q))
             .toList();
     final pinned = filtered.where((x) => x.b('isPinned')).toList();
-    final showPinned = pinned.isNotEmpty && _filter != 'archived';
+    final showPinned = pinned.isNotEmpty && _filter != 'archived' && _filter != 'hidden';
     final rest = showPinned ? filtered.where((x) => !x.b('isPinned')).toList() : filtered;
 
     final light = Theme.of(context).brightness == Brightness.light;
@@ -350,35 +386,39 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               search: _search,
               markingAll: _markingAll,
               totalUnread: totalUnread,
-              onSearch: (_) => setState(() {}),
+              vaultUnlocked: _vaultUnlocked,
+              onSearch: _onSearchChanged,
               onMarkAllRead: () => _markAllRead(totalUnread),
+              onLockVault: _lockVault,
             );
           }
           if (index == 2) {
+            final filters = [
+              'all',
+              'unread',
+              'archived',
+              if (_vaultUnlocked) 'hidden',
+            ];
             return SizedBox(
               height: 50,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 children: [
-                  for (final f in ['all', 'unread', 'archived'])
+                  for (final f in filters)
                     Padding(
                       padding: const EdgeInsetsDirectional.only(end: 8),
                       child: _FilterChip(
-                        label: f == 'all'
-                            ? t('conversations.filterAll')
-                            : f == 'unread'
-                                ? t('conversations.filterUnread')
-                                : t('conversations.filterArchived'),
+                        label: switch (f) {
+                          'unread' => t('conversations.filterUnread'),
+                          'archived' => t('conversations.filterArchived'),
+                          'hidden' => t('conversations.filterHidden'),
+                          _ => t('conversations.filterAll'),
+                        },
                         active: _filter == f,
                         badge: f == 'unread' ? totalUnread : 0,
                         dim: _loading && _filter != f,
-                        onTap: _loading
-                            ? null
-                            : () {
-                                setState(() => _filter = f);
-                                _fetch();
-                              },
+                        onTap: _loading ? null : () => _setFilter(f),
                       ),
                     ),
                 ],
@@ -388,9 +428,11 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           if (_loading) return const _ListSkeleton();
           if (_ready && filtered.isEmpty) {
             return EmptyState(
-              icon: LucideIcons.messageCircle,
-              text: t('conversations.empty'),
-              action: PillButton(label: t('conversations.newChat'), onPressed: () => _setSection('contacts')),
+              icon: _filter == 'hidden' ? LucideIcons.lock : LucideIcons.messageCircle,
+              text: _filter == 'hidden' ? t('conversations.noHiddenChats') : t('conversations.empty'),
+              action: _filter == 'hidden'
+                  ? PillButton(label: t('conversations.lockHidden'), onPressed: _lockVault)
+                  : PillButton(label: t('conversations.newChat'), onPressed: () => _setSection('contacts')),
             );
           }
           final row = body[index - 3];
@@ -401,7 +443,10 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               ),
             'headAll' => Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _SectionHead(icon: LucideIcons.messageCircle, title: t('conversations.allChats')),
+                child: _SectionHead(
+                  icon: _filter == 'hidden' ? LucideIcons.lock : LucideIcons.messageCircle,
+                  title: _filter == 'hidden' ? t('conversations.hiddenChats') : t('conversations.allChats'),
+                ),
               ),
             'more' => const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
@@ -507,8 +552,10 @@ class _StoriesHeroCard extends StatelessWidget {
     required this.search,
     required this.markingAll,
     required this.totalUnread,
+    required this.vaultUnlocked,
     required this.onSearch,
     required this.onMarkAllRead,
+    required this.onLockVault,
   });
 
   final bool light;
@@ -516,8 +563,10 @@ class _StoriesHeroCard extends StatelessWidget {
   final TextEditingController search;
   final bool markingAll;
   final int totalUnread;
+  final bool vaultUnlocked;
   final ValueChanged<String> onSearch;
   final VoidCallback onMarkAllRead;
+  final VoidCallback onLockVault;
 
   @override
   Widget build(BuildContext context) {
@@ -543,7 +592,7 @@ class _StoriesHeroCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text(
-              t('stories.allStory'),
+              vaultUnlocked ? t('conversations.hiddenChats') : t('stories.allStory'),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -553,7 +602,39 @@ class _StoriesHeroCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-            if (storiesEnabled) const StoriesStrip() else const SizedBox(height: 6),
+            if (storiesEnabled && !vaultUnlocked) const StoriesStrip() else const SizedBox(height: 6),
+            if (vaultUnlocked)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onLockVault,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(children: [
+                        const Icon(LucideIcons.lock, size: 16, color: Colors.white),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            t('conversations.lockHidden'),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                        Icon(
+                          Directionality.of(context) == TextDirection.rtl
+                              ? LucideIcons.chevronLeft
+                              : LucideIcons.chevronRight,
+                          size: 16,
+                          color: Colors.white70,
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
             Container(
               height: 40,
               padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
@@ -569,6 +650,7 @@ class _StoriesHeroCard extends StatelessWidget {
                   child: TextField(
                     controller: search,
                     onChanged: onSearch,
+                    obscureText: false,
                     style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
                     decoration: InputDecoration(
                       hintText: t('conversations.searchRecent'),

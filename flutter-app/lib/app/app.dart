@@ -188,10 +188,10 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
               if (!_online && !loggedIn)
                 Positioned.fill(child: NoConnectionView(onRetry: _retryConnection))
               else ...[
+                // Banner already includes status-bar SafeArea; only reserve the content strip
+                // so screens that also use MediaQuery.padding.top don't get a double gap.
                 Padding(
-                  padding: EdgeInsets.only(
-                    top: !_online ? MediaQuery.paddingOf(context).top + OfflineBanner.contentHeight : 0,
-                  ),
+                  padding: EdgeInsets.only(top: !_online ? OfflineBanner.contentHeight : 0),
                   child: child ?? const SizedBox.shrink(),
                 ),
                 if (!_online) Positioned(top: 0, left: 0, right: 0, child: OfflineBanner(onRetry: _retryConnection)),

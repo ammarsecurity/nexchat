@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NexChat.Core;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
+using NexChat.API.Hubs;
 using NexChat.API.Services;
 using System.Security.Claims;
 
@@ -16,7 +18,11 @@ namespace NexChat.API.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class ConversationsController(AppDbContext db, NotificationOutboxService notificationOutbox, IConversationMessageCrypto messageCrypto) : ControllerBase
+public class ConversationsController(
+    AppDbContext db,
+    NotificationOutboxService notificationOutbox,
+    IConversationMessageCrypto messageCrypto,
+    IHubContext<ConversationHub> conversationHub) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -64,6 +70,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 .Where(m => allConvIds.Contains(m.ConversationId)
                     && m.SenderId != uid
                     && !m.DeletedForEveryone
+                    && (m.ExpiresAt == null || m.ExpiresAt > DateTime.UtcNow)
                     && !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id)
                     && !db.UserConversationStates.Any(s =>
                         s.UserId == uid
@@ -74,24 +81,40 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 .Distinct()
                 .ToListAsync();
             convQuery = convQuery.Where(c => unreadConvIds.Contains(c.Id));
+
+            var hiddenIds = await db.UserConversationStates
+                .AsNoTracking()
+                .Where(s => s.UserId == uid && s.IsHidden)
+                .Select(s => s.ConversationId)
+                .ToListAsync();
+            convQuery = convQuery.Where(c => !hiddenIds.Contains(c.Id));
         }
         else if (f == "archived")
         {
             var archivedIds = await db.UserConversationStates
                 .AsNoTracking()
-                .Where(s => s.UserId == uid && s.IsArchived)
+                .Where(s => s.UserId == uid && s.IsArchived && !s.IsHidden)
                 .Select(s => s.ConversationId)
                 .ToListAsync();
             convQuery = convQuery.Where(c => archivedIds.Contains(c.Id));
         }
-        else
+        else if (f == "hidden")
         {
-            var archivedIds = await db.UserConversationStates
+            var hiddenIds = await db.UserConversationStates
                 .AsNoTracking()
-                .Where(s => s.UserId == uid && s.IsArchived)
+                .Where(s => s.UserId == uid && s.IsHidden)
                 .Select(s => s.ConversationId)
                 .ToListAsync();
-            convQuery = convQuery.Where(c => !archivedIds.Contains(c.Id));
+            convQuery = convQuery.Where(c => hiddenIds.Contains(c.Id));
+        }
+        else
+        {
+            var excludedIds = await db.UserConversationStates
+                .AsNoTracking()
+                .Where(s => s.UserId == uid && (s.IsArchived || s.IsHidden))
+                .Select(s => s.ConversationId)
+                .ToListAsync();
+            convQuery = convQuery.Where(c => !excludedIds.Contains(c.Id));
         }
 
         var convs = await convQuery
@@ -109,7 +132,8 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
         var lastMessages = await db.ConversationMessages
             .AsNoTracking()
             .Where(m => convIds.Contains(m.ConversationId) && !m.DeletedForEveryone &&
-                !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id))
+                !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id) &&
+                (m.ExpiresAt == null || m.ExpiresAt > DateTime.UtcNow))
             .GroupBy(m => m.ConversationId)
             .Select(g => new { ConvId = g.Key, Msg = g.OrderByDescending(m => m.SentAt).First() })
             .ToListAsync();
@@ -125,6 +149,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             .Where(m => convIds.Contains(m.ConversationId)
                 && m.SenderId != uid
                 && !m.DeletedForEveryone
+                && (m.ExpiresAt == null || m.ExpiresAt > DateTime.UtcNow)
                 && !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id)
                 && !db.UserConversationStates.Any(s =>
                     s.UserId == uid
@@ -206,7 +231,8 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 state?.IsPinned ?? false,
                 state?.IsArchived ?? false,
                 c.Type == ConversationType.Group,
-                partnerIsOnline
+                partnerIsOnline,
+                state?.IsHidden ?? false
             ));
         }
 
@@ -243,7 +269,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             .AnyAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
         if (deleted) return NotFound();
         if (conv.Type == ConversationType.Group)
-            return Ok(new { id = conv.Id, type = "group", groupName = conv.Name ?? "مجموعة", groupImageUrl = conv.ImageUrl });
+            return Ok(new { id = conv.Id, type = "group", groupName = conv.Name ?? "مجموعة", groupImageUrl = conv.ImageUrl, disappearMode = conv.DisappearMode });
         var partner = conv.User1Id == CurrentUserId ? conv.User2 : conv.User1;
         if (partner == null) return NotFound();
         return Ok(new
@@ -253,7 +279,8 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             partnerId = partner.Id,
             partnerName = partner.Name,
             partnerAvatar = partner.Avatar,
-            partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner)
+            partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner),
+            disappearMode = conv.DisappearMode
         });
     }
 
@@ -497,6 +524,44 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
         return Ok(new { isArchived = state.IsArchived });
     }
 
+    [HttpPut("{id:guid}/hide")]
+    public async Task<IActionResult> ToggleHide(Guid id)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        var state = await GetOrCreateState(id);
+        state.IsHidden = !state.IsHidden;
+        if (state.IsHidden)
+            state.IsArchived = false; // hidden vault is separate from archive
+        state.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Ok(new { isHidden = state.IsHidden });
+    }
+
+    public record SetDisappearRequest(int Mode);
+
+    /// <summary>
+    /// Set disappearing-messages mode for this chat (applies to new messages only).
+    /// Modes: 0=off, 1=after read, 2=1h, 3=24h, 4=1 week.
+    /// </summary>
+    [HttpPut("{id:guid}/disappear")]
+    public async Task<IActionResult> SetDisappearMode(Guid id, [FromBody] SetDisappearRequest req)
+    {
+        if (!await IsParticipant(id)) return NotFound();
+        if (!DisappearMode.IsValid(req.Mode))
+            return BadRequest(new { message = "وضع اختفاء غير صالح" });
+
+        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
+        if (conv == null) return NotFound();
+        if (conv.Type == ConversationType.Group && req.Mode == DisappearMode.AfterRead)
+            return BadRequest(new { message = "وضع «بعد القراءة» غير متاح للمجموعات" });
+
+        conv.DisappearMode = req.Mode;
+        await db.SaveChangesAsync();
+        await conversationHub.Clients.Group(id.ToString())
+            .SendAsync("DisappearModeChanged", new { conversationId = id, disappearMode = conv.DisappearMode });
+        return Ok(new { disappearMode = conv.DisappearMode });
+    }
+
     [HttpPut("{id:guid}/read")]
     public async Task<IActionResult> MarkAsRead(Guid id)
     {
@@ -517,9 +582,19 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 await db.ConversationMessages
                     .Where(m => m.ConversationId == id && m.SenderId != CurrentUserId && !m.IsRead)
                     .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+
+            var (expiring, expiresAt) = await DisappearingMessagesHelper.ApplyAfterReadExpiryAsync(db, id, CurrentUserId, conv.Type);
+            await db.SaveChangesAsync();
+
+            if (expiring.Count > 0 && expiresAt.HasValue)
+                await conversationHub.Clients.Group(id.ToString())
+                    .SendAsync("MessagesExpiring", new { messageIds = expiring, expiresAt });
+        }
+        else
+        {
+            await db.SaveChangesAsync();
         }
 
-        await db.SaveChangesAsync();
         return Ok();
     }
 

@@ -24,6 +24,9 @@ public class Conversation
     public Guid? CreatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Disappearing messages for new messages. See NexChat.Core.DisappearMode.</summary>
+    public int DisappearMode { get; set; } = 0;
+
     public User? User1 { get; set; }
     public User? User2 { get; set; }
     public User? CreatedBy { get; set; }

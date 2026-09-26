@@ -73,6 +73,14 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     state = state.copyWith(messages: [for (final m in state.messages) set.contains(msgId(m)) ? {...m, 'isRead': true} : m]);
   }
 
+  void setExpiresAt(Iterable<String> ids, String? expiresAt) {
+    final set = ids.toSet();
+    if (set.isEmpty) return;
+    state = state.copyWith(messages: [
+      for (final m in state.messages) set.contains(msgId(m)) ? {...m, 'expiresAt': expiresAt} : m,
+    ]);
+  }
+
   void updateByTempId(String tempId, Json updates) {
     state = state.copyWith(messages: [for (final m in state.messages) m['tempId'] == tempId ? {...m, ...updates} : m]);
   }
@@ -82,6 +90,12 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
   }
 
   void removeMessage(String id) => state = state.copyWith(messages: state.messages.where((m) => msgId(m) != id).toList());
+
+  void removeMessages(Iterable<String> ids) {
+    final set = ids.toSet();
+    if (set.isEmpty) return;
+    state = state.copyWith(messages: state.messages.where((m) => !set.contains(msgId(m))).toList());
+  }
 
   void removeByTempId(String tempId) => state = state.copyWith(messages: state.messages.where((m) => m['tempId'] != tempId).toList());
 

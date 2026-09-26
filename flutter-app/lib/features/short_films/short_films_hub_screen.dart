@@ -12,7 +12,7 @@ import '../../shared/video_poster.dart';
 import '../../shared/widgets.dart';
 import 'short_films_controller.dart';
 
-/// views/ShortFilmsHubView.vue
+/// Discover hub: dedicated Films tab + Series tab (not mixed on one scroll).
 class ShortFilmsHubScreen extends ConsumerStatefulWidget {
   const ShortFilmsHubScreen({super.key});
 
@@ -20,37 +20,41 @@ class ShortFilmsHubScreen extends ConsumerStatefulWidget {
   ConsumerState<ShortFilmsHubScreen> createState() => _ShortFilmsHubScreenState();
 }
 
-class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with SingleTickerProviderStateMixin {
-  final _scroll = ScrollController();
+class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with TickerProviderStateMixin {
+  final _filmsScroll = ScrollController();
+  final _seriesScroll = ScrollController();
   final _search = TextEditingController();
   late final _spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 750));
+  late final _tabs = TabController(length: 2, vsync: this);
 
   ShortFilmsController get _store => ref.read(shortFilmsProvider.notifier);
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
+    _filmsScroll.addListener(_onFilmsScroll);
     Future.microtask(() => _store.fetchAll(force: true));
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
+    _filmsScroll.dispose();
+    _seriesScroll.dispose();
     _search.dispose();
     _spin.dispose();
+    _tabs.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
+  void _onFilmsScroll() {
     final st = _store.current;
-    if (!_scroll.hasClients || !st.hasMore || st.loadingMore || st.loading) return;
-    if (_scroll.position.extentAfter < 160) _store.loadMore();
+    if (!_filmsScroll.hasClients || !st.hasMore || st.loadingMore || st.loading) return;
+    if (_filmsScroll.position.extentAfter < 160) _store.loadMore();
   }
 
   void _fillViewport() {
-    if (!mounted || !_scroll.hasClients || !_store.current.hasMore) return;
-    if (_scroll.position.maxScrollExtent < 160) _onScroll();
+    if (!mounted || !_filmsScroll.hasClients || !_store.current.hasMore) return;
+    if (_filmsScroll.position.maxScrollExtent < 160) _onFilmsScroll();
   }
 
   void _openFilm(ShortFilm f) {
@@ -78,93 +82,8 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
     } else {
       _spin.stop();
     }
-    final featured = st.visibleFeatured;
-    final showFeatured = featured.isNotEmpty;
-    final series = st.visibleSeries;
-    final grid = st.gridFilms;
-    final searching = st.isSearching;
-    final gridTitle = searching
-        ? t('common.search')
-        : st.selectedSectionId == null
-            ? t('shortFilms.allFilms')
-            : st.sections.where((s) => s.id == st.selectedSectionId).firstOrNull?.name ?? t('shortFilms.allFilms');
-    final bottom = tabScrollPadding(context, extra: 16);
-    final emptyResults = st.loaded && !st.loading && featured.isEmpty && grid.isEmpty && series.isEmpty;
 
-    Widget content;
-    if (st.loading && !st.loaded) {
-      content = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 48),
-        child: Column(children: [
-          RotationTransition(turns: _spin, child: Icon(LucideIcons.refreshCw, size: 28, color: c.primary.withValues(alpha: 0.7))),
-          const SizedBox(height: 12),
-          Text(t('common.loading'), style: TextStyle(color: c.textMuted)),
-        ]),
-      );
-    } else if (emptyResults) {
-      content = EmptyState(
-        icon: LucideIcons.film,
-        text: searching ? t('shortFilms.noSearchResults') : t('shortFilms.empty'),
-      );
-    } else {
-      final w = MediaQuery.sizeOf(context).width;
-      final rowCardW = (w * 0.32).clamp(108.0, 130.0);
-      content = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (showFeatured) ...[
-          _SectionTitle(t('shortFilms.featured')),
-          SizedBox(
-            height: rowCardW * 14 / 9,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: featured.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) => SizedBox(width: rowCardW, child: FilmCard(film: featured[i], onTap: () => _openFilm(featured[i]))),
-            ),
-          ),
-        ],
-        if (series.isNotEmpty) ...[
-          if (showFeatured) const SizedBox(height: 20),
-          _SectionTitle(t('shortFilms.series')),
-          SizedBox(
-            height: rowCardW * 14 / 9 + 4,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: series.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) => SizedBox(width: rowCardW, child: SeriesCard(series: series[i], onTap: () => _openSeries(series[i]))),
-            ),
-          ),
-        ],
-        if (grid.isNotEmpty) ...[
-          if (showFeatured || series.isNotEmpty) const SizedBox(height: 20),
-          _SectionTitle(gridTitle),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: w <= 360 ? 4 : 8,
-                mainAxisSpacing: w <= 360 ? 4 : 8,
-                childAspectRatio: 9 / 14,
-              ),
-              itemCount: grid.length,
-              itemBuilder: (_, i) => FilmCard(film: grid[i], onTap: () => _openFilm(grid[i]), small: true),
-            ),
-          ),
-        ],
-        Container(
-          constraints: const BoxConstraints(minHeight: 40),
-          margin: const EdgeInsets.only(top: 8),
-          alignment: Alignment.center,
-          child: st.loadingMore ? RotationTransition(turns: _spin, child: Icon(LucideIcons.refreshCw, size: 20, color: c.textMuted)) : null,
-        ),
-      ]);
-    }
+    final bottom = tabScrollPadding(context, extra: 16);
 
     return ModernPage(
       title: t('shortFilms.title'),
@@ -196,52 +115,302 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
                   ),
           ),
         ),
-        if (st.sections.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.only(top: 4, bottom: 10),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.border))),
-            child: SizedBox(
-              height: 74,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                children: [
-                  _SectionRing(
-                    label: t('shortFilms.allSections'),
-                    active: st.selectedSectionId == null,
-                    onTap: () => _store.setSection(null),
-                    bg: c.bgCard,
-                    child: Icon(LucideIcons.layoutGrid, size: 20, color: st.selectedSectionId == null ? c.primary : c.textSecondary),
-                  ),
-                  for (final s in st.sections)
-                    _SectionRing(
-                      label: s.name,
-                      active: st.selectedSectionId == s.id,
-                      onTap: () => _store.setSection(s.id),
-                      child: s.imageUrl != null
-                          ? CachedNetworkImage(imageUrl: Api.absoluteUrl(s.imageUrl)!, fit: BoxFit.cover, width: 48, height: 48)
-                          : Text(s.name.trim().isEmpty ? '?' : s.name.trim().characters.first.toUpperCase(),
-                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: c.primary)),
-                    ),
-                ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: c.bgElevated,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: c.border),
+            ),
+            child: TabBar(
+              controller: _tabs,
+              dividerColor: Colors.transparent,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                color: c.primary.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(AppRadius.md - 2),
               ),
+              labelColor: c.primary,
+              unselectedLabelColor: c.textSecondary,
+              labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              tabs: [
+                Tab(text: t('shortFilms.filmsTab')),
+                Tab(text: t('shortFilms.seriesTab')),
+              ],
             ),
           ),
+        ),
         Expanded(
-          child: RefreshIndicator(
-            color: c.primary,
-            onRefresh: () => _store.fetchAll(force: true),
-            child: SingleChildScrollView(
-              controller: _scroll,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.only(top: 8, bottom: bottom),
-              child: content,
-            ),
+          child: TabBarView(
+            controller: _tabs,
+            children: [
+              _FilmsPage(
+                scroll: _filmsScroll,
+                spin: _spin,
+                bottomPad: bottom,
+                onOpenFilm: _openFilm,
+                onRefresh: () => _store.fetchAll(force: true),
+              ),
+              _SeriesPage(
+                scroll: _seriesScroll,
+                spin: _spin,
+                bottomPad: bottom,
+                onOpenSeries: _openSeries,
+                onRefresh: () => _store.fetchAll(force: true),
+              ),
+            ],
           ),
         ),
       ]),
     );
   }
+}
+
+class _FilmsPage extends ConsumerWidget {
+  const _FilmsPage({
+    required this.scroll,
+    required this.spin,
+    required this.bottomPad,
+    required this.onOpenFilm,
+    required this.onRefresh,
+  });
+
+  final ScrollController scroll;
+  final AnimationController spin;
+  final double bottomPad;
+  final void Function(ShortFilm) onOpenFilm;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final st = ref.watch(shortFilmsProvider);
+    final store = ref.read(shortFilmsProvider.notifier);
+    final featured = st.visibleFeatured;
+    final grid = st.gridFilms;
+    final searching = st.isSearching;
+    final showFeatured = featured.isNotEmpty;
+    final empty = st.loaded && !st.loading && featured.isEmpty && grid.isEmpty;
+    final w = MediaQuery.sizeOf(context).width;
+
+    Widget body;
+    if (st.loading && !st.loaded) {
+      body = _LoadingBlock(spin: spin, color: c);
+    } else if (empty) {
+      body = EmptyState(
+        icon: LucideIcons.film,
+        text: searching ? t('shortFilms.noSearchResults') : t('shortFilms.empty'),
+      );
+    } else {
+      body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (showFeatured) ...[
+          _SectionTitle(t('shortFilms.featured')),
+          SizedBox(
+            height: ((w * 0.32).clamp(108.0, 130.0)) * 14 / 9,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: featured.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final f = featured[i];
+                return SizedBox(
+                  width: (w * 0.32).clamp(108.0, 130.0),
+                  child: FilmCard(film: f, onTap: () => onOpenFilm(f)),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+        _SectionTitle(searching
+            ? t('common.search')
+            : st.selectedSectionId == null
+                ? t('shortFilms.allFilms')
+                : st.sections.where((s) => s.id == st.selectedSectionId).firstOrNull?.name ?? t('shortFilms.allFilms')),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: w <= 360 ? 4 : 8,
+              mainAxisSpacing: w <= 360 ? 4 : 8,
+              childAspectRatio: 9 / 14,
+            ),
+            itemCount: grid.length,
+            itemBuilder: (_, i) => FilmCard(film: grid[i], onTap: () => onOpenFilm(grid[i]), small: true),
+          ),
+        ),
+        Container(
+          constraints: const BoxConstraints(minHeight: 40),
+          margin: const EdgeInsets.only(top: 8),
+          alignment: Alignment.center,
+          child: st.loadingMore
+              ? RotationTransition(turns: spin, child: Icon(LucideIcons.refreshCw, size: 20, color: c.textMuted))
+              : null,
+        ),
+      ]);
+    }
+
+    return Column(children: [
+      _SectionRingsBar(sections: st.sections, selectedId: st.selectedSectionId, onSelect: store.setSection),
+      Expanded(
+        child: RefreshIndicator(
+          color: c.primary,
+          onRefresh: onRefresh,
+          child: SingleChildScrollView(
+            controller: scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+            child: body,
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _SeriesPage extends ConsumerWidget {
+  const _SeriesPage({
+    required this.scroll,
+    required this.spin,
+    required this.bottomPad,
+    required this.onOpenSeries,
+    required this.onRefresh,
+  });
+
+  final ScrollController scroll;
+  final AnimationController spin;
+  final double bottomPad;
+  final void Function(FilmSeries) onOpenSeries;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final st = ref.watch(shortFilmsProvider);
+    final store = ref.read(shortFilmsProvider.notifier);
+    final series = st.visibleSeries;
+    final searching = st.isSearching;
+    final empty = st.loaded && !st.loading && series.isEmpty;
+    final w = MediaQuery.sizeOf(context).width;
+    final sectionName = st.selectedSectionId == null
+        ? null
+        : st.sections.where((s) => s.id == st.selectedSectionId).firstOrNull?.name;
+
+    Widget body;
+    if (st.loading && !st.loaded) {
+      body = _LoadingBlock(spin: spin, color: c);
+    } else if (empty) {
+      body = EmptyState(
+        icon: LucideIcons.tv,
+        text: searching ? t('shortFilms.noSearchResults') : t('shortFilms.emptySeriesList'),
+      );
+    } else {
+      body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _SectionTitle(sectionName ?? t('shortFilms.series')),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: w <= 360 ? 4 : 8,
+              mainAxisSpacing: w <= 360 ? 4 : 8,
+              childAspectRatio: 9 / 14,
+            ),
+            itemCount: series.length,
+            itemBuilder: (_, i) => SeriesCard(series: series[i], onTap: () => onOpenSeries(series[i])),
+          ),
+        ),
+      ]);
+    }
+
+    return Column(children: [
+      _SectionRingsBar(sections: st.sections, selectedId: st.selectedSectionId, onSelect: store.setSection),
+      Expanded(
+        child: RefreshIndicator(
+          color: c.primary,
+          onRefresh: onRefresh,
+          child: SingleChildScrollView(
+            controller: scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+            child: body,
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// Horizontal section rings — shared by Films and Series tabs.
+class _SectionRingsBar extends StatelessWidget {
+  const _SectionRingsBar({required this.sections, required this.selectedId, required this.onSelect});
+  final List<FilmSection> sections;
+  final String? selectedId;
+  final Future<void> Function(String?) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sections.isEmpty) return const SizedBox.shrink();
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.border))),
+      child: SizedBox(
+        height: 74,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          children: [
+            _SectionRing(
+              label: t('shortFilms.allSections'),
+              active: selectedId == null,
+              onTap: () => onSelect(null),
+              bg: c.bgCard,
+              child: Icon(LucideIcons.layoutGrid, size: 20, color: selectedId == null ? c.primary : c.textSecondary),
+            ),
+            for (final s in sections)
+              _SectionRing(
+                label: s.name,
+                active: selectedId == s.id,
+                onTap: () => onSelect(s.id),
+                child: s.imageUrl != null
+                    ? CachedNetworkImage(imageUrl: Api.absoluteUrl(s.imageUrl)!, fit: BoxFit.cover, width: 48, height: 48)
+                    : Text(
+                        s.name.trim().isEmpty ? '?' : s.name.trim().characters.first.toUpperCase(),
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: c.primary),
+                      ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingBlock extends StatelessWidget {
+  const _LoadingBlock({required this.spin, required this.color});
+  final AnimationController spin;
+  final AppColors color;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Column(children: [
+          RotationTransition(turns: spin, child: Icon(LucideIcons.refreshCw, size: 28, color: color.primary.withValues(alpha: 0.7))),
+          const SizedBox(height: 12),
+          Text(t('common.loading'), style: TextStyle(color: color.textMuted)),
+        ]),
+      );
 }
 
 class _SectionTitle extends StatelessWidget {
