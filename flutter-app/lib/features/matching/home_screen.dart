@@ -302,7 +302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final randomOn = flags?.randomChat ?? false;
     final codeOn = flags?.codeConnect ?? false;
     final filmsOn = flags?.shortFilms ?? false;
-    final unread = ref.watch(notificationsProvider).where((x) => x['isRead'] != true).length;
+    final unread = ref.watch(unreadNotificationsProvider);
     final compact = loaded && !randomOn && !codeOn;
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final featured = user?.isFeatured ?? false;

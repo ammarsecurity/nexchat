@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NexChat.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using NexChat.Infrastructure.Data;
 namespace NexChat.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926133956_AddShortFilmSeries")]
+    partial class AddShortFilmSeries
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -284,9 +287,9 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SenderId");
+                    b.HasIndex("ConversationId");
 
-                    b.HasIndex("ConversationId", "SentAt");
+                    b.HasIndex("SenderId");
 
                     b.ToTable("ConversationMessages");
                 });

@@ -22,14 +22,21 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ConversationListItemDto>>> GetConversations(
+    public async Task<ActionResult<object>> GetConversations(
         [FromQuery] string filter = "all",
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] int? page = null,
+        [FromQuery] int pageSize = 40)
     {
         var user = await db.Users.FindAsync(CurrentUserId);
         if (user == null) return NotFound();
         if (string.IsNullOrWhiteSpace(user.PhoneNumber))
             return BadRequest(new { message = "يجب إضافة رقم الهاتف من الإعدادات أولاً" });
+
+        // page == null → legacy full list (Vue / silent refresh). page set → paged object for Flutter.
+        var paged = page.HasValue;
+        var pageNum = Math.Max(1, page ?? 1);
+        pageSize = Math.Clamp(pageSize <= 0 ? 40 : pageSize, 10, 200);
 
         var convQuery = db.Conversations
             .Where(c => (c.Type == ConversationType.Private && (c.User1Id == CurrentUserId || c.User2Id == CurrentUserId))
@@ -41,31 +48,38 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             .ToListAsync();
         convQuery = convQuery.Where(c => !deletedIds.Contains(c.Id));
 
+        var uid = CurrentUserId;
         var f = (filter ?? "all").ToLowerInvariant();
         if (f == "unread")
         {
             var allConvIds = await convQuery.Select(c => c.Id).ToListAsync();
-            var unreadConvIds = new List<Guid>();
-            foreach (var cid in allConvIds)
-            {
-                var lastRead = await db.UserConversationStates
-                    .Where(s => s.UserId == CurrentUserId && s.ConversationId == cid)
-                    .Select(s => s.LastReadAt)
-                    .FirstOrDefaultAsync();
-                var hasUnread = await db.ConversationMessages
-                    .AnyAsync(m => m.ConversationId == cid &&
-                        m.SenderId != CurrentUserId &&
-                        !m.DeletedForEveryone &&
-                        !db.UserMessageDeletions.Any(d => d.UserId == CurrentUserId && d.MessageId == m.Id) &&
-                        (lastRead == null || m.SentAt > lastRead));
-                if (hasUnread) unreadConvIds.Add(cid);
-            }
+            if (allConvIds.Count == 0)
+                return paged
+                    ? Ok(new { items = Array.Empty<ConversationListItemDto>(), total = 0, page = pageNum, pageSize, hasMore = false })
+                    : Ok(Array.Empty<ConversationListItemDto>());
+
+            // Unread = message from others that is not covered by LastReadAt (single query, no N+1).
+            var unreadConvIds = await db.ConversationMessages
+                .AsNoTracking()
+                .Where(m => allConvIds.Contains(m.ConversationId)
+                    && m.SenderId != uid
+                    && !m.DeletedForEveryone
+                    && !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id)
+                    && !db.UserConversationStates.Any(s =>
+                        s.UserId == uid
+                        && s.ConversationId == m.ConversationId
+                        && s.LastReadAt != null
+                        && m.SentAt <= s.LastReadAt))
+                .Select(m => m.ConversationId)
+                .Distinct()
+                .ToListAsync();
             convQuery = convQuery.Where(c => unreadConvIds.Contains(c.Id));
         }
         else if (f == "archived")
         {
             var archivedIds = await db.UserConversationStates
-                .Where(s => s.UserId == CurrentUserId && s.IsArchived)
+                .AsNoTracking()
+                .Where(s => s.UserId == uid && s.IsArchived)
                 .Select(s => s.ConversationId)
                 .ToListAsync();
             convQuery = convQuery.Where(c => archivedIds.Contains(c.Id));
@@ -73,24 +87,54 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
         else
         {
             var archivedIds = await db.UserConversationStates
-                .Where(s => s.UserId == CurrentUserId && s.IsArchived)
+                .AsNoTracking()
+                .Where(s => s.UserId == uid && s.IsArchived)
                 .Select(s => s.ConversationId)
                 .ToListAsync();
             convQuery = convQuery.Where(c => !archivedIds.Contains(c.Id));
         }
 
         var convs = await convQuery
+            .AsNoTracking()
             .Include(c => c.User1)
             .Include(c => c.User2)
             .ToListAsync();
 
         var convIds = convs.Select(c => c.Id).ToList();
+        if (convIds.Count == 0)
+            return paged
+                ? Ok(new { items = Array.Empty<ConversationListItemDto>(), total = 0, page = pageNum, pageSize, hasMore = false })
+                : Ok(Array.Empty<ConversationListItemDto>());
+
         var lastMessages = await db.ConversationMessages
+            .AsNoTracking()
             .Where(m => convIds.Contains(m.ConversationId) && !m.DeletedForEveryone &&
-                !db.UserMessageDeletions.Any(d => d.UserId == CurrentUserId && d.MessageId == m.Id))
+                !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id))
             .GroupBy(m => m.ConversationId)
             .Select(g => new { ConvId = g.Key, Msg = g.OrderByDescending(m => m.SentAt).First() })
             .ToListAsync();
+
+        var states = await db.UserConversationStates
+            .AsNoTracking()
+            .Where(s => s.UserId == uid && convIds.Contains(s.ConversationId))
+            .ToListAsync();
+        var stateByConv = states.ToDictionary(s => s.ConversationId);
+
+        var unreadRows = await db.ConversationMessages
+            .AsNoTracking()
+            .Where(m => convIds.Contains(m.ConversationId)
+                && m.SenderId != uid
+                && !m.DeletedForEveryone
+                && !db.UserMessageDeletions.Any(d => d.UserId == uid && d.MessageId == m.Id)
+                && !db.UserConversationStates.Any(s =>
+                    s.UserId == uid
+                    && s.ConversationId == m.ConversationId
+                    && s.LastReadAt != null
+                    && m.SentAt <= s.LastReadAt))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new { ConvId = g.Key, Count = g.Count() })
+            .ToListAsync();
+        var unreadByConv = unreadRows.ToDictionary(x => x.ConvId, x => x.Count);
 
         var searchLower = search?.Trim().ToLowerInvariant();
         if (!string.IsNullOrEmpty(searchLower))
@@ -99,7 +143,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             {
                 if (c.Type == ConversationType.Group)
                     return (c.Name?.ToLowerInvariant().Contains(searchLower) ?? false);
-                var partner = c.User1Id == CurrentUserId ? c.User2 : c.User1;
+                var partner = c.User1Id == uid ? c.User2 : c.User1;
                 return partner != null && ((partner.Name?.ToLowerInvariant().Contains(searchLower) ?? false) ||
                        (partner.PhoneNumber?.Contains(searchLower) ?? false) ||
                        (partner.UniqueCode?.ToLowerInvariant().Contains(searchLower) ?? false));
@@ -107,7 +151,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
         }
 
         var lastMsgDict = lastMessages.ToDictionary(x => x.ConvId, x => x.Msg);
-        var result = new List<ConversationListItemDto>();
+        var result = new List<ConversationListItemDto>(convs.Count);
         foreach (var c in convs)
         {
             Guid partnerId;
@@ -124,7 +168,7 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             }
             else
             {
-                var partner = c.User1Id == CurrentUserId ? c.User2 : c.User1;
+                var partner = c.User1Id == uid ? c.User2 : c.User1;
                 if (partner == null) continue;
                 partnerId = partner.Id;
                 partnerName = partner.Name ?? "";
@@ -133,18 +177,9 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
                 partnerUniqueCode = partner.UniqueCode;
                 partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner);
             }
-            lastMsgDict.TryGetValue(c.Id, out var lastMsgObj);
-            var lastMsg = lastMsgObj;
-            var state = await db.UserConversationStates
-                .FirstOrDefaultAsync(s => s.UserId == CurrentUserId && s.ConversationId == c.Id);
-            var lastRead = state?.LastReadAt;
-
-            var unreadCount = await db.ConversationMessages
-                .CountAsync(m => m.ConversationId == c.Id &&
-                    m.SenderId != CurrentUserId &&
-                    !m.DeletedForEveryone &&
-                    !db.UserMessageDeletions.Any(d => d.UserId == CurrentUserId && d.MessageId == m.Id) &&
-                    (lastRead == null || m.SentAt > lastRead));
+            lastMsgDict.TryGetValue(c.Id, out var lastMsg);
+            stateByConv.TryGetValue(c.Id, out var state);
+            unreadByConv.TryGetValue(c.Id, out var unreadCount);
 
             string? preview = null;
             string? lastType = null;
@@ -180,7 +215,19 @@ public class ConversationsController(AppDbContext db, NotificationOutboxService 
             .ThenByDescending(x => x.LastMessageAt ?? DateTime.MinValue)
             .ToList();
 
-        return Ok(result);
+        if (!paged)
+            return Ok(result);
+
+        var total = result.Count;
+        var items = result.Skip((pageNum - 1) * pageSize).Take(pageSize).ToList();
+        return Ok(new
+        {
+            items,
+            total,
+            page = pageNum,
+            pageSize,
+            hasMore = pageNum * pageSize < total
+        });
     }
 
     [HttpGet("{id:guid}")]

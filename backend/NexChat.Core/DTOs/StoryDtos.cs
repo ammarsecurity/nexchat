@@ -54,7 +54,8 @@ public record StoryViewerDto(
     Guid UserId,
     string Name,
     string? Avatar,
-    DateTime ViewedAt
+    DateTime? ViewedAt,
+    bool Liked
 );
 
 public record StoryReplyRequest(string Text);

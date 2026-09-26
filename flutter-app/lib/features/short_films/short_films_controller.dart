@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import 'short_film_cache.dart';
@@ -16,6 +19,10 @@ class ShortFilm {
     this.durationSeconds,
     this.sectionId,
     this.sectionName,
+    this.seriesId,
+    this.seriesTitle,
+    this.episodeNumber,
+    this.episodesCount,
     this.isFeatured = false,
     this.viewCount = 0,
   });
@@ -28,8 +35,22 @@ class ShortFilm {
   final int? durationSeconds;
   final String? sectionId;
   final String? sectionName;
+  final String? seriesId;
+  final String? seriesTitle;
+  final int? episodeNumber;
+  final int? episodesCount;
   final bool isFeatured;
   final int viewCount;
+
+  bool get isEpisode => seriesId != null && seriesId!.isNotEmpty;
+
+  String get displaySubtitle {
+    if (isEpisode && episodeNumber != null) {
+      final name = (seriesTitle != null && seriesTitle!.isNotEmpty) ? seriesTitle! : title;
+      return '$name · ${t('shortFilms.episodeN', {'n': '$episodeNumber'})}';
+    }
+    return title;
+  }
 
   factory ShortFilm.fromJson(Map f) => ShortFilm(
         id: f.str('id'),
@@ -40,6 +61,10 @@ class ShortFilm {
         durationSeconds: f.v('durationSeconds') == null ? null : f.i('durationSeconds'),
         sectionId: f.s('sectionId'),
         sectionName: f.s('sectionName'),
+        seriesId: f.s('seriesId'),
+        seriesTitle: f.s('seriesTitle'),
+        episodeNumber: f.v('episodeNumber') == null ? null : f.i('episodeNumber'),
+        episodesCount: f.v('episodesCount') == null ? null : f.i('episodesCount'),
         isFeatured: f.b('isFeatured'),
         viewCount: f.i('viewCount'),
       );
@@ -53,8 +78,48 @@ class ShortFilm {
         durationSeconds: durationSeconds,
         sectionId: sectionId,
         sectionName: sectionName,
+        seriesId: seriesId,
+        seriesTitle: seriesTitle,
+        episodeNumber: episodeNumber,
+        episodesCount: episodesCount,
         isFeatured: isFeatured,
         viewCount: n,
+      );
+}
+
+class FilmSeries {
+  const FilmSeries({
+    required this.id,
+    required this.title,
+    this.description,
+    this.coverUrl,
+    this.sectionId,
+    this.sectionName,
+    this.isFeatured = false,
+    this.episodesCount = 0,
+    this.episodes = const [],
+  });
+
+  final String id;
+  final String title;
+  final String? description;
+  final String? coverUrl;
+  final String? sectionId;
+  final String? sectionName;
+  final bool isFeatured;
+  final int episodesCount;
+  final List<ShortFilm> episodes;
+
+  factory FilmSeries.fromJson(Map s) => FilmSeries(
+        id: s.str('id'),
+        title: s.str('title'),
+        description: s.s('description'),
+        coverUrl: s.s('coverUrl'),
+        sectionId: s.s('sectionId'),
+        sectionName: s.s('sectionName'),
+        isFeatured: s.b('isFeatured'),
+        episodesCount: s.i('episodesCount'),
+        episodes: asJsonList(s.v('episodes')).map(ShortFilm.fromJson).toList(),
       );
 }
 
@@ -77,6 +142,7 @@ class ShortFilmsState {
   const ShortFilmsState({
     this.list = const [],
     this.featured = const [],
+    this.series = const [],
     this.sections = const [],
     this.sectionBrowse = const [],
     this.uncategorizedBrowse = const [],
@@ -87,10 +153,12 @@ class ShortFilmsState {
     this.total = 0,
     this.hasMore = true,
     this.selectedSectionId,
+    this.searchQuery = '',
   });
 
   final List<ShortFilm> list;
   final List<ShortFilm> featured;
+  final List<FilmSeries> series;
   final List<FilmSection> sections;
   final List<FilmSection> sectionBrowse;
   final List<ShortFilm> uncategorizedBrowse;
@@ -101,13 +169,36 @@ class ShortFilmsState {
   final int total;
   final bool hasMore;
   final String? selectedSectionId;
+  final String searchQuery;
+
+  bool get isSearching => searchQuery.trim().isNotEmpty;
+
+  List<FilmSeries> get visibleSeries {
+    final section = selectedSectionId;
+    var rows = section == null ? series : series.where((s) => s.sectionId == section);
+    final q = searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      rows = rows.where((s) =>
+          s.title.toLowerCase().contains(q) ||
+          (s.description?.toLowerCase().contains(q) ?? false));
+    }
+    return rows.toList();
+  }
 
   List<ShortFilm> get gridFilms {
     final ids = featured.map((f) => f.id).toSet();
-    return list.where((f) => !ids.contains(f.id)).toList();
+    final q = searchQuery.trim();
+    // When searching, show all matching films (including episodes).
+    if (q.isNotEmpty) return list.where((f) => !ids.contains(f.id)).toList();
+    return list.where((f) => !ids.contains(f.id) && !f.isEpisode).toList();
   }
 
-  /// allFilmsForFeed(): featured, then section rows, then uncategorized, then the paged list (deduped).
+  List<ShortFilm> get visibleFeatured {
+    if (isSearching || selectedSectionId != null) return const [];
+    return featured;
+  }
+
+  /// Feed order: featured → section browse → uncategorized → paged list (deduped).
   List<ShortFilm> get feed {
     final seen = <String>{};
     final out = <ShortFilm>[];
@@ -127,6 +218,7 @@ class ShortFilmsState {
   ShortFilmsState copyWith({
     List<ShortFilm>? list,
     List<ShortFilm>? featured,
+    List<FilmSeries>? series,
     List<FilmSection>? sections,
     List<FilmSection>? sectionBrowse,
     List<ShortFilm>? uncategorizedBrowse,
@@ -137,10 +229,12 @@ class ShortFilmsState {
     int? total,
     bool? hasMore,
     String? Function()? selectedSectionId,
+    String? searchQuery,
   }) =>
       ShortFilmsState(
         list: list ?? this.list,
         featured: featured ?? this.featured,
+        series: series ?? this.series,
         sections: sections ?? this.sections,
         sectionBrowse: sectionBrowse ?? this.sectionBrowse,
         uncategorizedBrowse: uncategorizedBrowse ?? this.uncategorizedBrowse,
@@ -151,15 +245,20 @@ class ShortFilmsState {
         total: total ?? this.total,
         hasMore: hasMore ?? this.hasMore,
         selectedSectionId: selectedSectionId != null ? selectedSectionId() : this.selectedSectionId,
+        searchQuery: searchQuery ?? this.searchQuery,
       );
 }
 
 /// stores/shortFilms.js
 class ShortFilmsController extends Notifier<ShortFilmsState> {
   final Set<String> _viewed = {};
+  Timer? _searchDebounce;
 
   @override
-  ShortFilmsState build() => const ShortFilmsState();
+  ShortFilmsState build() {
+    ref.onDispose(() => _searchDebounce?.cancel());
+    return const ShortFilmsState();
+  }
 
   ShortFilmsState get current => state;
 
@@ -168,6 +267,38 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
       final data = await Api.get('/short-films/sections');
       state = state.copyWith(sections: asJsonList(data).map(FilmSection.fromJson).toList());
     } catch (_) {}
+  }
+
+  Future<void> fetchSeriesList({String? search}) async {
+    try {
+      final q = (search ?? state.searchQuery).trim();
+      final data = await Api.get('/short-films/series', query: {
+        'sectionId': ?state.selectedSectionId,
+        if (q.isNotEmpty) 'search': q,
+      });
+      state = state.copyWith(series: asJsonList(data).map(FilmSeries.fromJson).toList());
+    } catch (_) {}
+  }
+
+  Future<FilmSeries?> fetchSeriesDetail(String id) async {
+    try {
+      final data = await Api.get('/short-films/series/$id');
+      if (data is! Map) return null;
+      return FilmSeries.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<ShortFilm?> fetchById(String id) async {
+    if (id.isEmpty) return null;
+    try {
+      final data = await Api.get('/short-films/$id');
+      if (data is! Map) return null;
+      return ShortFilm.fromJson(data);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> fetchBrowse({int previewSize = 8}) async {
@@ -186,11 +317,28 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
     if (!reset && !state.hasMore) return;
     state = reset ? state.copyWith(page: 1, hasMore: true, loading: true) : state.copyWith(loadingMore: true);
     final section = state.selectedSectionId;
+    final search = state.searchQuery.trim();
+    final searching = search.isNotEmpty;
     try {
-      final params = <String, dynamic>{'page': state.page, 'pageSize': _pageSize, 'excludeFeatured': true, 'sectionId': ?section};
+      final params = <String, dynamic>{
+        'page': state.page,
+        'pageSize': _pageSize,
+        'excludeFeatured': !searching,
+        'standaloneOnly': !searching,
+        'sectionId': ?section,
+        if (searching) 'search': search,
+      };
       if (reset) {
-        final (featured, _) = await (Api.get('/short-films/featured', query: {'sectionId': ?section}), fetchSections()).wait;
-        state = state.copyWith(featured: asJsonList(featured).map(ShortFilm.fromJson).toList());
+        if (searching) {
+          await Future.wait([fetchSections(), fetchSeriesList(search: search)]);
+          state = state.copyWith(featured: const []);
+        } else {
+          final (featured, _) = await (
+            Api.get('/short-films/featured', query: {'sectionId': ?section}),
+            Future.wait([fetchSections(), fetchSeriesList()]),
+          ).wait;
+          state = state.copyWith(featured: asJsonList(featured).map(ShortFilm.fromJson).toList());
+        }
       }
       final data = await Api.get('/short-films', query: params);
       final m = data is Map ? data : const {};
@@ -205,9 +353,11 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
       final total = m.v('total') == null ? list.length : m.i('total');
       final hasMore = m.v('hasMore') != null ? m.b('hasMore') : state.page * _pageSize < total;
       state = state.copyWith(list: list, total: total, hasMore: hasMore, page: state.page + 1, loaded: true);
-      if (reset) ShortFilmCache.instance.prefetchFilms(state.featured, priority: CachePriority.high);
+      if (reset && !searching) ShortFilmCache.instance.prefetchFilms(state.featured, priority: CachePriority.high);
     } catch (_) {
-      if (reset && !state.loaded) state = state.copyWith(list: const [], featured: const [], total: 0, hasMore: false);
+      if (reset && !state.loaded) {
+        state = state.copyWith(list: const [], featured: const [], series: const [], total: 0, hasMore: false);
+      }
     } finally {
       state = state.copyWith(loading: false, loadingMore: false);
     }
@@ -216,7 +366,6 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
   Future<void> fetchAll({bool force = false}) async {
     if (state.loading && !force) return;
     if (state.loaded && !force) return;
-    await fetchSections();
     await fetchPage(reset: true);
   }
 
@@ -226,17 +375,27 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
     await fetchPage(reset: true);
   }
 
-  Future<void> loadMore() => fetchPage();
-
-  Future<void> loadAllPages() async {
-    var guard = 0;
-    while (state.hasMore && !state.loadingMore && guard < 100) {
-      guard++;
-      await loadMore();
-    }
+  void setSearch(String query) {
+    final next = query.trimLeft();
+    if (next == state.searchQuery) return;
+    state = state.copyWith(searchQuery: next);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      fetchPage(reset: true);
+    });
   }
 
+  Future<void> clearSearch() async {
+    _searchDebounce?.cancel();
+    if (state.searchQuery.isEmpty) return;
+    state = state.copyWith(searchQuery: '');
+    await fetchPage(reset: true);
+  }
+
+  Future<void> loadMore() => fetchPage();
+
   void invalidate() {
+    _searchDebounce?.cancel();
     _viewed.clear();
     state = const ShortFilmsState();
     ShortFilmCache.instance.clear();

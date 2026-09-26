@@ -46,10 +46,15 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   final _search = TextEditingController();
   bool _ready = false;
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  int _page = 1;
+  static const _pageSize = 40;
   bool _needPhone = false;
   bool _markingAll = false;
   bool _fabOpen = false;
   final _contactsKey = GlobalKey<ContactsPanelState>();
+  final _listScroll = ScrollController();
   void Function()? _removeReturnListener;
 
   String get _section => switch (widget.tab) { 'contacts' => 'contacts', 'requests' => 'requests', _ => 'chats' };
@@ -57,6 +62,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   @override
   void initState() {
     super.initState();
+    _listScroll.addListener(_onListScroll);
     Future.microtask(() {
       ref.read(notificationsProvider.notifier).load();
       if (NetworkStatus.online.value) ref.read(pendingRequestsProvider.notifier).fetch();
@@ -75,8 +81,16 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   @override
   void dispose() {
     _removeReturnListener?.call();
+    _listScroll.removeListener(_onListScroll);
+    _listScroll.dispose();
     _search.dispose();
     super.dispose();
+  }
+
+  void _onListScroll() {
+    if (!_hasMore || _loadingMore || _loading || _section != 'chats') return;
+    final pos = _listScroll.position;
+    if (pos.pixels >= pos.maxScrollExtent - 400) unawaited(_loadMore());
   }
 
   void _maybeOpen() {
@@ -107,6 +121,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       }
     }
     _needPhone = false;
+    _page = 1;
+    _hasMore = true;
     if (!ref.read(networkProvider)) {
       if (mounted) {
         setState(() {
@@ -120,10 +136,15 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     try {
       final data = await Api.get('/conversations', query: {
         'filter': _filter,
+        'page': 1,
+        'pageSize': _pageSize,
         if (_search.text.trim().isNotEmpty) 'search': _search.text.trim(),
       });
       final items = _normalize(asJsonList(data));
       list.setList(items);
+      final hasMore = data is Map ? (data['hasMore'] == true || data['HasMore'] == true) : items.length >= _pageSize;
+      _hasMore = hasMore;
+      _page = 1;
       if (_filter == 'all') Prefs.instance.setString(_cacheKey, jsonEncode(items));
     } catch (e) {
       final msg = Api.errorMessage(e);
@@ -136,6 +157,29 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         });
         _maybeOpen();
       }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _loading) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = _page + 1;
+      final data = await Api.get('/conversations', query: {
+        'filter': _filter,
+        'page': next,
+        'pageSize': _pageSize,
+        if (_search.text.trim().isNotEmpty) 'search': _search.text.trim(),
+      });
+      final items = _normalize(asJsonList(data));
+      ref.read(conversationsListProvider.notifier).appendList(items);
+      final hasMore = data is Map ? (data['hasMore'] == true || data['HasMore'] == true) : items.length >= _pageSize;
+      _page = next;
+      _hasMore = hasMore && items.isNotEmpty;
+    } catch (_) {
+      // keep current page; user can scroll again
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -239,7 +283,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     final all = ref.watch(conversationsListProvider);
     final totalUnread = ref.watch(totalUnreadProvider);
     final storiesEnabled = ref.watch(featureFlagsProvider).value?.stories ?? false;
-    final activeId = ref.watch(activeConversationProvider).conversationId;
+    final activeId = ref.watch(activeConversationProvider.select((s) => s.conversationId));
     final q = _search.text.trim().toLowerCase();
     final filtered = q.isEmpty
         ? all
@@ -255,14 +299,38 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
 
     final light = Theme.of(context).brightness == Brightness.light;
 
+    // Flat list of row descriptors — widgets built only when visible.
+    final body = <({String kind, Json? conv, bool pinned})>[];
+    if (!_loading && !(_ready && filtered.isEmpty)) {
+      if (showPinned) {
+        body.add((kind: 'headPinned', conv: null, pinned: true));
+        for (final conv in pinned) {
+          body.add((kind: 'tile', conv: conv, pinned: true));
+        }
+      }
+      if (rest.isNotEmpty || filtered.isEmpty) {
+        body.add((kind: 'headAll', conv: null, pinned: false));
+        for (final conv in rest) {
+          body.add((kind: 'tile', conv: conv, pinned: false));
+        }
+      }
+      if (_loadingMore) body.add((kind: 'more', conv: null, pinned: false));
+    }
+
+    final emptyOrLoading = _loading || (_ready && filtered.isEmpty);
+    final itemCount = 3 + (emptyOrLoading ? 1 : body.length);
+
     return RefreshIndicator(
       color: c.primary,
       onRefresh: () => _fetch(background: true),
-      child: ListView(
+      child: ListView.builder(
+        controller: _listScroll,
         padding: EdgeInsets.only(bottom: tabScrollPadding(context, extra: kFabSize + kFabScreenGap)),
-        children: [
-          if (_needPhone)
-            Container(
+        itemCount: itemCount,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            if (!_needPhone) return const SizedBox.shrink();
+            return Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               color: const Color(0x26FFC107),
               child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [
@@ -273,69 +341,83 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                       style: TextStyle(color: c.primary, decoration: TextDecoration.underline)),
                 ),
               ]),
-            ),
-          _StoriesHeroCard(
-            light: light,
-            storiesEnabled: storiesEnabled,
-            search: _search,
-            markingAll: _markingAll,
-            totalUnread: totalUnread,
-            onSearch: (_) => setState(() {}),
-            onMarkAllRead: () => _markAllRead(totalUnread),
-          ),
-          // filter chips
-          SizedBox(
-            height: 50,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              children: [
-                for (final f in ['all', 'unread', 'archived'])
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 8),
-                    child: _FilterChip(
-                      label: f == 'all'
-                          ? t('conversations.filterAll')
-                          : f == 'unread'
-                              ? t('conversations.filterUnread')
-                              : t('conversations.filterArchived'),
-                      active: _filter == f,
-                      badge: f == 'unread' ? totalUnread : 0,
-                      dim: _loading && _filter != f,
-                      onTap: _loading
-                          ? null
-                          : () {
-                              setState(() => _filter = f);
-                              _fetch();
-                            },
+            );
+          }
+          if (index == 1) {
+            return _StoriesHeroCard(
+              light: light,
+              storiesEnabled: storiesEnabled,
+              search: _search,
+              markingAll: _markingAll,
+              totalUnread: totalUnread,
+              onSearch: (_) => setState(() {}),
+              onMarkAllRead: () => _markAllRead(totalUnread),
+            );
+          }
+          if (index == 2) {
+            return SizedBox(
+              height: 50,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                children: [
+                  for (final f in ['all', 'unread', 'archived'])
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: _FilterChip(
+                        label: f == 'all'
+                            ? t('conversations.filterAll')
+                            : f == 'unread'
+                                ? t('conversations.filterUnread')
+                                : t('conversations.filterArchived'),
+                        active: _filter == f,
+                        badge: f == 'unread' ? totalUnread : 0,
+                        dim: _loading && _filter != f,
+                        onTap: _loading
+                            ? null
+                            : () {
+                                setState(() => _filter = f);
+                                _fetch();
+                              },
+                      ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-          if (_loading)
-            const _ListSkeleton()
-          else if (_ready && filtered.isEmpty)
-            EmptyState(
+                ],
+              ),
+            );
+          }
+          if (_loading) return const _ListSkeleton();
+          if (_ready && filtered.isEmpty) {
+            return EmptyState(
               icon: LucideIcons.messageCircle,
               text: t('conversations.empty'),
               action: PillButton(label: t('conversations.newChat'), onPressed: () => _setSection('contacts')),
-            )
-          else
-            for (final row in [
-              if (showPinned) ...[
-                _SectionHead(icon: LucideIcons.pin, title: t('conversations.pinnedChats')),
-                for (final conv in pinned)
-                  ConversationTile(key: ValueKey('p${conv.str('id')}'), conv: conv, active: activeId == conv.str('id'), onOpen: _refreshOnReturn),
-              ],
-              if (rest.isNotEmpty || filtered.isEmpty) ...[
-                _SectionHead(icon: LucideIcons.messageCircle, title: t('conversations.allChats')),
-                for (final conv in rest)
-                  ConversationTile(key: ValueKey('c${conv.str('id')}'), conv: conv, active: activeId == conv.str('id'), onOpen: _refreshOnReturn),
-              ],
-            ])
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: row),
-        ],
+            );
+          }
+          final row = body[index - 3];
+          return switch (row.kind) {
+            'headPinned' => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _SectionHead(icon: LucideIcons.pin, title: t('conversations.pinnedChats')),
+              ),
+            'headAll' => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _SectionHead(icon: LucideIcons.messageCircle, title: t('conversations.allChats')),
+              ),
+            'more' => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
+              ),
+            _ => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ConversationTile(
+                  key: ValueKey('${row.pinned ? 'p' : 'c'}${row.conv!.str('id')}'),
+                  conv: row.conv!,
+                  active: activeId == row.conv!.str('id'),
+                  onOpen: _refreshOnReturn,
+                ),
+              ),
+          };
+        },
       ),
     );
   }

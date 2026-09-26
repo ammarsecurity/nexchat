@@ -112,11 +112,21 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
 
         var messageIdsToMark = conv.Type == ConversationType.Group
             ? await db.ConversationMessages.Where(m => m.ConversationId == cid && m.SenderId != userId && !m.IsRead).Select(m => m.Id).ToListAsync()
-            : await db.ConversationMessages.Where(m => m.ConversationId == cid && partnerId.HasValue && m.SenderId == partnerId.Value && !m.IsRead).Select(m => m.Id).ToListAsync();
-        if (messageIdsToMark.Count > 0)
+            : null;
+
+        if (conv.Type == ConversationType.Group)
+        {
+            if (messageIdsToMark is { Count: > 0 })
+            {
+                await db.ConversationMessages
+                    .Where(m => messageIdsToMark.Contains(m.Id))
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+            }
+        }
+        else if (partnerId.HasValue)
         {
             await db.ConversationMessages
-                .Where(m => messageIdsToMark.Contains(m.Id))
+                .Where(m => m.ConversationId == cid && m.SenderId == partnerId.Value && !m.IsRead)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
         }
 
@@ -125,18 +135,14 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (conv.Type == ConversationType.Group)
         {
             await Clients.Group(cid.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt, ReaderId = userId });
-            if (messageIdsToMark.Count > 0)
+            // Groups need message IDs for per-message ticks; private uses LastReadAt only.
+            if (messageIdsToMark is { Count: > 0 })
                 await Clients.Group(cid.ToString()).SendAsync("MessagesRead", new { messageIds = messageIdsToMark });
         }
         else if (partnerId.HasValue)
         {
-            await Clients.User(partnerId.Value.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt });
-            if (messageIdsToMark.Count > 0)
-            {
-                var readPayload = new { messageIds = messageIdsToMark };
-                await Clients.User(partnerId.Value.ToString()).SendAsync("MessagesRead", readPayload);
-                await Clients.Group(cid.ToString()).SendAsync("MessagesRead", readPayload);
-            }
+            await Clients.User(partnerId.Value.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt, ReaderId = userId });
+            await Clients.Group(cid.ToString()).SendAsync("PartnerReadUpTo", new { LastReadAt = state.LastReadAt, ReaderId = userId });
         }
     }
 
@@ -195,11 +201,22 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
 
         var messageIdsToMark = conv.Type == ConversationType.Group
             ? await db.ConversationMessages.Where(m => m.ConversationId == cid && m.SenderId != userId && !m.IsRead).Select(m => m.Id).ToListAsync()
-            : await db.ConversationMessages.Where(m => m.ConversationId == cid && partnerId.HasValue && m.SenderId == partnerId.Value && !m.IsRead).Select(m => m.Id).ToListAsync();
-        if (messageIdsToMark.Count > 0)
+            : null;
+
+        if (conv.Type == ConversationType.Group)
         {
+            if (messageIdsToMark is { Count: > 0 })
+            {
+                await db.ConversationMessages
+                    .Where(m => messageIdsToMark.Contains(m.Id))
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+            }
+        }
+        else if (partnerId.HasValue)
+        {
+            // Private: mark unread without collecting IDs; clients use PartnerReadUpTo / LastReadAt.
             await db.ConversationMessages
-                .Where(m => messageIdsToMark.Contains(m.Id))
+                .Where(m => m.ConversationId == cid && m.SenderId == partnerId.Value && !m.IsRead)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
         }
 
@@ -209,13 +226,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         await Clients.Group(cid.ToString()).SendAsync("PartnerReadUpTo", payload);
         if (partnerId.HasValue)
             await Clients.User(partnerId.Value.ToString()).SendAsync("PartnerReadUpTo", payload);
-        if (messageIdsToMark.Count > 0)
-        {
-            var readPayload = new { messageIds = messageIdsToMark };
-            await Clients.Group(cid.ToString()).SendAsync("MessagesRead", readPayload);
-            if (partnerId.HasValue)
-                await Clients.User(partnerId.Value.ToString()).SendAsync("MessagesRead", readPayload);
-        }
+        if (conv.Type == ConversationType.Group && messageIdsToMark is { Count: > 0 })
+            await Clients.Group(cid.ToString()).SendAsync("MessagesRead", new { messageIds = messageIdsToMark });
     }
 
     public async Task SendMessage(string conversationId, string content, string type = "text", string? replyToMessageId = null)
@@ -621,15 +633,32 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             return;
         if (!await CanPrivateConversationVideoCall(cid, userId)) return;
 
-        if (PendingConversationCalls.TryGetValue(cid, out var existing))
-            PendingConversationCalls[cid] = existing with { Accepted = true, StartedUtc = DateTime.UtcNow };
-        PendingConversationCalls.TryGetValue(cid, out var pending);
-        var pendingVoiceOnly = pending?.VoiceOnly ?? false;
+        // Must have a live ringing pending that this user did not place.
+        // After caller cancel (DeclineVideoCall), pending is gone — do not resurrect the call.
+        if (!PendingConversationCalls.TryGetValue(cid, out var pending) ||
+            pending.Accepted ||
+            pending.CallerId == userId)
+        {
+            await Clients.Caller.SendAsync("VideoCallEnded", conversationId, 0);
+            return;
+        }
+
+        var accepted = pending with { Accepted = true, StartedUtc = DateTime.UtcNow };
+        if (!PendingConversationCalls.TryUpdate(cid, accepted, pending))
+        {
+            // Lost race with Decline/End/another Accept.
+            await Clients.Caller.SendAsync("VideoCallEnded", conversationId, 0);
+            return;
+        }
 
         var conv = await db.Conversations.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
                 (c.User1Id == userId || c.User2Id == userId));
-        if (conv == null) return;
+        if (conv == null)
+        {
+            PendingConversationCalls.TryRemove(cid, out _);
+            return;
+        }
 
         var otherUserId = conv.User1Id == userId ? conv.User2Id!.Value : conv.User1Id!.Value;
         var now = DateTime.UtcNow;
@@ -637,7 +666,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         UsersBusyInCall[otherUserId] = new BusyCall(cid, now);
         // Stop ringing on the callee device (and collapse any duplicate pushes).
         await notificationOutbox.CancelCallPushAsync(userId, cid);
-        await Clients.User(otherUserId.ToString()).SendAsync("VideoCallAccepted", conversationId, pendingVoiceOnly);
+        await Clients.User(otherUserId.ToString()).SendAsync("VideoCallAccepted", conversationId, accepted.VoiceOnly);
     }
 
     public async Task DeclineVideoCall(string conversationId, bool busy = false, string? outcome = null)
@@ -647,6 +676,20 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (!await CanPrivateConversationVideoCall(cid, userId)) return;
 
         PendingConversationCalls.TryRemove(cid, out var pending);
+
+        // Accepted call: do not emit ring-decline, but still clear THIS user's busy.
+        // Flutter calls Decline when leaving the video screen before Media is connected;
+        // restoring pending without clearing busy left both users stuck ~45m.
+        if (pending is { Accepted: true })
+        {
+            UsersBusyInCall.TryRemove(userId, out _);
+            var anyoneBusy = UsersBusyInCall.Any(kv => kv.Value.ConversationId == cid);
+            if (!anyoneBusy)
+                PendingConversationCalls.TryRemove(cid, out _);
+            else
+                PendingConversationCalls[cid] = pending;
+            return;
+        }
 
         var conv = await db.Conversations.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == cid && c.Type == ConversationType.Private &&
@@ -672,9 +715,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
 
         ClearBusyForConversation(cid, userId, otherUserId);
 
-        // Skip history if the call was already accepted (hangup uses EndVideoCall).
-        if (pending is not { Accepted: true })
-            await PersistCallSystemMessageAsync(cid, callerId, peerId, voiceOnly, status, durationSec: 0);
+        await PersistCallSystemMessageAsync(cid, callerId, peerId, voiceOnly, status, durationSec: 0);
 
         await notificationOutbox.CancelCallPushAsync(otherUserId, cid);
         await notificationOutbox.CancelCallPushAsync(userId, cid);

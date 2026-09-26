@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using NexChat.API.Services;
 
 namespace NexChat.API.Controllers;
 
@@ -54,11 +55,31 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (!new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" }.Contains(ext))
             ext = ".jpg";
-        var fileName = $"{Guid.NewGuid()}{ext}";
-        var filePath = Path.Combine(uploadsPath, fileName);
 
-        await using (var dest = new FileStream(filePath, FileMode.Create))
+        stream.Position = 0;
+        var optimized = await ImageOptimizeService.TryOptimizeAsync(stream, ext);
+        string fileName;
+        string? thumbUrl = null;
+        if (optimized != null)
         {
+            fileName = $"{Guid.NewGuid()}{optimized.Extension}";
+            var filePath = Path.Combine(uploadsPath, fileName);
+            await System.IO.File.WriteAllBytesAsync(filePath, optimized.Bytes);
+            if (optimized.ThumbBytes is { Length: > 0 })
+            {
+                var thumbName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
+                await System.IO.File.WriteAllBytesAsync(Path.Combine(uploadsPath, thumbName), optimized.ThumbBytes);
+                var baseUrlThumb = config["Media:BaseUrl"];
+                thumbUrl = !string.IsNullOrEmpty(baseUrlThumb)
+                    ? $"{baseUrlThumb.TrimEnd('/')}/uploads/{thumbName}"
+                    : $"{Request.Scheme}://{Request.Host}/uploads/{thumbName}";
+            }
+        }
+        else
+        {
+            fileName = $"{Guid.NewGuid()}{ext}";
+            var filePath = Path.Combine(uploadsPath, fileName);
+            await using var dest = new FileStream(filePath, FileMode.Create);
             stream.Position = 0;
             await stream.CopyToAsync(dest);
         }
@@ -67,7 +88,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
         var url = !string.IsNullOrEmpty(baseUrl)
             ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
             : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
-        return Ok(new { url });
+        return Ok(new { url, thumbUrl });
     }
 
     private static readonly string[] AllowedAudioTypes = ["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-m4a"];
@@ -214,6 +235,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
             ".webp" => "image/webp",
             _ => "image/jpeg"
         };
+        Response.Headers.CacheControl = "public,max-age=604800,immutable";
         return PhysicalFile(filePath, contentType, enableRangeProcessing: true);
     }
 }

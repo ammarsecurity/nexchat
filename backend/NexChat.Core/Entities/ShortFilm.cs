@@ -12,6 +12,8 @@ public class ShortFilm
     public string? ThumbnailUrl { get; set; }
     public int? DurationSeconds { get; set; }
     public Guid? SectionId { get; set; }
+    public Guid? SeriesId { get; set; }
+    public int? EpisodeNumber { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsFeatured { get; set; }
@@ -21,5 +23,6 @@ public class ShortFilm
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public ShortFilmSection? Section { get; set; }
+    public ShortFilmSeries? Series { get; set; }
     public User? CreatedByAdmin { get; set; }
 }

@@ -75,11 +75,12 @@ onMounted(async () => {
   try {
     await startHub(conversationHub)
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data }) => {
-      const list = (data ?? []).map((c) => {
-        const raw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
+      const raw = Array.isArray(data) ? data : (data?.items ?? data?.Items ?? [])
+      const list = raw.map((c) => {
+        const previewRaw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
         const type = c?.lastMessageType ?? c?.LastMessageType ?? ''
-        const formatted = formatConversationListPreview(raw, t('shortFilms.title'), { t, type, lastMessageType: type })
-        if (formatted === raw && !type) return c
+        const formatted = formatConversationListPreview(previewRaw, t('shortFilms.title'), { t, type, lastMessageType: type })
+        if (formatted === previewRaw && !type) return c
         return {
           ...c,
           lastMessagePreview: formatted,
@@ -171,7 +172,8 @@ async function handleConversationListUpdated(payload) {
   }, shouldIncrementUnread)
   if (!updated) {
     api.get('/conversations', { params: { filter: 'all' } }).then(({ data: res }) => {
-      const list = (res ?? []).map((c) => {
+      const rawList = Array.isArray(res) ? res : (res?.items ?? res?.Items ?? [])
+      const list = rawList.map((c) => {
         const raw = c?.lastMessagePreview ?? c?.LastMessagePreview ?? ''
         const type = c?.lastMessageType ?? c?.LastMessageType ?? ''
         const formatted = formatConversationListPreview(raw, t('shortFilms.title'), { t, type, lastMessageType: type })

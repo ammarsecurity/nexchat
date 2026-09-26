@@ -38,14 +38,17 @@ public class AdminShortFilmsController(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
         [FromQuery] string? status = "all",
-        [FromQuery] Guid? sectionId = null)
+        [FromQuery] Guid? sectionId = null,
+        [FromQuery] Guid? seriesId = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         page = Math.Max(1, page);
 
-        var query = db.ShortFilms.Include(f => f.Section).AsQueryable();
+        var query = db.ShortFilms.Include(f => f.Section).Include(f => f.Series).AsQueryable();
         if (sectionId.HasValue)
             query = query.Where(f => f.SectionId == sectionId);
+        if (seriesId.HasValue)
+            query = query.Where(f => f.SeriesId == seriesId);
         if (string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
             query = query.Where(f => f.IsActive);
         else if (string.Equals(status, "inactive", StringComparison.OrdinalIgnoreCase))
@@ -74,7 +77,7 @@ public class AdminShortFilmsController(
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AdminShortFilmDto>> GetShortFilm(Guid id)
     {
-        var film = await db.ShortFilms.Include(f => f.Section).FirstOrDefaultAsync(f => f.Id == id);
+        var film = await db.ShortFilms.Include(f => f.Section).Include(f => f.Series).FirstOrDefaultAsync(f => f.Id == id);
         if (film == null) return NotFound();
         return Ok(MapAdmin(film));
     }
@@ -87,6 +90,16 @@ public class AdminShortFilmsController(
         if (string.IsNullOrWhiteSpace(dto.VideoUrl))
             return BadRequest(new { message = "VideoUrl is required" });
 
+        if (dto.SeriesId is Guid seriesId)
+        {
+            var seriesOk = await db.ShortFilmSeries.AnyAsync(s => s.Id == seriesId);
+            if (!seriesOk) return BadRequest(new { message = "SeriesId not found" });
+            if (dto.EpisodeNumber is null or < 1)
+                return BadRequest(new { message = "EpisodeNumber is required when SeriesId is set" });
+            var dup = await db.ShortFilms.AnyAsync(f => f.SeriesId == seriesId && f.EpisodeNumber == dto.EpisodeNumber);
+            if (dup) return Conflict(new { message = "Episode number already exists in this series" });
+        }
+
         var film = new ShortFilm
         {
             Title = dto.Title.Trim(),
@@ -95,6 +108,8 @@ public class AdminShortFilmsController(
             ThumbnailUrl = string.IsNullOrWhiteSpace(dto.ThumbnailUrl) ? null : dto.ThumbnailUrl.Trim(),
             DurationSeconds = dto.DurationSeconds,
             SectionId = dto.SectionId,
+            SeriesId = dto.SeriesId,
+            EpisodeNumber = dto.SeriesId.HasValue ? dto.EpisodeNumber : null,
             SortOrder = dto.SortOrder,
             IsActive = dto.IsActive,
             IsFeatured = dto.IsFeatured,
@@ -106,13 +121,14 @@ public class AdminShortFilmsController(
         db.ShortFilms.Add(film);
         await db.SaveChangesAsync();
         await db.Entry(film).Reference(f => f.Section).LoadAsync();
+        await db.Entry(film).Reference(f => f.Series).LoadAsync();
         return Ok(MapAdmin(film));
     }
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<AdminShortFilmDto>> Update(Guid id, [FromBody] UpdateShortFilmDto dto)
     {
-        var film = await db.ShortFilms.Include(f => f.Section).FirstOrDefaultAsync(f => f.Id == id);
+        var film = await db.ShortFilms.Include(f => f.Section).Include(f => f.Series).FirstOrDefaultAsync(f => f.Id == id);
         if (film == null) return NotFound();
 
         if (dto.Title != null)
@@ -135,6 +151,34 @@ public class AdminShortFilmsController(
             film.DurationSeconds = dto.DurationSeconds;
         if (dto.SetSectionId == true)
             film.SectionId = dto.SectionId;
+        if (dto.SetSeriesId == true)
+        {
+            if (dto.SeriesId is Guid seriesId)
+            {
+                var seriesOk = await db.ShortFilmSeries.AnyAsync(s => s.Id == seriesId);
+                if (!seriesOk) return BadRequest(new { message = "SeriesId not found" });
+                var episodeNumber = dto.EpisodeNumber ?? film.EpisodeNumber;
+                if (episodeNumber is null or < 1)
+                    return BadRequest(new { message = "EpisodeNumber is required when SeriesId is set" });
+                var dup = await db.ShortFilms.AnyAsync(f =>
+                    f.Id != id && f.SeriesId == seriesId && f.EpisodeNumber == episodeNumber);
+                if (dup) return Conflict(new { message = "Episode number already exists in this series" });
+                film.SeriesId = seriesId;
+                film.EpisodeNumber = episodeNumber;
+            }
+            else
+            {
+                film.SeriesId = null;
+                film.EpisodeNumber = null;
+            }
+        }
+        else if (dto.EpisodeNumber.HasValue && film.SeriesId.HasValue)
+        {
+            var dup = await db.ShortFilms.AnyAsync(f =>
+                f.Id != id && f.SeriesId == film.SeriesId && f.EpisodeNumber == dto.EpisodeNumber);
+            if (dup) return Conflict(new { message = "Episode number already exists in this series" });
+            film.EpisodeNumber = dto.EpisodeNumber;
+        }
         if (dto.SortOrder.HasValue)
             film.SortOrder = dto.SortOrder.Value;
         if (dto.IsActive.HasValue)
@@ -161,6 +205,8 @@ public class AdminShortFilmsController(
     }
 
     [HttpPost("upload-video")]
+    [RequestSizeLimit(100 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
     public async Task<IActionResult> UploadVideo(IFormFile file)
     {
         if (file == null || file.Length == 0)
@@ -170,8 +216,8 @@ public class AdminShortFilmsController(
         if (!AllowedVideoTypes.Contains(contentType) && !contentType.StartsWith("video/"))
             return BadRequest(new { message = "Only video files are allowed (MP4, WebM)" });
 
-        if (file.Length > 50 * 1024 * 1024)
-            return BadRequest(new { message = "Max file size is 50MB" });
+        if (file.Length > 100 * 1024 * 1024)
+            return BadRequest(new { message = "Max file size is 100MB" });
 
         await using var stream = file.OpenReadStream();
         var url = await UploadFileHelper.SaveUploadAsync(
@@ -239,6 +285,8 @@ public class AdminShortFilmsController(
                 dto.ThumbnailUrl,
                 dto.DurationSeconds,
                 dto.SectionId,
+                dto.SeriesId,
+                dto.EpisodeNumber,
                 dto.SortOrder,
                 dto.IsActive,
                 dto.IsFeatured,
@@ -289,6 +337,9 @@ public class AdminShortFilmsController(
             f.DurationSeconds,
             f.SectionId,
             f.Section?.Name,
+            f.SeriesId,
+            f.Series?.Title,
+            f.EpisodeNumber,
             f.SortOrder,
             f.IsActive,
             f.IsFeatured,

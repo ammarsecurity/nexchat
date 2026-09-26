@@ -17,7 +17,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 35 * 1024 * 1024;
+    // Short-film admin uploads (and other media) — keep above controller limits.
+    options.Limits.MaxRequestBodySize = 100 * 1024 * 1024;
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 100 * 1024 * 1024;
+    options.ValueLengthLimit = int.MaxValue;
 });
 
 // Database - MySQL
@@ -65,6 +72,11 @@ builder.Services.AddHttpClient<StockVideoImportService>(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(4);
     c.DefaultRequestHeaders.UserAgent.ParseAdd("NexChat-Admin/1.0");
+});
+builder.Services.AddHttpClient<ShortFilmIngestService>(c =>
+{
+    c.Timeout = TimeSpan.FromMinutes(5);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("NexChat-ShortFilmIngest/1.0");
 });
 
 // JWT Auth
@@ -236,7 +248,18 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("NexChatPolicy");
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.Context.Request.Path.Value ?? "";
+        if (path.StartsWith("/uploads", StringComparison.OrdinalIgnoreCase))
+        {
+            // Uploaded media uses GUID filenames — safe to cache long-term.
+            ctx.Context.Response.Headers.CacheControl = "public,max-age=604800,immutable";
+        }
+    }
+});
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

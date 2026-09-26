@@ -39,56 +39,60 @@ public class StoriesController(
         var viewerId = CurrentUserId;
         var now = DateTime.UtcNow;
 
-        var activeByUser = await db.StorySlides
-            .Where(s => s.ExpiresAt > now)
-            .GroupBy(s => s.UserId)
-            .Select(g => new
-            {
-                UserId = g.Key,
-                LatestAt = g.Max(x => x.CreatedAt),
-                SlideCount = g.Count(),
-                LatestSlide = g.OrderByDescending(x => x.SortOrder).ThenByDescending(x => x.CreatedAt).First()
-            })
+        // Audience first — avoid scanning every active story on the platform.
+        var publisherIds = await audience.GetFeedPublisherIdsAsync(viewerId);
+        if (publisherIds.Count == 0)
+            return Ok(Array.Empty<StoryRingDto>());
+
+        var slides = await db.StorySlides.AsNoTracking()
+            .Where(s => s.ExpiresAt > now && publisherIds.Contains(s.UserId))
+            .Select(s => new { s.Id, s.UserId, s.CreatedAt, s.SortOrder, s.MediaUrl })
             .ToListAsync();
 
-        if (activeByUser.Count == 0)
+        if (slides.Count == 0)
             return Ok(Array.Empty<StoryRingDto>());
 
-        var publisherIds = activeByUser.Select(x => x.UserId).ToList();
-        var visibleIds = await audience.FilterVisiblePublishersAsync(viewerId, publisherIds);
-        var filtered = activeByUser.Where(x => visibleIds.Contains(x.UserId)).ToList();
-        if (filtered.Count == 0)
-            return Ok(Array.Empty<StoryRingDto>());
+        var byUser = slides
+            .GroupBy(s => s.UserId)
+            .Select(g =>
+            {
+                var latest = g.OrderByDescending(x => x.SortOrder).ThenByDescending(x => x.CreatedAt).First();
+                return new
+                {
+                    UserId = g.Key,
+                    LatestAt = g.Max(x => x.CreatedAt),
+                    SlideCount = g.Count(),
+                    LatestMediaUrl = latest.MediaUrl,
+                    SlideIds = g.Select(x => x.Id).ToList()
+                };
+            })
+            .ToList();
 
-        var userIds = filtered.Select(x => x.UserId).ToList();
-        var users = await db.Users.Where(u => userIds.Contains(u.Id))
+        var userIds = byUser.Select(x => x.UserId).ToList();
+        var users = await db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id);
 
-        var myViewedSlideIds = await db.StoryViews
-            .Where(v => v.ViewerUserId == viewerId)
-            .Select(v => v.StorySlideId)
-            .ToListAsync();
-        var viewedSet = myViewedSlideIds.ToHashSet();
+        var slideIdSet = slides.Select(s => s.Id).ToHashSet();
+        var viewedSet = (await db.StoryViews.AsNoTracking()
+                .Where(v => v.ViewerUserId == viewerId && slideIdSet.Contains(v.StorySlideId))
+                .Select(v => v.StorySlideId)
+                .ToListAsync())
+            .ToHashSet();
 
-        var allSlides = await db.StorySlides
-            .Where(s => userIds.Contains(s.UserId) && s.ExpiresAt > now)
-            .Select(s => new { s.Id, s.UserId })
-            .ToListAsync();
-
-        var rings = filtered
+        var rings = byUser
             .OrderByDescending(x => x.UserId == viewerId)
             .ThenByDescending(x => x.LatestAt)
             .Select(x =>
             {
                 users.TryGetValue(x.UserId, out var u);
-                var userSlideIds = allSlides.Where(s => s.UserId == x.UserId).Select(s => s.Id).ToList();
-                var hasUnseen = userSlideIds.Any(id => !viewedSet.Contains(id));
+                var hasUnseen = x.SlideIds.Any(id => !viewedSet.Contains(id));
                 return new StoryRingDto(
                     x.UserId,
                     u?.Name ?? "—",
                     u?.Avatar,
                     hasUnseen,
-                    GetThumbUrl(x.LatestSlide),
+                    string.IsNullOrEmpty(x.LatestMediaUrl) ? null : x.LatestMediaUrl,
                     x.LatestAt,
                     x.SlideCount,
                     x.UserId == viewerId
@@ -252,16 +256,47 @@ public class StoriesController(
         if (slide == null || slide.UserId != CurrentUserId)
             return NotFound();
 
-        var viewers = await db.StoryViews
+        var views = await db.StoryViews
+            .AsNoTracking()
             .Where(v => v.StorySlideId == slideId)
             .Include(v => v.Viewer)
-            .OrderByDescending(v => v.ViewedAt)
-            .Select(v => new StoryViewerDto(
-                v.ViewerUserId,
-                v.Viewer.Name,
-                v.Viewer.Avatar,
-                v.ViewedAt))
             .ToListAsync();
+
+        var likes = await db.StoryLikes
+            .AsNoTracking()
+            .Where(l => l.StorySlideId == slideId)
+            .Include(l => l.User)
+            .ToListAsync();
+
+        var likedIds = likes.Select(l => l.UserId).ToHashSet();
+        var byUser = new Dictionary<Guid, StoryViewerDto>();
+
+        foreach (var v in views)
+        {
+            byUser[v.ViewerUserId] = new StoryViewerDto(
+                v.ViewerUserId,
+                v.Viewer?.Name ?? "—",
+                v.Viewer?.Avatar,
+                v.ViewedAt,
+                likedIds.Contains(v.ViewerUserId));
+        }
+
+        // Include likers who somehow have no view row yet.
+        foreach (var l in likes)
+        {
+            if (byUser.ContainsKey(l.UserId)) continue;
+            byUser[l.UserId] = new StoryViewerDto(
+                l.UserId,
+                l.User?.Name ?? "—",
+                l.User?.Avatar,
+                null,
+                true);
+        }
+
+        var viewers = byUser.Values
+            .OrderByDescending(v => v.Liked)
+            .ThenByDescending(v => v.ViewedAt ?? DateTime.MinValue)
+            .ToList();
 
         return Ok(viewers);
     }

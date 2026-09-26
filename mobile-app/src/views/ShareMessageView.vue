@@ -73,7 +73,9 @@ async function fetchData() {
       api.get('/conversations', { params: { filter: 'all' } }),
       api.get('/contacts').catch(() => ({ data: [] }))
     ])
-    conversations.value = convRes.data ?? []
+    conversations.value = Array.isArray(convRes.data)
+      ? convRes.data
+      : (convRes.data?.items ?? convRes.data?.Items ?? [])
     contacts.value = contactRes.data ?? []
   } catch {
     conversations.value = []

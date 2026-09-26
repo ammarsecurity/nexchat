@@ -277,6 +277,19 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       if (parsed == null) return;
       final cid = parsed.conversationId;
       final existing = ref.read(activeCallProvider);
+      final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
+      final alreadyOnCall = path == '/video/$cid' || videoScreenMounts(cid) > 0;
+      final expecting = existing.sessionId == cid;
+      // Caller cancelled locally before accept arrived — ignore late VideoCallAccepted.
+      if (!expecting && !alreadyOnCall) {
+        unawaited(
+          Hubs.conversation
+              .ensureConnected()
+              .then((_) => Hubs.conversation.invoke('ReleaseVideoCallBusy', [cid]))
+              .catchError((_) => null),
+        );
+        return;
+      }
       final voiceOnly = parsed.voiceOnly || (existing.sessionId == cid && existing.voiceOnly);
       final item = ref.read(conversationsListProvider).where((c) => c.str('id') == cid).firstOrNull;
       ref.read(activeCallProvider.notifier).syncMeta(
@@ -288,8 +301,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
             partnerUserId: existing.partnerUserId ?? item?.s('partnerId'),
           );
       ref.read(activeCallProvider.notifier).expand();
-      final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
-      if (path == '/video/$cid' || videoScreenMounts(cid) > 0) return;
+      if (alreadyOnCall) return;
       openAcceptedCall(ref.read(routerProvider), cid, voiceOnly);
     }));
 

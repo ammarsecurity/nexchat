@@ -6,14 +6,17 @@ import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/ira
 
 const films = ref([])
 const sections = ref([])
+const seriesList = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(12)
 const loading = ref(false)
 const sectionsLoading = ref(false)
+const seriesLoading = ref(false)
 const search = ref('')
 const statusFilter = ref('all')
 const sectionFilter = ref(null)
+const seriesFilter = ref(null)
 let searchTimer = null
 
 const dialog = ref(false)
@@ -21,18 +24,25 @@ const previewDialog = ref(false)
 const deleteDialog = ref(false)
 const sectionDialog = ref(false)
 const sectionDeleteDialog = ref(false)
+const seriesDialog = ref(false)
+const seriesDeleteDialog = ref(false)
 const editingSectionId = ref(null)
+const editingSeriesId = ref(null)
 const sectionToDelete = ref(null)
+const seriesToDelete = ref(null)
 const savingSection = ref(false)
+const savingSeries = ref(false)
 const editingId = ref(null)
 const previewFilm = ref(null)
 const toDelete = ref(null)
 const saving = ref(false)
 const deletingFilm = ref(false)
 const deletingSection = ref(false)
+const deletingSeries = ref(false)
 const uploadingVideo = ref(false)
 const uploadingThumb = ref(false)
 const uploadingSectionImage = ref(false)
+const uploadingSeriesCover = ref(false)
 
 const importDialog = ref(false)
 const stockProviders = ref([])
@@ -45,12 +55,15 @@ const stockHasMore = ref(false)
 const stockSearching = ref(false)
 const stockImportingKey = ref(null)
 const importSectionId = ref(null)
+const importSeriesId = ref(null)
+const importEpisodeNumber = ref(1)
 const importActive = ref(false)
 const importFeatured = ref(false)
 
 const videoInput = ref(null)
 const thumbInput = ref(null)
 const sectionImageInput = ref(null)
+const seriesCoverInput = ref(null)
 
 const form = ref({
   title: '',
@@ -61,7 +74,9 @@ const form = ref({
   sortOrder: 0,
   isActive: true,
   isFeatured: false,
-  sectionId: null
+  sectionId: null,
+  seriesId: null,
+  episodeNumber: null
 })
 
 const sectionForm = ref({
@@ -69,6 +84,16 @@ const sectionForm = ref({
   sortOrder: 0,
   isActive: true,
   imageUrl: ''
+})
+
+const seriesForm = ref({
+  title: '',
+  description: '',
+  coverUrl: '',
+  sectionId: null,
+  sortOrder: 0,
+  isActive: true,
+  isFeatured: false
 })
 
 const stats = computed(() => ({
@@ -176,6 +201,136 @@ async function fetchSections() {
 function sectionName(sectionId) {
   if (!sectionId) return '—'
   return sections.value.find(s => s.id === sectionId)?.name ?? '—'
+}
+
+function seriesName(seriesId) {
+  if (!seriesId) return '—'
+  return seriesList.value.find(s => s.id === seriesId)?.title ?? '—'
+}
+
+async function fetchSeries() {
+  seriesLoading.value = true
+  try {
+    const res = await api.get('/admin/short-film-series')
+    seriesList.value = res.data ?? []
+  } catch {
+    seriesList.value = []
+  } finally {
+    seriesLoading.value = false
+  }
+}
+
+function openAddSeries() {
+  editingSeriesId.value = null
+  seriesForm.value = {
+    title: '',
+    description: '',
+    coverUrl: '',
+    sectionId: null,
+    sortOrder: seriesList.value.length,
+    isActive: true,
+    isFeatured: false
+  }
+  seriesDialog.value = true
+}
+
+function openEditSeries(item) {
+  editingSeriesId.value = item.id
+  seriesForm.value = {
+    title: item.title,
+    description: item.description || '',
+    coverUrl: item.coverUrl || '',
+    sectionId: item.sectionId || null,
+    sortOrder: item.sortOrder,
+    isActive: item.isActive,
+    isFeatured: item.isFeatured
+  }
+  seriesDialog.value = true
+}
+
+function clearSeriesCover() {
+  seriesForm.value.coverUrl = ''
+}
+
+function confirmDeleteSeries(item) {
+  seriesToDelete.value = item
+  seriesDeleteDialog.value = true
+}
+
+async function onSeriesCoverChange(e) {
+  const file = e.target?.files?.[0]
+  if (!file) return
+  uploadingSeriesCover.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await api.post('/admin/short-film-series/upload-cover', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    seriesForm.value.coverUrl = res.data.url
+  } catch (err) {
+    notify.error(err.response?.data?.message || 'فشل رفع غلاف المسلسل')
+  } finally {
+    uploadingSeriesCover.value = false
+    e.target.value = ''
+  }
+}
+
+async function saveSeries() {
+  if (!seriesForm.value.title.trim()) {
+    notify.warning('عنوان المسلسل مطلوب')
+    return
+  }
+  savingSeries.value = true
+  try {
+    const body = {
+      title: seriesForm.value.title.trim(),
+      description: seriesForm.value.description.trim() || null,
+      coverUrl: seriesForm.value.coverUrl || null,
+      sectionId: seriesForm.value.sectionId,
+      setSectionId: true,
+      sortOrder: seriesForm.value.sortOrder,
+      isActive: seriesForm.value.isActive,
+      isFeatured: seriesForm.value.isFeatured
+    }
+    if (editingSeriesId.value) {
+      const hadCover = seriesList.value.find(s => s.id === editingSeriesId.value)?.coverUrl
+      if (!seriesForm.value.coverUrl && hadCover) body.clearCoverUrl = true
+      await api.put(`/admin/short-film-series/${editingSeriesId.value}`, body)
+    } else {
+      await api.post('/admin/short-film-series', {
+        title: body.title,
+        description: body.description,
+        coverUrl: body.coverUrl,
+        sectionId: body.sectionId,
+        sortOrder: body.sortOrder,
+        isActive: body.isActive,
+        isFeatured: body.isFeatured
+      })
+    }
+    seriesDialog.value = false
+    await fetchSeries()
+  } catch (err) {
+    notify.error(err.response?.data?.message || 'حدث خطأ')
+  } finally {
+    savingSeries.value = false
+  }
+}
+
+async function executeDeleteSeries() {
+  if (!seriesToDelete.value) return
+  deletingSeries.value = true
+  try {
+    await api.delete(`/admin/short-film-series/${seriesToDelete.value.id}`)
+    seriesDeleteDialog.value = false
+    if (seriesFilter.value === seriesToDelete.value.id) seriesFilter.value = null
+    await fetchSeries()
+    fetchFilms()
+  } catch (err) {
+    notify.error(err.response?.data?.message || 'فشل الحذف')
+  } finally {
+    deletingSeries.value = false
+  }
 }
 
 function openAddSection() {
@@ -290,6 +445,8 @@ function openImport() {
   stockTotal.value = 0
   stockHasMore.value = false
   importSectionId.value = sectionFilter.value
+  importSeriesId.value = seriesFilter.value
+  importEpisodeNumber.value = 1
   importActive.value = false
   importFeatured.value = false
   void fetchStockProviders()
@@ -337,6 +494,8 @@ async function importStockItem(item) {
         thumbnailUrl: item.thumbnailUrl,
         durationSeconds: item.durationSeconds,
         sectionId: importSectionId.value,
+        seriesId: importSeriesId.value,
+        episodeNumber: importSeriesId.value ? importEpisodeNumber.value : null,
         sortOrder: total.value,
         isActive: importActive.value,
         isFeatured: importFeatured.value
@@ -344,6 +503,7 @@ async function importStockItem(item) {
       { timeout: 180000 }
     )
     await fetchFilms()
+    await fetchSeries()
     notify.success('تم استيراد الفيديو بنجاح')
   } catch (err) {
     notify.error(err.response?.data?.message || 'فشل الاستيراد')
@@ -361,7 +521,8 @@ async function fetchFilms() {
         pageSize: pageSize.value,
         search: search.value.trim() || undefined,
         status: statusFilter.value,
-        sectionId: sectionFilter.value || undefined
+        sectionId: sectionFilter.value || undefined,
+        seriesId: seriesFilter.value || undefined
       }
     })
     films.value = res.data.items ?? []
@@ -385,7 +546,9 @@ function openAdd() {
     sortOrder: films.value.length,
     isActive: true,
     isFeatured: false,
-    sectionId: null
+    sectionId: null,
+    seriesId: seriesFilter.value || null,
+    episodeNumber: null
   }
   dialog.value = true
 }
@@ -401,7 +564,9 @@ function openEdit(film) {
     sortOrder: film.sortOrder,
     isActive: film.isActive,
     isFeatured: film.isFeatured,
-    sectionId: film.sectionId || null
+    sectionId: film.sectionId || null,
+    seriesId: film.seriesId || null,
+    episodeNumber: film.episodeNumber ?? null
   }
   dialog.value = true
 }
@@ -441,7 +606,8 @@ async function onVideoChange(e) {
     fd.append('file', file)
     const [res, duration] = await Promise.all([
       api.post('/admin/short-films/upload-video', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000
       }),
       durationPromise
     ])
@@ -463,7 +629,8 @@ async function onThumbChange(e) {
     const fd = new FormData()
     fd.append('file', file)
     const res = await api.post('/admin/short-films/upload-thumbnail', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000
     })
     form.value.thumbnailUrl = res.data.url
   } catch (err) {
@@ -479,6 +646,10 @@ async function save() {
     notify.warning('العنوان والفيديو مطلوبان')
     return
   }
+  if (form.value.seriesId && !(form.value.episodeNumber > 0)) {
+    notify.warning('رقم الحلقة مطلوب عند اختيار مسلسل')
+    return
+  }
   saving.value = true
   try {
     const body = {
@@ -491,7 +662,10 @@ async function save() {
       isActive: form.value.isActive,
       isFeatured: form.value.isFeatured,
       sectionId: form.value.sectionId,
-      setSectionId: true
+      setSectionId: true,
+      seriesId: form.value.seriesId,
+      setSeriesId: true,
+      episodeNumber: form.value.seriesId ? form.value.episodeNumber : null
     }
     if (editingId.value) {
       await api.put(`/admin/short-films/${editingId.value}`, body)
@@ -500,6 +674,7 @@ async function save() {
     }
     dialog.value = false
     fetchFilms()
+    fetchSeries()
   } catch (err) {
     notify.error(err.response?.data?.message || 'حدث خطأ')
   } finally {
@@ -513,6 +688,10 @@ watch(statusFilter, () => {
   fetchFilms()
 })
 watch(sectionFilter, () => {
+  page.value = 1
+  fetchFilms()
+})
+watch(seriesFilter, () => {
   page.value = 1
   fetchFilms()
 })
@@ -540,8 +719,12 @@ watch(sectionDeleteDialog, (open) => {
   if (!open && !deletingSection.value) sectionToDelete.value = null
 })
 
+watch(seriesDeleteDialog, (open) => {
+  if (!open && !deletingSeries.value) seriesToDelete.value = null
+})
+
 onMounted(async () => {
-  await fetchSections()
+  await Promise.all([fetchSections(), fetchSeries()])
   await fetchFilms()
 })
 </script>
@@ -644,8 +827,60 @@ onMounted(async () => {
     </v-card>
 
     <v-card rounded="xl" elevation="0" class="pa-4 mb-4">
+      <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-4">
+        <div class="text-subtitle-1 font-weight-bold">المسلسلات</div>
+        <v-btn size="small" color="primary" variant="tonal" prepend-icon="mdi-television-play" @click="openAddSeries">
+          مسلسل جديد
+        </v-btn>
+      </div>
+      <v-progress-linear v-if="seriesLoading" indeterminate color="primary" class="mb-3" />
+      <v-list v-if="seriesList.length" density="compact" class="mb-2 pa-0">
+        <v-list-item v-for="item in seriesList" :key="item.id" rounded="lg" class="mb-1">
+          <template #prepend>
+            <v-avatar v-if="item.coverUrl" size="40" class="me-2" rounded="lg">
+              <v-img :src="fullMediaUrl(item.coverUrl)" cover />
+            </v-avatar>
+            <v-avatar v-else size="40" color="primary" variant="tonal" class="me-2" rounded="lg">
+              <v-icon icon="mdi-television-classic" />
+            </v-avatar>
+          </template>
+          <v-list-item-title>{{ item.title }}</v-list-item-title>
+          <v-list-item-subtitle>{{ item.episodesCount }} حلقة · ترتيب {{ item.sortOrder }}</v-list-item-subtitle>
+          <template #append>
+            <v-chip v-if="!item.isActive" size="x-small" variant="tonal" class="me-2">معطل</v-chip>
+            <v-chip v-if="item.isFeatured" size="x-small" color="primary" variant="tonal" class="me-2">مميز</v-chip>
+            <div class="action-btns">
+              <v-btn
+                icon="mdi-pencil"
+                size="small"
+                variant="tonal"
+                color="primary"
+                title="تعديل"
+                :disabled="deletingSeries || savingSeries"
+                @click="openEditSeries(item)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="small"
+                variant="tonal"
+                color="error"
+                title="حذف"
+                :loading="deletingSeries && seriesToDelete?.id === item.id"
+                :disabled="deletingSeries || savingSeries"
+                @click="confirmDeleteSeries(item)"
+              />
+            </div>
+          </template>
+        </v-list-item>
+      </v-list>
+      <v-alert v-else-if="!seriesLoading" type="info" variant="tonal" density="compact" rounded="lg">
+        لا توجد مسلسلات. أنشئ مسلسلاً ثم اربط الحلقات به عند إضافة الفيلم.
+      </v-alert>
+    </v-card>
+
+    <v-card rounded="xl" elevation="0" class="pa-4 mb-4">
       <v-row dense align="center">
-        <v-col cols="12" md="4">
+        <v-col cols="12" md="3">
           <v-text-field
             v-model="search"
             label="بحث بالعنوان أو الوصف"
@@ -657,7 +892,7 @@ onMounted(async () => {
             clearable
           />
         </v-col>
-        <v-col cols="12" md="3">
+        <v-col cols="12" md="2">
           <v-select
             v-model="statusFilter"
             :items="[
@@ -674,13 +909,27 @@ onMounted(async () => {
             hide-details
           />
         </v-col>
-        <v-col cols="12" md="3">
+        <v-col cols="12" md="2">
           <v-select
             v-model="sectionFilter"
             :items="[{ title: 'كل الأقسام', value: null }, ...sections.map(s => ({ title: s.name, value: s.id }))]"
             item-title="title"
             item-value="value"
             label="القسم"
+            variant="outlined"
+            rounded="lg"
+            density="compact"
+            hide-details
+            clearable
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-select
+            v-model="seriesFilter"
+            :items="[{ title: 'كل المسلسلات', value: null }, ...seriesList.map(s => ({ title: s.title, value: s.id }))]"
+            item-title="title"
+            item-value="value"
+            label="المسلسل"
             variant="outlined"
             rounded="lg"
             density="compact"
@@ -728,6 +977,9 @@ onMounted(async () => {
               <v-chip v-else size="x-small" variant="tonal">معطل</v-chip>
               <v-chip v-if="film.isFeatured" size="x-small" color="primary" variant="tonal">مميز</v-chip>
               <v-chip v-if="film.sectionId" size="x-small" variant="tonal">{{ sectionName(film.sectionId) }}</v-chip>
+              <v-chip v-if="film.seriesId" size="x-small" color="secondary" variant="tonal">
+                {{ film.seriesTitle || seriesName(film.seriesId) }} · ح{{ film.episodeNumber }}
+              </v-chip>
               <v-chip size="x-small" variant="tonal">{{ formatDuration(film.durationSeconds) }}</v-chip>
             </div>
             <div class="text-subtitle-2 font-weight-bold text-truncate">{{ film.title }}</div>
@@ -840,7 +1092,7 @@ onMounted(async () => {
             بحث
           </v-btn>
           <v-row dense class="mb-2">
-            <v-col cols="12" sm="6">
+            <v-col cols="12" sm="4">
               <v-select
                 v-model="importSectionId"
                 :items="[{ title: 'بدون قسم', value: null }, ...sections.filter(s => s.isActive).map(s => ({ title: s.name, value: s.id }))]"
@@ -854,10 +1106,35 @@ onMounted(async () => {
                 clearable
               />
             </v-col>
-            <v-col cols="6" sm="3">
-              <v-switch v-model="importActive" label="نشط فوراً" color="primary" hide-details density="compact" />
+            <v-col cols="12" sm="4">
+              <v-select
+                v-model="importSeriesId"
+                :items="[{ title: 'بدون مسلسل', value: null }, ...seriesList.filter(s => s.isActive).map(s => ({ title: s.title, value: s.id }))]"
+                item-title="title"
+                item-value="value"
+                label="المسلسل"
+                variant="outlined"
+                rounded="lg"
+                density="compact"
+                hide-details
+                clearable
+              />
             </v-col>
-            <v-col cols="6" sm="3">
+            <v-col cols="6" sm="2">
+              <v-text-field
+                v-model.number="importEpisodeNumber"
+                type="number"
+                label="رقم الحلقة"
+                variant="outlined"
+                rounded="lg"
+                density="compact"
+                hide-details
+                min="1"
+                :disabled="!importSeriesId"
+              />
+            </v-col>
+            <v-col cols="6" sm="2">
+              <v-switch v-model="importActive" label="نشط فوراً" color="primary" hide-details density="compact" />
               <v-switch v-model="importFeatured" label="مميز" color="primary" hide-details density="compact" />
             </v-col>
           </v-row>
@@ -995,6 +1272,31 @@ onMounted(async () => {
           <v-switch v-model="form.isActive" label="نشط" color="primary" hide-details class="mb-1" />
           <v-switch v-model="form.isFeatured" label="مميز (يظهر في الشريط الأفقي)" color="primary" hide-details class="mb-3" />
           <v-select
+            v-model="form.seriesId"
+            :items="[{ title: 'بدون مسلسل (فيلم مستقل)', value: null }, ...seriesList.map(s => ({ title: s.title, value: s.id }))]"
+            item-title="title"
+            item-value="value"
+            label="المسلسل"
+            variant="outlined"
+            rounded="lg"
+            density="compact"
+            hide-details
+            clearable
+            class="mb-3"
+          />
+          <v-text-field
+            v-if="form.seriesId"
+            v-model.number="form.episodeNumber"
+            type="number"
+            label="رقم الحلقة *"
+            variant="outlined"
+            rounded="lg"
+            density="compact"
+            min="1"
+            hide-details
+            class="mb-3"
+          />
+          <v-select
             v-model="form.sectionId"
             :items="[{ title: 'بدون قسم', value: null }, ...sections.filter(s => s.isActive).map(s => ({ title: s.name, value: s.id }))]"
             item-title="title"
@@ -1040,6 +1342,95 @@ onMounted(async () => {
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" color="white" @click="previewDialog = false">إغلاق</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Series add/edit -->
+    <v-dialog v-model="seriesDialog" max-width="480" persistent>
+      <v-card rounded="xl" elevation="0" class="position-relative">
+        <v-overlay
+          :model-value="savingSeries || uploadingSeriesCover"
+          contained
+          persistent
+          class="align-center justify-center dialog-busy-overlay"
+          scrim="rgba(13, 13, 26, 0.72)"
+        >
+          <div class="d-flex flex-column align-center ga-3">
+            <v-progress-circular indeterminate color="primary" size="40" width="3" />
+            <span class="text-body-2 text-medium-emphasis">
+              {{ savingSeries ? 'جاري الحفظ…' : 'جاري رفع الغلاف…' }}
+            </span>
+          </div>
+        </v-overlay>
+        <v-card-title class="font-weight-bold pa-4 pb-0">
+          {{ editingSeriesId ? 'تعديل مسلسل' : 'مسلسل جديد' }}
+        </v-card-title>
+        <v-card-text class="pa-4">
+          <input ref="seriesCoverInput" type="file" accept="image/*" hidden @change="onSeriesCoverChange" />
+          <div class="text-body-2 mb-2">غلاف المسلسل</div>
+          <v-img
+            v-if="seriesForm.coverUrl"
+            :src="fullMediaUrl(seriesForm.coverUrl)"
+            max-height="140"
+            cover
+            rounded="lg"
+            class="mb-2"
+          />
+          <div class="d-flex gap-2 flex-wrap mb-4">
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="primary"
+              prepend-icon="mdi-image"
+              :loading="uploadingSeriesCover"
+              @click="seriesCoverInput?.click()"
+            >
+              {{ seriesForm.coverUrl ? 'تغيير الغلاف' : 'رفع غلاف' }}
+            </v-btn>
+            <v-btn v-if="seriesForm.coverUrl" size="small" variant="text" color="error" @click="clearSeriesCover">
+              إزالة
+            </v-btn>
+          </div>
+          <v-text-field v-model="seriesForm.title" label="عنوان المسلسل *" variant="outlined" rounded="lg" density="compact" class="mb-3" />
+          <v-textarea v-model="seriesForm.description" label="الوصف" variant="outlined" rounded="lg" density="compact" rows="2" class="mb-3" />
+          <v-text-field v-model.number="seriesForm.sortOrder" type="number" label="الترتيب" variant="outlined" rounded="lg" density="compact" min="0" class="mb-3" />
+          <v-select
+            v-model="seriesForm.sectionId"
+            :items="[{ title: 'بدون قسم', value: null }, ...sections.filter(s => s.isActive).map(s => ({ title: s.name, value: s.id }))]"
+            item-title="title"
+            item-value="value"
+            label="القسم"
+            variant="outlined"
+            rounded="lg"
+            density="compact"
+            hide-details
+            clearable
+            class="mb-3"
+          />
+          <v-switch v-model="seriesForm.isActive" label="نشط" color="primary" hide-details class="mb-1" />
+          <v-switch v-model="seriesForm.isFeatured" label="مميز" color="primary" hide-details />
+        </v-card-text>
+        <v-card-actions class="pa-4 pt-0">
+          <v-spacer />
+          <v-btn variant="text" :disabled="savingSeries || uploadingSeriesCover" @click="seriesDialog = false">إلغاء</v-btn>
+          <v-btn color="primary" variant="tonal" :loading="savingSeries" :disabled="savingSeries || uploadingSeriesCover" @click="saveSeries">
+            حفظ
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="seriesDeleteDialog" max-width="400" persistent>
+      <v-card rounded="xl" elevation="0">
+        <v-card-title class="font-weight-bold pa-4 pb-0">حذف المسلسل؟</v-card-title>
+        <v-card-text class="pa-4">
+          سيتم فك ربط الحلقات من المسلسل «{{ seriesToDelete?.title }}» دون حذفها.
+        </v-card-text>
+        <v-card-actions class="pa-4 pt-0">
+          <v-spacer />
+          <v-btn variant="text" :disabled="deletingSeries" @click="seriesDeleteDialog = false">إلغاء</v-btn>
+          <v-btn color="error" variant="tonal" :loading="deletingSeries" @click="executeDeleteSeries">حذف</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

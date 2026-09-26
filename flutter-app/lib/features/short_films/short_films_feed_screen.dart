@@ -7,16 +7,16 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
-import '../../core/share_links.dart';
-import '../../shared/widgets.dart';
 import 'short_film_cache.dart';
 import 'short_films_controller.dart';
 
 /// views/ShortFilmsFeedView.vue — vertical snap feed; only the current ±1 players are alive.
 class ShortFilmsFeedScreen extends ConsumerStatefulWidget {
-  const ShortFilmsFeedScreen({super.key, this.startId});
+  const ShortFilmsFeedScreen({super.key, this.startId, this.seriesId});
   final String? startId;
+  final String? seriesId;
 
   @override
   ConsumerState<ShortFilmsFeedScreen> createState() => _ShortFilmsFeedScreenState();
@@ -31,6 +31,8 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
   bool _userPaused = false;
   bool _descExpanded = false;
   bool _scrolling = false;
+  bool _seriesMode = false;
+  bool _requestingMore = false;
   final Map<String, VideoPlayerController> _players = {};
   final Set<String> _playing = {};
   final Set<String> _failed = {};
@@ -45,10 +47,19 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
 
   Future<void> _load() async {
     final store = ref.read(shortFilmsProvider.notifier);
-    await store.fetchAll(force: true);
-    await store.loadAllPages();
-    if (!mounted) return;
-    _films = store.current.feed;
+    final seriesId = widget.seriesId;
+    if (seriesId != null && seriesId.isNotEmpty) {
+      _seriesMode = true;
+      final detail = await store.fetchSeriesDetail(seriesId);
+      if (!mounted) return;
+      _films = detail?.episodes ?? const [];
+    } else {
+      _seriesMode = false;
+      await store.fetchAll(force: true);
+      if (!mounted) return;
+      _films = List<ShortFilm>.from(store.current.feed);
+      await _ensureStartFilmPresent();
+    }
     final start = widget.startId;
     if (start != null) {
       final i = _films.indexWhere((f) => f.id == start);
@@ -57,6 +68,37 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
     _pages = PageController(initialPage: _index);
     setState(() => _ready = true);
     _onIndexChanged();
+  }
+
+  /// Resolve start film; prefer full series episode list when applicable.
+  Future<void> _ensureStartFilmPresent() async {
+    final start = widget.startId;
+    if (start == null || start.isEmpty) return;
+
+    final store = ref.read(shortFilmsProvider.notifier);
+    final localIdx = _films.indexWhere((f) => f.id == start);
+    var film = localIdx >= 0 ? _films[localIdx] : null;
+    film ??= await store.fetchById(start);
+    if (!mounted || film == null) return;
+
+    final sid = film.seriesId;
+    if (sid != null && sid.isNotEmpty) {
+      final detail = await store.fetchSeriesDetail(sid);
+      if (!mounted) return;
+      final eps = detail?.episodes ?? const <ShortFilm>[];
+      if (eps.isNotEmpty) {
+        _seriesMode = true;
+        _films = eps;
+        final i = _films.indexWhere((f) => f.id == start);
+        _index = i >= 0 ? i : 0;
+        return;
+      }
+    }
+
+    if (localIdx < 0) {
+      _films = [film, ..._films.where((f) => f.id != film!.id)];
+      _index = 0;
+    }
   }
 
   @override
@@ -71,10 +113,33 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
     var i = _films.indexWhere((f) => f.id == id);
     if (i < 0) {
       final store = ref.read(shortFilmsProvider.notifier);
-      await store.fetchAll(force: true);
-      await store.loadAllPages();
-      if (!mounted || widget.startId != id) return;
-      setState(() => _films = store.current.feed);
+      final seriesId = widget.seriesId;
+      if (seriesId != null && seriesId.isNotEmpty) {
+        final detail = await store.fetchSeriesDetail(seriesId);
+        if (!mounted || widget.startId != id) return;
+        setState(() => _films = detail?.episodes ?? const []);
+      } else {
+        final film = await store.fetchById(id);
+        if (!mounted || widget.startId != id) return;
+        if (film != null) {
+          final sid = film.seriesId;
+          if (sid != null && sid.isNotEmpty) {
+            final detail = await store.fetchSeriesDetail(sid);
+            if (!mounted || widget.startId != id) return;
+            final eps = detail?.episodes ?? const <ShortFilm>[];
+            if (eps.isNotEmpty) {
+              setState(() {
+                _seriesMode = true;
+                _films = eps;
+              });
+            } else {
+              setState(() => _films = [film, ..._films.where((f) => f.id != film.id)]);
+            }
+          } else {
+            setState(() => _films = [film, ..._films.where((f) => f.id != film.id)]);
+          }
+        }
+      }
       i = _films.indexWhere((f) => f.id == id);
     }
     final p = _pages;
@@ -142,6 +207,28 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
     final cur = _current;
     if (cur != null) ref.read(shortFilmsProvider.notifier).recordView(cur.id);
     _playCurrent(restart: true);
+    _maybeLoadMore();
+  }
+
+  Future<void> _maybeLoadMore() async {
+    if (_seriesMode || _requestingMore || !_ready) return;
+    final store = ref.read(shortFilmsProvider.notifier);
+    if (!store.current.hasMore || store.current.loadingMore) return;
+    if (_index < _films.length - 4) return;
+    _requestingMore = true;
+    try {
+      final before = store.current.feed.length;
+      await store.loadMore();
+      if (!mounted) return;
+      final feed = store.current.feed;
+      if (feed.length <= before) return;
+      final seen = {for (final f in _films) f.id};
+      final added = [for (final f in feed) if (seen.add(f.id)) f];
+      if (added.isEmpty) return;
+      setState(() => _films = [..._films, ...added]);
+    } finally {
+      _requestingMore = false;
+    }
   }
 
   Future<void> _playCurrent({bool force = false, bool restart = false}) async {
@@ -323,9 +410,21 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
             offset: 8,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               GestureDetector(
-                onTap: () async {
-                  final msg = await shareShortFilmPublic(film.id, title: film.title);
-                  if (msg != null && mounted) showToast(context, msg);
+                onTap: () {
+                  final returnPath = film.seriesId != null && film.seriesId!.isNotEmpty
+                      ? '/short-films/watch?start=${film.id}&series=${film.seriesId}'
+                      : '/short-films/watch?start=${film.id}';
+                  context.push('/share-message', extra: {
+                    'shareMessage': {
+                      'type': 'short_film',
+                      'content': buildShortFilmShareContent(
+                        film.id,
+                        film.isEpisode ? film.displaySubtitle : film.title,
+                        film.thumbnailUrl,
+                      ),
+                    },
+                    'returnPath': returnPath,
+                  });
                 },
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Container(
@@ -364,10 +463,17 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> {
                 child: Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(narrow ? 12 : 14, 12, wide ? 14 : (narrow ? 64 : 72), 14 + pad.bottom),
                   child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(film.title,
+                    Text(film.isEpisode ? film.displaySubtitle : film.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: Colors.white, fontSize: narrow ? 15 : 16, fontWeight: FontWeight.w700, height: 1.3, shadows: _shadowStrong)),
+                    if (film.isEpisode && film.title != film.displaySubtitle) ...[
+                      const SizedBox(height: 2),
+                      Text(film.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: narrow ? 12 : 13, shadows: _shadow)),
+                    ],
                     if (film.description?.isNotEmpty ?? false) ...[
                       const SizedBox(height: 4),
                       GestureDetector(

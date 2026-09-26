@@ -9,10 +9,39 @@ public record ShortFilmDto(
     int? DurationSeconds,
     Guid? SectionId,
     string? SectionName,
+    Guid? SeriesId,
+    string? SeriesTitle,
+    int? EpisodeNumber,
+    int? EpisodesCount,
     int SortOrder,
     bool IsFeatured,
     int ViewCount,
     DateTime CreatedAt);
+
+public record ShortFilmSeriesDto(
+    Guid Id,
+    string Title,
+    string? Description,
+    string? CoverUrl,
+    Guid? SectionId,
+    string? SectionName,
+    int SortOrder,
+    bool IsFeatured,
+    int EpisodesCount,
+    DateTime CreatedAt);
+
+public record ShortFilmSeriesDetailDto(
+    Guid Id,
+    string Title,
+    string? Description,
+    string? CoverUrl,
+    Guid? SectionId,
+    string? SectionName,
+    int SortOrder,
+    bool IsFeatured,
+    int EpisodesCount,
+    DateTime CreatedAt,
+    IReadOnlyList<ShortFilmDto> Episodes);
 
 public record ShortFilmSectionDto(
     Guid Id,
@@ -48,11 +77,28 @@ public record AdminShortFilmDto(
     int? DurationSeconds,
     Guid? SectionId,
     string? SectionName,
+    Guid? SeriesId,
+    string? SeriesTitle,
+    int? EpisodeNumber,
     int SortOrder,
     bool IsActive,
     bool IsFeatured,
     int ViewCount,
     Guid? CreatedByAdminId,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+public record AdminShortFilmSeriesDto(
+    Guid Id,
+    string Title,
+    string? Description,
+    string? CoverUrl,
+    Guid? SectionId,
+    string? SectionName,
+    int SortOrder,
+    bool IsActive,
+    bool IsFeatured,
+    int EpisodesCount,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
@@ -70,6 +116,26 @@ public record CreateShortFilmSectionDto(string Name, int SortOrder, bool IsActiv
 
 public record UpdateShortFilmSectionDto(string? Name, int? SortOrder, bool? IsActive, string? ImageUrl, bool? ClearImageUrl);
 
+public record CreateShortFilmSeriesDto(
+    string Title,
+    string? Description,
+    string? CoverUrl,
+    Guid? SectionId,
+    int SortOrder,
+    bool IsActive,
+    bool IsFeatured);
+
+public record UpdateShortFilmSeriesDto(
+    string? Title,
+    string? Description,
+    string? CoverUrl,
+    bool? ClearCoverUrl,
+    Guid? SectionId,
+    bool? SetSectionId,
+    int? SortOrder,
+    bool? IsActive,
+    bool? IsFeatured);
+
 public record CreateShortFilmDto(
     string Title,
     string? Description,
@@ -77,6 +143,8 @@ public record CreateShortFilmDto(
     string? ThumbnailUrl,
     int? DurationSeconds,
     Guid? SectionId,
+    Guid? SeriesId,
+    int? EpisodeNumber,
     int SortOrder,
     bool IsActive,
     bool IsFeatured);
@@ -89,6 +157,9 @@ public record UpdateShortFilmDto(
     int? DurationSeconds,
     Guid? SectionId,
     bool? SetSectionId,
+    Guid? SeriesId,
+    bool? SetSeriesId,
+    int? EpisodeNumber,
     int? SortOrder,
     bool? IsActive,
     bool? IsFeatured);
@@ -122,6 +193,8 @@ public record ImportStockVideoDto(
     string? ThumbnailUrl,
     int? DurationSeconds,
     Guid? SectionId,
+    Guid? SeriesId,
+    int? EpisodeNumber,
     int SortOrder,
     bool IsActive,
     bool IsFeatured);

@@ -33,6 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<StoryLike> StoryLikes => Set<StoryLike>();
     public DbSet<ShortFilm> ShortFilms => Set<ShortFilm>();
     public DbSet<ShortFilmSection> ShortFilmSections => Set<ShortFilmSection>();
+    public DbSet<ShortFilmSeries> ShortFilmSeries => Set<ShortFilmSeries>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -222,6 +223,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Content).HasColumnType("longtext");
             e.Property(x => x.Type).HasMaxLength(20);
+            e.HasIndex(x => new { x.ConversationId, x.SentAt });
         });
 
         modelBuilder.Entity<MessageReaction>(e =>
@@ -396,12 +398,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.IsActive, x.SortOrder });
         });
 
+        modelBuilder.Entity<ShortFilmSeries>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.CoverUrl).HasMaxLength(500);
+            e.HasOne(x => x.Section)
+                .WithMany()
+                .HasForeignKey(x => x.SectionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => new { x.IsActive, x.SortOrder });
+            e.HasIndex(x => new { x.IsFeatured, x.IsActive });
+            e.HasIndex(x => x.Title);
+        });
+
         modelBuilder.Entity<ShortFilm>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Section)
                 .WithMany(x => x.Films)
                 .HasForeignKey(x => x.SectionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Series)
+                .WithMany(x => x.Episodes)
+                .HasForeignKey(x => x.SeriesId)
                 .OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.CreatedByAdmin)
                 .WithMany()
@@ -417,6 +438,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.IsActive, x.SortOrder });
             e.HasIndex(x => new { x.IsFeatured, x.IsActive });
             e.HasIndex(x => new { x.SectionId, x.IsActive, x.SortOrder });
+            e.HasIndex(x => new { x.SeriesId, x.EpisodeNumber }).IsUnique();
+            e.HasIndex(x => new { x.SeriesId, x.IsActive, x.EpisodeNumber });
         });
 
         modelBuilder.Entity<OtpChallenge>(e =>

@@ -25,6 +25,8 @@ public class StockVideoImportService(
         string? thumbnailUrl,
         int? durationSeconds,
         Guid? sectionId,
+        Guid? seriesId,
+        int? episodeNumber,
         int sortOrder,
         bool isActive,
         bool isFeatured,
@@ -49,6 +51,21 @@ public class StockVideoImportService(
             f => f.StockProvider == provider && f.StockExternalId == externalId, ct);
         if (exists)
             throw new InvalidOperationException("This video was already imported");
+
+        if (seriesId is Guid sid)
+        {
+            var seriesOk = await db.ShortFilmSeries.AnyAsync(s => s.Id == sid, ct);
+            if (!seriesOk) throw new ArgumentException("SeriesId not found");
+            if (episodeNumber is null or < 1)
+                throw new ArgumentException("EpisodeNumber is required when SeriesId is set");
+            var dupEp = await db.ShortFilms.AnyAsync(
+                f => f.SeriesId == sid && f.EpisodeNumber == episodeNumber, ct);
+            if (dupEp) throw new InvalidOperationException("Episode number already exists in this series");
+        }
+        else
+        {
+            episodeNumber = null;
+        }
 
         var fullDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
 
@@ -82,6 +99,8 @@ public class StockVideoImportService(
             ThumbnailUrl = savedThumb,
             DurationSeconds = durationSeconds > 0 ? durationSeconds : null,
             SectionId = sectionId,
+            SeriesId = seriesId,
+            EpisodeNumber = episodeNumber,
             SortOrder = sortOrder,
             IsActive = isActive,
             IsFeatured = isFeatured,
@@ -93,6 +112,7 @@ public class StockVideoImportService(
         db.ShortFilms.Add(film);
         await db.SaveChangesAsync(ct);
         await db.Entry(film).Reference(f => f.Section).LoadAsync(ct);
+        await db.Entry(film).Reference(f => f.Series).LoadAsync(ct);
         return film;
     }
 

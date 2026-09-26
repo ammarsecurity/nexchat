@@ -240,6 +240,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         if (at != null) _store.setPartnerLastReadAt(at);
       }),
       h.on('MessagesRead', (a) {
+        // Private chats use PartnerReadUpTo / lastReadAt for ticks — skip heavy list patch.
+        if (!ref.read(activeConversationProvider).isGroup) return;
         final p = a.firstOrNull;
         final ids = p is Map ? p.v('messageIds') : null;
         if (ids is List && ids.isNotEmpty) _store.setMessagesRead(ids.map((e) => '$e'));
@@ -1153,8 +1155,9 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       if (prev == false && next == true) unawaited(_recoverAfterOnline());
     });
     final c = context.colors;
-    final s = ref.watch(activeConversationProvider);
-    final partner = s.partner;
+    final partner = ref.watch(activeConversationProvider.select((s) => s.partner));
+    final isGroup = ref.watch(activeConversationProvider.select((s) => s.isGroup));
+    final partnerTyping = ref.watch(activeConversationProvider.select((s) => s.partnerTyping));
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final pad = MediaQuery.paddingOf(context);
     final online = partner?.b('isOnline') ?? false;
@@ -1191,7 +1194,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                           clipBehavior: Clip.none,
                           children: [
                             UserAvatar(url: partner?.s('avatar'), name: partner?.s('name') ?? '', size: 44),
-                            if (!s.isGroup)
+                            if (!isGroup)
                               PositionedDirectional(
                                 end: 0,
                                 bottom: 0,
@@ -1224,12 +1227,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                                 ),
                               ),
                               const SizedBox(height: 3),
-                              if (s.partnerTyping)
+                              if (partnerTyping)
                                 Text(
                                   t('conversationChat.typing'),
                                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary),
                                 )
-                              else if (s.isGroup)
+                              else if (isGroup)
                                 Text(t('groups.members'), style: TextStyle(fontSize: 12, color: c.textMuted))
                               else
                                 Text(
@@ -1249,7 +1252,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                 ),
               ),
               const SizedBox(width: 4),
-              if (!s.isGroup) ...[
+              if (!isGroup) ...[
                 _HeaderAction(icon: LucideIcons.video, onTap: () => _startCall(voiceOnly: false)),
                 const SizedBox(width: 6),
                 _HeaderAction(icon: LucideIcons.phone, onTap: () => _startCall(voiceOnly: true)),
@@ -1262,84 +1265,93 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           Expanded(
             child: ColoredBox(
               color: c.bgPrimary,
-              child: s.messages.isEmpty && !s.partnerTyping
-                  ? Center(child: Text(t('conversationChat.empty'), style: TextStyle(color: c.textMuted, fontSize: 13)))
-                  : Stack(
-                      children: [
-                        ListView.builder(
-                          controller: _scroll,
-                          reverse: true,
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                          itemCount: s.messages.length + (s.partnerTyping ? 1 : 0) + (_loadingOlder ? 1 : 0),
-                          itemBuilder: (context, i) {
-                            final typing = s.partnerTyping ? 1 : 0;
-                            if (i < typing) return const TypingBubble();
-                            final msgIndexFromEnd = i - typing;
-                            if (_loadingOlder && msgIndexFromEnd == s.messages.length) {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Center(
-                                  child: Text(t('conversationChat.loadingOlder'), style: TextStyle(fontSize: 12, color: c.textMuted)),
-                                ),
-                              );
-                            }
-                            final msg = s.messages[s.messages.length - 1 - msgIndexFromEnd];
-                            final key = _keys.putIfAbsent(msgKey(msg), GlobalKey.new);
-                            return KeyedSubtree(
-                              key: key,
-                              child: MessageItem(
-                                msg: msg,
-                                mine: msg['senderId'] == _me,
-                                me: _me,
-                                isGroup: s.isGroup,
-                                sender: _groupSenders[msg.str('senderId')],
-                                highlighted: _highlighted == msgKey(msg),
-                                read: _isRead(msg, s.partnerLastReadAt, isGroup: s.isGroup),
-                                onMenu: () => _openMenu(msg),
-                                onLongPress: () => _openReactionPicker(msg),
-                                onReaction: (e) => _pickReaction(msg, e),
-                                onRetry: () => _retry(msg),
-                                onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
-                                onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final messages = ref.watch(activeConversationProvider.select((s) => s.messages));
+                  final typing = ref.watch(activeConversationProvider.select((s) => s.partnerTyping));
+                  final lastRead = ref.watch(activeConversationProvider.select((s) => s.partnerLastReadAt));
+                  final group = ref.watch(activeConversationProvider.select((s) => s.isGroup));
+                  if (messages.isEmpty && !typing) {
+                    return Center(child: Text(t('conversationChat.empty'), style: TextStyle(color: c.textMuted, fontSize: 13)));
+                  }
+                  return Stack(
+                    children: [
+                      ListView.builder(
+                        controller: _scroll,
+                        reverse: true,
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        itemCount: messages.length + (typing ? 1 : 0) + (_loadingOlder ? 1 : 0),
+                        itemBuilder: (context, i) {
+                          final typingPad = typing ? 1 : 0;
+                          if (i < typingPad) return const TypingBubble();
+                          final msgIndexFromEnd = i - typingPad;
+                          if (_loadingOlder && msgIndexFromEnd == messages.length) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Center(
+                                child: Text(t('conversationChat.loadingOlder'), style: TextStyle(fontSize: 12, color: c.textMuted)),
                               ),
                             );
-                          },
-                        ),
-                        if (_showJumpFab)
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 12,
-                            child: Center(
-                              child: Material(
-                                color: c.bgElevated,
-                                elevation: 3,
+                          }
+                          final msg = messages[messages.length - 1 - msgIndexFromEnd];
+                          final key = _keys.putIfAbsent(msgKey(msg), GlobalKey.new);
+                          return KeyedSubtree(
+                            key: key,
+                            child: MessageItem(
+                              msg: msg,
+                              mine: msg['senderId'] == _me,
+                              me: _me,
+                              isGroup: group,
+                              sender: _groupSenders[msg.str('senderId')],
+                              highlighted: _highlighted == msgKey(msg),
+                              read: _isRead(msg, lastRead, isGroup: group),
+                              onMenu: () => _openMenu(msg),
+                              onLongPress: () => _openReactionPicker(msg),
+                              onReaction: (e) => _pickReaction(msg, e),
+                              onRetry: () => _retry(msg),
+                              onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
+                              onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
+                            ),
+                          );
+                        },
+                      ),
+                      if (_showJumpFab)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 12,
+                          child: Center(
+                            child: Material(
+                              color: c.bgElevated,
+                              elevation: 3,
+                              borderRadius: BorderRadius.circular(20),
+                              child: InkWell(
+                                onTap: _jumpToLatest,
                                 borderRadius: BorderRadius.circular(20),
-                                child: InkWell(
-                                  onTap: _jumpToLatest,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(LucideIcons.chevronsDown, size: 16, color: c.primary),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          _unreadWhileAway > 0
-                                              ? '${t('conversationChat.newMessages')} ($_unreadWhileAway)'
-                                              : t('conversationChat.newMessages'),
-                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textPrimary),
-                                        ),
-                                      ],
-                                    ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(LucideIcons.chevronsDown, size: 16, color: c.primary),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _unreadWhileAway > 0
+                                            ? '${t('conversationChat.newMessages')} ($_unreadWhileAway)'
+                                            : t('conversationChat.newMessages'),
+                                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textPrimary),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
           _buildInput(context),

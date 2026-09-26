@@ -300,6 +300,16 @@ class _NotificationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Light mode keeps pastel soft fills; dark mode uses accent tints on card surfaces.
+    final softFill = isDark ? style.accent.withValues(alpha: 0.18) : style.soft;
+    final unreadBg = isDark
+        ? Color.alphaBlend(style.accent.withValues(alpha: 0.22), c.bgCard)
+        : Color.alphaBlend(style.soft.withValues(alpha: 0.55), c.bgCard);
+    final unreadBorder = style.accent.withValues(alpha: isDark ? 0.35 : 0.16);
+    final cardShadow = isDark
+        ? const [BoxShadow(color: Color(0x66000000), blurRadius: 14, offset: Offset(0, 4))]
+        : const [BoxShadow(color: Color(0x0F0F172A), blurRadius: 12, offset: Offset(0, 4))];
 
     Widget leading;
     if (style.systemLeading) {
@@ -309,7 +319,7 @@ class _NotificationCard extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(colors: [style.accent, style.accent.withValues(alpha: 0.75)]),
-          boxShadow: [BoxShadow(color: style.accent.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: style.accent.withValues(alpha: isDark ? 0.35 : 0.25), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         child: const Icon(LucideIcons.rocket, color: Colors.white, size: 24),
       );
@@ -328,7 +338,7 @@ class _NotificationCard extends StatelessWidget {
           ),
           child: Container(
             padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(shape: BoxShape.circle, color: c.bgCard),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: unread ? unreadBg : c.bgCard),
             child: avatar,
           ),
         );
@@ -346,7 +356,7 @@ class _NotificationCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: style.badgeBg,
                 shape: BoxShape.circle,
-                border: Border.all(color: c.bgCard, width: 2),
+                border: Border.all(color: unread ? unreadBg : c.bgCard, width: 2),
                 boxShadow: [BoxShadow(color: style.badgeBg.withValues(alpha: 0.35), blurRadius: 6)],
               ),
               child: Icon(style.badgeIcon, size: 11, color: Colors.white),
@@ -358,12 +368,10 @@ class _NotificationCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: unread ? Color.alphaBlend(style.soft.withValues(alpha: 0.55), c.bgCard) : c.bgCard,
+        color: unread ? unreadBg : c.bgCard,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: unread ? style.accent.withValues(alpha: 0.16) : c.border),
-        boxShadow: const [
-          BoxShadow(color: Color(0x0F0F172A), blurRadius: 12, offset: Offset(0, 4)),
-        ],
+        border: Border.all(color: unread ? unreadBorder : c.border),
+        boxShadow: cardShadow,
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
@@ -380,8 +388,8 @@ class _NotificationCard extends StatelessWidget {
                 Container(
                   width: 44,
                   height: 44,
-                  decoration: BoxDecoration(color: style.soft, shape: BoxShape.circle),
-                  child: Icon(style.typeIcon, size: 20, color: style.accent),
+                  decoration: BoxDecoration(color: softFill, shape: BoxShape.circle),
+                  child: Icon(style.typeIcon, size: 20, color: isDark ? style.accent.withValues(alpha: 0.95) : style.accent),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -397,7 +405,7 @@ class _NotificationCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: unread ? FontWeight.w800 : FontWeight.w700,
                                 color: c.textPrimary,
                                 height: 1.3,
                               ),
@@ -408,7 +416,13 @@ class _NotificationCard extends StatelessWidget {
                               width: 8,
                               height: 8,
                               margin: const EdgeInsetsDirectional.only(start: 8),
-                              decoration: BoxDecoration(color: style.accent, shape: BoxShape.circle),
+                              decoration: BoxDecoration(
+                                color: style.accent,
+                                shape: BoxShape.circle,
+                                boxShadow: isDark
+                                    ? [BoxShadow(color: style.accent.withValues(alpha: 0.55), blurRadius: 6)]
+                                    : null,
+                              ),
                             ),
                         ],
                       ),
@@ -418,7 +432,12 @@ class _NotificationCard extends StatelessWidget {
                           body,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: c.textSecondary, height: 1.45),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: unread && isDark ? c.textPrimary.withValues(alpha: 0.78) : c.textSecondary,
+                            height: 1.45,
+                            fontWeight: unread ? FontWeight.w500 : FontWeight.w400,
+                          ),
                         ),
                       ],
                       if (time.isNotEmpty) ...[

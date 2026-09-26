@@ -79,6 +79,16 @@ public class StoryAudienceService(AppDbContext db)
         return result;
     }
 
+    /// Mutual friends + self (minus blocks) — publishers the viewer may see in the story feed.
+    public async Task<HashSet<Guid>> GetFeedPublisherIdsAsync(Guid viewerId)
+    {
+        var blocked = await GetBlockedSetAsync(viewerId);
+        var mutual = await GetMutualFriendIdsAsync(viewerId);
+        mutual.Add(viewerId);
+        mutual.RemoveWhere(id => id != viewerId && blocked.Contains(id));
+        return mutual;
+    }
+
     public async Task<bool> AreMutualFriendsAsync(Guid a, Guid b)
     {
         var ab = await db.Contacts.AnyAsync(c => c.UserId == a && c.ContactUserId == b);

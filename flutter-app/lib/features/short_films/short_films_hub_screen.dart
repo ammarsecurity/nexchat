@@ -22,6 +22,7 @@ class ShortFilmsHubScreen extends ConsumerStatefulWidget {
 
 class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with SingleTickerProviderStateMixin {
   final _scroll = ScrollController();
+  final _search = TextEditingController();
   late final _spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 750));
 
   ShortFilmsController get _store => ref.read(shortFilmsProvider.notifier);
@@ -36,6 +37,7 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
   @override
   void dispose() {
     _scroll.dispose();
+    _search.dispose();
     _spin.dispose();
     super.dispose();
   }
@@ -51,7 +53,15 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
     if (_scroll.position.maxScrollExtent < 160) _onScroll();
   }
 
-  void _openFilm(ShortFilm f) => context.push('/short-films/watch?start=${f.id}');
+  void _openFilm(ShortFilm f) {
+    if (f.seriesId != null && f.seriesId!.isNotEmpty) {
+      context.push('/short-films/watch?start=${f.id}&series=${f.seriesId}');
+    } else {
+      context.push('/short-films/watch?start=${f.id}');
+    }
+  }
+
+  void _openSeries(FilmSeries s) => context.push('/short-films/series/${s.id}');
 
   @override
   Widget build(BuildContext context) {
@@ -68,12 +78,18 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
     } else {
       _spin.stop();
     }
-    final showFeatured = st.selectedSectionId == null && st.featured.isNotEmpty;
+    final featured = st.visibleFeatured;
+    final showFeatured = featured.isNotEmpty;
+    final series = st.visibleSeries;
     final grid = st.gridFilms;
-    final gridTitle = st.selectedSectionId == null
-        ? t('shortFilms.allFilms')
-        : st.sections.where((s) => s.id == st.selectedSectionId).firstOrNull?.name ?? t('shortFilms.allFilms');
+    final searching = st.isSearching;
+    final gridTitle = searching
+        ? t('common.search')
+        : st.selectedSectionId == null
+            ? t('shortFilms.allFilms')
+            : st.sections.where((s) => s.id == st.selectedSectionId).firstOrNull?.name ?? t('shortFilms.allFilms');
     final bottom = tabScrollPadding(context, extra: 16);
+    final emptyResults = st.loaded && !st.loading && featured.isEmpty && grid.isEmpty && series.isEmpty;
 
     Widget content;
     if (st.loading && !st.loaded) {
@@ -85,8 +101,11 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
           Text(t('common.loading'), style: TextStyle(color: c.textMuted)),
         ]),
       );
-    } else if (st.loaded && st.featured.isEmpty && st.list.isEmpty) {
-      content = EmptyState(icon: LucideIcons.film, text: t('shortFilms.empty'));
+    } else if (emptyResults) {
+      content = EmptyState(
+        icon: LucideIcons.film,
+        text: searching ? t('shortFilms.noSearchResults') : t('shortFilms.empty'),
+      );
     } else {
       final w = MediaQuery.sizeOf(context).width;
       final rowCardW = (w * 0.32).clamp(108.0, 130.0);
@@ -98,14 +117,28 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: st.featured.length,
+              itemCount: featured.length,
               separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) => SizedBox(width: rowCardW, child: FilmCard(film: st.featured[i], onTap: () => _openFilm(st.featured[i]))),
+              itemBuilder: (_, i) => SizedBox(width: rowCardW, child: FilmCard(film: featured[i], onTap: () => _openFilm(featured[i]))),
+            ),
+          ),
+        ],
+        if (series.isNotEmpty) ...[
+          if (showFeatured) const SizedBox(height: 20),
+          _SectionTitle(t('shortFilms.series')),
+          SizedBox(
+            height: rowCardW * 14 / 9 + 4,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: series.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, i) => SizedBox(width: rowCardW, child: SeriesCard(series: series[i], onTap: () => _openSeries(series[i]))),
             ),
           ),
         ],
         if (grid.isNotEmpty) ...[
-          if (showFeatured) const SizedBox(height: 20),
+          if (showFeatured || series.isNotEmpty) const SizedBox(height: 20),
           _SectionTitle(gridTitle),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -145,6 +178,24 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
         ),
       ],
       body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: SearchField(
+            controller: _search,
+            hint: t('shortFilms.searchPlaceholder'),
+            onChanged: _store.setSearch,
+            trailing: st.searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      _search.clear();
+                      _store.clearSearch();
+                    },
+                    icon: Icon(LucideIcons.x, size: 18, color: c.textMuted),
+                  ),
+          ),
+        ),
         if (st.sections.isNotEmpty)
           Container(
             padding: const EdgeInsets.only(top: 4, bottom: 10),
@@ -324,6 +375,75 @@ class FilmCard extends StatelessWidget {
             child: Padding(
               padding: narrow ? const EdgeInsets.fromLTRB(4, 16, 4, 4) : const EdgeInsets.fromLTRB(6, 20, 6, 6),
               child: Text(film.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white, fontSize: narrow ? 9 : 10, fontWeight: FontWeight.w600, height: 1.25)),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class SeriesCard extends StatelessWidget {
+  const SeriesCard({super.key, required this.series, required this.onTap});
+  final FilmSeries series;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final narrow = MediaQuery.sizeOf(context).width <= 360;
+    final fallback = Container(
+      color: c.bgCard,
+      alignment: Alignment.center,
+      child: Icon(LucideIcons.tv, size: 24, color: c.primary.withValues(alpha: 0.5)),
+    );
+    final cover = series.coverUrl;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: c.bgElevated,
+          borderRadius: BorderRadius.circular(narrow ? 8 : AppRadius.md),
+          boxShadow: [BoxShadow(color: c.shadow, blurRadius: 6)],
+        ),
+        child: Stack(fit: StackFit.expand, children: [
+          if (cover != null && cover.isNotEmpty)
+            CachedNetworkImage(imageUrl: Api.absoluteUrl(cover)!, fit: BoxFit.cover, memCacheWidth: 480, errorWidget: (_, _, _) => fallback)
+          else
+            fallback,
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Color(0xBF000000), Color(0x00000000)],
+                stops: [0, 0.55],
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            top: 6,
+            start: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: const Color(0x8C000000), borderRadius: BorderRadius.circular(5)),
+              child: Text(
+                t('shortFilms.episodesCount').replaceAll('{n}', '${series.episodesCount}'),
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Padding(
+              padding: narrow ? const EdgeInsets.fromLTRB(4, 16, 4, 4) : const EdgeInsets.fromLTRB(6, 20, 6, 6),
+              child: Text(series.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: Colors.white, fontSize: narrow ? 9 : 10, fontWeight: FontWeight.w600, height: 1.25)),

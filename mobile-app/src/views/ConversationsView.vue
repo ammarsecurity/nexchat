@@ -218,7 +218,14 @@ function normalizeListPreview(conv) {
 }
 
 function normalizeConversationsList(list) {
-  return (list ?? []).map(normalizeListPreview)
+  const raw = Array.isArray(list)
+    ? list
+    : Array.isArray(list?.items)
+      ? list.items
+      : Array.isArray(list?.Items)
+        ? list.Items
+        : []
+  return raw.map(normalizeListPreview)
 }
 
 function getListPreview(conv) {

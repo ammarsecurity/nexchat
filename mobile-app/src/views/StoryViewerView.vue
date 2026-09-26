@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { X, Eye, Send, Pause, Volume2, VolumeX, Share2 } from 'lucide-vue-next'
+import { X, Eye, Send, Pause, Volume2, VolumeX, Share2, Heart } from 'lucide-vue-next'
 import { shareStoryPublic } from '../utils/shareExternal'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
@@ -291,7 +291,19 @@ function normalizeSlide(s) {
     backgroundColor: s.backgroundColor ?? s.BackgroundColor,
     filterId: s.filterId ?? s.FilterId,
     videoDurationSeconds: s.videoDurationSeconds ?? s.VideoDurationSeconds,
-    viewedByMe: s.viewedByMe ?? s.ViewedByMe
+    viewedByMe: s.viewedByMe ?? s.ViewedByMe,
+    viewCount: s.viewCount ?? s.ViewCount ?? 0,
+    likeCount: s.likeCount ?? s.LikeCount ?? 0
+  }
+}
+
+function normalizeViewer(v) {
+  return {
+    userId: v.userId ?? v.UserId,
+    name: v.name ?? v.Name ?? '—',
+    avatar: v.avatar ?? v.Avatar,
+    viewedAt: v.viewedAt ?? v.ViewedAt,
+    liked: !!(v.liked ?? v.Liked)
   }
 }
 
@@ -472,7 +484,7 @@ async function openViewers() {
   showViewers.value = true
   try {
     const { data } = await api.get(`/stories/${slide.id}/viewers`)
-    viewers.value = data ?? []
+    viewers.value = (data ?? []).map(normalizeViewer)
   } catch {
     viewers.value = []
   }
@@ -622,11 +634,22 @@ onUnmounted(clearTimer)
       <div v-if="showViewers" class="viewers-overlay" @click="showViewers = false">
         <div class="viewers-sheet" @click.stop>
           <h3>{{ t('stories.viewersTitle') }}</h3>
+          <p
+            v-if="(current?.viewCount || 0) > 0 || (current?.likeCount || 0) > 0"
+            class="viewers-summary"
+          >
+            {{ t('stories.viewersSummary', { views: current?.viewCount || 0, likes: current?.likeCount || 0 }) }}
+          </p>
           <div v-if="!viewers.length" class="viewers-empty">{{ t('stories.noViewers') }}</div>
           <ul v-else class="viewers-list">
             <li v-for="v in viewers" :key="v.userId">
               <CachedAvatar v-if="v.avatar" :url="v.avatar" img-class="viewer-av" />
-              <span>{{ v.name }}</span>
+              <span v-else class="viewer-av viewer-av--fallback">{{ (v.name || '?').charAt(0) }}</span>
+              <div class="viewer-meta">
+                <span class="viewer-name">{{ v.name }}</span>
+                <span v-if="v.liked" class="viewer-liked">{{ t('stories.likedStory') }}</span>
+              </div>
+              <Heart v-if="v.liked" :size="16" class="viewer-heart" fill="currentColor" />
             </li>
           </ul>
           <button type="button" class="btn-close" @click="showViewers = false">{{ t('common.cancel') }}</button>
@@ -951,12 +974,26 @@ video.media-el.media-el--playing {
 }
 
 .viewers-sheet h3 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 16px;
+}
+
+.viewers-summary {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--text-muted, #888);
+}
+
+.viewers-empty {
+  padding: 20px 0;
+  text-align: center;
+  color: var(--text-muted, #888);
 }
 
 .viewers-list {
   list-style: none;
+  margin: 0;
+  padding: 0;
   max-height: 40vh;
   overflow-y: auto;
 }
@@ -974,6 +1011,38 @@ video.media-el.media-el--playing {
   height: 36px;
   border-radius: 50%;
   object-fit: cover;
+  flex-shrink: 0;
+}
+
+.viewer-av--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated, #2a2a2a);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.viewer-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viewer-name {
+  font-weight: 600;
+}
+
+.viewer-liked {
+  font-size: 12px;
+  color: #ff2d55;
+}
+
+.viewer-heart {
+  flex-shrink: 0;
+  color: #ff2d55;
 }
 
 .btn-close {

@@ -31,6 +31,7 @@ import '../features/profile/user_profile_screen.dart';
 import '../features/settings/blocked_screen.dart';
 import '../features/settings/legal_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/short_films/short_film_series_detail_screen.dart';
 import '../features/short_films/short_films_feed_screen.dart';
 import '../features/short_films/short_films_hub_screen.dart';
 import '../features/splash/splash_screen.dart';
@@ -207,7 +208,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           from: s.uri.queryParameters['from'],
         ),
       ),
-      page('/short-films/watch', (s) => ShortFilmsFeedScreen(startId: s.uri.queryParameters['start'])),
+      page('/short-films/watch', (s) => ShortFilmsFeedScreen(
+            startId: s.uri.queryParameters['start'],
+            seriesId: s.uri.queryParameters['series'],
+          )),
+      page('/short-films/series/:id', (s) => ShortFilmSeriesDetailScreen(seriesId: s.pathParameters['id']!)),
       page('/conversations/create-group', (_) => const CreateGroupScreen()),
       page('/conversation/:conversationId/group-info', (s) => GroupInfoScreen(conversationId: s.pathParameters['conversationId']!)),
       page('/conversations/:conversationId/options', (s) => ConversationOptionsScreen(conversationId: s.pathParameters['conversationId']!)),

@@ -11,6 +11,14 @@ class ConversationsListController extends Notifier<List<Json>> {
 
   void setList(List<Json> items) => state = List.of(items);
 
+  void appendList(List<Json> items) {
+    if (items.isEmpty) return;
+    final seen = {for (final c in state) c.str('id')};
+    final added = [for (final c in items) if (seen.add(c.str('id'))) c];
+    if (added.isEmpty) return;
+    state = [...state, ...added];
+  }
+
   bool updateConversation(String conversationId, Json updates, {bool incrementUnread = false}) {
     final list = List<Json>.of(state);
     final idx = list.indexWhere((c) => c.str('id') == conversationId);
@@ -55,6 +63,7 @@ class ConversationsListController extends Notifier<List<Json>> {
   }
 
   /// Soft refresh after network restore (keeps current list on failure).
+  /// Omits `page` so API returns the full list (legacy shape) and does not drop loaded pages.
   Future<void> refreshSilently() async {
     if (!NetworkStatus.online.value) return;
     try {

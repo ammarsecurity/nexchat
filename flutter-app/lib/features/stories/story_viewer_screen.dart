@@ -476,7 +476,11 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
     final future = Api.get('/stories/${slide.id}/viewers').then(asJsonList).catchError((_) => <Json>[]);
     await showAppSheet<void>(
       context,
-      builder: (ctx) => _ViewersSheet(viewers: future),
+      builder: (ctx) => _ViewersSheet(
+        viewers: future,
+        viewCount: slide.viewCount,
+        likeCount: slide.likeCount,
+      ),
     );
     if (!mounted) return;
     _holding = false;
@@ -759,8 +763,14 @@ class _IconBtn extends StatelessWidget {
 }
 
 class _ViewersSheet extends StatelessWidget {
-  const _ViewersSheet({required this.viewers});
+  const _ViewersSheet({
+    required this.viewers,
+    this.viewCount = 0,
+    this.likeCount = 0,
+  });
   final Future<List<Json>> viewers;
+  final int viewCount;
+  final int likeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -771,6 +781,16 @@ class _ViewersSheet extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(t('stories.viewersTitle'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
+          if (viewCount > 0 || likeCount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              t('stories.viewersSummary', {
+                'views': '$viewCount',
+                'likes': '$likeCount',
+              }),
+              style: TextStyle(fontSize: 13, color: c.textMuted),
+            ),
+          ],
           const SizedBox(height: 12),
           Flexible(
             child: FutureBuilder<List<Json>>(
@@ -790,14 +810,32 @@ class _ViewersSheet extends StatelessWidget {
                   shrinkWrap: true,
                   itemCount: list.length,
                   separatorBuilder: (_, _) => Divider(height: 1, color: c.border),
-                  itemBuilder: (_, i) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(children: [
-                      UserAvatar(url: list[i].s('avatar'), name: list[i].str('name'), size: 36),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(list[i].str('name'), style: TextStyle(color: c.textPrimary))),
-                    ]),
-                  ),
+                  itemBuilder: (_, i) {
+                    final v = list[i];
+                    final liked = v.b('liked');
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Row(children: [
+                        UserAvatar(url: v.s('avatar'), name: v.str('name'), size: 36),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(v.str('name'), style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600)),
+                              if (liked)
+                                Text(
+                                  t('stories.likedStory'),
+                                  style: TextStyle(fontSize: 12, color: c.danger.withValues(alpha: 0.9)),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (liked)
+                          Icon(LucideIcons.heart, size: 18, color: c.danger),
+                      ]),
+                    );
+                  },
                 );
               },
             ),
