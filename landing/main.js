@@ -145,6 +145,7 @@
 
       bindDownload(getEl('downloadBtn'), db);
       bindDownload(getEl('downloadBtnNav'), db);
+      bindDownload(getEl('downloadBtnClosing'), db);
     } catch (e) {
       console.warn('SQLite init failed:', e);
       updateUI(0, 0);
