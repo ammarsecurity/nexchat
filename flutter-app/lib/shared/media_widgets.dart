@@ -268,6 +268,7 @@ class ShortFilmCard extends StatelessWidget {
   final String title;
   final String? thumbnailUrl;
   final VoidCallback onOpen;
+  /// Kept for call-site compatibility; card uses its own surface colors.
   final bool mine;
 
   @override
@@ -315,15 +316,16 @@ class ShortFilmCard extends StatelessWidget {
           ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
-            color: mine ? Colors.white.withValues(alpha: 0.08) : c.bgCard,
+            // Own surface (not the bubble gradient) — always use theme text for contrast in light/dark.
+            color: c.bgCard,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(t('shortFilms.title').toUpperCase(),
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: mine ? const Color(0xFFC8C4FF) : c.primary)),
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primaryHover)),
               const SizedBox(height: 4),
               Text(title.isEmpty ? t('shortFilms.title') : title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.35, color: mine ? Colors.white : c.textPrimary)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.35, color: c.textPrimary)),
             ]),
           ),
         ]),

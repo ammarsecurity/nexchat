@@ -8,6 +8,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
 import '../../core/storage/prefs.dart';
 import '../../services/push_service.dart';
+import '../../services/tiktok_analytics_service.dart';
 import '../short_films/short_film_cache.dart';
 
 class AppUser {
@@ -113,15 +114,15 @@ class AuthController extends Notifier<AuthState> {
     };
     if (otpCode != null && otpCode.isNotEmpty) body['otpCode'] = otpCode;
     final data = await Api.post('/auth/register', body);
-    await _setAuth(data as Map<String, dynamic>);
+    await _setAuth(data as Map<String, dynamic>, isNewRegistration: true);
   }
 
   Future<void> login(String name, String password) async {
     final data = await Api.post('/auth/login', {'name': name, 'password': password});
-    await _setAuth(data as Map<String, dynamic>);
+    await _setAuth(data as Map<String, dynamic>, isNewRegistration: false);
   }
 
-  Future<void> _setAuth(Map<String, dynamic> data) async {
+  Future<void> _setAuth(Map<String, dynamic> data, {required bool isNewRegistration}) async {
     final user = AppUser(
       id: '${data['userId']}',
       name: '${data['name'] ?? ''}',
@@ -149,6 +150,14 @@ class AuthController extends Notifier<AuthState> {
     PushService.instance.init(user.id).then((granted) {
       if (!granted) PushService.promptNotifications.value = true;
     });
+    final tiktok = TikTokAnalyticsService.instance;
+    unawaited(tiktok.identify(userId: user.id, userName: user.name).then((_) async {
+      if (isNewRegistration) {
+        await tiktok.logCompleteRegistration();
+      } else {
+        await tiktok.logLogin();
+      }
+    }));
   }
 
   Future<void> setAvatar(String? value) async {
@@ -166,6 +175,7 @@ class AuthController extends Notifier<AuthState> {
 
   Future<void> logout() async {
     await PushService.instance.clear();
+    unawaited(TikTokAnalyticsService.instance.logout());
     await Hubs.stopAll();
     final p = Prefs.instance;
     await p.setToken(null);

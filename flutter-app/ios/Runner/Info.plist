@@ -18,6 +18,8 @@
 	<string>لاختيار الصور أو إرسالها في المحادثات</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>لحفظ الصور والفيديو من المحادثات</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>نستخدم معرّف الإعلان لقياس فعالية الحملات وتحسين تجربة الإعلانات بدون بيع بياناتك.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

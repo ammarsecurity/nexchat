@@ -372,7 +372,7 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
   Future<void> setSection(String? sectionId) async {
     if (state.selectedSectionId == sectionId) return;
     state = state.copyWith(selectedSectionId: () => sectionId);
-    await fetchPage(reset: true);
+    await Future.wait([fetchPage(reset: true), fetchSeriesList()]);
   }
 
   void setSearch(String query) {
@@ -381,7 +381,7 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
     state = state.copyWith(searchQuery: next);
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 350), () {
-      fetchPage(reset: true);
+      Future.wait([fetchPage(reset: true), fetchSeriesList()]);
     });
   }
 
@@ -389,7 +389,7 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
     _searchDebounce?.cancel();
     if (state.searchQuery.isEmpty) return;
     state = state.copyWith(searchQuery: '');
-    await fetchPage(reset: true);
+    await Future.wait([fetchPage(reset: true), fetchSeriesList()]);
   }
 
   Future<void> loadMore() => fetchPage();

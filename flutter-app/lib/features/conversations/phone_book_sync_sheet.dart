@@ -229,37 +229,39 @@ class _PhoneBookSyncSheetState extends ConsumerState<PhoneBookSyncSheet> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-            decoration: BoxDecoration(
-              color: c.primarySoft,
+          child: Material(
+            color: c.bgCard,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(color: c.primary.withValues(alpha: 0.16)),
+              side: BorderSide(color: c.border),
             ),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(color: c.primary.withValues(alpha: 0.14), shape: BoxShape.circle),
-                child: Icon(LucideIcons.contact, size: 20, color: c.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    t('contacts.phoneBookTitle'),
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c.textPrimary),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _loading
-                        ? t('contacts.phoneBookScanning')
-                        : t('contacts.phoneBookSubtitle', {'count': '$canAdd'}),
-                    style: TextStyle(fontSize: 13, height: 1.45, color: c.textSecondary, fontWeight: FontWeight.w500),
-                  ),
-                ]),
-              ),
-            ]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(color: c.primarySoft, borderRadius: BorderRadius.circular(12)),
+                  child: Icon(LucideIcons.contact, size: 20, color: c.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                      t('contacts.phoneBookTitle'),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.textPrimary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _loading
+                          ? t('contacts.phoneBookScanning')
+                          : t('contacts.phoneBookSubtitle', {'count': '$canAdd'}),
+                      style: TextStyle(fontSize: 12, height: 1.4, color: c.textSecondary),
+                    ),
+                  ]),
+                ),
+              ]),
+            ),
           ),
         ),
         if (_loading)
@@ -282,16 +284,16 @@ class _PhoneBookSyncSheetState extends ConsumerState<PhoneBookSyncSheet> {
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(color: c.primarySoft, shape: BoxShape.circle),
-                  child: Icon(LucideIcons.contact, size: 32, color: c.primary),
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(color: c.primarySoft, borderRadius: BorderRadius.circular(AppRadius.md)),
+                  child: Icon(LucideIcons.contact, size: 28, color: c.primary),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   _error,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 15, height: 1.5, color: c.textSecondary, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 14, height: 1.5, color: c.textSecondary, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 20),
                 if (_deniedForever)
@@ -307,10 +309,9 @@ class _PhoneBookSyncSheetState extends ConsumerState<PhoneBookSyncSheet> {
           )
         else
           Expanded(
-            child: ListView.separated(
+            child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               itemCount: _matches.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
                 final m = _matches[i];
                 final id = m.str('userId');
@@ -374,121 +375,133 @@ class _ContactRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final subtitle = [
+      if (deviceName != null && deviceName!.isNotEmpty) deviceName!,
+      if (phoneLabel.isNotEmpty) phoneLabel,
+    ].join(' · ');
 
-    return Material(
-      color: c.bgElevated,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        side: BorderSide(color: c.border.withValues(alpha: 0.7)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: Row(children: [
-          UserAvatar(url: avatarUrl, name: name, size: 48),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: c.textPrimary),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: c.bgCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          side: BorderSide(color: c.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: busy || pending ? null : (isContact ? onMessage : onAdd),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(children: [
+              UserAvatar(url: avatarUrl, name: name, size: 52),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, color: c.textSecondary),
+                    ),
+                  ],
+                ]),
               ),
-              if (deviceName != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  deviceName!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.5, color: c.textSecondary, fontWeight: FontWeight.w500),
-                ),
-              ],
-              if (phoneLabel.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  phoneLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textDirection: TextDirection.ltr,
-                  style: TextStyle(fontSize: 12.5, color: c.textMuted, fontWeight: FontWeight.w500),
-                ),
-              ],
+              const SizedBox(width: 8),
+              if (busy)
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.2, color: c.primary),
+                )
+              else if (pending)
+                _StatusChip(label: t('contacts.requestPending'))
+              else if (isContact)
+                _ActionChip(label: t('contacts.message'), filled: true, icon: LucideIcons.messageCircle, onTap: onMessage)
+              else
+                _ActionChip(label: t('contacts.addFriend'), filled: false, icon: LucideIcons.userPlus, onTap: onAdd),
             ]),
           ),
-          const SizedBox(width: 10),
-          if (busy)
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.2, color: c.primary),
-            )
-          else if (pending)
-            _StatusChip(
-              label: t('contacts.requestPending'),
-              fg: const Color(0xFFD97706),
-              bg: const Color(0x1AF59E0B),
-            )
-          else if (isContact)
-            _ActionChip(label: t('contacts.message'), filled: true, onTap: onMessage)
-          else
-            _ActionChip(label: t('contacts.addFriend'), filled: false, onTap: onAdd),
-        ]),
+        ),
       ),
     );
   }
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, required this.fg, required this.bg});
+  const _StatusChip({required this.label});
   final String label;
-  final Color fg;
-  final Color bg;
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 110),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      constraints: const BoxConstraints(maxWidth: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.bgElevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border),
+      ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: fg, height: 1.1, decoration: TextDecoration.none),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.textMuted, height: 1.1),
       ),
     );
   }
 }
 
 class _ActionChip extends StatelessWidget {
-  const _ActionChip({required this.label, required this.filled, required this.onTap});
+  const _ActionChip({required this.label, required this.filled, required this.onTap, this.icon});
   final String label;
   final bool filled;
   final VoidCallback onTap;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final radius = BorderRadius.circular(14);
     return Material(
-      color: filled ? c.primary : c.primary.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(999),
+      color: filled ? c.primary : c.primarySoft,
+      borderRadius: radius,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: filled ? Colors.white : c.primary,
-              height: 1.1,
-              decoration: TextDecoration.none,
+        borderRadius: radius,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: filled
+              ? null
+              : BoxDecoration(
+                  borderRadius: radius,
+                  border: Border.all(color: c.primary.withValues(alpha: 0.22)),
+                ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: filled ? Colors.white : c.primary),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: filled ? Colors.white : c.primary,
+                height: 1.1,
+              ),
             ),
-          ),
+          ]),
         ),
       ),
     );

@@ -153,25 +153,56 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     updateById(messageId, {'reactions': next});
   }
 
-  /// Replace a pending optimistic message with the server echo.
+  /// Replace an optimistic outgoing message with the server echo.
+  /// Matches `pending` or hub-acked `sent` rows that still only have a tempId.
   bool updatePendingMessage(Json server) {
     final type = server.s('type') ?? 'text';
-    final sender = server.str('senderId');
+    final sender = server.str('senderId').toLowerCase();
     final reply = server.s('replyToMessageId') ?? '';
     final media = type == 'audio' || type == 'image' || type == 'video' || type == 'album';
-    final idx = state.messages.indexWhere((m) {
-      if (m['status'] != 'pending' || m.str('senderId') != sender || (m.s('type') ?? 'text') != type) return false;
+    bool isOptimistic(Json m) {
+      if (m['tempId'] == null) return false;
+      final status = m.s('status');
+      if (status != 'pending' && status != 'sent') return false;
+      final id = m.s('id');
+      return id == null || id.isEmpty;
+    }
+
+    // Prefer the newest matching optimistic row so rapid sends don't cross-merge.
+    var idx = -1;
+    for (var i = state.messages.length - 1; i >= 0; i--) {
+      final m = state.messages[i];
+      if (!isOptimistic(m)) continue;
+      if (m.str('senderId').toLowerCase() != sender) continue;
+      if ((m.s('type') ?? 'text') != type) continue;
       if (media) {
-        if (m.b('isViewOnce') != server.b('isViewOnce')) return false;
-        // Prefer exact content match so two pending media of the same type don't cross-merge.
+        if (m.b('isViewOnce') != server.b('isViewOnce')) continue;
         final local = m.s('content') ?? '';
         final remote = server.s('content') ?? '';
-        if (local.isNotEmpty && remote.isNotEmpty) return local == remote;
-        return (m.s('replyToMessageId') ?? '') == reply;
+        if (local.isNotEmpty && remote.isNotEmpty) {
+          if (local != remote) continue;
+        } else if ((m.s('replyToMessageId') ?? '') != reply) {
+          continue;
+        }
+      } else {
+        final local = m.s('content') ?? '';
+        final remote = server.s('content') ?? '';
+        if (local == remote) {
+          // ok
+        } else if ((m.s('replyToMessageId') ?? '') == reply) {
+          // Profanity mask may alter content — only merge when unique among peers.
+          final peers = state.messages.where((x) =>
+              isOptimistic(x) &&
+              x.str('senderId').toLowerCase() == sender &&
+              (x.s('type') ?? 'text') == type);
+          if (peers.length > 1) continue;
+        } else {
+          continue;
+        }
       }
-      if (m.s('content') == server.s('content')) return true;
-      return (m.s('replyToMessageId') ?? '') == reply;
-    });
+      idx = i;
+      break;
+    }
     if (idx < 0) return false;
     final list = List<Json>.of(state.messages);
     list[idx] = {...server, 'status': 'sent', if (list[idx]['tempId'] != null) 'tempId': list[idx]['tempId']};

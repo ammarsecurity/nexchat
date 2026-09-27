@@ -135,15 +135,5 @@ function onOpen() {
   overflow: hidden;
 }
 
-.message-wrap.mine .short-film-card__body {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.message-wrap.mine .short-film-card__title {
-  color: #fff;
-}
-
-.message-wrap.mine .short-film-card__tag {
-  color: #c8c4ff;
-}
+/* Card keeps its own surface — theme text colors stay readable in light mode. */
 </style>

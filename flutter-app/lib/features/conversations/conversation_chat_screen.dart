@@ -414,7 +414,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (raw is! Map) return;
     final m = normalizeMsg(raw);
     if (messageIsExpired(m)) return;
-    final fromMe = m['senderId'] == _me;
+    final fromMe = m.str('senderId').toLowerCase() == _me.toLowerCase();
     if (fromMe) {
       if (!_store.updatePendingMessage(m)) _store.addMessage({...m, 'status': 'sent'});
     } else {
@@ -600,11 +600,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         final tempId = '${msg['tempId']}';
         _store.updateByTempId(tempId, {'status': 'pending'});
         try {
-          await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 15));
-          await Hubs.conversation.invoke('SendMessage', [_cid, msg.str('content'), 'text', msg.s('replyToMessageId') ?? '']);
-          _armPendingTimeout(tempId);
+          await _hubSendMessage(msg.str('content'), 'text', msg.s('replyToMessageId') ?? '');
+          _markSendResult(tempId, ok: true);
         } catch (_) {
-          _store.updateByTempId(tempId, {'status': 'failed'});
+          _markSendResult(tempId, ok: false);
         }
       }
       _persistOutbox();
@@ -718,6 +717,24 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     return false;
   }
 
+  /// Mark failed only when the server never echoed an id (invoke error must not clobber a saved msg).
+  void _markSendResult(String tempId, {required bool ok}) {
+    final m = ref.read(activeConversationProvider).messages.where((x) => x['tempId'] == tempId).firstOrNull;
+    if (m == null) return;
+    final hasServerId = (m.s('id') ?? '').isNotEmpty;
+    if (ok || hasServerId) {
+      if (m['status'] != 'sent') _store.updateByTempId(tempId, {'status': 'sent'});
+    } else {
+      _store.updateByTempId(tempId, {'status': 'failed'});
+    }
+    _persistOutbox();
+  }
+
+  Future<void> _hubSendMessage(String content, String type, String replyId, {bool viewOnce = false}) async {
+    await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 25));
+    await Hubs.conversation.invokeReliable('SendMessage', [_cid, content, type, replyId, viewOnce]);
+  }
+
   Future<void> _send() async {
     final text = _text.text.trim();
     if (text.isEmpty) return;
@@ -725,12 +742,13 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final reply = _replyingTo;
     _text.clear();
     setState(() => _replyingTo = null);
+    // Stop typing through the same invoke queue (never fire concurrent with SendMessage).
     if (_typingTimer != null) {
       _typingTimer!.cancel();
       _typingTimer = null;
-      if (online) Hubs.conversation.invoke('StopTyping', [_cid]).catchError((_) => null);
     }
     final tempId = 'temp-${DateTime.now().microsecondsSinceEpoch}';
+    final replyId = '${reply?['id'] ?? ''}';
     _store.addMessage({
       'tempId': tempId,
       'senderId': _me,
@@ -750,19 +768,16 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       return;
     }
     try {
-      await Hubs.conversation.invoke('SendMessage', [_cid, text, 'text', reply?['id'] ?? '']);
-      _armPendingTimeout(tempId);
+      if (online) {
+        try {
+          await Hubs.conversation.invoke('StopTyping', [_cid]);
+        } catch (_) {}
+      }
+      await _hubSendMessage(text, 'text', replyId);
+      _markSendResult(tempId, ok: true);
     } catch (_) {
-      _store.updateByTempId(tempId, {'status': 'failed'});
-      _persistOutbox();
+      _markSendResult(tempId, ok: false);
     }
-  }
-
-  void _armPendingTimeout(String tempId) {
-    Timer(const Duration(seconds: 12), () {
-      final m = ref.read(activeConversationProvider).messages.where((x) => x['tempId'] == tempId).firstOrNull;
-      if (m != null && m['status'] == 'pending') _store.updateByTempId(tempId, {'status': 'failed'});
-    });
   }
 
   Future<void> _sendUploaded(String content, String type, {bool viewOnce = false}) async {
@@ -786,11 +801,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     });
     _scrollToBottom(force: true);
     try {
-      await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 25));
-      await Hubs.conversation.invoke('SendMessage', [_cid, content, type, reply?['id'] ?? '', viewOnce]);
-      _armPendingTimeout(tempId);
+      await _hubSendMessage(content, type, '${reply?['id'] ?? ''}', viewOnce: viewOnce);
+      _markSendResult(tempId, ok: true);
     } catch (_) {
-      _store.updateByTempId(tempId, {'status': 'failed'});
+      _markSendResult(tempId, ok: false);
     }
   }
 
@@ -944,13 +958,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       var sent = false;
       for (var attempt = 0; attempt < 2 && !sent; attempt++) {
         try {
-          await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 25));
           final pending = ref.read(activeConversationProvider).messages.where((x) => x['tempId'] == tempId).firstOrNull;
-          await Hubs.conversation.invoke('SendMessage', [_cid, url, 'audio', pending?['replyToMessageId'] ?? '']);
+          await _hubSendMessage(url, 'audio', '${pending?['replyToMessageId'] ?? ''}');
           sent = true;
-          _armPendingTimeout(tempId);
+          _markSendResult(tempId, ok: true);
         } catch (_) {
-          if (attempt == 1) _store.updateByTempId(tempId, {'status': 'failed'});
+          if (attempt == 1) _markSendResult(tempId, ok: false);
         }
       }
     } catch (e) {
@@ -973,12 +986,22 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       await _uploadVoice(newTemp, localAudio);
       return;
     }
+    // If the first attempt already got a server id, don't send a duplicate.
+    final existing = ref.read(activeConversationProvider).messages.where((x) => x['tempId'] == newTemp).firstOrNull;
+    if ((existing?.s('id') ?? '').isNotEmpty) {
+      _markSendResult(newTemp, ok: true);
+      return;
+    }
     try {
-      await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 20));
-      await Hubs.conversation.invoke('SendMessage', [_cid, msg.str('content'), msg.s('type') ?? 'text', msg.s('replyToMessageId') ?? '', msg.b('isViewOnce')]);
-      _armPendingTimeout(newTemp);
+      await _hubSendMessage(
+        msg.str('content'),
+        msg.s('type') ?? 'text',
+        msg.s('replyToMessageId') ?? '',
+        viewOnce: msg.b('isViewOnce'),
+      );
+      _markSendResult(newTemp, ok: true);
     } catch (_) {
-      _store.updateByTempId(newTemp, {'status': 'failed'});
+      _markSendResult(newTemp, ok: false);
     }
   }
 

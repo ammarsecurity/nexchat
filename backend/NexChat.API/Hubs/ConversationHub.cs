@@ -364,8 +364,13 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 ViewOnceOpened = false
             };
 
+            // Post-save side effects must not fail the hub invoke — message is already persisted.
             try
             {
+                // Echo to the invoking connection first so the sender confirms even when
+                // Clients.User mapping is briefly unavailable. Client dedupes by message id.
+                await Clients.Caller.SendAsync("ReceiveMessage", BuildPayload(true));
+
                 if (conv.Type == ConversationType.Group)
                 {
                     var memberIds = await db.ConversationMembers
@@ -383,53 +388,52 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     await Clients.User(userId.ToString()).SendAsync("ReceiveMessage", BuildPayload(true));
                     await Clients.User(recipientId.Value.ToString()).SendAsync("ReceiveMessage", BuildPayload(!viewOnce));
                 }
+                logger.LogInformation("SendMessage ReceiveMessage sent");
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "SendMessage ReceiveMessage failed");
-                throw;
+                logger.LogError(ex, "SendMessage ReceiveMessage failed (message saved)");
             }
-            logger.LogInformation("SendMessage ReceiveMessage sent");
 
-            var sender = senderUser ?? await db.Users.FindAsync(userId);
-            var preview = viewOnce
-                ? ConversationPreviewHelper.BuildViewOncePreview(type)
-                : type switch
-                {
-                    "text" => plainBody.Length > 80 ? plainBody[..80] + "…" : plainBody,
-                    "audio" => "رسالة صوتية",
-                    "image" => "صورة",
-                    "video" => "فيديو",
-                    "album" => ConversationPreviewHelper.BuildAlbumPreview(plainBody),
-                    "short_film" => ConversationPreviewHelper.BuildShortFilmPreview(plainBody),
-                    "story_share" => ConversationPreviewHelper.BuildStorySharePreview(plainBody),
-                    _ => plainBody
-                };
-            if (preview.Length > 80) preview = preview[..80] + "…";
-            if (recipientId.HasValue && !await IsHiddenForUserAsync(cid, recipientId.Value))
-                await notificationOutbox.EnqueueAsync(
-                    recipientId.Value,
-                    "conversation_message",
-                    sender?.Name ?? "شخص",
-                    preview,
-                    new Dictionary<string, string>
-                    {
-                        ["conversationId"] = cid.ToString(),
-                        ["userId"] = userId.ToString(),
-                        ["senderName"] = sender?.Name ?? "",
-                        ["senderAvatar"] = sender?.Avatar ?? ""
-                    });
-
-            var listUpdate = new
-            {
-                ConversationId = cid,
-                LastMessagePreview = preview,
-                LastMessageType = type,
-                LastMessageAt = msg.SentAt,
-                SenderId = userId
-            };
             try
             {
+                var sender = senderUser ?? await db.Users.FindAsync(userId);
+                var preview = viewOnce
+                    ? ConversationPreviewHelper.BuildViewOncePreview(type)
+                    : type switch
+                    {
+                        "text" => plainBody.Length > 80 ? plainBody[..80] + "…" : plainBody,
+                        "audio" => "رسالة صوتية",
+                        "image" => "صورة",
+                        "video" => "فيديو",
+                        "album" => ConversationPreviewHelper.BuildAlbumPreview(plainBody),
+                        "short_film" => ConversationPreviewHelper.BuildShortFilmPreview(plainBody),
+                        "story_share" => ConversationPreviewHelper.BuildStorySharePreview(plainBody),
+                        _ => plainBody
+                    };
+                if (preview.Length > 80) preview = preview[..80] + "…";
+                if (recipientId.HasValue && !await IsHiddenForUserAsync(cid, recipientId.Value))
+                    await notificationOutbox.EnqueueAsync(
+                        recipientId.Value,
+                        "conversation_message",
+                        sender?.Name ?? "شخص",
+                        preview,
+                        new Dictionary<string, string>
+                        {
+                            ["conversationId"] = cid.ToString(),
+                            ["userId"] = userId.ToString(),
+                            ["senderName"] = sender?.Name ?? "",
+                            ["senderAvatar"] = sender?.Avatar ?? ""
+                        });
+
+                var listUpdate = new
+                {
+                    ConversationId = cid,
+                    LastMessagePreview = preview,
+                    LastMessageType = type,
+                    LastMessageAt = msg.SentAt,
+                    SenderId = userId
+                };
                 if (conv.Type == ConversationType.Group)
                     await Clients.Group(cid.ToString()).SendAsync("ConversationListUpdated", listUpdate);
                 else
@@ -441,8 +445,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "SendMessage Clients.User failed");
-                throw;
+                logger.LogError(ex, "SendMessage post-save notify/list update failed (message saved)");
             }
         }
         catch (Exception ex)

@@ -6,6 +6,7 @@ import 'app/app.dart';
 import 'core/i18n/i18n.dart';
 import 'core/storage/prefs.dart';
 import 'services/push_service.dart';
+import 'services/tiktok_analytics_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,5 +15,6 @@ Future<void> main() async {
   await Prefs.init();
   await I18n.load();
   await PushService.instance.bootstrap();
+  await TikTokAnalyticsService.instance.bootstrap();
   runApp(const ProviderScope(child: NexChatApp()));
 }

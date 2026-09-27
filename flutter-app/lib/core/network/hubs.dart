@@ -180,10 +180,33 @@ class Hub {
     return () => list.remove(handler);
   }
 
+  /// Serialize invokes — concurrent SignalR invokes on the same connection often fail on mobile.
+  Future<void> _invokeChain = Future.value();
+
   /// SignalR args can't be null in this client; pass '' for optional strings (the server treats it as absent).
-  Future<Object?> invoke(String method, [List<Object> args = const []]) async {
-    await ensureConnected();
-    return _conn!.invoke(method, args: args);
+  Future<Object?> invoke(String method, [List<Object> args = const []]) {
+    final done = Completer<Object?>();
+    _invokeChain = _invokeChain.catchError((_) {}).then((_) async {
+      try {
+        await ensureConnected();
+        final result = await _conn!.invoke(method, args: args);
+        done.complete(result);
+      } catch (e, st) {
+        done.completeError(e, st);
+      }
+    });
+    return done.future;
+  }
+
+  /// Invoke with one reconnect+retry — used for critical sends.
+  Future<Object?> invokeReliable(String method, [List<Object> args = const []]) async {
+    try {
+      return await invoke(method, args);
+    } catch (_) {
+      await forceReconnect();
+      await ensureConnected(timeout: const Duration(seconds: 20));
+      return await invoke(method, args);
+    }
   }
 }
 

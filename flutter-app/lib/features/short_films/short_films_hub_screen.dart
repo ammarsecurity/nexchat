@@ -214,7 +214,7 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
                 children: [
-                  _SectionRing(
+                  ShortFilmSectionRing(
                     label: t('shortFilms.allSections'),
                     active: st.selectedSectionId == null,
                     onTap: () => _store.setSection(null),
@@ -222,12 +222,18 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
                     child: Icon(LucideIcons.layoutGrid, size: 20, color: st.selectedSectionId == null ? c.primary : c.textSecondary),
                   ),
                   for (final s in st.sections)
-                    _SectionRing(
+                    ShortFilmSectionRing(
                       label: s.name,
                       active: st.selectedSectionId == s.id,
                       onTap: () => _store.setSection(s.id),
                       child: s.imageUrl != null
-                          ? CachedNetworkImage(imageUrl: Api.absoluteUrl(s.imageUrl)!, fit: BoxFit.cover, width: 48, height: 48)
+                          ? CachedNetworkImage(
+                              imageUrl: Api.absoluteUrl(s.imageUrl)!,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              memCacheWidth: 144,
+                            )
                           : Text(s.name.trim().isEmpty ? '?' : s.name.trim().characters.first.toUpperCase(),
                               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: c.primary)),
                     ),
@@ -299,8 +305,9 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _SectionRing extends StatelessWidget {
-  const _SectionRing({required this.label, required this.active, required this.onTap, required this.child, this.bg});
+/// Horizontal section filter chip (hub + catalog).
+class ShortFilmSectionRing extends StatelessWidget {
+  const ShortFilmSectionRing({super.key, required this.label, required this.active, required this.onTap, required this.child, this.bg});
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -331,10 +338,18 @@ class _SectionRing extends StatelessWidget {
               child: Container(
                 width: 48,
                 height: 48,
-                clipBehavior: Clip.antiAlias,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: bg ?? c.bgElevated, border: Border.all(color: c.bgPrimary, width: 2)),
-                child: child,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: bg ?? c.bgElevated,
+                  border: Border.all(color: c.bgPrimary, width: 2),
+                ),
+                child: ClipOval(
+                  child: SizedBox.expand(
+                    child: child is Icon || child is Text
+                        ? Center(child: child)
+                        : child,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 4),

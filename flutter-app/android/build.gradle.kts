@@ -2,6 +2,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
@@ -16,6 +17,14 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
+    // tiktok_events_sdk skips kotlin-android on AGP 9+, so its .kt classes never compile.
+    pluginManager.withPlugin("com.android.library") {
+        if (name == "tiktok_events_sdk" &&
+            !pluginManager.hasPlugin("org.jetbrains.kotlin.android") &&
+            !pluginManager.hasPlugin("kotlin-android")) {
+            pluginManager.apply("org.jetbrains.kotlin.android")
+        }
+    }
     afterEvaluate {
         extensions.findByName("android")?.let { ext ->
             val methods = ext.javaClass.methods
