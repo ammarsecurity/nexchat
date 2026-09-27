@@ -40,29 +40,54 @@ public static class ConversationPreviewHelper
 
     public static string BuildListPreview(ConversationMessage m, Func<string, string> decrypt)
     {
+        if (m.IsViewOnce && m.Type == "image") return "صورة · مشاهدة مرة واحدة";
+        if (m.IsViewOnce && m.Type == "video") return "فيديو · مشاهدة مرة واحدة";
         if (m.Type == "image") return "صورة";
         if (m.Type == "audio") return "رسالة صوتية";
         if (m.Type == "video") return "فيديو";
         if (m.Type == "album") return BuildAlbumPreview(decrypt(m.Content ?? ""));
         if (m.Type == "short_film") return BuildShortFilmPreview(decrypt(m.Content ?? ""));
+        if (m.Type == "story_share") return BuildStorySharePreview(decrypt(m.Content ?? ""));
         if (m.Type == "story_reply") return BuildStoryReplyPreview(decrypt(m.Content ?? ""));
         if (m.Type == "call") return BuildCallPreview(decrypt(m.Content ?? ""));
         var c = decrypt(m.Content ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
     }
 
-    public static string BuildListPreview(string? type, string? encryptedContent, Func<string, string> decrypt)
+    public static string BuildViewOncePreview(string type) =>
+        type == "video" ? "فيديو · مشاهدة مرة واحدة" : "صورة · مشاهدة مرة واحدة";
+
+    public static string BuildListPreview(string? type, string? encryptedContent, Func<string, string> decrypt, bool isViewOnce = false)
     {
+        if (isViewOnce && (type == "image" || type == "video"))
+            return BuildViewOncePreview(type ?? "image");
         if (type == "image") return "صورة";
         if (type == "audio") return "رسالة صوتية";
         if (type == "video") return "فيديو";
         if (type == "album") return BuildAlbumPreview(decrypt(encryptedContent ?? ""));
         if (type == "short_film")
             return BuildShortFilmPreview(decrypt(encryptedContent ?? ""));
+        if (type == "story_share") return BuildStorySharePreview(decrypt(encryptedContent ?? ""));
         if (type == "story_reply") return BuildStoryReplyPreview(decrypt(encryptedContent ?? ""));
         if (type == "call") return BuildCallPreview(decrypt(encryptedContent ?? ""));
         var c = decrypt(encryptedContent ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
+    }
+
+    public static string BuildStorySharePreview(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var name = doc.RootElement.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var preview = $"◌ ستوري {name.Trim()}";
+                return preview.Length > 50 ? preview[..50] + "…" : preview;
+            }
+        }
+        catch { /* invalid payload */ }
+        return "◌ ستوري";
     }
 
     public static string BuildStoryReplyPreview(string json)

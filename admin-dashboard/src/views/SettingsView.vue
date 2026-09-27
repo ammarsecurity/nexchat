@@ -7,6 +7,10 @@ const supportAvatar = ref(null)
 const avatarUploading = ref(false)
 const avatarFileInput = ref(null)
 
+const officialAvatar = ref(null)
+const officialAvatarUploading = ref(false)
+const officialAvatarFileInput = ref(null)
+
 const evoLoading = ref(false)
 const evoSaving = ref(false)
 const evoTesting = ref(false)
@@ -39,8 +43,21 @@ async function fetchSupportAvatar() {
   }
 }
 
+async function fetchOfficialAvatar() {
+  try {
+    const res = await api.get('/admin/official-story/avatar')
+    officialAvatar.value = res.data.avatar ?? null
+  } catch {
+    officialAvatar.value = null
+  }
+}
+
 function triggerAvatarUpload() {
   avatarFileInput.value?.click()
+}
+
+function triggerOfficialAvatarUpload() {
+  officialAvatarFileInput.value?.click()
 }
 
 async function onAvatarFileChange(e) {
@@ -55,10 +72,32 @@ async function onAvatarFileChange(e) {
     })
     await api.put('/admin/support/avatar', { avatar: res.data.url })
     supportAvatar.value = res.data.url
+    notify.success('تم تحديث صورة الدعم')
   } catch (err) {
     notify.error(err.response?.data?.message || 'فشل رفع الصورة')
   } finally {
     avatarUploading.value = false
+    e.target.value = ''
+  }
+}
+
+async function onOfficialAvatarFileChange(e) {
+  const file = e.target?.files?.[0]
+  if (!file) return
+  officialAvatarUploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await api.post('/media/upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    await api.put('/admin/official-story/avatar', { avatar: res.data.url })
+    officialAvatar.value = res.data.url
+    notify.success('تم تحديث صورة الحساب الرسمي')
+  } catch (err) {
+    notify.error(err.response?.data?.message || 'فشل رفع الصورة')
+  } finally {
+    officialAvatarUploading.value = false
     e.target.value = ''
   }
 }
@@ -130,6 +169,7 @@ async function testEvolution() {
 
 onMounted(() => {
   fetchSupportAvatar()
+  fetchOfficialAvatar()
   fetchEvolution()
 })
 </script>
@@ -320,6 +360,46 @@ onMounted(() => {
             >
               رفع صورة
             </v-btn>
+            <p class="avatar-hint text-medium-emphasis text-caption mt-3 mb-0">
+              تظهر في محادثات الدعم الفني داخل التطبيق.
+            </p>
+          </div>
+        </div>
+      </v-card-text>
+    </v-card>
+
+    <v-card rounded="xl" elevation="0" class="settings-card mt-4">
+      <v-card-title class="section-title">
+        <v-icon start>mdi-shield-check</v-icon>
+        صورة الحساب الرسمي (NexChat)
+      </v-card-title>
+      <v-card-text>
+        <div class="avatar-section">
+          <div class="avatar-preview avatar-preview--official">
+            <img v-if="isAvatarUrl(officialAvatar)" :src="officialAvatar" alt="NexChat" class="avatar-img" />
+            <span v-else class="avatar-placeholder">N</span>
+          </div>
+          <div class="avatar-controls">
+            <input
+              ref="officialAvatarFileInput"
+              type="file"
+              accept="image/*"
+              class="d-none"
+              @change="onOfficialAvatarFileChange"
+            />
+            <v-btn
+              color="primary"
+              variant="tonal"
+              prepend-icon="mdi-camera"
+              rounded="lg"
+              :loading="officialAvatarUploading"
+              @click="triggerOfficialAvatarUpload"
+            >
+              رفع صورة
+            </v-btn>
+            <p class="avatar-hint text-medium-emphasis text-caption mt-3 mb-0">
+              تظهر في الستوري الرسمي وشريط القصص كحساب NexChat الموثّق.
+            </p>
           </div>
         </div>
       </v-card-text>
@@ -361,6 +441,11 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.avatar-preview--official {
+  background: linear-gradient(135deg, #F97316, #EA580C);
+  border-radius: 50%;
 }
 
 .avatar-img {

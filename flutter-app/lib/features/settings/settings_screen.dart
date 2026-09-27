@@ -24,7 +24,6 @@ import '../../services/update_check.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_widgets.dart';
-import '../chat/chat_session.dart';
 import 'avatar_picker_sheet.dart';
 
 const _violet = Color(0xFF6C63FF);
@@ -173,16 +172,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (!_requireOnline()) return;
     setState(() => _supportLoading = true);
     try {
-      final data = Json.from(await Api.get('/support/session') as Map);
+      final data = Json.from(await Api.get('/support/conversation') as Map);
       if (!mounted) return;
-      final sid = data.s('sessionId');
-      if (sid == null || sid.isEmpty) {
+      final cid = data.s('conversationId');
+      if (cid == null || cid.isEmpty) {
         showToast(context, t('common.error'), error: true);
         return;
       }
-      final partner = data.v('partner') is Map ? Json.from(data.v('partner') as Map) : null;
-      ref.read(chatSessionProvider.notifier).setSession(sid, partner);
-      context.push('/chat/$sid?support=1', extra: {'partner': partner});
+      context.push('/conversation/$cid');
     } catch (e) {
       if (mounted) showToast(context, Api.errorMessage(e, t('common.error')), error: true);
     } finally {
@@ -448,15 +445,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: _openBirthDate,
             trailing: [_arrow(c, 18)],
           ),
-          if (cc) ...[
-            _gap,
-            _BigRowCard(
-              icon: LucideIcons.messageCircle,
-              title: t('settings.supportChat'),
-              desc: t('settings.supportDesc'),
-              onTap: _supportLoading ? null : _openSupport,
-            ),
-          ],
+          _gap,
+          _BigRowCard(
+            icon: LucideIcons.messageCircle,
+            title: t('settings.supportChat'),
+            desc: t('settings.supportDesc'),
+            onTap: _supportLoading ? null : _openSupport,
+          ),
           _section(t('settings.permissions')),
           _Card(
             padding: EdgeInsets.zero,

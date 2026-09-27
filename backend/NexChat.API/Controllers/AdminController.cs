@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NexChat.API.Hubs;
 using NexChat.API.Services;
+using NexChat.Core;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -18,13 +19,20 @@ public class AdminController(
     AppDbContext db,
     IHubContext<ChatHub> hubContext,
     IHubContext<StoryHub> storyHub,
+    IHubContext<ConversationHub> conversationHub,
     StoryAudienceService storyAudience,
+    OfficialStoryPublisherService officialStoryPublisher,
+    SupportConversationService supportConversations,
+    NotificationOutboxService notificationOutbox,
     OneSignalService oneSignal,
     EvolutionWhatsAppService evolution,
     IWebHostEnvironment env,
     IConfiguration config,
     IConversationMessageCrypto messageCrypto) : ControllerBase
 {
+    private static readonly string[] AllowedStoryMediaTypes =
+        [StoryMediaType.Image, StoryMediaType.Video, StoryMediaType.Text];
+
     [HttpGet("stats")]
     public async Task<ActionResult<AdminStatsDto>> GetStats()
     {
@@ -562,11 +570,29 @@ public class AdminController(
     [HttpPut("support/avatar")]
     public async Task<IActionResult> UpdateSupportAvatar([FromBody] UpdateSupportAvatarDto dto)
     {
+        if (dto == null) return BadRequest(new { message = "البيانات مطلوبة" });
         var avatar = dto.Avatar?.Length > 500 ? dto.Avatar[..500] : dto.Avatar;
         var rows = await db.Users
             .Where(u => u.UniqueCode == "NX-SUPPORT")
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.Avatar, avatar));
         return rows > 0 ? Ok() : NotFound(new { message = "مستخدم الدعم غير موجود" });
+    }
+
+    [HttpGet("official-story/avatar")]
+    public async Task<ActionResult<object>> GetOfficialStoryAvatar()
+    {
+        var publisher = await officialStoryPublisher.GetOrCreateAsync();
+        return Ok(new { avatar = publisher.Avatar, name = publisher.Name });
+    }
+
+    [HttpPut("official-story/avatar")]
+    public async Task<IActionResult> UpdateOfficialStoryAvatar([FromBody] UpdateSupportAvatarDto dto)
+    {
+        if (dto == null) return BadRequest(new { message = "البيانات مطلوبة" });
+        var publisher = await officialStoryPublisher.GetOrCreateAsync();
+        publisher.Avatar = dto.Avatar?.Length > 500 ? dto.Avatar[..500] : dto.Avatar;
+        await db.SaveChangesAsync();
+        return Ok(new { avatar = publisher.Avatar });
     }
 
     [HttpGet("support/sessions")]
@@ -575,32 +601,100 @@ public class AdminController(
         [FromQuery] int pageSize = 30,
         [FromQuery] string? search = null)
     {
-        var query = db.ChatSessions
-            .Include(s => s.User1)
-            .Include(s => s.User2)
-            .Where(s => s.Type == "support");
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var support = await supportConversations.GetSupportUserAsync();
+        if (support == null)
+            return Ok(new PagedResult<AdminSessionDto>([], 0, page, pageSize));
+
+        var query = db.Conversations
+            .AsNoTracking()
+            .Include(c => c.User1)
+            .Include(c => c.User2)
+            .Where(c => c.Type == ConversationType.Private &&
+                        (c.User1Id == support.Id || c.User2Id == support.Id));
 
         if (!string.IsNullOrEmpty(search))
         {
             var s = search.Trim().ToLower();
-            query = query.Where(sess => sess.User2.Name.ToLower().Contains(s));
+            query = query.Where(c =>
+                (c.User1Id != support.Id && c.User1 != null && c.User1.Name.ToLower().Contains(s)) ||
+                (c.User2Id != support.Id && c.User2 != null && c.User2.Name.ToLower().Contains(s)));
         }
 
         var total = await query.CountAsync();
-        var sessions = await query
-            .OrderByDescending(s => s.StartedAt)
+        // Order by latest activity (last message), not CreatedAt — then page.
+        var pageRows = await query
+            .Select(c => new
+            {
+                Conv = c,
+                LastAt = db.ConversationMessages
+                    .Where(m => m.ConversationId == c.Id && !m.DeletedForEveryone)
+                    .Max(m => (DateTime?)m.SentAt) ?? c.CreatedAt,
+                MsgCount = db.ConversationMessages
+                    .Count(m => m.ConversationId == c.Id && !m.DeletedForEveryone)
+            })
+            .OrderByDescending(x => x.LastAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(s => new AdminSessionDto(
-                s.Id, s.User1.Name, s.User2.Name, s.Type,
-                s.StartedAt, s.EndedAt,
-                s.Messages.Count,
-                s.User1.Avatar,
-                s.User2.Avatar
-            ))
             .ToListAsync();
 
+        var sessions = pageRows.Select(x =>
+        {
+            var c = x.Conv;
+            var user = c.User1Id == support.Id ? c.User2 : c.User1;
+            return new AdminSessionDto(
+                c.Id,
+                support.Name,
+                user?.Name ?? "—",
+                "support",
+                x.LastAt,
+                null,
+                x.MsgCount,
+                support.Avatar,
+                user?.Avatar
+            );
+        }).ToList();
+
         return Ok(new PagedResult<AdminSessionDto>(sessions, total, page, pageSize));
+    }
+
+    [HttpGet("support/messages")]
+    public async Task<ActionResult<PagedResult<AdminMessageDto>>> GetSupportMessages(
+        [FromQuery] Guid conversationId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        if (!await supportConversations.IsSupportConversationAsync(conversationId))
+            return NotFound(new { message = "محادثة الدعم غير موجودة" });
+
+        var query = db.ConversationMessages
+            .AsNoTracking()
+            .Include(m => m.Sender)
+            .Where(m => m.ConversationId == conversationId && !m.DeletedForEveryone);
+
+        var total = await query.CountAsync();
+        var rows = await query
+            .OrderByDescending(m => m.SentAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var messages = rows.Select(m => new AdminMessageDto(
+            m.Id,
+            m.Sender?.Name ?? "—",
+            conversationId.ToString(),
+            messageCrypto.DecryptFromStorage(m.Content),
+            m.Type,
+            m.SentAt,
+            m.Sender?.Avatar
+        )).ToList();
+
+        return Ok(new PagedResult<AdminMessageDto>(messages, total, page, pageSize));
     }
 
     [HttpPost("support/send")]
@@ -609,40 +703,91 @@ public class AdminController(
         if (string.IsNullOrWhiteSpace(dto.Content) || dto.Content.Length > 5000)
             return BadRequest(new { message = "محتوى الرسالة غير صالح" });
 
-        var supportUser = await db.Users.FirstOrDefaultAsync(u => u.UniqueCode == "NX-SUPPORT");
+        var conversationId = dto.ConversationId ?? dto.SessionId;
+        if (conversationId is null || conversationId == Guid.Empty)
+            return BadRequest(new { message = "معرف المحادثة مطلوب" });
+
+        var supportUser = await supportConversations.GetSupportUserAsync();
         if (supportUser == null)
             return StatusCode(500, new { message = "خدمة الدعم غير متاحة" });
 
-        var session = await db.ChatSessions
-            .FirstOrDefaultAsync(s => s.Id == dto.SessionId && s.Type == "support");
-        if (session == null)
-            return NotFound(new { message = "الجلسة غير موجودة" });
+        var conv = await db.Conversations
+            .Include(c => c.User1)
+            .Include(c => c.User2)
+            .FirstOrDefaultAsync(c => c.Id == conversationId.Value && c.Type == ConversationType.Private &&
+                (c.User1Id == supportUser.Id || c.User2Id == supportUser.Id));
+        if (conv == null)
+            return NotFound(new { message = "محادثة الدعم غير موجودة" });
 
-        if (session.EndedAt != null)
-        {
-            session.EndedAt = null;
-        }
+        var userId = conv.User1Id == supportUser.Id ? conv.User2Id : conv.User1Id;
+        if (userId == null)
+            return BadRequest(new { message = "محادثة غير صالحة" });
 
-        var message = new Message
+        // Restore if user deleted locally
+        var deletion = await db.UserConversationDeletions
+            .FirstOrDefaultAsync(d => d.UserId == userId.Value && d.ConversationId == conv.Id);
+        if (deletion != null)
+            db.UserConversationDeletions.Remove(deletion);
+
+        var text = dto.Content.Trim();
+        var msg = new ConversationMessage
         {
-            SessionId = dto.SessionId,
+            ConversationId = conv.Id,
             SenderId = supportUser.Id,
-            Content = dto.Content.Trim(),
-            Type = "text"
+            Content = messageCrypto.EncryptForStorage(text),
+            Type = "text",
+            SentAt = DateTime.UtcNow,
+            DisappearMode = DisappearMode.Off,
+            IsRead = false
         };
-        db.Messages.Add(message);
+        db.ConversationMessages.Add(msg);
         await db.SaveChangesAsync();
 
-        await hubContext.Clients.Group(dto.SessionId.ToString()).SendAsync("ReceiveMessage", new
+        var payload = new
         {
-            message.Id,
-            message.SenderId,
-            message.Content,
-            message.Type,
-            message.SentAt
+            msg.Id,
+            msg.SenderId,
+            Content = text,
+            msg.Type,
+            msg.SentAt,
+            msg.DeletedForEveryone,
+            ReplyToMessageId = (Guid?)null,
+            ReplyToContent = (string?)null,
+            ReplyToSenderName = (string?)null,
+            IsRead = false,
+            Reactions = Array.Empty<object>(),
+            MyReaction = (string?)null,
+            msg.DisappearMode,
+            msg.ExpiresAt
+        };
+
+        // Private chats: deliver via User only (Group + User would double-append in the open chat).
+        await conversationHub.Clients.User(userId.Value.ToString()).SendAsync("ReceiveMessage", payload);
+
+        var preview = text.Length > 80 ? text[..80] + "…" : text;
+        await conversationHub.Clients.User(userId.Value.ToString()).SendAsync("ConversationListUpdated", new
+        {
+            ConversationId = conv.Id,
+            LastMessagePreview = preview,
+            LastMessageType = "text",
+            LastMessageAt = msg.SentAt,
+            SenderId = supportUser.Id
         });
 
-        return Ok(new { message.Id, message.SentAt });
+        await notificationOutbox.EnqueueAsync(
+            userId.Value,
+            "conversation_message",
+            supportUser.Name,
+            preview,
+            new Dictionary<string, string>
+            {
+                ["conversationId"] = conv.Id.ToString(),
+                ["userId"] = supportUser.Id.ToString(),
+                ["senderName"] = supportUser.Name,
+                ["senderAvatar"] = supportUser.Avatar ?? ""
+            });
+
+        return Ok(new { msg.Id, msg.SentAt, conversationId = conv.Id });
     }
 
     [HttpGet("messages")]
@@ -764,7 +909,19 @@ public class AdminController(
             .OrderBy(m => m.SentAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(m => new { m.Id, SenderName = m.Sender.Name, SenderAvatar = m.Sender.Avatar, m.Content, m.Type, m.SentAt, m.ExpiresAt, m.DisappearMode })
+            .Select(m => new
+            {
+                m.Id,
+                SenderName = m.Sender.Name,
+                SenderAvatar = m.Sender.Avatar,
+                m.Content,
+                m.Type,
+                m.SentAt,
+                m.ExpiresAt,
+                m.DisappearMode,
+                m.IsViewOnce,
+                ViewOnceOpenCount = m.ViewOnceReceipts.Count
+            })
             .ToListAsync();
 
         var now = DateTime.UtcNow;
@@ -778,7 +935,9 @@ public class AdminController(
                 m.SenderAvatar,
                 m.ExpiresAt,
                 m.DisappearMode,
-                m.ExpiresAt != null && m.ExpiresAt <= now))
+                m.ExpiresAt != null && m.ExpiresAt <= now,
+                m.IsViewOnce,
+                m.ViewOnceOpenCount))
             .ToList();
 
         return Ok(new PagedResult<AdminConversationMessageDto>(messages, total, page, pageSize));
@@ -1280,7 +1439,8 @@ public class AdminController(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
-        [FromQuery] string? status = "all")
+        [FromQuery] string? status = "all",
+        [FromQuery] string? scope = "all")
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         page = Math.Max(1, page);
@@ -1291,6 +1451,11 @@ public class AdminController(
             query = query.Where(s => s.ExpiresAt > now);
         else if (string.Equals(status, "expired", StringComparison.OrdinalIgnoreCase))
             query = query.Where(s => s.ExpiresAt <= now);
+
+        if (string.Equals(scope, "official", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(s => s.IsBroadcast);
+        else if (string.Equals(scope, "user", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(s => !s.IsBroadcast);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -1321,10 +1486,150 @@ public class AdminController(
                 s.CreatedAt,
                 s.ExpiresAt,
                 s.ExpiresAt > now,
-                s.Views.Count))
+                s.Views.Count,
+                s.Likes.Count,
+                s.IsBroadcast))
             .ToListAsync();
 
         return Ok(new PagedResult<AdminStorySlideDto>(items, total, page, pageSize));
+    }
+
+    [HttpGet("stories/{id:guid}/engagement")]
+    public async Task<ActionResult<object>> GetStoryEngagement(Guid id)
+    {
+        var exists = await db.StorySlides.AsNoTracking().AnyAsync(s => s.Id == id);
+        if (!exists) return NotFound();
+
+        var views = await db.StoryViews
+            .AsNoTracking()
+            .Where(v => v.StorySlideId == id)
+            .Include(v => v.Viewer)
+            .ToListAsync();
+
+        var likes = await db.StoryLikes
+            .AsNoTracking()
+            .Where(l => l.StorySlideId == id)
+            .Include(l => l.User)
+            .ToListAsync();
+
+        var likedIds = likes.Select(l => l.UserId).ToHashSet();
+        var byUser = new Dictionary<Guid, StoryViewerDto>();
+
+        foreach (var v in views)
+        {
+            byUser[v.ViewerUserId] = new StoryViewerDto(
+                v.ViewerUserId,
+                v.Viewer?.Name ?? "—",
+                v.Viewer?.Avatar,
+                v.ViewedAt,
+                likedIds.Contains(v.ViewerUserId));
+        }
+
+        foreach (var l in likes)
+        {
+            if (byUser.ContainsKey(l.UserId)) continue;
+            byUser[l.UserId] = new StoryViewerDto(
+                l.UserId,
+                l.User?.Name ?? "—",
+                l.User?.Avatar,
+                null,
+                true);
+        }
+
+        var people = byUser.Values
+            .OrderByDescending(v => v.Liked)
+            .ThenByDescending(v => v.ViewedAt ?? DateTime.MinValue)
+            .ToList();
+
+        return Ok(new
+        {
+            viewCount = views.Count,
+            likeCount = likes.Count,
+            people
+        });
+    }
+
+    [HttpPost("stories")]
+    public async Task<ActionResult<AdminStorySlideDto>> CreateOfficialStory([FromBody] CreateAdminStorySlideDto dto)
+    {
+        if (dto == null)
+            return BadRequest(new { message = "البيانات مطلوبة" });
+
+        var mediaType = (dto.MediaType ?? StoryMediaType.Image).ToLowerInvariant();
+        if (!AllowedStoryMediaTypes.Contains(mediaType))
+            return BadRequest(new { message = "نوع الوسائط غير مدعوم" });
+        if (mediaType != StoryMediaType.Text && string.IsNullOrWhiteSpace(dto.MediaUrl))
+            return BadRequest(new { message = "رابط الوسائط مطلوب" });
+        if (mediaType == StoryMediaType.Text && string.IsNullOrWhiteSpace(dto.Caption))
+            return BadRequest(new { message = "نص الستوري مطلوب" });
+
+        var publisher = await officialStoryPublisher.GetOrCreateAsync();
+        var now = DateTime.UtcNow;
+        var maxOrder = await db.StorySlides
+            .Where(s => s.UserId == publisher.Id && s.ExpiresAt > now)
+            .Select(s => (int?)s.SortOrder)
+            .MaxAsync() ?? -1;
+
+        var slide = new StorySlide
+        {
+            UserId = publisher.Id,
+            MediaUrl = string.IsNullOrWhiteSpace(dto.MediaUrl) ? null : dto.MediaUrl.Trim(),
+            MediaType = mediaType,
+            Caption = string.IsNullOrWhiteSpace(dto.Caption) ? null : dto.Caption.Trim(),
+            OverlayJson = dto.OverlayJson,
+            BackgroundColor = dto.BackgroundColor,
+            FilterId = dto.FilterId == "none" ? null : dto.FilterId,
+            VideoDurationSeconds = dto.VideoDurationSeconds,
+            SortOrder = maxOrder + 1,
+            IsBroadcast = true,
+            ExpiresAt = now.AddHours(24),
+            CreatedAt = now
+        };
+        db.StorySlides.Add(slide);
+        await db.SaveChangesAsync();
+
+        var payload = new
+        {
+            userId = publisher.Id,
+            slideId = slide.Id,
+            thumbUrl = slide.MediaUrl,
+            publisherName = publisher.Name,
+            publisherAvatar = publisher.Avatar,
+            isOfficial = true
+        };
+        await storyHub.Clients.All.SendAsync("StoryPublished", payload);
+
+        if (dto.SendPush)
+        {
+            var subscriptionIds = await db.DeviceSubscriptions
+                .Select(d => d.OneSignalPlayerId)
+                .ToListAsync();
+            var title = publisher.Name;
+            var body = string.IsNullOrWhiteSpace(slide.Caption)
+                ? "ستوري جديد من NexChat"
+                : slide.Caption!;
+            var imageUrl = mediaType == StoryMediaType.Image ? slide.MediaUrl : null;
+            await oneSignal.SendBroadcastAsync(subscriptionIds, title, body, imageUrl);
+        }
+
+        return Ok(new AdminStorySlideDto(
+            slide.Id,
+            slide.UserId,
+            publisher.Name,
+            publisher.Avatar,
+            slide.MediaUrl,
+            slide.MediaType,
+            slide.Caption,
+            slide.BackgroundColor,
+            slide.FilterId,
+            slide.VideoDurationSeconds,
+            slide.SortOrder,
+            slide.CreatedAt,
+            slide.ExpiresAt,
+            true,
+            0,
+            0,
+            true));
     }
 
     [HttpDelete("stories/{id:guid}")]
@@ -1334,14 +1639,22 @@ public class AdminController(
         if (slide == null) return NotFound();
 
         var userId = slide.UserId;
+        var isBroadcast = slide.IsBroadcast || await storyAudience.IsOfficialPublisherAsync(userId);
         db.StorySlides.Remove(slide);
         await db.SaveChangesAsync();
 
-        var audienceIds = await storyAudience.GetAudienceUserIdsAsync(userId);
-        if (audienceIds.Count > 0)
+        if (isBroadcast)
         {
-            await storyHub.Clients.Users(audienceIds.Select(x => x.ToString()).ToList())
-                .SendAsync("StoryDeleted", new { userId, slideId = id });
+            await storyHub.Clients.All.SendAsync("StoryDeleted", new { userId, slideId = id, isOfficial = true });
+        }
+        else
+        {
+            var audienceIds = await storyAudience.GetAudienceUserIdsAsync(userId);
+            if (audienceIds.Count > 0)
+            {
+                await storyHub.Clients.Users(audienceIds.Select(x => x.ToString()).ToList())
+                    .SendAsync("StoryDeleted", new { userId, slideId = id });
+            }
         }
 
         return NoContent();

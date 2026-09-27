@@ -82,7 +82,7 @@ public record ReorderBannersDto(IEnumerable<Guid> Ids);
 
 public record UpdateSiteContentDto(string Content);
 
-public record SupportSendDto(Guid SessionId, string Content);
+public record SupportSendDto(Guid? SessionId, Guid? ConversationId, string Content);
 
 public record UpdateSupportAvatarDto(string? Avatar);
 
@@ -116,7 +116,9 @@ public record AdminConversationMessageDto(
     string? SenderAvatar = null,
     DateTime? ExpiresAt = null,
     int DisappearMode = 0,
-    bool IsExpired = false
+    bool IsExpired = false,
+    bool IsViewOnce = false,
+    int ViewOnceOpenCount = 0
 );
 public record AdminBlockDto(Guid Id, string BlockerName, string BlockedUserName, DateTime CreatedAt, string? BlockerAvatar = null, string? BlockedUserAvatar = null);
 public record AdminContactDto(Guid Id, string UserName, string ContactUserName, DateTime CreatedAt, string? UserAvatar = null, string? ContactUserAvatar = null);
@@ -140,5 +142,18 @@ public record AdminStorySlideDto(
     DateTime CreatedAt,
     DateTime ExpiresAt,
     bool IsActive,
-    int ViewCount
+    int ViewCount,
+    int LikeCount = 0,
+    bool IsBroadcast = false
+);
+
+public record CreateAdminStorySlideDto(
+    string? MediaUrl,
+    string MediaType,
+    string? Caption,
+    string? OverlayJson,
+    string? BackgroundColor,
+    string? FilterId,
+    int? VideoDurationSeconds,
+    bool SendPush = false
 );

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NexChat.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using NexChat.Infrastructure.Data;
 namespace NexChat.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260927113757_AddOfficialBroadcastStories")]
+    partial class AddOfficialBroadcastStories
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -275,9 +278,6 @@ namespace NexChat.Infrastructure.Migrations
                         .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsRead")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<bool>("IsViewOnce")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<Guid?>("ReplyToMessageId")
@@ -1173,24 +1173,6 @@ namespace NexChat.Infrastructure.Migrations
                     b.ToTable("UserNotifications");
                 });
 
-            modelBuilder.Entity("NexChat.Core.Entities.ViewOnceReceipt", b =>
-                {
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("ViewedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("MessageId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ViewOnceReceipts");
-                });
-
             modelBuilder.Entity("NexChat.Core.Entities.ChatSession", b =>
                 {
                     b.HasOne("NexChat.Core.Entities.User", "User1")
@@ -1578,25 +1560,6 @@ namespace NexChat.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("NexChat.Core.Entities.ViewOnceReceipt", b =>
-                {
-                    b.HasOne("NexChat.Core.Entities.ConversationMessage", "Message")
-                        .WithMany("ViewOnceReceipts")
-                        .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("NexChat.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Message");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("NexChat.Core.Entities.ChatSession", b =>
                 {
                     b.Navigation("Messages");
@@ -1607,11 +1570,6 @@ namespace NexChat.Infrastructure.Migrations
                     b.Navigation("Members");
 
                     b.Navigation("Messages");
-                });
-
-            modelBuilder.Entity("NexChat.Core.Entities.ConversationMessage", b =>
-                {
-                    b.Navigation("ViewOnceReceipts");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.ShortFilmSection", b =>

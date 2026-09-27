@@ -35,8 +35,8 @@
     "logoutConfirm": "Log out",
     "logoutConfirmText": "Are you sure you want to log out?",
     "onlineNow": "Online now",
-    "startRandom": "Start random chat",
-    "randomNav": "Random",
+    "startRandom": "Start instant chat",
+    "randomNav": "Instant",
     "filterLabel": "Match filter",
     "filterAll": "All",
     "filterMale": "Male",
@@ -65,7 +65,12 @@
     "goToConversations": "Conversations",
     "addCode": "Add code",
     "noSavedCodes": "No saved codes",
-    "codeLabelPlaceholder": "Label (optional)"
+    "codeLabelPlaceholder": "Label (optional)",
+    "discoverSection": "Discover",
+    "quickActions": "Shortcuts",
+    "exploreFilms": "Browse short films",
+    "exploreFilmsHint": "Series and new clips every day",
+    "openChatsHint": "Continue your recent chats"
   },
   "profile": {
     "title": "Profile",
@@ -295,7 +300,7 @@
     "start": "Start",
     "slide1Title": "Welcome to NexChat",
     "slide1Desc": "Meet new people from around the world",
-    "slide2Title": "Random chats",
+    "slide2Title": "Instant chats",
     "slide2Desc": "Start a conversation with someone new in one tap",
     "slide3Title": "Video calls",
     "slide3Desc": "Talk face to face with the person you are chatting with"
@@ -317,7 +322,7 @@
     "accept": "Accept",
     "decline": "Decline",
     "skip": "Skip",
-    "exitRandom": "Leave random chat",
+    "exitRandom": "Leave chat",
     "legalHint": "Abuse and harassment are prohibited. Violations can be reported and are reviewed within 24 hours."
   },
   "randomChat": {
@@ -706,6 +711,17 @@
     "replyPreviewImage": "Photo",
     "replyPreviewVideo": "Video",
     "replyPreviewAlbum": "Photo album",
+    "viewOnce": "View once",
+    "viewOnceHint": "The recipient can open this photo or video only once — no download or forward.",
+    "viewOnceSend": "Send as view once",
+    "viewOnceSendNormal": "Send normally",
+    "viewOncePhoto": "Photo · View once",
+    "viewOnceVideo": "Video · View once",
+    "viewOnceTapToOpen": "Tap to view once",
+    "viewOnceOpened": "Opened",
+    "viewOnceOpenFailed": "Could not open media",
+    "viewOnceAlreadyOpened": "Already opened",
+    "viewOnceScreenshotTaken": "Recipient took a screenshot",
     "videoUploadFailed": "Failed to upload video",
     "albumUploadFailed": "Failed to upload album",
     "albumTooMany": "You can send up to 10 photos",
@@ -789,7 +805,10 @@
     "openingInvite": "Opening invite...",
     "shareInvite": "Share invite",
     "shareStory": "Share story",
-    "shareFilm": "Share film"
+    "shareFilm": "Share film",
+    "storySharePreview": "◌ Story",
+    "storyShareOf": "{name}'s story",
+    "storyShareHint": "Tap to open story"
   },
   "calls": {
     "title": "Calls",

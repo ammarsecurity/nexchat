@@ -13,7 +13,7 @@ export function buildShortFilmShareMessage(film) {
   }
 }
 
-const MEDIA_PREVIEW_TYPES = new Set(['image', 'audio', 'video', 'album', 'short_film'])
+const MEDIA_PREVIEW_TYPES = new Set(['image', 'audio', 'video', 'album', 'short_film', 'story_share'])
 
 function isVideoUrl(s) {
   const lower = s.toLowerCase()
@@ -30,13 +30,21 @@ function isAudioUrl(s) {
   return /\.(webm|m4a|ogg|opus|mp3|wav)(\?|$)/i.test(lower) || (lower.includes('/uploads/') && (lower.includes('webm') || lower.includes('m4a') || lower.includes('ogg')))
 }
 
+function isViewOncePreview(preview) {
+  if (!preview || typeof preview !== 'string') return false
+  const s = preview.trim()
+  return s.includes('مشاهدة مرة') || s.toLowerCase().includes('view once')
+}
+
 function previewFromType(type, preview, fallbackLabel, t) {
   if (!type || !MEDIA_PREVIEW_TYPES.has(type)) return null
   if (typeof t !== 'function') return null
   switch (type) {
     case 'video':
+      if (isViewOncePreview(preview)) return preview
       return t('conversationChat.videoMessage')
     case 'image':
+      if (isViewOncePreview(preview)) return preview
       return t('conversationChat.replyPreviewImage')
     case 'audio':
       return t('conversationChat.voiceMessage')
@@ -45,6 +53,12 @@ function previewFromType(type, preview, fallbackLabel, t) {
     case 'short_film': {
       if (!preview) return fallbackLabel ? `🎬 ${fallbackLabel}` : ''
       return formatConversationListPreview(preview, fallbackLabel, { t })
+    }
+    case 'story_share': {
+      const parsed = parseStorySharePayload(preview)
+      if (parsed?.name) return `◌ ${t('share.storyShareOf', { name: parsed.name })}`
+      if (preview && typeof preview === 'string' && !preview.trim().startsWith('{')) return preview
+      return t('share.storySharePreview')
     }
     default:
       return null
@@ -125,5 +139,33 @@ export function parseShortFilmMessage(msg) {
     id: match[1],
     title,
     thumbnailUrl: null
+  }
+}
+
+export function parseStorySharePayload(contentOrMsg) {
+  const content =
+    typeof contentOrMsg === 'string'
+      ? contentOrMsg
+      : contentOrMsg?.content ?? contentOrMsg?.Content ?? ''
+  const type =
+    typeof contentOrMsg === 'string'
+      ? 'story_share'
+      : contentOrMsg?.type ?? contentOrMsg?.Type ?? 'story_share'
+  if (type !== 'story_share' || !content) return null
+  try {
+    const data = typeof content === 'string' ? JSON.parse(content) : content
+    const userId = data?.userId ?? data?.UserId
+    if (!userId) return null
+    return {
+      userId: String(userId),
+      name: String(data.name ?? data.Name ?? '').trim() || 'NexChat',
+      slideId: data.slideId ?? data.SlideId ?? null,
+      mediaUrl: data.mediaUrl ?? data.MediaUrl ?? null,
+      mediaType: String(data.mediaType ?? data.MediaType ?? 'image').toLowerCase(),
+      caption: data.caption ?? data.Caption ?? null,
+      backgroundColor: data.backgroundColor ?? data.BackgroundColor ?? null
+    }
+  } catch {
+    return null
   }
 }

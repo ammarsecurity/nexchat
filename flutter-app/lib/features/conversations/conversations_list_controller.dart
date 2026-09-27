@@ -37,6 +37,8 @@ class ConversationsListController extends Notifier<List<Json>> {
       list[idx] = item;
     }
     list.sort((a, b) {
+      final as = a.b('isSupport'), bs = b.b('isSupport');
+      if (as != bs) return bs ? 1 : -1;
       final ap = a.b('isPinned'), bp = b.b('isPinned');
       if (ap != bp) return bp ? 1 : -1;
       final ta = a.date('lastMessageAt') ?? DateTime(0), tb = b.date('lastMessageAt') ?? DateTime(0);

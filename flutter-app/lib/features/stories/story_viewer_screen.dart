@@ -7,10 +7,10 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
-import '../../core/share_links.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
@@ -62,6 +62,8 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
 
   StorySlide? get _current => _index < _slides.length ? _slides[_index] : null;
   bool get _isOwner => _userId == ref.read(authProvider).user?.id;
+  bool get _isOfficial =>
+      ref.read(storiesProvider).feed.where((r) => r.userId == _userId).firstOrNull?.isOfficial ?? false;
 
   String get _publisherName =>
       ref.read(storiesProvider).feed.where((r) => r.userId == _userId).firstOrNull?.name ?? '—';
@@ -73,8 +75,10 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
   }
 
   List<StoryRing> get _feedRings {
-    final withSlides = ref.read(storiesProvider).feed.where((r) => r.slideCount > 0);
-    return [...withSlides.where((r) => r.isMine), ...withSlides.where((r) => !r.isMine)];
+    final withSlides = ref.read(storiesProvider).feed.where((r) => r.slideCount > 0).toList();
+    sortStoryFeed(withSlides);
+    final mine = withSlides.where((r) => r.isMine).toList();
+    return [...mine, ...othersStoryRings(withSlides)];
   }
 
   @override
@@ -398,6 +402,35 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
     await _video?.setVolume(_muted ? 0 : 1);
   }
 
+  void _shareToChat() {
+    final slide = _current;
+    if (slide == null) return;
+    setState(() => _paused = true);
+    _syncPause();
+    final returnPath = widget.slideId != null && widget.slideId!.isNotEmpty
+        ? '/stories/view/$_userId?slideId=${Uri.encodeQueryComponent(widget.slideId!)}'
+        : '/stories/view/$_userId';
+    context.push('/share-message', extra: {
+      'shareMessage': {
+        'type': 'story_share',
+        'content': buildStoryShareContent(
+          userId: _userId,
+          slideId: slide.id,
+          name: _publisherName,
+          mediaUrl: slide.mediaUrl,
+          mediaType: slide.mediaType,
+          caption: slide.caption,
+          backgroundColor: slide.backgroundColor,
+        ),
+      },
+      'returnPath': returnPath,
+    }).then((_) {
+      if (!mounted) return;
+      setState(() => _paused = false);
+      _syncPause();
+    });
+  }
+
   Future<void> _sendReply() async {
     final slide = _current;
     final text = _reply.text.trim();
@@ -554,10 +587,18 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
                         UserAvatar(url: _publisherAvatar, name: _publisherName, size: 28),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(_publisherName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+                          child: Row(children: [
+                            Flexible(
+                              child: Text(_publisherName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+                            ),
+                            if (_isOfficial) ...[
+                              const SizedBox(width: 4),
+                              const Icon(Icons.verified, size: 16, color: Color(0xFF60A5FA)),
+                            ],
+                          ]),
                         ),
                         if (slide.isVideo) ...[
                           _IconBtn(icon: _muted ? LucideIcons.volumeX : LucideIcons.volume2, onTap: _toggleMute),
@@ -565,10 +606,7 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
                         ],
                         _IconBtn(
                           icon: LucideIcons.share2,
-                          onTap: () async {
-                            final msg = await shareStoryPublic(_userId, publisherName: _publisherName);
-                            if (msg != null && context.mounted) showToast(context, msg);
-                          },
+                          onTap: _shareToChat,
                         ),
                         if (_isOwner) ...[
                           const SizedBox(width: 10),
@@ -614,27 +652,30 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
                           gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Color(0x99000000), Color(0x00000000)]),
                         ),
                         child: Row(children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _reply,
-                              focusNode: _replyFocus,
-                              onChanged: (_) => setState(() {}),
-                              onSubmitted: (_) => _sendReply(),
-                              textInputAction: TextInputAction.send,
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
-                              decoration: InputDecoration(
-                                hintText: t('stories.replyPlaceholder'),
-                                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-                                filled: true,
-                                fillColor: const Color(0x59000000),
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Color(0x4DFFFFFF))),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Color(0x4DFFFFFF))),
-                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Color(0x80FFFFFF))),
+                          if (!_isOfficial)
+                            Expanded(
+                              child: TextField(
+                                controller: _reply,
+                                focusNode: _replyFocus,
+                                onChanged: (_) => setState(() {}),
+                                onSubmitted: (_) => _sendReply(),
+                                textInputAction: TextInputAction.send,
+                                style: const TextStyle(color: Colors.white, fontSize: 14),
+                                decoration: InputDecoration(
+                                  hintText: t('stories.replyPlaceholder'),
+                                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                                  filled: true,
+                                  fillColor: const Color(0x59000000),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Color(0x4DFFFFFF))),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Color(0x4DFFFFFF))),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Color(0x80FFFFFF))),
+                                ),
                               ),
-                            ),
-                          ),
+                            )
+                          else
+                            const Spacer(),
                           const SizedBox(width: 6),
                           Material(
                             color: Colors.transparent,
@@ -653,19 +694,21 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> with Sing
                               ),
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          Opacity(
-                            opacity: _sending || _reply.text.trim().isEmpty ? 0.5 : 1,
-                            child: Material(
-                              color: context.colors.primary,
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: _sending || _reply.text.trim().isEmpty ? null : _sendReply,
-                                child: const SizedBox(width: 44, height: 44, child: Icon(LucideIcons.send, size: 18, color: Colors.white)),
+                          if (!_isOfficial) ...[
+                            const SizedBox(width: 4),
+                            Opacity(
+                              opacity: _sending || _reply.text.trim().isEmpty ? 0.5 : 1,
+                              child: Material(
+                                color: context.colors.primary,
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: _sending || _reply.text.trim().isEmpty ? null : _sendReply,
+                                  child: const SizedBox(width: 44, height: 44, child: Icon(LucideIcons.send, size: 18, color: Colors.white)),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ]),
                       ),
                     ),

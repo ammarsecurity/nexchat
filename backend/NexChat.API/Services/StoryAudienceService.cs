@@ -1,28 +1,41 @@
 using Microsoft.EntityFrameworkCore;
-using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
 
 namespace NexChat.API.Services;
 
 /// <summary>
-/// Stories are visible only to mutual friends (both sides have a Contact row),
-/// which is created when a message/friend request is accepted — WhatsApp-like.
+/// Stories are visible to mutual friends (WhatsApp-like), plus official broadcast stories to everyone.
 /// </summary>
 public class StoryAudienceService(AppDbContext db)
 {
-    /// <summary>Mutual friends of the publisher (minus blocks).</summary>
+    /// <summary>Mutual friends of the publisher (minus blocks). Empty for official publishers (use Clients.All).</summary>
     public async Task<HashSet<Guid>> GetAudienceUserIdsAsync(Guid publisherId)
     {
+        if (await IsOfficialPublisherAsync(publisherId))
+            return [];
+
         var blocked = await GetBlockedSetAsync(publisherId);
         var mutual = await GetMutualFriendIdsAsync(publisherId);
         mutual.RemoveWhere(id => id == publisherId || blocked.Contains(id));
         return mutual;
     }
 
+    public Task<bool> IsOfficialPublisherAsync(Guid userId) =>
+        db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.IsOfficialStoryPublisher);
+
+    public Task<Guid?> GetOfficialPublisherIdAsync() =>
+        db.Users.AsNoTracking()
+            .Where(u => u.IsOfficialStoryPublisher)
+            .Select(u => (Guid?)u.Id)
+            .FirstOrDefaultAsync();
+
     /// <summary>True if viewer may see publisher's stories.</summary>
     public async Task<bool> CanViewAsync(Guid viewerId, Guid publisherId)
     {
         if (viewerId == publisherId)
+            return true;
+
+        if (await IsOfficialPublisherAsync(publisherId))
             return true;
 
         if (await IsBlockedEitherWayAsync(viewerId, publisherId))
@@ -44,7 +57,7 @@ public class StoryAudienceService(AppDbContext db)
         return await FilterVisiblePublishersAsync(viewerId, activePublishers);
     }
 
-    /// <summary>Keep only self + mutual friends (minus blocks) from a candidate publisher list.</summary>
+    /// <summary>Keep only self + mutual friends + official publisher (minus blocks) from a candidate publisher list.</summary>
     public async Task<HashSet<Guid>> FilterVisiblePublishersAsync(Guid viewerId, IReadOnlyList<Guid> publisherIds)
     {
         var result = new HashSet<Guid>();
@@ -52,7 +65,17 @@ public class StoryAudienceService(AppDbContext db)
             return result;
 
         var blocked = await GetBlockedSetAsync(viewerId);
-        var candidates = publisherIds.Where(id => id == viewerId || !blocked.Contains(id)).Distinct().ToList();
+        var officialIds = await db.Users.AsNoTracking()
+            .Where(u => u.IsOfficialStoryPublisher && publisherIds.Contains(u.Id))
+            .Select(u => u.Id)
+            .ToListAsync();
+        foreach (var id in officialIds)
+            result.Add(id);
+
+        var candidates = publisherIds
+            .Where(id => id == viewerId || (!blocked.Contains(id) && !result.Contains(id)))
+            .Distinct()
+            .ToList();
         if (candidates.Count == 0)
             return result;
 
@@ -79,13 +102,27 @@ public class StoryAudienceService(AppDbContext db)
         return result;
     }
 
-    /// Mutual friends + self (minus blocks) — publishers the viewer may see in the story feed.
+    /// Mutual friends + self + official publisher with active broadcast slides.
     public async Task<HashSet<Guid>> GetFeedPublisherIdsAsync(Guid viewerId)
     {
         var blocked = await GetBlockedSetAsync(viewerId);
         var mutual = await GetMutualFriendIdsAsync(viewerId);
         mutual.Add(viewerId);
         mutual.RemoveWhere(id => id != viewerId && blocked.Contains(id));
+
+        var now = DateTime.UtcNow;
+        var officialId = await db.Users.AsNoTracking()
+            .Where(u => u.IsOfficialStoryPublisher)
+            .Select(u => (Guid?)u.Id)
+            .FirstOrDefaultAsync();
+        if (officialId is Guid oid)
+        {
+            var hasActive = await db.StorySlides.AsNoTracking()
+                .AnyAsync(s => s.UserId == oid && s.IsBroadcast && s.ExpiresAt > now);
+            if (hasActive)
+                mutual.Add(oid);
+        }
+
         return mutual;
     }
 

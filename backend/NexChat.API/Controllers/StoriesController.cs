@@ -47,7 +47,7 @@ public class StoriesController(
 
         var slides = await db.StorySlides.AsNoTracking()
             .Where(s => s.ExpiresAt > now && publisherIds.Contains(s.UserId))
-            .Select(s => new { s.Id, s.UserId, s.CreatedAt, s.SortOrder, s.MediaUrl })
+            .Select(s => new { s.Id, s.UserId, s.CreatedAt, s.SortOrder, s.MediaUrl, s.IsBroadcast })
             .ToListAsync();
 
         if (slides.Count == 0)
@@ -64,7 +64,8 @@ public class StoriesController(
                     LatestAt = g.Max(x => x.CreatedAt),
                     SlideCount = g.Count(),
                     LatestMediaUrl = latest.MediaUrl,
-                    SlideIds = g.Select(x => x.Id).ToList()
+                    SlideIds = g.Select(x => x.Id).ToList(),
+                    IsOfficial = g.Any(x => x.IsBroadcast)
                 };
             })
             .ToList();
@@ -82,23 +83,34 @@ public class StoriesController(
             .ToHashSet();
 
         var rings = byUser
-            .OrderByDescending(x => x.UserId == viewerId)
-            .ThenByDescending(x => x.LatestAt)
             .Select(x =>
             {
                 users.TryGetValue(x.UserId, out var u);
+                var isOfficial = x.IsOfficial || (u?.IsOfficialStoryPublisher ?? false);
                 var hasUnseen = x.SlideIds.Any(id => !viewedSet.Contains(id));
-                return new StoryRingDto(
-                    x.UserId,
-                    u?.Name ?? "—",
-                    u?.Avatar,
-                    hasUnseen,
-                    string.IsNullOrEmpty(x.LatestMediaUrl) ? null : x.LatestMediaUrl,
+                return new
+                {
+                    Ring = new StoryRingDto(
+                        x.UserId,
+                        u?.Name ?? "—",
+                        u?.Avatar,
+                        hasUnseen,
+                        string.IsNullOrEmpty(x.LatestMediaUrl) ? null : x.LatestMediaUrl,
+                        x.LatestAt,
+                        x.SlideCount,
+                        x.UserId == viewerId,
+                        isOfficial
+                    ),
                     x.LatestAt,
-                    x.SlideCount,
-                    x.UserId == viewerId
-                );
+                    IsMine = x.UserId == viewerId,
+                    IsOfficial = isOfficial
+                };
             })
+            // Always: own → official NexChat → everyone else (by recency).
+            .OrderByDescending(x => x.IsMine)
+            .ThenByDescending(x => x.IsOfficial)
+            .ThenByDescending(x => x.LatestAt)
+            .Select(x => x.Ring)
             .ToList();
 
         return Ok(rings);
@@ -150,6 +162,7 @@ public class StoriesController(
             FilterId = req.FilterId,
             VideoDurationSeconds = req.VideoDurationSeconds,
             SortOrder = req.SortOrder ?? maxOrder + 1,
+            IsBroadcast = false,
             ExpiresAt = DateTime.UtcNow.AddHours(24),
             CreatedAt = DateTime.UtcNow
         };
@@ -365,6 +378,8 @@ public class StoriesController(
             return NotFound();
         if (slide.UserId == CurrentUserId)
             return BadRequest(new { message = "لا يمكن الرد على ستوريتك" });
+        if (slide.IsBroadcast || await audience.IsOfficialPublisherAsync(slide.UserId))
+            return BadRequest(new { message = "لا يمكن الرد على الستوري الرسمي" });
 
         var conv = await FindOrCreatePrivateConversationAsync(CurrentUserId, slide.UserId);
         if (conv == null)
@@ -558,7 +573,8 @@ public class StoriesController(
         Guid slideId,
         string? thumbUrl,
         string publisherName,
-        string? publisherAvatar)
+        string? publisherAvatar,
+        bool isOfficial = false)
     {
         try
         {
@@ -566,6 +582,9 @@ public class StoriesController(
             var scopedAudience = scope.ServiceProvider.GetRequiredService<StoryAudienceService>();
             var scopedOutbox = scope.ServiceProvider.GetRequiredService<NotificationOutboxService>();
             var scopedHub = scope.ServiceProvider.GetRequiredService<IHubContext<StoryHub>>();
+
+            if (!isOfficial)
+                isOfficial = await scopedAudience.IsOfficialPublisherAsync(publisherId);
 
             var audienceIds = await scopedAudience.GetAudienceUserIdsAsync(publisherId);
             foreach (var recipientId in audienceIds)
@@ -595,7 +614,8 @@ public class StoriesController(
                         slideId,
                         thumbUrl,
                         publisherName,
-                        publisherAvatar
+                        publisherAvatar,
+                        isOfficial
                     });
             }
         }

@@ -26,7 +26,7 @@ import { useActiveCallStore } from '../stores/activeCall'
 import ActiveCallBar from '../components/ActiveCallBar.vue'
 import ShortFilmMessageBubble from '../components/ShortFilmMessageBubble.vue'
 import AlbumMessageBubble from '../components/AlbumMessageBubble.vue'
-import { parseShortFilmMessage, buildShortFilmShareMessage, formatConversationListPreview } from '../utils/shortFilmShare'
+import { parseShortFilmMessage, buildShortFilmShareMessage, formatConversationListPreview, parseStorySharePayload } from '../utils/shortFilmShare'
 import { parseAlbumMessage, buildAlbumPayload, MAX_ALBUM_IMAGES } from '../utils/conversationAlbum'
 
 const route = useRoute()
@@ -146,6 +146,16 @@ function replyPreviewText(content, msgType) {
   if (msgType === 'album') return t('conversationChat.replyPreviewAlbum')
   if (msgType === 'audio') return t('conversationChat.voiceMessage')
   if (msgType === 'image') return t('conversationChat.replyPreviewImage')
+  if (msgType === 'story_share') {
+    const story = parseStorySharePayload(content)
+    if (story?.name) return t('share.storyShareOf', { name: story.name })
+    if (content && typeof content === 'string' && !content.trim().startsWith('{')) return content
+    return t('share.storySharePreview')
+  }
+  if (msgType === 'short_film') {
+    const sf = parseShortFilmMessage({ type: 'short_film', content })
+    if (sf) return `🎬 ${(sf.title || t('shortFilms.title')).slice(0, 48)}`
+  }
   if (!content || typeof content !== 'string') return ''
   if (parseAlbumMessage(content)) return t('conversationChat.replyPreviewAlbum')
   const lower = content.toLowerCase()
@@ -928,10 +938,13 @@ function replyToMessage(msg) {
   showMessageMenuMsg.value = null
   const isMine = String(msg.senderId) === String(currentUserId.value)
   const sf = parseShortFilmMessage(msg)
+  const story = parseStorySharePayload(msg)
   const album = parseAlbumMessage(msg.content)
   const preview = sf
     ? `🎬 ${(sf.title || t('shortFilms.title')).slice(0, 48)}`
-    : msg.type === 'video'
+    : story
+      ? t('share.storyShareOf', { name: story.name })
+      : msg.type === 'video'
       ? t('conversationChat.replyPreviewVideo')
       : msg.type === 'album' || album
         ? t('conversationChat.replyPreviewAlbum')
@@ -967,6 +980,10 @@ function getShortFilmPayload(msg) {
   return parseShortFilmMessage(msg)
 }
 
+function getStorySharePayload(msg) {
+  return parseStorySharePayload(msg)
+}
+
 function getAlbumPayload(msg) {
   if ((msg.type ?? msg.Type) !== 'album') return null
   return parseAlbumMessage(msg.content ?? msg.Content)
@@ -977,13 +994,22 @@ function openSharedShortFilm(payload) {
   router.push({ path: '/short-films/watch', query: { start: payload.id } })
 }
 
+function openSharedStory(payload) {
+  if (!payload?.userId) return
+  const query = payload.slideId ? { slideId: payload.slideId } : undefined
+  router.push({ path: `/stories/view/${payload.userId}`, query })
+}
+
 function openShareToConvModal(msg) {
   showMessageMenu.value = null
   showMessageMenuMsg.value = null
   const sf = parseShortFilmMessage(msg)
+  const story = parseStorySharePayload(msg)
   const shareMessage = sf
     ? buildShortFilmShareMessage(sf)
-    : { content: msg.content, type: msg.type || 'text' }
+    : story
+      ? { type: 'story_share', content: msg.content }
+      : { content: msg.content, type: msg.type || 'text' }
   router.push({
     path: '/share-message',
     state: {
@@ -1645,6 +1671,30 @@ function removeReaction(msg) {
             :payload="getShortFilmPayload(msg)"
             @open="openSharedShortFilm"
           />
+          <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
+        </div>
+        <div
+          v-else-if="getStorySharePayload(msg)"
+          class="bubble short-film-bubble story-share-bubble"
+          @contextmenu="onMessageContextMenu(msg, $event)"
+        >
+          <button
+            v-if="!msg.deletedForEveryone"
+            type="button"
+            class="story-share-card"
+            @click="openSharedStory(getStorySharePayload(msg))"
+          >
+            <img
+              v-if="getStorySharePayload(msg).mediaUrl && getStorySharePayload(msg).mediaType !== 'text'"
+              :src="ensureAbsoluteUrl(getStorySharePayload(msg).mediaUrl)"
+              alt=""
+              class="story-share-card__thumb"
+            />
+            <div class="story-share-card__meta">
+              <span class="story-share-card__title">{{ t('share.storyShareOf', { name: getStorySharePayload(msg).name }) }}</span>
+              <span class="story-share-card__hint">{{ t('share.storyShareHint') }}</span>
+            </div>
+          </button>
           <span v-else class="deleted-msg">{{ t('conversationChat.messageDeleted') }}</span>
         </div>
         <div
@@ -3061,6 +3111,46 @@ html.light .msg-action-react:active {
   box-shadow: none !important;
 }
 
+.story-share-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 260px;
+  padding: 8px;
+  border: none;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.story-share-card__thumb {
+  width: 56px;
+  height: 74px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.story-share-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.story-share-card__title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.story-share-card__hint {
+  font-size: 12px;
+  opacity: 0.75;
+}
 
 .audio-bubble {
   padding: 0;

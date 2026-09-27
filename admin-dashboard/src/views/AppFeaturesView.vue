@@ -92,17 +92,17 @@ onMounted(fetchConfig)
         class="mb-0"
         title="وضع مراجعة App Store (محادثات فقط)"
       >
-        لإخفاء الدردشة العشوائية والاتصال بالكود بالكامل من تطبيق iOS/Android (مثلاً أثناء مراجعة Apple):
-        أوقف <strong>الدردشة العشوائية</strong> و<strong>الاتصال بالكود</strong> معاً. يبقى للمستخدم: المحادثات، طلبات المراسلة، المجموعات، وجهات الاتصال فقط — بدون تبويب «اتصال» وبدون أكواد NX.
+        لإخفاء المحادثة الفورية والاتصال بالكود بالكامل من تطبيق iOS/Android (مثلاً أثناء مراجعة Apple):
+        أوقف <strong>المحادثة الفورية</strong> و<strong>الاتصال بالكود</strong> معاً. يبقى للمستخدم: المحادثات، طلبات المراسلة، المجموعات، وجهات الاتصال فقط — بدون تبويب «اتصال» وبدون أكواد NX.
       </v-alert>
     </v-card>
 
     <v-card rounded="xl" elevation="0" class="pa-4">
       <div class="d-flex align-center justify-space-between py-2">
         <div>
-          <div class="text-subtitle-1 font-weight-medium">إظهار الدردشة العشوائية</div>
+          <div class="text-subtitle-1 font-weight-medium">إظهار المحادثة الفورية</div>
           <div class="text-body-2 text-medium-emphasis mt-1">
-            إظهار زر «ابدأ محادثة عشوائية» وفلتر المطابقة في تبويب الاتصال. عند الإلغاء يُخفى البحث العشوائي ويُمنع الوصول لمسارات `/matching` و`/chat` من التطبيق والخادم.
+            إظهار زر «ابدأ محادثة فورية» وفلتر المطابقة في تبويب الاتصال. عند الإلغاء يُخفى البحث الفوري ويُمنع الوصول لمسارات `/matching` و`/chat` من التطبيق والخادم.
           </div>
         </div>
         <v-switch

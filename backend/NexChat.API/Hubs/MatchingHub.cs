@@ -75,7 +75,7 @@ public class MatchingHub(
     {
         if (!await features.IsRandomChatEnabledAsync())
         {
-            await Clients.Caller.SendAsync("Error", "الدردشة العشوائية غير متاحة حالياً");
+            await Clients.Caller.SendAsync("Error", "المحادثة الفورية غير متاحة حالياً");
             return;
         }
         if (!TryGetUserId(out var userId))
@@ -121,7 +121,7 @@ public class MatchingHub(
     {
         if (!await features.IsRandomChatEnabledAsync())
         {
-            await Clients.Caller.SendAsync("Error", "الدردشة العشوائية غير متاحة حالياً");
+            await Clients.Caller.SendAsync("Error", "المحادثة الفورية غير متاحة حالياً");
             return;
         }
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionIdStr, out var sessionId))

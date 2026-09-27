@@ -51,6 +51,8 @@ Json normalizeMsg(Map<dynamic, dynamic> m) => {
       'myReaction': m.s('myReaction'),
       'disappearMode': m.i('disappearMode'),
       'expiresAt': m.s('expiresAt'),
+      'isViewOnce': m.b('isViewOnce'),
+      'viewOnceOpened': m.b('viewOnceOpened'),
     };
 
 bool messageIsExpired(Json m, [DateTime? now]) {
@@ -71,6 +73,7 @@ String replyPreviewText(String? content, String? type) {
   if (type == 'album') return t('conversationChat.replyPreviewAlbum');
   if (type == 'audio') return t('conversationChat.voiceMessage');
   if (type == 'image') return t('conversationChat.replyPreviewImage');
+  if (type == 'story_share') return parseStoryShareMessage('story_share', content ?? '')?.listPreview ?? t('share.storySharePreview');
   if (type == 'story_reply') return parseStoryReplyMessage('story_reply', content ?? '')?.listPreview ?? t('stories.storyReplyPreview');
   if (type == 'call') return formatCallMessagePreview(content, mine: false);
   if (content == null || content.isEmpty) return '';
@@ -200,6 +203,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
             'isOnline': fromList.b('partnerIsOnline'),
           };
     var isGroup = fromList?.b('isGroup') ?? false;
+    var isSupport = fromList?.b('isSupport') ?? false;
     if (fromList == null && ref.read(networkProvider)) {
       try {
         final data = await Api.get('/conversations/$_cid') as Map;
@@ -207,12 +211,13 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           isGroup = true;
           partner = {'id': _cid, 'name': data.s('groupName') ?? 'مجموعة', 'avatar': data.s('groupImageUrl')};
         } else if (data.s('partnerId') != null) {
+          isSupport = data.b('isSupport');
           partner = {'id': data.s('partnerId'), 'name': data.s('partnerName') ?? '', 'avatar': data.s('partnerAvatar'), 'isOnline': data.b('partnerIsOnline')};
         }
       } catch (_) {}
     }
     if (!mounted || !_ownsStore) return;
-    _store.setConversation(_cid, partner, isGroup: isGroup);
+    _store.setConversation(_cid, partner, isGroup: isGroup, isSupport: isSupport);
     if (isGroup && ref.read(networkProvider)) _fetchGroupSenders();
 
     final cached = Prefs.instance.getString(_cacheKey);
@@ -303,6 +308,24 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           _store.updateReactions(mid, (p.v('reactions') as List?) ?? const []);
           _saveDebounced();
         }
+      }),
+      h.on('ViewOnceOpened', (a) {
+        final p = a.firstOrNull;
+        if (p is! Map) return;
+        final mid = p.s('messageId') ?? '${p.v('messageId') ?? ''}';
+        if (mid.isEmpty) return;
+        final openerId = p.s('userId') ?? '${p.v('userId') ?? ''}';
+        // Per-user receipts: only the opener marks opened locally.
+        // Sender marks opened when anyone opens (matches history load).
+        final existing = ref.read(activeConversationProvider).messages.where((m) => msgId(m) == mid).firstOrNull;
+        final isSender = existing != null && existing.str('senderId') == _me;
+        if (isSender || openerId == _me) {
+          _store.updateById(mid, {'viewOnceOpened': true});
+          _saveDebounced();
+        }
+      }),
+      h.on('ViewOnceScreenshot', (a) {
+        if (mounted) showToast(context, t('conversationChat.viewOnceScreenshotTaken'));
       }),
       h.on('VideoCallDeclined', (a) {
         final cid = '${a.firstOrNull ?? ''}';
@@ -451,7 +474,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final ids = server.map((m) => m['id']).toSet();
     final merged = withoutExpiredMessages([...server, ...pending.where((m) => !ids.contains(m['id']))])
       ..sort((a, b) => (a.date('sentAt') ?? DateTime(0)).compareTo(b.date('sentAt') ?? DateTime(0)));
-    _store.setConversationAndMessages(_cid, partner, isGroup: isGroup, messages: merged);
+    final isSupport = ref.read(activeConversationProvider).isSupport ||
+        partner?.s('uniqueCode') == 'NX-SUPPORT' ||
+        (partner?.s('name') == 'دعم');
+    _store.setConversationAndMessages(_cid, partner, isGroup: isGroup, isSupport: isSupport, messages: merged);
     final mode = raw.i('disappearMode');
     final hasMore = raw.b('hasMore') || raw.v('HasMore') == true;
     final effectiveMode = isGroup && mode == 1 ? 0 : mode;
@@ -739,7 +765,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     });
   }
 
-  Future<void> _sendUploaded(String content, String type) async {
+  Future<void> _sendUploaded(String content, String type, {bool viewOnce = false}) async {
     if (!_requireOnline(send: true)) return;
     final reply = _replyingTo;
     if (reply != null && mounted) setState(() => _replyingTo = null);
@@ -755,25 +781,54 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       'replyToContent': reply?['content'],
       'replyToSenderName': reply?['senderName'],
       'replyToType': reply?['type'],
+      'isViewOnce': viewOnce,
+      'viewOnceOpened': false,
     });
     _scrollToBottom(force: true);
     try {
       await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 25));
-      await Hubs.conversation.invoke('SendMessage', [_cid, content, type, reply?['id'] ?? '']);
+      await Hubs.conversation.invoke('SendMessage', [_cid, content, type, reply?['id'] ?? '', viewOnce]);
       _armPendingTimeout(tempId);
     } catch (_) {
       _store.updateByTempId(tempId, {'status': 'failed'});
     }
   }
 
+  /// Returns true = view once, false = normal, null = cancelled.
+  Future<bool?> _askViewOnceMode() async {
+    return showAppSheet<bool>(
+      context,
+      builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+          child: Column(children: [
+            Text(t('conversationChat.viewOnce'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ctx.colors.textPrimary)),
+            const SizedBox(height: 6),
+            Text(
+              t('conversationChat.viewOnceHint'),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: ctx.colors.textSecondary, height: 1.35),
+            ),
+          ]),
+        ),
+        SheetAction(icon: LucideIcons.eye, label: t('conversationChat.viewOnceSend'), onTap: () => Navigator.pop(ctx, true)),
+        SheetAction(icon: LucideIcons.send, label: t('conversationChat.viewOnceSendNormal'), onTap: () => Navigator.pop(ctx, false)),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('common.cancel'))),
+        const SizedBox(height: 8),
+      ]),
+    );
+  }
+
   Future<void> _attachImage() async {
     if (!_requireOnline(send: true)) return;
     final f = await pickImage();
     if (f == null) return;
+    final mode = await _askViewOnceMode();
+    if (mode == null || !mounted) return;
     setState(() => _uploadingImage = true);
     try {
       final url = await uploadFile('/media/upload', f.path);
-      await _sendUploaded(url, 'image');
+      await _sendUploaded(url, 'image', viewOnce: mode);
     } catch (e) {
       if (mounted) showToast(context, Api.errorMessage(e, t('conversationChat.imageUploadFailed')), error: true);
     } finally {
@@ -785,10 +840,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (!_requireOnline(send: true)) return;
     final f = await pickVideo();
     if (f == null) return;
+    final mode = await _askViewOnceMode();
+    if (mode == null || !mounted) return;
     setState(() => _uploadingVideo = true);
     try {
       final url = await uploadFile('/media/upload-chat-video', f.path, timeout: const Duration(seconds: 120));
-      await _sendUploaded(url, 'video');
+      await _sendUploaded(url, 'video', viewOnce: mode);
     } catch (e) {
       if (mounted) showToast(context, Api.errorMessage(e, t('conversationChat.videoUploadFailed')), error: true);
     } finally {
@@ -918,7 +975,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     }
     try {
       await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 20));
-      await Hubs.conversation.invoke('SendMessage', [_cid, msg.str('content'), msg.s('type') ?? 'text', msg.s('replyToMessageId') ?? '']);
+      await Hubs.conversation.invoke('SendMessage', [_cid, msg.str('content'), msg.s('type') ?? 'text', msg.s('replyToMessageId') ?? '', msg.b('isViewOnce')]);
       _armPendingTimeout(newTemp);
     } catch (_) {
       _store.updateByTempId(newTemp, {'status': 'failed'});
@@ -936,14 +993,18 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       final title = sf.title.isEmpty ? t('shortFilms.title') : sf.title;
       preview = '🎬 ${title.length > 48 ? title.substring(0, 48) : title}';
     } else if (type == 'video') {
-      preview = t('conversationChat.replyPreviewVideo');
+      preview = msg.b('isViewOnce') ? t('conversationChat.viewOnceVideo') : t('conversationChat.replyPreviewVideo');
     } else if (type == 'album' || album != null) {
       preview = t('conversationChat.replyPreviewAlbum');
+    } else if (type == 'story_share') {
+      preview = parseStoryShareMessage(type, msg.str('content'))?.listPreview ?? t('share.storySharePreview');
     } else if (type == 'story_reply') {
       preview = parseStoryReplyMessage(type, msg.str('content'))?.listPreview ?? t('stories.storyReplyPreview');
     } else if (type == 'text') {
       final s = msg.str('content');
       preview = s.length > 50 ? s.substring(0, 50) : s;
+    } else if (type == 'image') {
+      preview = msg.b('isViewOnce') ? t('conversationChat.viewOncePhoto') : t('conversationChat.replyPreviewImage');
     } else {
       preview = type == 'audio' ? '🎤' : '🖼';
     }
@@ -960,20 +1021,105 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   void _share(Json msg) {
+    if (msg.b('isViewOnce')) return;
     final type = msg.s('type') ?? 'text';
     final sf = parseShortFilmMessage(type, msg.str('content'));
-    final share = sf != null
-        ? {'type': 'short_film', 'content': buildShortFilmShareContent(sf.id, sf.title, sf.thumbnailUrl)}
-        : {'type': type, 'content': msg.str('content')};
+    final story = parseStoryShareMessage(type, msg.str('content'));
+    final Map<String, dynamic> share;
+    if (sf != null) {
+      share = {'type': 'short_film', 'content': buildShortFilmShareContent(sf.id, sf.title, sf.thumbnailUrl)};
+    } else if (story != null) {
+      share = {
+        'type': 'story_share',
+        'content': buildStoryShareContent(
+          userId: story.userId,
+          slideId: story.slideId,
+          name: story.name,
+          mediaUrl: story.mediaUrl,
+          mediaType: story.mediaType,
+          caption: story.caption,
+          backgroundColor: story.backgroundColor,
+        ),
+      };
+    } else {
+      share = {'type': type, 'content': msg.str('content')};
+    }
     context.push('/share-message', extra: {'shareMessage': share, 'sourceConversationId': _cid});
   }
 
   Future<void> _download(Json msg) async {
+    if (msg.b('isViewOnce')) return;
     try {
       await downloadMessageMedia(msg);
       if (mounted) showToast(context, t('conversationChat.downloadSuccess'));
     } catch (_) {
       if (mounted) showToast(context, t('conversationChat.downloadFailed'), error: true);
+    }
+  }
+
+  Future<void> _openViewOnce(Json msg) async {
+    final mine = msg['senderId'] == _me;
+    final type = msg.s('type') ?? 'image';
+    final localContent = msg.str('content');
+    final id = msg.s('id');
+    final opened = msg.b('viewOnceOpened');
+    if (!mine && opened) {
+      if (mounted) showToast(context, t('conversationChat.viewOnceAlreadyOpened'));
+      return;
+    }
+    // Sender (or pending optimistic): open local/server URL in fullscreen only — never inline.
+    if (mine && localContent.isNotEmpty && (id == null || id.isEmpty || id.startsWith('temp'))) {
+      if (!mounted) return;
+      if (type == 'video') {
+        await showVideoViewer(context, localContent, allowDownload: false);
+      } else {
+        await showImageViewer(context, [localContent], allowDownload: false);
+      }
+      return;
+    }
+    if (!_requireOnline()) return;
+    if (id == null || id.isEmpty) return;
+    try {
+      await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 15));
+      final raw = await Hubs.conversation.invoke('OpenViewOnce', [id]);
+      if (raw is! Map) {
+        if (mounted) showToast(context, t('conversationChat.viewOnceOpenFailed'), error: true);
+        return;
+      }
+      final map = Map<dynamic, dynamic>.from(raw);
+      final content = map.s('content') ?? '${map.v('content') ?? ''}';
+      final mediaType = map.s('type') ?? type;
+      final already = map.b('opened');
+      if (content.isEmpty || already) {
+        if (!mine) {
+          _store.updateById(id, {'viewOnceOpened': true});
+          _saveDebounced();
+        }
+        if (mounted) showToast(context, t('conversationChat.viewOnceAlreadyOpened'));
+        return;
+      }
+      // Server burns on OpenViewOnce; show media first, then mark local + legacy Confirm ack.
+      if (!mounted) return;
+      void reportShot() {
+        Hubs.conversation.invoke('ReportViewOnceScreenshot', [id]).catchError((_) => null);
+      }
+      try {
+        if (mediaType == 'video') {
+          await showVideoViewer(context, content, allowDownload: false, onScreenshot: mine ? null : reportShot);
+        } else {
+          await showImageViewer(context, [content], allowDownload: false, onScreenshot: mine ? null : reportShot);
+        }
+      } finally {
+        if (!mine) {
+          _store.updateById(id, {'viewOnceOpened': true});
+          _saveDebounced();
+          try {
+            await Hubs.conversation.invoke('ConfirmViewOnceOpened', [id]);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      if (mounted) showToast(context, t('conversationChat.viewOnceOpenFailed'), error: true);
     }
   }
 
@@ -985,6 +1131,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       'album' => t('conversationChat.downloadAlbum'),
       _ => t('conversationChat.downloadImage'),
     };
+    final viewOnce = msg.b('isViewOnce');
     showAppSheet<void>(
       context,
       builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
@@ -1005,11 +1152,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           Navigator.pop(ctx);
           _reply(msg);
         }),
-        SheetAction(icon: LucideIcons.forward, label: t('conversationChat.share'), onTap: () {
-          Navigator.pop(ctx);
-          _share(msg);
-        }),
-        if (canDownloadMessage(msg))
+        if (!viewOnce)
+          SheetAction(icon: LucideIcons.forward, label: t('conversationChat.share'), onTap: () {
+            Navigator.pop(ctx);
+            _share(msg);
+          }),
+        if (!viewOnce && canDownloadMessage(msg))
           SheetAction(icon: LucideIcons.download, label: label, onTap: () {
             Navigator.pop(ctx);
             _download(msg);
@@ -1178,6 +1326,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   Future<void> _deleteConversation() async {
     if (!_requireOnline()) return;
+    if (ref.read(activeConversationProvider).isSupport) {
+      if (mounted) showToast(context, t('settings.supportDesc'), error: true);
+      return;
+    }
     final ok = await confirmDialog(
       context,
       title: '${t('conversationChat.deleteConversation')}؟',
@@ -1196,6 +1348,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   void _openPartner() {
     final s = ref.read(activeConversationProvider);
+    if (s.isSupport) return;
     if (s.isGroup) {
       context.push('/conversation/$_cid/group-info');
       return;
@@ -1239,6 +1392,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final c = context.colors;
     final partner = ref.watch(activeConversationProvider.select((s) => s.partner));
     final isGroup = ref.watch(activeConversationProvider.select((s) => s.isGroup));
+    final isSupport = ref.watch(activeConversationProvider.select((s) => s.isSupport));
     final partnerTyping = ref.watch(activeConversationProvider.select((s) => s.partnerTyping));
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final pad = MediaQuery.paddingOf(context);
@@ -1334,13 +1488,14 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                 ),
               ),
               const SizedBox(width: 4),
-              if (!isGroup) ...[
+              if (!isGroup && !isSupport) ...[
                 _HeaderAction(icon: LucideIcons.video, onTap: () => _startCall(voiceOnly: false)),
                 const SizedBox(width: 6),
                 _HeaderAction(icon: LucideIcons.phone, onTap: () => _startCall(voiceOnly: true)),
                 const SizedBox(width: 6),
               ],
-              _HeaderAction(icon: LucideIcons.trash2, onTap: _deleteConversation, danger: true),
+              if (!isSupport)
+                _HeaderAction(icon: LucideIcons.trash2, onTap: _deleteConversation, danger: true),
             ]),
           ),
           if (_disappearMode != 0)
@@ -1415,6 +1570,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                               onRetry: () => _retry(msg),
                               onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
                               onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
+                              onViewOnceOpen: () => _openViewOnce(msg),
                             ),
                           );
                         },
@@ -1851,6 +2007,7 @@ class MessageItem extends StatelessWidget {
     this.onRetry,
     this.onReplyTap,
     this.onSenderTap,
+    this.onViewOnceOpen,
   });
 
   final Json msg;
@@ -1866,6 +2023,7 @@ class MessageItem extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onReplyTap;
   final VoidCallback? onSenderTap;
+  final VoidCallback? onViewOnceOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -1873,8 +2031,11 @@ class MessageItem extends StatelessWidget {
     final type = msg.s('type') ?? 'text';
     final content = msg.str('content');
     final deleted = msg.b('deletedForEveryone');
+    final viewOnce = msg.b('isViewOnce');
+    final viewOnceOpened = msg.b('viewOnceOpened');
     final album = type == 'album' ? parseAlbumMessage(content) : null;
     final sf = parseShortFilmMessage(type, content);
+    final storyShare = parseStoryShareMessage(type, content);
     final storyReply = parseStoryReplyMessage(type, content);
     final fg = mine ? Colors.white : c.msgTheirsColor;
     final reactions = (msg['reactions'] as List? ?? const []).whereType<Map>().toList();
@@ -1885,15 +2046,38 @@ class MessageItem extends StatelessWidget {
     }
     myReaction ??= msg.s('myReaction');
 
-    final isMediaBubble = type == 'image' || album != null || type == 'video' || sf != null || storyReply != null;
+    final isMediaBubble = type == 'image' || album != null || type == 'video' || sf != null || storyShare != null || storyReply != null || viewOnce;
 
     Widget body;
     if (deleted) {
       body = Text(t('conversationChat.messageDeleted'), style: TextStyle(fontStyle: FontStyle.italic, color: fg.withValues(alpha: 0.7), fontSize: 14));
     } else if (type == 'call') {
       return _CallHistoryRow(msg: msg, mine: mine, me: me);
+    } else if (storyShare != null) {
+      body = _StoryShareBubble(
+        share: storyShare,
+        mine: mine,
+        fg: fg,
+        onOpen: () {
+          final slide = storyShare.slideId;
+          final path = (slide != null && slide.isNotEmpty)
+              ? '/stories/view/${storyShare.userId}?slideId=${Uri.encodeQueryComponent(slide)}'
+              : '/stories/view/${storyShare.userId}';
+          context.push(path);
+        },
+      );
     } else if (storyReply != null) {
       body = _StoryReplyBubble(reply: storyReply, mine: mine, fg: fg);
+    } else if (viewOnce && (type == 'image' || type == 'video')) {
+      // Never show thumbnail/player inline — only after tap (fullscreen).
+      final lockedForRecipient = !mine && viewOnceOpened;
+      body = _ViewOncePlaceholder(
+        type: type,
+        opened: lockedForRecipient,
+        fg: fg,
+        onTap: lockedForRecipient ? null : onViewOnceOpen,
+        senderOpenedHint: mine && viewOnceOpened,
+      );
     } else if (type == 'image') {
       body = GestureDetector(
         onTap: () => showImageViewer(context, [content]),
@@ -2052,6 +2236,170 @@ class MessageItem extends StatelessWidget {
                 ]),
               ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewOncePlaceholder extends StatelessWidget {
+  const _ViewOncePlaceholder({
+    required this.type,
+    required this.opened,
+    required this.fg,
+    this.onTap,
+    this.senderOpenedHint = false,
+  });
+
+  final String type;
+  final bool opened;
+  final Color fg;
+  final VoidCallback? onTap;
+  /// Sender sees that the recipient opened it, but media stays hidden in the bubble.
+  final bool senderOpenedHint;
+
+  @override
+  Widget build(BuildContext context) {
+    final isVideo = type == 'video';
+    final String title;
+    final String? subtitle;
+    if (opened) {
+      title = t('conversationChat.viewOnceOpened');
+      subtitle = null;
+    } else if (senderOpenedHint) {
+      title = isVideo ? t('conversationChat.viewOnceVideo') : t('conversationChat.viewOncePhoto');
+      subtitle = t('conversationChat.viewOnceOpened');
+    } else {
+      title = isVideo ? t('conversationChat.viewOnceVideo') : t('conversationChat.viewOncePhoto');
+      subtitle = t('conversationChat.viewOnceTapToOpen');
+    }
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 180, maxWidth: 240),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: fg.withValues(alpha: 0.15),
+              ),
+              child: Icon(
+                opened ? LucideIcons.eyeOff : (isVideo ? LucideIcons.video : LucideIcons.eye),
+                size: 20,
+                color: fg,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: fg)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(fontSize: 12, color: fg.withValues(alpha: 0.75))),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StoryShareBubble extends StatelessWidget {
+  const _StoryShareBubble({required this.share, required this.mine, required this.fg, required this.onOpen});
+
+  final StoryShareRef share;
+  final bool mine;
+  final Color fg;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 72,
+        height: 96,
+        child: share.isText
+            ? DecoratedBox(
+                decoration: storyBackgroundDecoration(share.backgroundColor),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      (share.caption ?? '').trim().isEmpty ? t('stories.allStory') : share.caption!,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, height: 1.25),
+                    ),
+                  ),
+                ),
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image(
+                    image: mediaImage(share.mediaUrl!, cacheWidth: bubbleImageCacheWidth),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => ColoredBox(
+                      color: Colors.black26,
+                      child: Icon(share.isVideo ? LucideIcons.video : LucideIcons.image, color: Colors.white70, size: 22),
+                    ),
+                  ),
+                  if (share.isVideo) const Center(child: Icon(LucideIcons.play, color: Colors.white, size: 22)),
+                ],
+              ),
+      ),
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(12),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              thumb,
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t('share.storyShareOf', {'name': share.name}),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: fg),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      t('share.storyShareHint'),
+                      style: TextStyle(fontSize: 12, color: fg.withValues(alpha: 0.75)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

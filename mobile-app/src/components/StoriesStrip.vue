@@ -68,6 +68,13 @@ const props = defineProps({
 const isHero = computed(() => props.variant === 'hero')
 const skeletonCount = computed(() => (isHero.value ? 5 : 6))
 const showStoriesLoading = computed(() => storiesStore.loading)
+
+const otherRings = computed(() => {
+  const others = storiesStore.feed.filter((r) => !r.isMine)
+  const official = others.filter((r) => r.isOfficial)
+  const rest = others.filter((r) => !r.isOfficial)
+  return [...official, ...rest]
+})
 </script>
 
 <template>
@@ -108,7 +115,7 @@ const showStoriesLoading = computed(() => storiesStore.loading)
       </button>
 
       <button
-        v-for="ring in storiesStore.feed.filter(r => !r.isMine)"
+        v-for="ring in otherRings"
         :key="ring.userId"
         type="button"
         class="story-ring"

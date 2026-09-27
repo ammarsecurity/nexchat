@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { X, Eye, Send, Pause, Volume2, VolumeX, Share2, Heart } from 'lucide-vue-next'
-import { shareStoryPublic } from '../utils/shareExternal'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '../stores/locale'
 import api from '../services/api'
@@ -55,7 +54,27 @@ function closeStoryDialog() {
 }
 
 async function shareCurrentStory() {
-  await shareStoryPublic(userId.value, { t, publisherName: publisherName.value })
+  const slide = current.value
+  if (!slide) return
+  paused.value = true
+  router.push({
+    path: '/share-message',
+    state: {
+      shareMessage: {
+        type: 'story_share',
+        content: JSON.stringify({
+          userId: userId.value,
+          slideId: slide.id,
+          name: publisherName.value,
+          mediaUrl: slide.mediaUrl || null,
+          mediaType: slide.mediaType || 'image',
+          caption: slide.caption || null,
+          backgroundColor: slide.backgroundColor || null
+        })
+      },
+      returnPath: route.fullPath
+    }
+  })
 }
 
 const mediaCache = new Set()
@@ -71,7 +90,9 @@ const SWIPE_DOWN_MIN = 72
 
 const current = computed(() => slides.value[index.value])
 const isOwner = computed(() => String(userId.value) === String(auth.user?.id))
-const publisherName = computed(() => storiesStore.feed.find(r => String(r.userId) === String(userId.value))?.name ?? '—')
+const publisherRing = computed(() => storiesStore.feed.find(r => String(r.userId) === String(userId.value)))
+const publisherName = computed(() => publisherRing.value?.name ?? '—')
+const isOfficial = computed(() => !!(publisherRing.value?.isOfficial))
 
 const feedRings = computed(() => {
   const withSlides = storiesStore.feed.filter(r => (r.slideCount ?? 0) > 0)
@@ -237,7 +258,10 @@ async function loadSlidesForUser(uid, opts = {}) {
 async function loadSlides(opts = {}) {
   const { initial = true, clearCache = true } = opts
   if (clearCache) mediaCache.clear()
-  await loadSlidesForUser(userId.value, { startSlideId: route.query.slideId, initial })
+  await loadSlidesForUser(userId.value, {
+    startSlideId: route.query.slideId || route.query.slide,
+    initial
+  })
 }
 
 async function switchToFeedUser(targetUid, direction) {
@@ -464,7 +488,7 @@ function togglePause() {
 async function sendReply() {
   const slide = current.value
   const text = replyText.value.trim()
-  if (!slide?.id || !text || sending.value || isOwner.value) return
+  if (!slide?.id || !text || sending.value || isOwner.value || isOfficial.value) return
   sending.value = true
   try {
     const { data } = await api.post(`/stories/${slide.id}/reply`, { text })
@@ -616,7 +640,7 @@ onUnmounted(clearTimer)
         </div>
       </div>
 
-      <footer v-if="!isOwner" class="viewer-reply" @click.stop>
+      <footer v-if="!isOwner && !isOfficial" class="viewer-reply" @click.stop>
         <input
           v-model="replyText"
           type="text"

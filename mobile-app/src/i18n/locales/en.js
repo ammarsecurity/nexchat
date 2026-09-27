@@ -31,8 +31,8 @@ export default {
     logoutConfirm: 'Log out',
     logoutConfirmText: 'Are you sure you want to log out?',
     onlineNow: 'Online now',
-    startRandom: 'Start random chat',
-    randomNav: 'Random',
+    startRandom: 'Start instant chat',
+    randomNav: 'Instant',
     filterLabel: 'Match filter',
     filterAll: 'All',
     filterMale: 'Male',
@@ -237,7 +237,7 @@ export default {
     accept: 'Accept',
     decline: 'Decline',
     skip: 'Skip',
-    exitRandom: 'Leave random chat',
+    exitRandom: 'Leave chat',
     legalHint: 'Abuse and harassment are prohibited. Violations can be reported and are reviewed within 24 hours.'
   },
   randomChat: {
@@ -620,7 +620,10 @@ export default {
     openingInvite: 'Opening invite...',
     shareInvite: 'Share invite',
     shareStory: 'Share story',
-    shareFilm: 'Share film'
+    shareFilm: 'Share film',
+    storySharePreview: '◌ Story',
+    storyShareOf: '{name}\'s story',
+    storyShareHint: 'Tap to open story'
   },
   connectionHistory: {
     title: 'Code connections',

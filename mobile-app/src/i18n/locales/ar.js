@@ -31,8 +31,8 @@ export default {
     logoutConfirm: 'تسجيل الخروج',
     logoutConfirmText: 'هل أنت متأكد من تسجيل الخروج؟',
     onlineNow: 'متصل الآن',
-    startRandom: 'ابدأ محادثة عشوائية',
-    randomNav: 'عشوائي',
+    startRandom: 'ابدأ محادثة فورية',
+    randomNav: 'فوري',
     filterLabel: 'فلتر المطابقة',
     filterAll: 'الكل',
     filterMale: 'ذكور',
@@ -237,7 +237,7 @@ export default {
     accept: 'قبول',
     decline: 'رفض',
     skip: 'تخطٍ',
-    exitRandom: 'الخروج من الدردشة العشوائية',
+    exitRandom: 'الخروج من المحادثة',
     legalHint: 'يمنع إساءة الاستخدام والتحرش. المحتوى المخالف يُبلّغ ويُراجع خلال 24 ساعة.'
   },
   randomChat: {
@@ -620,7 +620,10 @@ export default {
     openingInvite: 'جاري فتح الدعوة...',
     shareInvite: 'مشاركة الدعوة',
     shareStory: 'مشاركة الستوري',
-    shareFilm: 'مشاركة الفيلم'
+    shareFilm: 'مشاركة الفيلم',
+    storySharePreview: '◌ ستوري',
+    storyShareOf: 'ستوري {name}',
+    storyShareHint: 'اضغط لفتح الستوري'
   },
   connectionHistory: {
     title: 'اتصالات الكود',

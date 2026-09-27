@@ -30,6 +30,8 @@ import '../auth/auth_controller.dart';
 import '../conversations/conversations_list_controller.dart';
 import '../notifications/notifications_controller.dart';
 import '../settings/avatar_picker_sheet.dart';
+import '../short_films/short_films_controller.dart';
+import '../short_films/short_films_hub_screen.dart';
 import 'matching_controller.dart';
 
 /// views/HomeView.vue
@@ -308,118 +310,128 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final featured = user?.isFeatured ?? false;
     final uniqueCode = user?.uniqueCode;
 
+    final filmsState = filmsOn ? ref.watch(shortFilmsProvider) : null;
+    if (filmsOn && filmsState != null && !filmsState.loaded && !filmsState.loading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(shortFilmsProvider.notifier).fetchAll(force: true);
+      });
+    }
+
+    Widget avatarBadge({double size = 40}) {
+      if (user == null) return const SizedBox.shrink();
+      return GestureDetector(
+        onTap: () => context.push('/profile/${user.id}'),
+        child: Stack(clipBehavior: Clip.none, children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: auth.avatarColor,
+              border: Border.all(color: c.primaryMuted, width: 2),
+              boxShadow: featured ? const [BoxShadow(color: Color(0x66FF7300), spreadRadius: 2)] : null,
+            ),
+            clipBehavior: Clip.antiAlias,
+            alignment: Alignment.center,
+            child: isImageAvatar(auth.avatar)
+                ? UserAvatar(url: auth.avatar, name: user.name, size: size - 4)
+                : Text(
+                    (auth.avatar?.isNotEmpty ?? false) ? auth.avatar! : (user.name.isEmpty ? '?' : user.name.characters.first.toUpperCase()),
+                    style: TextStyle(fontSize: size * 0.36, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+          ),
+          if (featured) const PositionedDirectional(top: -2, end: -2, child: Icon(LucideIcons.crown, size: 12, color: Color(0xFFFF7300))),
+        ]),
+      );
+    }
+
     final header = Padding(
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 10, 16, 8),
-      child: Row(children: [
-        Expanded(child: Text(t('nav.connect'), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: c.textPrimary))),
-        GlassIconButton(icon: LucideIcons.bell, color: c.textSecondary, badgeDot: unread > 0, onTap: () => context.push('/notifications')),
+      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: Text(t('nav.connect'), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: c.textPrimary, height: 1.15)),
+          ),
+          GlassIconButton(icon: LucideIcons.bell, color: c.textSecondary, badgeDot: unread > 0, onTap: () => context.push('/notifications')),
+        ]),
+        if (user != null) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            avatarBadge(size: 42),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${t('home.greeting')} ${user.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textPrimary),
+              ),
+            ),
+          ]),
+        ],
       ]),
     );
 
-    final profile = user == null
-        ? const SizedBox.shrink()
-        : Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () => context.push('/profile/${user.id}'),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                child: Row(children: [
-                  Stack(clipBehavior: Clip.none, children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: auth.avatarColor,
-                        border: Border.all(color: c.primaryMuted, width: 2),
-                        boxShadow: featured ? const [BoxShadow(color: Color(0x66FF7300), spreadRadius: 2)] : null,
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      alignment: Alignment.center,
-                      child: isImageAvatar(auth.avatar)
-                          ? UserAvatar(url: auth.avatar, name: user.name, size: 44)
-                          : Text((auth.avatar?.isNotEmpty ?? false) ? auth.avatar! : (user.name.isEmpty ? '?' : user.name.characters.first.toUpperCase()),
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-                    ),
-                    if (featured) const PositionedDirectional(top: -2, end: -2, child: Icon(LucideIcons.crown, size: 14, color: Color(0xFFFF7300))),
-                  ]),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(t('home.greeting'), style: TextStyle(fontSize: 12, color: c.textMuted)),
-                      Text(user.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: c.textPrimary)),
-                    ]),
-                  ),
-                  if (uniqueCode != null && uniqueCode.isNotEmpty && codeOn) ...[
-                    const SizedBox(width: 8),
-                    Material(
-                      color: c.primarySoft,
-                      shape: const StadiumBorder(),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => _copyCode(uniqueCode),
-                        child: Stack(children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            child: Directionality(
-                              textDirection: TextDirection.ltr,
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(LucideIcons.hash, size: 13, color: c.primary),
-                                const SizedBox(width: 5),
-                                Text(uniqueCode,
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.66, color: c.primary)),
-                                const SizedBox(width: 5),
-                                Icon(LucideIcons.copy, size: 13, color: c.primary),
-                              ]),
+    final codeChip = (uniqueCode != null && uniqueCode.isNotEmpty && codeOn)
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(children: [
+              Expanded(
+                child: Material(
+                  color: c.bgCard,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: c.border)),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _copyCode(uniqueCode),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(children: [
+                        Icon(LucideIcons.hash, size: 16, color: c.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(
+                              uniqueCode,
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: c.textPrimary),
                             ),
                           ),
-                          if (_copied)
-                            Positioned.fill(
-                              child: Container(
-                                color: c.success,
-                                alignment: Alignment.center,
-                                child: Text(t('common.copiedShort'), style: const TextStyle(color: Colors.white, fontSize: 10)),
-                              ),
-                            ),
-                        ]),
-                      ),
+                        ),
+                        Text(_copied ? t('common.copiedShort') : t('common.copy'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary)),
+                      ]),
                     ),
-                    const SizedBox(width: 8),
-                    Material(
-                      color: c.bgElevated,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: _shareInvite,
-                        child: SizedBox(width: 36, height: 36, child: Icon(LucideIcons.share2, size: 16, color: c.primary)),
-                      ),
-                    ),
-                  ],
-                ]),
+                  ),
+                ),
               ),
-            ),
-          );
+              const SizedBox(width: 8),
+              Material(
+                color: c.primarySoft,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _shareInvite,
+                  child: SizedBox(width: 44, height: 44, child: Icon(LucideIcons.share2, size: 18, color: c.primary)),
+                ),
+              ),
+            ]),
+          )
+        : const SizedBox.shrink();
 
     Widget startButton({required Widget leading, required Widget content, Widget? trailing, VoidCallback? onTap, bool center = false}) => Opacity(
           opacity: onTap == null ? 0.65 : 1,
           child: Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF3B82F6), Color(0xFF2563EB)]),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(22),
               boxShadow: const [BoxShadow(color: Color(0x472563EB), blurRadius: 24, offset: Offset(0, 8))],
             ),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
                 onTap: onTap,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   child: Row(mainAxisAlignment: center ? MainAxisAlignment.center : MainAxisAlignment.start, children: [
                     leading,
                     SizedBox(width: center ? 10 : 14),
@@ -443,21 +455,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       startButton(
         onTap: _loading ? null : _startRandom,
         leading: Container(
-          width: 56,
-          height: 56,
+          width: 58,
+          height: 58,
           decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(16)),
           clipBehavior: Clip.antiAlias,
           alignment: Alignment.center,
           child: Lottie.asset('assets/lottie/chat.json', width: 52, height: 52, frameRate: FrameRate.max, options: LottieOptions(enableMergePaths: true)),
         ),
         content: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          Text(t('home.startRandom'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, height: 1.25)),
-          const SizedBox(height: 2),
-          Text(t('matching.secureSearch'), style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 12, fontWeight: FontWeight.w500)),
+          Text(t('home.startRandom'), style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800, height: 1.25)),
+          const SizedBox(height: 4),
+          Text(t('matching.secureSearch'), style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 12.5, fontWeight: FontWeight.w500)),
         ]),
         trailing: Icon(rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight, size: 22, color: Colors.white.withValues(alpha: 0.85)),
       ),
-      const SizedBox(height: 14),
+      const SizedBox(height: 12),
       Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(color: c.bgElevated, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
@@ -592,7 +604,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ]);
 
     final hub = Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
       decoration: BoxDecoration(
         color: c.bgCard,
@@ -613,56 +625,188 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ]),
     );
 
-    final narrow = MediaQuery.sizeOf(context).width <= 360;
-    Widget shortcut({required Widget icon, required String label, required String to}) => Material(
-          color: c.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: c.border)),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => context.push(to),
-            child: Container(
-              constraints: BoxConstraints(minHeight: narrow ? 72 : 96),
-              padding: EdgeInsets.symmetric(horizontal: narrow ? 16 : 10, vertical: 14),
-              child: Flex(
-                direction: narrow ? Axis.horizontal : Axis.vertical,
-                mainAxisAlignment: narrow ? MainAxisAlignment.start : MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(color: c.primarySoft, borderRadius: BorderRadius.circular(14)),
-                    clipBehavior: Clip.antiAlias,
-                    alignment: Alignment.center,
-                    child: icon,
-                  ),
-                  SizedBox(width: narrow ? 12 : 0, height: narrow ? 0 : 8),
-                  Text(label,
-                      textAlign: narrow ? TextAlign.start : TextAlign.center,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.textPrimary, height: 1.3)),
-                ],
+    void openFilm(ShortFilm f) {
+      if (f.seriesId != null && f.seriesId!.isNotEmpty) {
+        context.push('/short-films/watch?start=${f.id}&series=${f.seriesId}');
+      } else {
+        context.push('/short-films/watch?start=${f.id}');
+      }
+    }
+
+    Widget sectionHeader(String title, {VoidCallback? onSeeAll}) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Row(children: [
+            Expanded(child: Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: c.textPrimary))),
+            if (onSeeAll != null)
+              GestureDetector(
+                onTap: onSeeAll,
+                behavior: HitTestBehavior.opaque,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(t('shortFilms.seeAll'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.primary)),
+                  const SizedBox(width: 2),
+                  Icon(rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight, size: 16, color: c.primary),
+                ]),
+              ),
+          ]),
+        );
+
+    Widget shortcutRow({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required VoidCallback onTap,
+      Color? accent,
+    }) {
+      final a = accent ?? c.primary;
+      return Material(
+        color: c.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: c.border)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Row(children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(color: a.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(14)),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 20, color: a),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: c.textPrimary)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.textMuted)),
+                ]),
+              ),
+              Icon(rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight, size: 18, color: c.textMuted),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    final previewFilms = <ShortFilm>[
+      if (filmsState != null) ...filmsState.visibleFeatured,
+      if (filmsState != null) ...filmsState.gridFilms,
+    ];
+    final seenFilmIds = <String>{};
+    final uniquePreview = <ShortFilm>[];
+    for (final f in previewFilms) {
+      if (seenFilmIds.add(f.id)) uniquePreview.add(f);
+      if (uniquePreview.length >= 12) break;
+    }
+    final previewSeries = filmsState?.series.take(8).toList() ?? const <FilmSeries>[];
+
+    final cardW = (MediaQuery.sizeOf(context).width * 0.30).clamp(104.0, 124.0);
+    final cardH = cardW * 14 / 9;
+
+    Widget filmsDiscover;
+    if (!filmsOn) {
+      filmsDiscover = const SizedBox.shrink();
+    } else if (uniquePreview.isNotEmpty || previewSeries.isNotEmpty) {
+      filmsDiscover = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        sectionHeader(t('shortFilms.title'), onSeeAll: () => context.push('/short-films')),
+        if (uniquePreview.isNotEmpty)
+          SizedBox(
+            height: cardH,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: uniquePreview.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (_, i) => SizedBox(
+                width: cardW,
+                child: FilmCard(film: uniquePreview[i], onTap: () => openFilm(uniquePreview[i])),
               ),
             ),
           ),
-        );
-    final shortcuts = [
-      if (loaded && filmsOn)
-        shortcut(icon: Lottie.asset('assets/lottie/shortFilm.json', width: 32, height: 32), label: t('shortFilms.title'), to: '/short-films'),
-      if (loaded && codeOn) shortcut(icon: Icon(LucideIcons.bookmarkPlus, size: 22, color: c.primary), label: t('home.savedCodes'), to: '/saved-codes'),
+        if (previewSeries.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          sectionHeader(t('shortFilms.series'), onSeeAll: () => context.push('/short-films/catalog?kind=series')),
+          SizedBox(
+            height: cardH + 4,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: previewSeries.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (_, i) {
+                final s = previewSeries[i];
+                return SizedBox(
+                  width: cardW,
+                  child: SeriesCard(series: s, onTap: () => context.push('/short-films/series/${s.id}')),
+                );
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+      ]);
+    } else {
+      filmsDiscover = Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Material(
+          color: c.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: c.border)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => context.push('/short-films'),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                  colors: [Color(0x338B5CF6), Color(0x00000000)],
+                ),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(color: const Color(0x338B5CF6), borderRadius: BorderRadius.circular(18)),
+                  alignment: Alignment.center,
+                  child: Lottie.asset('assets/lottie/shortFilm.json', width: 40, height: 40),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(t('home.exploreFilms'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c.textPrimary)),
+                    const SizedBox(height: 4),
+                    Text(t('home.exploreFilmsHint'), style: TextStyle(fontSize: 12.5, height: 1.35, color: c.textMuted)),
+                  ]),
+                ),
+                Icon(rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight, color: c.textMuted),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final shortcuts = <Widget>[
+      if (loaded && codeOn)
+        shortcutRow(
+          icon: LucideIcons.bookmarkPlus,
+          title: t('home.savedCodes'),
+          subtitle: t('home.savedCodesTileHint'),
+          onTap: () => context.push('/saved-codes'),
+        ),
+      shortcutRow(
+        icon: LucideIcons.messageCircle,
+        title: t('home.goToConversations'),
+        subtitle: t('home.openChatsHint'),
+        onTap: () => context.go('/conversations'),
+        accent: const Color(0xFF06B6D4),
+      ),
     ];
 
-    final primary = Column(mainAxisSize: MainAxisSize.min, children: [
-      hub,
-      if (shortcuts.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: narrow
-              ? Column(children: [for (final (i, s) in shortcuts.indexed) Padding(padding: EdgeInsets.only(top: i > 0 ? 10 : 0), child: s)])
-              : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  for (final (i, s) in shortcuts.indexed) ...[if (i > 0) const SizedBox(width: 10), Expanded(child: s)],
-                  if (shortcuts.length == 1) ...[const SizedBox(width: 10), const Expanded(child: SizedBox())],
-                ]),
-        ),
-    ]);
+    final bottomPad = tabScrollPadding(context, extra: 12);
 
     return Scaffold(
       backgroundColor: c.bgPrimary,
@@ -671,19 +815,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           header,
           const AppUpdateBanner(),
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, box) => SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: box.maxHeight),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Column(children: [profile, if (!compact) primary]),
-                    if (compact) Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: primary),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Column(children: [BannerStrip(placement: 'home'), AppFooter()]),
+            child: RefreshIndicator(
+              color: c.primary,
+              onRefresh: () async {
+                await _loadConversations();
+                if (filmsOn) await ref.read(shortFilmsProvider.notifier).fetchAll(force: true);
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.only(bottom: bottomPad),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  codeChip,
+                  if (!compact) hub,
+                  if (compact)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: hub,
                     ),
-                  ]),
-                ),
+                  if (filmsOn) ...[
+                    if (uniquePreview.isEmpty && previewSeries.isEmpty) sectionHeader(t('home.discoverSection')),
+                    filmsDiscover,
+                  ],
+                  if (shortcuts.isNotEmpty) ...[
+                    sectionHeader(t('home.quickActions')),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < shortcuts.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 10),
+                            shortcuts[i],
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                  const BannerStrip(placement: 'home'),
+                  const AppFooter(),
+                ]),
               ),
             ),
           ),

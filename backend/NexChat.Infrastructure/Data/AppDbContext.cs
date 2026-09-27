@@ -18,6 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
     public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
+    public DbSet<ViewOnceReceipt> ViewOnceReceipts => Set<ViewOnceReceipt>();
     public DbSet<MessageReaction> MessageReactions => Set<MessageReaction>();
     public DbSet<UserMessageDeletion> UserMessageDeletions => Set<UserMessageDeletion>();
     public DbSet<UserConversationDeletion> UserConversationDeletions => Set<UserConversationDeletion>();
@@ -226,6 +227,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.ConversationId, x.SentAt });
         });
 
+        modelBuilder.Entity<ViewOnceReceipt>(e =>
+        {
+            e.HasKey(x => new { x.MessageId, x.UserId });
+            e.HasOne(x => x.Message)
+                .WithMany(m => m.ViewOnceReceipts)
+                .HasForeignKey(x => x.MessageId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.UserId);
+        });
+
         modelBuilder.Entity<MessageReaction>(e =>
         {
             e.HasKey(x => new { x.MessageId, x.UserId });
@@ -360,6 +375,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.FilterId).HasMaxLength(50);
             e.HasIndex(x => new { x.UserId, x.ExpiresAt });
             e.HasIndex(x => x.ExpiresAt);
+            e.HasIndex(x => new { x.IsBroadcast, x.ExpiresAt });
         });
 
         modelBuilder.Entity<StoryView>(e =>

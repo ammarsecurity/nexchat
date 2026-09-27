@@ -32,6 +32,7 @@ import '../features/settings/blocked_screen.dart';
 import '../features/settings/legal_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/short_films/short_film_series_detail_screen.dart';
+import '../features/short_films/short_films_catalog_screen.dart';
 import '../features/short_films/short_films_feed_screen.dart';
 import '../features/short_films/short_films_hub_screen.dart';
 import '../features/splash/splash_screen.dart';
@@ -204,13 +205,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         '/stories/view/:userId',
         (s) => StoryViewerScreen(
           userId: s.pathParameters['userId']!,
-          slideId: s.uri.queryParameters['slideId'],
+          slideId: s.uri.queryParameters['slideId'] ?? s.uri.queryParameters['slide'],
           from: s.uri.queryParameters['from'],
         ),
       ),
       page('/short-films/watch', (s) => ShortFilmsFeedScreen(
             startId: s.uri.queryParameters['start'],
             seriesId: s.uri.queryParameters['series'],
+          )),
+      page('/short-films/catalog', (s) => ShortFilmsCatalogScreen(
+            kind: s.uri.queryParameters['kind'] == 'series' ? 'series' : 'films',
           )),
       page('/short-films/series/:id', (s) => ShortFilmSeriesDetailScreen(seriesId: s.pathParameters['id']!)),
       page('/conversations/create-group', (_) => const CreateGroupScreen()),

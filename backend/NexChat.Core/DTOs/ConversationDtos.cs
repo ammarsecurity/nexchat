@@ -42,7 +42,8 @@ public record ConversationListItemDto(
     bool IsArchived,
     bool IsGroup = false,
     bool PartnerIsOnline = false,
-    bool IsHidden = false
+    bool IsHidden = false,
+    bool IsSupport = false
 );
 
 public record CreateConversationRequest(Guid ContactUserId);

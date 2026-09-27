@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue'
 import api from '../services/api'
 import { notify } from '../utils/notify'
 import AvatarCircle from '../components/AvatarCircle.vue'
+import AdminMessageBody from '../components/AdminMessageBody.vue'
 import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const conversations = ref([])
@@ -432,13 +433,12 @@ async function confirmDeleteMsgs() {
                 <AvatarCircle :name="msg.senderName" :avatar="msg.senderAvatar" :size="22" />
                 <span>{{ msg.senderName }}</span>
               </div>
-              <template v-if="msg.type === 'image'">
-                <a :href="msg.content" target="_blank" class="msg-image-link">
-                  <v-icon size="20">mdi-image</v-icon>
-                  عرض الصورة
-                </a>
-              </template>
-              <div v-else class="msg-text">{{ msg.content }}</div>
+              <AdminMessageBody
+                :type="msg.type"
+                :content="msg.content"
+                :is-view-once="!!msg.isViewOnce"
+                :view-once-open-count="msg.viewOnceOpenCount || 0"
+              />
               <div class="msg-time">{{ formatTime(msg.sentAt) }}</div>
               </div>
             </div>

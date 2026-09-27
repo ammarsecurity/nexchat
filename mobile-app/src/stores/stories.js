@@ -10,21 +10,6 @@ export const useStoriesStore = defineStore('stories', () => {
 
   const unseenCount = computed(() => feed.value.filter(r => !r.isMine && r.hasUnseen).length)
 
-  async function fetchFeed(force = false) {
-    if (loading.value) return
-    if (loaded.value && !force) return
-    loading.value = true
-    try {
-      const { data } = await api.get('/stories/feed', { skipGlobalLoader: true })
-      feed.value = (data ?? []).map(normalizeRing)
-      loaded.value = true
-    } catch {
-      if (!loaded.value) feed.value = []
-    } finally {
-      loading.value = false
-    }
-  }
-
   function normalizeRing(r) {
     return {
       userId: r.userId ?? r.UserId,
@@ -34,7 +19,35 @@ export const useStoriesStore = defineStore('stories', () => {
       latestThumbUrl: r.latestThumbUrl ?? r.LatestThumbUrl,
       latestAt: r.latestAt ?? r.LatestAt,
       slideCount: r.slideCount ?? r.SlideCount ?? 0,
-      isMine: r.isMine ?? r.IsMine ?? false
+      isMine: r.isMine ?? r.IsMine ?? false,
+      isOfficial: r.isOfficial ?? r.IsOfficial ?? false
+    }
+  }
+
+  function sortFeed() {
+    feed.value.sort((a, b) => {
+      const rank = (r) => (r.isMine ? 2 : r.isOfficial ? 1 : 0)
+      const d = rank(b) - rank(a)
+      if (d !== 0) return d
+      const aAt = a.latestAt || ''
+      const bAt = b.latestAt || ''
+      return bAt > aAt ? 1 : bAt < aAt ? -1 : 0
+    })
+  }
+
+  async function fetchFeed(force = false) {
+    if (loading.value) return
+    if (loaded.value && !force) return
+    loading.value = true
+    try {
+      const { data } = await api.get('/stories/feed', { skipGlobalLoader: true })
+      feed.value = (data ?? []).map(normalizeRing)
+      sortFeed()
+      loaded.value = true
+    } catch {
+      if (!loaded.value) feed.value = []
+    } finally {
+      loading.value = false
     }
   }
 
@@ -42,22 +55,26 @@ export const useStoriesStore = defineStore('stories', () => {
     const userId = payload?.userId ?? payload?.UserId
     if (!userId) return
     const idx = feed.value.findIndex(r => String(r.userId) === String(userId))
+    const prev = idx >= 0 ? feed.value[idx] : null
+    const isOfficial = !!(payload.isOfficial ?? payload.IsOfficial ?? prev?.isOfficial)
+    const isMine = !!prev?.isMine
     const ring = {
       userId,
-      name: payload.publisherName ?? payload.PublisherName ?? feed.value[idx]?.name ?? '—',
-      avatar: feed.value[idx]?.avatar,
-      hasUnseen: true,
-      latestThumbUrl: payload.thumbUrl ?? payload.ThumbUrl ?? feed.value[idx]?.latestThumbUrl,
+      name: payload.publisherName ?? payload.PublisherName ?? prev?.name ?? '—',
+      avatar: payload.publisherAvatar ?? payload.PublisherAvatar ?? prev?.avatar,
+      hasUnseen: !isMine,
+      latestThumbUrl: payload.thumbUrl ?? payload.ThumbUrl ?? prev?.latestThumbUrl,
       latestAt: new Date().toISOString(),
-      slideCount: (feed.value[idx]?.slideCount ?? 0) + 1,
-      isMine: false
+      slideCount: (prev?.slideCount ?? 0) + 1,
+      isMine,
+      isOfficial
     }
     if (idx >= 0) {
-      feed.value[idx] = { ...feed.value[idx], ...ring }
+      feed.value[idx] = { ...prev, ...ring }
     } else {
-      feed.value.unshift(ring)
+      feed.value.push(ring)
     }
-    feed.value.sort((a, b) => (b.isMine ? 1 : 0) - (a.isMine ? 1 : 0))
+    sortFeed()
   }
 
   function applyStoryDeleted(payload) {

@@ -973,6 +973,7 @@ class ConversationTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final isGroup = conv.b('isGroup');
+    final isSupport = conv.b('isSupport');
     final unread = conv.i('unreadCount');
     final name = conv.s('partnerName') ?? '—';
     final partnerId = conv.s('partnerId');
@@ -981,7 +982,19 @@ class ConversationTile extends ConsumerWidget {
     final hasEmoji = avatar != null && avatar.trim().isNotEmpty && !hasImage;
 
     Widget avatarWidget;
-    if (isGroup && !hasImage) {
+    if (isSupport && !hasImage && !hasEmoji) {
+      avatarWidget = Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0x332E86FB),
+          border: Border.all(color: c.border),
+        ),
+        alignment: Alignment.center,
+        child: Icon(LucideIcons.headphones, size: 20, color: c.primary),
+      );
+    } else if (isGroup && !hasImage) {
       avatarWidget = Container(
         width: 50,
         height: 50,
@@ -1009,9 +1022,9 @@ class ConversationTile extends ConsumerWidget {
           onLongPress: () => _open(context, '/conversations/${conv.str('id')}/options'),
           child: Container(
             constraints: const BoxConstraints(minHeight: 72),
-            padding: EdgeInsetsDirectional.fromSTEB(isGroup ? 11 : 14, 12, 14, 12),
+            padding: EdgeInsetsDirectional.fromSTEB(isGroup || isSupport ? 11 : 14, 12, 14, 12),
             decoration: BoxDecoration(
-              border: isGroup ? BorderDirectional(start: BorderSide(color: c.primary, width: 3)) : null,
+              border: (isGroup || isSupport) ? BorderDirectional(start: BorderSide(color: c.primary, width: 3)) : null,
               boxShadow: [BoxShadow(color: c.shadow, blurRadius: 4)],
             ),
             child: Row(children: [
@@ -1021,11 +1034,19 @@ class ConversationTile extends ConsumerWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Expanded(
-                      child: Text(name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 16, height: 1.2, fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600, color: c.textPrimary)),
+                      child: Row(children: [
+                        Flexible(
+                          child: Text(name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 16, height: 1.2, fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600, color: c.textPrimary)),
+                        ),
+                        if (isSupport) ...[
+                          const SizedBox(width: 4),
+                          Icon(Icons.verified, size: 16, color: c.primary),
+                        ],
+                      ]),
                     ),
                     Text(formatRelative(conv.date('lastMessageAt')), style: TextStyle(fontSize: 11, color: c.textMuted)),
                   ]),
@@ -1041,7 +1062,14 @@ class ConversationTile extends ConsumerWidget {
                               color: c.textSecondary,
                               fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.w400)),
                     ),
-                    if (isGroup)
+                    if (isSupport)
+                      Container(
+                        margin: const EdgeInsetsDirectional.only(start: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        decoration: BoxDecoration(color: const Color(0x262E86FB), borderRadius: BorderRadius.circular(4)),
+                        child: Text(t('settings.supportChat'), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary)),
+                      )
+                    else if (isGroup)
                       Container(
                         margin: const EdgeInsetsDirectional.only(start: 6),
                         padding: const EdgeInsets.symmetric(horizontal: 5),

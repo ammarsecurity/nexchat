@@ -68,8 +68,22 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             .AnyAsync(d => d.UserId == userId && d.ConversationId == cid);
         if (deleted)
         {
-            await Clients.Caller.SendAsync("Error", "Conversation not found");
-            return;
+            // Support chat is permanent — restore instead of blocking join.
+            var isSupport = conv.Type == ConversationType.Private &&
+                ((conv.User1 != null && conv.User1.UniqueCode == SupportConversationService.SupportUniqueCode) ||
+                 (conv.User2 != null && conv.User2.UniqueCode == SupportConversationService.SupportUniqueCode));
+            if (!isSupport)
+            {
+                await Clients.Caller.SendAsync("Error", "Conversation not found");
+                return;
+            }
+            var del = await db.UserConversationDeletions
+                .FirstOrDefaultAsync(d => d.UserId == userId && d.ConversationId == cid);
+            if (del != null)
+            {
+                db.UserConversationDeletions.Remove(del);
+                await db.SaveChangesAsync();
+            }
         }
 
         var groupName = cid.ToString();
@@ -239,14 +253,16 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             await Clients.Group(cid.ToString()).SendAsync("MessagesRead", new { messageIds = messageIdsToMark });
     }
 
-    public async Task SendMessage(string conversationId, string content, string type = "text", string? replyToMessageId = null)
+    public async Task SendMessage(string conversationId, string content, string type = "text", string? replyToMessageId = null, bool viewOnce = false)
     {
         try
         {
-            logger.LogInformation("SendMessage entered: convId={ConvId}, type={Type}, contentLen={Len}", conversationId, type, content?.Length ?? 0);
+            logger.LogInformation("SendMessage entered: convId={ConvId}, type={Type}, contentLen={Len}, viewOnce={ViewOnce}", conversationId, type, content?.Length ?? 0, viewOnce);
             if (string.IsNullOrWhiteSpace(content) || content.Length > 5000) return;
-            if (type != "text" && type != "image" && type != "audio" && type != "short_film" && type != "video" && type != "album")
+            if (type != "text" && type != "image" && type != "audio" && type != "short_film" && type != "video" && type != "album" && type != "story_share")
                 type = "text";
+            if (viewOnce && type != "image" && type != "video")
+                viewOnce = false;
 
             if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid))
                 return;
@@ -274,7 +290,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                     replyToId = rid;
                     var rt = replyTo.Type ?? "text";
                     var replyPlain = messageCrypto.DecryptFromStorage(replyTo.Content ?? "");
-                    replyToContent = GetReplyPreview(replyPlain, rt);
+                    replyToContent = replyTo.IsViewOnce
+                        ? ConversationPreviewHelper.BuildViewOncePreview(rt)
+                        : GetReplyPreview(replyPlain, rt);
                     var replySender = await db.Users.FindAsync(replyTo.SenderId);
                     replyToSenderName = replySender?.Name ?? (replyTo.SenderId == userId ? "أنت" : "طرف آخر");
                 }
@@ -296,7 +314,8 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 ReplyToMessageId = replyToId,
                 SentAt = sentAt,
                 DisappearMode = disappearMode,
-                ExpiresAt = DisappearMode.ExpiresAtOnSend(disappearMode, sentAt)
+                ExpiresAt = DisappearMode.ExpiresAtOnSend(disappearMode, sentAt),
+                IsViewOnce = viewOnce
             };
             db.ConversationMessages.Add(msg);
             var recipientId = conv.Type == ConversationType.Group ? (Guid?)null : (conv.User1Id == userId ? conv.User2Id : conv.User1Id);
@@ -322,57 +341,47 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             logger.LogInformation("SendMessage SaveChanges OK");
 
             var senderUser = conv.Type == ConversationType.Group ? await db.Users.FindAsync(userId) : null;
-            object receivePayload;
-            if (conv.Type == ConversationType.Group)
+
+            object BuildPayload(bool includeMediaContent) => new
             {
-                receivePayload = new
-                {
-                    msg.Id,
-                    msg.SenderId,
-                    Content = plainBody,
-                    msg.Type,
-                    msg.SentAt,
-                    msg.DeletedForEveryone,
-                    msg.ReplyToMessageId,
-                    ReplyToContent = replyToContent,
-                    ReplyToSenderName = replyToSenderName,
-                    IsRead = false,
-                    SenderName = senderUser?.Name ?? "—",
-                    SenderAvatar = senderUser?.Avatar,
-                    Reactions = Array.Empty<object>(),
-                    MyReaction = (string?)null,
-                    msg.DisappearMode,
-                    msg.ExpiresAt
-                };
-            }
-            else
-            {
-                receivePayload = new
-                {
-                    msg.Id,
-                    msg.SenderId,
-                    Content = plainBody,
-                    msg.Type,
-                    msg.SentAt,
-                    msg.DeletedForEveryone,
-                    msg.ReplyToMessageId,
-                    ReplyToContent = replyToContent,
-                    ReplyToSenderName = replyToSenderName,
-                    IsRead = false,
-                    Reactions = Array.Empty<object>(),
-                    MyReaction = (string?)null,
-                    msg.DisappearMode,
-                    msg.ExpiresAt
-                };
-            }
+                msg.Id,
+                msg.SenderId,
+                Content = includeMediaContent ? plainBody : (viewOnce ? "" : plainBody),
+                msg.Type,
+                msg.SentAt,
+                msg.DeletedForEveryone,
+                msg.ReplyToMessageId,
+                ReplyToContent = replyToContent,
+                ReplyToSenderName = replyToSenderName,
+                IsRead = false,
+                SenderName = conv.Type == ConversationType.Group ? (senderUser?.Name ?? "—") : (string?)null,
+                SenderAvatar = conv.Type == ConversationType.Group ? senderUser?.Avatar : null,
+                Reactions = Array.Empty<object>(),
+                MyReaction = (string?)null,
+                msg.DisappearMode,
+                msg.ExpiresAt,
+                IsViewOnce = viewOnce,
+                ViewOnceOpened = false
+            };
+
             try
             {
                 if (conv.Type == ConversationType.Group)
-                    await Clients.Group(cid.ToString()).SendAsync("ReceiveMessage", receivePayload);
+                {
+                    var memberIds = await db.ConversationMembers
+                        .Where(m => m.ConversationId == cid)
+                        .Select(m => m.UserId)
+                        .ToListAsync();
+                    foreach (var mid in memberIds.Distinct())
+                    {
+                        var include = !viewOnce || mid == userId;
+                        await Clients.User(mid.ToString()).SendAsync("ReceiveMessage", BuildPayload(include));
+                    }
+                }
                 else if (recipientId.HasValue)
                 {
-                    await Clients.User(userId.ToString()).SendAsync("ReceiveMessage", receivePayload);
-                    await Clients.User(recipientId.Value.ToString()).SendAsync("ReceiveMessage", receivePayload);
+                    await Clients.User(userId.ToString()).SendAsync("ReceiveMessage", BuildPayload(true));
+                    await Clients.User(recipientId.Value.ToString()).SendAsync("ReceiveMessage", BuildPayload(!viewOnce));
                 }
             }
             catch (Exception ex)
@@ -383,16 +392,19 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             logger.LogInformation("SendMessage ReceiveMessage sent");
 
             var sender = senderUser ?? await db.Users.FindAsync(userId);
-            var preview = type switch
-            {
-                "text" => plainBody.Length > 80 ? plainBody[..80] + "…" : plainBody,
-                "audio" => "رسالة صوتية",
-                "image" => "صورة",
-                "video" => "فيديو",
-                "album" => ConversationPreviewHelper.BuildAlbumPreview(plainBody),
-                "short_film" => ConversationPreviewHelper.BuildShortFilmPreview(plainBody),
-                _ => plainBody
-            };
+            var preview = viewOnce
+                ? ConversationPreviewHelper.BuildViewOncePreview(type)
+                : type switch
+                {
+                    "text" => plainBody.Length > 80 ? plainBody[..80] + "…" : plainBody,
+                    "audio" => "رسالة صوتية",
+                    "image" => "صورة",
+                    "video" => "فيديو",
+                    "album" => ConversationPreviewHelper.BuildAlbumPreview(plainBody),
+                    "short_film" => ConversationPreviewHelper.BuildShortFilmPreview(plainBody),
+                    "story_share" => ConversationPreviewHelper.BuildStorySharePreview(plainBody),
+                    _ => plainBody
+                };
             if (preview.Length > 80) preview = preview[..80] + "…";
             if (recipientId.HasValue && !await IsHiddenForUserAsync(cid, recipientId.Value))
                 await notificationOutbox.EnqueueAsync(
@@ -460,6 +472,145 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         }
     }
 
+    /// <summary>
+    /// Returns view-once media URL for the caller. For recipients, the one view is burned
+    /// on the first successful open (receipt + ViewOnceOpened). Sender may reopen freely.
+    /// </summary>
+    public async Task<object?> OpenViewOnce(string messageId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(messageId, out var mid))
+            return null;
+
+        var msg = await db.ConversationMessages
+            .FirstOrDefaultAsync(m => m.Id == mid && !m.DeletedForEveryone);
+        if (msg == null || !msg.IsViewOnce) return null;
+        if (msg.Type != "image" && msg.Type != "video") return null;
+        if (msg.ExpiresAt != null && msg.ExpiresAt <= DateTime.UtcNow) return null;
+        if (!await IsParticipant(msg.ConversationId, userId)) return null;
+        if (await db.UserMessageDeletions.AnyAsync(d => d.UserId == userId && d.MessageId == mid))
+            return null;
+
+        var plain = messageCrypto.DecryptFromStorage(msg.Content ?? "");
+        if (string.IsNullOrEmpty(plain)) return null;
+
+        // Sender can reopen without creating a receipt.
+        if (msg.SenderId == userId)
+        {
+            return new { messageId = msg.Id, content = plain, type = msg.Type };
+        }
+
+        var already = await db.ViewOnceReceipts.AnyAsync(r => r.MessageId == mid && r.UserId == userId);
+        if (already)
+            return new { messageId = msg.Id, content = (string?)null, type = msg.Type, opened = true };
+
+        // Burn on first open so clients cannot replay OpenViewOnce without Confirm.
+        db.ViewOnceReceipts.Add(new ViewOnceReceipt
+        {
+            MessageId = mid,
+            UserId = userId,
+            ViewedAt = DateTime.UtcNow
+        });
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            foreach (var entry in db.ChangeTracker.Entries<ViewOnceReceipt>().ToList())
+                entry.State = EntityState.Detached;
+            // Concurrent open from another device — treat as already opened.
+            return new { messageId = msg.Id, content = (string?)null, type = msg.Type, opened = true };
+        }
+
+        var payload = new
+        {
+            messageId = msg.Id,
+            conversationId = msg.ConversationId,
+            userId
+        };
+        await Clients.Group(msg.ConversationId.ToString()).SendAsync("ViewOnceOpened", payload);
+        await Clients.User(msg.SenderId.ToString()).SendAsync("ViewOnceOpened", payload);
+        await Clients.User(userId.ToString()).SendAsync("ViewOnceOpened", payload);
+
+        return new { messageId = msg.Id, content = plain, type = msg.Type, opened = false };
+    }
+
+    /// <summary>
+    /// Legacy client ack. Receipt is created in <see cref="OpenViewOnce"/>; this only
+    /// fills a missing receipt without re-broadcasting if already opened.
+    /// </summary>
+    public async Task ConfirmViewOnceOpened(string messageId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(messageId, out var mid))
+            return;
+
+        var msg = await db.ConversationMessages.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == mid && m.IsViewOnce && !m.DeletedForEveryone);
+        if (msg == null) return;
+        if (msg.SenderId == userId) return;
+        if (msg.Type != "image" && msg.Type != "video") return;
+        if (msg.ExpiresAt != null && msg.ExpiresAt <= DateTime.UtcNow) return;
+        if (!await IsParticipant(msg.ConversationId, userId)) return;
+        if (await db.UserMessageDeletions.AnyAsync(d => d.UserId == userId && d.MessageId == mid))
+            return;
+
+        var already = await db.ViewOnceReceipts.AnyAsync(r => r.MessageId == mid && r.UserId == userId);
+        if (already) return;
+
+        db.ViewOnceReceipts.Add(new ViewOnceReceipt
+        {
+            MessageId = mid,
+            UserId = userId,
+            ViewedAt = DateTime.UtcNow
+        });
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            foreach (var entry in db.ChangeTracker.Entries<ViewOnceReceipt>().ToList())
+                entry.State = EntityState.Detached;
+            return;
+        }
+
+        if (!await db.ViewOnceReceipts.AnyAsync(r => r.MessageId == mid && r.UserId == userId))
+            return;
+
+        var payload = new
+        {
+            messageId = msg.Id,
+            conversationId = msg.ConversationId,
+            userId
+        };
+        await Clients.Group(msg.ConversationId.ToString()).SendAsync("ViewOnceOpened", payload);
+        await Clients.User(msg.SenderId.ToString()).SendAsync("ViewOnceOpened", payload);
+        await Clients.User(userId.ToString()).SendAsync("ViewOnceOpened", payload);
+    }
+
+    /// <summary>Recipient reports a screenshot while viewing view-once media (iOS). Notifies the sender.</summary>
+    public async Task ReportViewOnceScreenshot(string messageId)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(messageId, out var mid))
+            return;
+
+        var msg = await db.ConversationMessages.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == mid && m.IsViewOnce && !m.DeletedForEveryone);
+        if (msg == null) return;
+        if (msg.SenderId == userId) return;
+        if (!await IsParticipant(msg.ConversationId, userId)) return;
+        // Only after the recipient has actually opened (confirmed) the media.
+        if (!await db.ViewOnceReceipts.AnyAsync(r => r.MessageId == mid && r.UserId == userId))
+            return;
+
+        await Clients.User(msg.SenderId.ToString()).SendAsync("ViewOnceScreenshot", new
+        {
+            messageId = msg.Id,
+            conversationId = msg.ConversationId,
+            userId
+        });
+    }
+
     public async Task DeleteMessageForMe(string conversationId, string messageId)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(conversationId, out var cid) || !Guid.TryParse(messageId, out var mid))
@@ -507,6 +658,20 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             return;
 
         if (!await IsParticipant(cid, userId)) return;
+
+        var supportId = await db.Users.AsNoTracking()
+            .Where(u => u.UniqueCode == SupportConversationService.SupportUniqueCode)
+            .Select(u => (Guid?)u.Id)
+            .FirstOrDefaultAsync();
+        if (supportId is Guid sid &&
+            await db.Conversations.AnyAsync(c =>
+                c.Id == cid &&
+                c.Type == ConversationType.Private &&
+                (c.User1Id == sid || c.User2Id == sid)))
+        {
+            await Clients.Caller.SendAsync("Error", "لا يمكن حذف محادثة الدعم");
+            return;
+        }
 
         var exists = await db.UserConversationDeletions.AnyAsync(d => d.UserId == userId && d.ConversationId == cid);
         if (!exists)
@@ -1148,7 +1313,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
             .OrderByDescending(m => m.SentAt)
             .ThenByDescending(m => m.Id)
             .Take(take + 1)
-            .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId, m.DisappearMode, m.ExpiresAt })
+            .Select(m => new { m.Id, m.SenderId, m.Content, m.Type, m.SentAt, m.DeletedForEveryone, m.IsRead, m.ReplyToMessageId, m.DisappearMode, m.ExpiresAt, m.IsViewOnce })
             .ToListAsync();
 
         var hasMore = rawDesc.Count > take;
@@ -1166,17 +1331,34 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 .ToDictionary(g => g.Key, g => g.Select(r => (r.UserId, r.Emoji)).ToList())
             : new Dictionary<Guid, List<(Guid UserId, string Emoji)>>();
 
+        var viewOnceOpenedIds = messageIds.Count > 0
+            ? (await db.ViewOnceReceipts
+                .Where(r => r.UserId == userId && messageIds.Contains(r.MessageId))
+                .Select(r => r.MessageId)
+                .ToListAsync())
+                .ToHashSet()
+            : new HashSet<Guid>();
+
+        var viewOnceAnyOpenedIds = messageIds.Count > 0
+            ? (await db.ViewOnceReceipts
+                .Where(r => messageIds.Contains(r.MessageId))
+                .Select(r => r.MessageId)
+                .Distinct()
+                .ToListAsync())
+                .ToHashSet()
+            : new HashSet<Guid>();
+
         var replyIds = messagesRaw.Where(m => m.ReplyToMessageId != null).Select(m => m.ReplyToMessageId!.Value).Distinct().ToList();
-        Dictionary<Guid, (string Content, string Type, string? SenderName)> replyData;
+        Dictionary<Guid, (string Content, string Type, string? SenderName, bool IsViewOnce)> replyData;
         if (replyIds.Count > 0)
         {
             var replyList = await db.ConversationMessages
                 .Where(m => replyIds.Contains(m.Id))
-                .Select(m => new { m.Id, m.Content, m.Type, SenderName = m.Sender.Name })
+                .Select(m => new { m.Id, m.Content, m.Type, SenderName = m.Sender.Name, m.IsViewOnce })
                 .ToListAsync();
             replyData = replyList.ToDictionary(
                 m => m.Id,
-                m => (messageCrypto.DecryptFromStorage(m.Content ?? ""), m.Type ?? "text", (string?)m.SenderName));
+                m => (messageCrypto.DecryptFromStorage(m.Content ?? ""), m.Type ?? "text", (string?)m.SenderName, m.IsViewOnce));
         }
         else
         {
@@ -1195,11 +1377,20 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         var messages = messagesRaw.Select(m =>
         {
             var decryptedContent = messageCrypto.DecryptFromStorage(m.Content ?? "");
+            // Non-senders never get the URL from history; they must call OpenViewOnce (once).
+            if (m.IsViewOnce && m.SenderId != userId)
+                decryptedContent = "";
+            var viewOnceOpened = m.IsViewOnce && (
+                m.SenderId == userId
+                    ? viewOnceAnyOpenedIds.Contains(m.Id)
+                    : viewOnceOpenedIds.Contains(m.Id));
             string? replyToContent = null;
             string? replyToSenderName = null;
             if (m.ReplyToMessageId != null && replyData.TryGetValue(m.ReplyToMessageId.Value, out var rd))
             {
-                replyToContent = GetReplyPreview(rd.Content, rd.Type);
+                replyToContent = rd.IsViewOnce
+                    ? ConversationPreviewHelper.BuildViewOncePreview(rd.Type)
+                    : GetReplyPreview(rd.Content, rd.Type);
                 replyToSenderName = rd.SenderName ?? "—";
             }
             string? senderName = null;
@@ -1237,7 +1428,9 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
                 Reactions = reactions,
                 MyReaction = myReaction,
                 m.DisappearMode,
-                m.ExpiresAt
+                m.ExpiresAt,
+                IsViewOnce = m.IsViewOnce,
+                ViewOnceOpened = viewOnceOpened
             };
         }).ToList();
 
@@ -1251,6 +1444,7 @@ public class ConversationHub(AppDbContext db, NotificationOutboxService notifica
         if (type == "video") return "فيديو";
         if (type == "album") return ConversationPreviewHelper.BuildAlbumPreview(content ?? "");
         if (type == "short_film") return "فيلم قصير";
+        if (type == "story_share") return ConversationPreviewHelper.BuildStorySharePreview(content ?? "");
         if (type == "story_reply") return ConversationPreviewHelper.BuildStoryReplyPreview(content ?? "");
         if (type == "call") return ConversationPreviewHelper.BuildCallPreview(content ?? "");
         if (string.IsNullOrEmpty(content)) return "";

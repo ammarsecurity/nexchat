@@ -50,6 +50,8 @@ builder.Services.AddScoped<NexChat.API.Services.OtpService>();
 builder.Services.AddScoped<NotificationOutboxService>();
 builder.Services.AddSingleton<UserPresenceService>();
 builder.Services.AddScoped<StoryAudienceService>();
+builder.Services.AddScoped<OfficialStoryPublisherService>();
+builder.Services.AddScoped<SupportConversationService>();
 builder.Services.AddHostedService<NotificationOutboxDispatcherService>();
 builder.Services.AddHostedService<InactiveSessionCleanupService>();
 builder.Services.AddHostedService<StoryExpiryBackgroundService>();
@@ -238,6 +240,16 @@ using (var scope = app.Services.CreateScope())
             IsAdmin = false
         });
         await dbCtx.SaveChangesAsync();
+    }
+
+    try
+    {
+        await scope.ServiceProvider.GetRequiredService<OfficialStoryPublisherService>().GetOrCreateAsync();
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+        logger.LogError(ex, "Failed to ensure official story publisher user");
     }
 }
 

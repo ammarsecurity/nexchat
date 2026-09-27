@@ -11,8 +11,19 @@ class SecureScreen {
   static const _channel = MethodChannel('nexchat/secure');
   static int _holders = 0;
   static Future<void> _queue = Future.value();
+  static void Function()? onScreenshot;
+  static bool _handlerReady = false;
+
+  static void ensureHandler() {
+    if (_handlerReady) return;
+    _handlerReady = true;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onScreenshot') onScreenshot?.call();
+    });
+  }
 
   static Future<void> acquire() {
+    ensureHandler();
     final done = Completer<void>();
     _queue = _queue.then((_) async {
       try {

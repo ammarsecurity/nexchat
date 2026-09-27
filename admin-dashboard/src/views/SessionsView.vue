@@ -120,7 +120,7 @@ onMounted(fetchSessions)
             variant="tonal"
             :prepend-icon="item.type === 'random' ? 'mdi-shuffle' : 'mdi-key'"
           >
-            {{ item.type === 'random' ? 'عشوائي' : 'كود' }}
+            {{ item.type === 'random' ? 'فوري' : 'كود' }}
           </v-chip>
         </template>
 

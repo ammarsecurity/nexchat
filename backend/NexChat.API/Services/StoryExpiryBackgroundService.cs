@@ -45,6 +45,7 @@ public class StoryExpiryBackgroundService(
 
         var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
         var byUser = expired.GroupBy(s => s.UserId);
+        var audience = scope.ServiceProvider.GetRequiredService<StoryAudienceService>();
 
         foreach (var slide in expired)
         {
@@ -56,7 +57,19 @@ public class StoryExpiryBackgroundService(
 
         foreach (var group in byUser)
         {
-            var audience = scope.ServiceProvider.GetRequiredService<StoryAudienceService>();
+            var isOfficial = group.Any(s => s.IsBroadcast) || await audience.IsOfficialPublisherAsync(group.Key);
+            if (isOfficial)
+            {
+                foreach (var slide in group)
+                {
+                    await hub.Clients.All.SendAsync(
+                        "StoryDeleted",
+                        new { userId = group.Key, slideId = slide.Id, isOfficial = true },
+                        ct);
+                }
+                continue;
+            }
+
             var ids = await audience.GetAudienceUserIdsAsync(group.Key);
             ids.Add(group.Key);
             foreach (var slide in group)

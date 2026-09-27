@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NexChat.API.Services;
 using NexChat.Infrastructure.Data;
-using NexChat.Infrastructure.Services;
 using System.Security.Claims;
 
 namespace NexChat.API.Controllers;
@@ -11,21 +11,55 @@ namespace NexChat.API.Controllers;
 [Route("api/support")]
 [Authorize]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("api")]
-public class SupportController(AppDbContext db, SiteContentFeatureService features) : ControllerBase
+public class SupportController(
+    AppDbContext db,
+    SupportConversationService supportConversations) : ControllerBase
 {
-    [HttpGet("session")]
-    public async Task<ActionResult<object>> GetOrCreateSession(CancellationToken ct)
+    /// <summary>
+    /// يضمن محادثة الدعم في صندوق المحادثات ويعيد معرفها (متاحة دائماً).
+    /// </summary>
+    [HttpGet("conversation")]
+    public async Task<ActionResult<object>> GetOrCreateConversation(CancellationToken ct)
     {
-        if (!await features.IsCodeConnectEnabledAsync(ct))
-            return StatusCode(403, new { message = "دردشة الدعم غير متاحة حالياً" });
-
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
             return Unauthorized();
 
-        var supportUser = await db.Users.FirstOrDefaultAsync(u => u.UniqueCode == "NX-SUPPORT");
-        if (supportUser == null)
+        var ensured = await supportConversations.EnsureForUserAsync(userId, ct);
+        if (ensured == null)
             return StatusCode(500, new { message = "خدمة الدعم غير متاحة" });
+
+        var (conv, support) = ensured.Value;
+        return Ok(new
+        {
+            conversationId = conv.Id,
+            isSupport = true,
+            partner = new
+            {
+                support.Id,
+                support.Name,
+                support.Gender,
+                support.UniqueCode,
+                support.Avatar,
+                IsFeatured = support.IsFeatured
+            }
+        });
+    }
+
+    /// <summary>توافق قديم: يفتح جلسة ChatSession (للعملاء القديمين).</summary>
+    [HttpGet("session")]
+    public async Task<ActionResult<object>> GetOrCreateSession(CancellationToken ct)
+    {
+        // Prefer conversation-based support; still create/open legacy session for old clients.
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized();
+
+        var ensured = await supportConversations.EnsureForUserAsync(userId, ct);
+        if (ensured == null)
+            return StatusCode(500, new { message = "خدمة الدعم غير متاحة" });
+
+        var (conv, supportUser) = ensured.Value;
 
         var session = await db.ChatSessions
             .Include(s => s.User1)
@@ -33,13 +67,12 @@ public class SupportController(AppDbContext db, SiteContentFeatureService featur
             .FirstOrDefaultAsync(s =>
                 s.Type == "support" &&
                 s.User1Id == supportUser.Id &&
-                s.User2Id == userId);
+                s.User2Id == userId, ct);
 
-        // إعادة فتح الجلسة إذا كانت منتهية (للمتابعة)
         if (session != null && session.EndedAt != null)
         {
             session.EndedAt = null;
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
         }
 
         if (session == null)
@@ -51,16 +84,17 @@ public class SupportController(AppDbContext db, SiteContentFeatureService featur
                 Type = "support"
             };
             db.ChatSessions.Add(session);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             session = await db.ChatSessions
                 .Include(s => s.User1)
                 .Include(s => s.User2)
-                .FirstAsync(s => s.Id == session.Id);
+                .FirstAsync(s => s.Id == session.Id, ct);
         }
 
         return Ok(new
         {
             sessionId = session.Id.ToString(),
+            conversationId = conv.Id.ToString(),
             isSupport = true,
             partner = new
             {

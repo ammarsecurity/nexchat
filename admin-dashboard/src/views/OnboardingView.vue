@@ -10,7 +10,7 @@ const slides = ref([])
 
 const defaultSlides = [
   { title: 'مرحباً بك في NexChat', description: 'تواصل مع أشخاص جدد من حول العالم', imageUrl: '' },
-  { title: 'محادثات عشوائية', description: 'ابدأ محادثة مع شخص جديد بنقرة واحدة', imageUrl: '' },
+  { title: 'محادثات فورية', description: 'ابدأ محادثة مع شخص جديد بنقرة واحدة', imageUrl: '' },
   { title: 'مكالمات فيديو', description: 'تواصل وجهًا لوجه مع من تتحدث', imageUrl: '' }
 ]
 

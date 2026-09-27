@@ -20,6 +20,8 @@ public class StorySlide
     public string? BackgroundColor { get; set; }
     public string? FilterId { get; set; }
     public int? VideoDurationSeconds { get; set; }
+    /// <summary>ستوري رسمي من الأدمن — يظهر لكل المستخدمين.</summary>
+    public bool IsBroadcast { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public User User { get; set; } = null!;

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lottie/lottie.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/feature_flags.dart';
@@ -102,20 +101,13 @@ class _TabItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final color = active ? c.primary : c.textMuted;
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-    Widget icon;
-    switch (tab.icon) {
-      case 'home':
-        icon = reduceMotion
-            ? Icon(LucideIcons.rocket, size: 22, color: color)
-            : Lottie.asset('assets/lottie/rocket.json', width: 32, height: 32, repeat: true);
-      case 'chat':
-        icon = Icon(LucideIcons.messageCircle, size: 22, color: color);
-      case 'films':
-        icon = Icon(LucideIcons.clapperboard, size: 22, color: color);
-      default:
-        icon = Icon(LucideIcons.user, size: 24, color: color);
-    }
+    final IconData iconData = switch (tab.icon) {
+      'home' => LucideIcons.rocket,
+      'chat' => LucideIcons.messageCircle,
+      'films' => LucideIcons.clapperboard,
+      _ => LucideIcons.user,
+    };
+    final iconSize = tab.icon == 'profile' || tab.icon == 'user' ? 24.0 : 22.0;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -137,7 +129,7 @@ class _TabItem extends StatelessWidget {
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  icon,
+                  Icon(iconData, size: iconSize, color: color),
                   if (tab.badge > 0 && tab.icon == 'chat')
                     PositionedDirectional(
                       top: 2,

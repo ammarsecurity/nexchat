@@ -3,13 +3,16 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using NexChat.API.Services;
 using NexChat.Core.DTOs;
+using NexChat.Core.Entities;
+using NexChat.Infrastructure.Data;
 
 namespace NexChat.API.Controllers;
 
 /// <summary>
-/// إضافة فيلم قصير بدون JWT — يحمّل الفيديو والصورة إلى السيرفر.
+/// إضافة فيلم قصير / مسلسل بدون JWT — يحمّل الفيديو والصورة إلى السيرفر.
 /// مسموح في Development، أو مع هيدر X-Api-Key = ShortFilmIngest:ApiKey.
 /// </summary>
 [ApiController]
@@ -17,6 +20,7 @@ namespace NexChat.API.Controllers;
 [AllowAnonymous]
 public class DevShortFilmsController(
     ShortFilmIngestService ingest,
+    AppDbContext db,
     IHostEnvironment env,
     IConfiguration config) : ControllerBase
 {
@@ -57,25 +61,7 @@ public class DevShortFilmsController(
                 episodeNumber,
                 ct);
 
-            return Ok(new AdminShortFilmDto(
-                film.Id,
-                film.Title,
-                film.Description,
-                film.VideoUrl,
-                film.ThumbnailUrl,
-                film.DurationSeconds,
-                film.SectionId,
-                film.Section?.Name,
-                film.SeriesId,
-                film.Series?.Title,
-                film.EpisodeNumber,
-                film.SortOrder,
-                film.IsActive,
-                film.IsFeatured,
-                film.ViewCount,
-                film.CreatedByAdminId,
-                film.CreatedAt,
-                film.UpdatedAt));
+            return Ok(MapFilm(film));
         }
         catch (ArgumentException ex)
         {
@@ -100,6 +86,123 @@ public class DevShortFilmsController(
             return StatusCode(502, new { message = "Download failed", detail = ex.Message });
         }
     }
+
+    /// <summary>
+    /// إضافة مسلسل كامل مع حلقاته دفعة واحدة (نفس مصادقة X-Api-Key).
+    /// Body: series_title أو series_id + episodes[].
+    /// </summary>
+    [HttpPost("series")]
+    [RequestSizeLimit(100 * 1024 * 1024)]
+    public async Task<IActionResult> CreateSeries(
+        [FromBody] JsonElement body,
+        CancellationToken ct)
+    {
+        if (!IsIngestAllowed())
+            return Unauthorized(new { message = "Invalid or missing X-Api-Key" });
+
+        if (!TryGetPropertyIgnoreCase(body, "episodes", out var episodesEl) &&
+            !TryGetPropertyIgnoreCase(body, "Episodes", out episodesEl))
+            return BadRequest(new { message = "episodes array is required" });
+
+        if (episodesEl.ValueKind != JsonValueKind.Array || episodesEl.GetArrayLength() == 0)
+            return BadRequest(new { message = "episodes must be a non-empty array" });
+
+        var seriesTitle = ReadString(body, "series_title", "seriesTitle", "SeriesTitle", "title", "Title");
+        var seriesId = ReadGuid(body, "series_id", "seriesId", "SeriesId");
+        if (seriesId is null && string.IsNullOrWhiteSpace(seriesTitle))
+            return BadRequest(new { message = "series_title (or title) or series_id is required" });
+
+        var episodes = new List<SeriesEpisodeIngestItem>();
+        var index = 0;
+        foreach (var ep in episodesEl.EnumerateArray())
+        {
+            index++;
+            var title = ReadString(ep, "title", "Title") ?? $"الحلقة {index}";
+            var videoUrl = ReadString(ep, "video_url", "videoUrl", "VideoUrl") ?? "";
+            episodes.Add(new SeriesEpisodeIngestItem
+            {
+                Title = title,
+                Description = ReadString(ep, "description", "Description"),
+                VideoUrl = videoUrl,
+                ThumbnailUrl = ReadString(ep, "thumbnail_url", "thumbnailUrl", "ThumbnailUrl"),
+                DurationSeconds = ReadInt(ep, "duration_seconds", "durationSeconds", "DurationSeconds"),
+                EpisodeNumber = ReadInt(ep, "episode_num", "episode_number", "episodeNumber", "EpisodeNumber"),
+                SortOrder = ReadInt(ep, "sort_order", "sortOrder", "SortOrder"),
+                SectionId = ReadGuid(ep, "section_id", "sectionId", "SectionId"),
+                IsActive = ReadBool(ep, "is_active", "isActive", "IsActive"),
+                IsFeatured = ReadBool(ep, "is_featured", "isFeatured", "IsFeatured")
+            });
+        }
+
+        try
+        {
+            var (series, created, skipped, shortsTeaser) = await ingest.IngestSeriesAsync(
+                Request,
+                seriesTitle,
+                seriesId,
+                ReadString(body, "description", "Description"),
+                ReadString(body, "cover_url", "coverUrl", "CoverUrl"),
+                ReadGuid(body, "section_id", "sectionId", "SectionId"),
+                ReadInt(body, "sort_order", "sortOrder", "SortOrder") ?? 0,
+                ReadBool(body, "is_active", "isActive", "IsActive") ?? true,
+                ReadBool(body, "is_featured", "isFeatured", "IsFeatured") ?? false,
+                episodes,
+                ct);
+
+            var episodeCount = await db.ShortFilms.CountAsync(f => f.SeriesId == series.Id, ct);
+            return Ok(new
+            {
+                series = new AdminShortFilmSeriesDto(
+                    series.Id,
+                    series.Title,
+                    series.Description,
+                    series.CoverUrl,
+                    series.SectionId,
+                    series.Section?.Name,
+                    series.SortOrder,
+                    series.IsActive,
+                    series.IsFeatured,
+                    episodeCount,
+                    series.CreatedAt,
+                    series.UpdatedAt),
+                created = created.Select(MapFilm).ToList(),
+                skipped,
+                createdCount = created.Count,
+                skippedCount = skipped.Count,
+                // نسخة الحلقة 1 في شبكة الأفلام القصيرة — العنوان = اسم المسلسل فقط
+                shortsTeaser = shortsTeaser == null ? null : MapFilm(shortsTeaser)
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(502, new { message = "Download failed", detail = ex.Message });
+        }
+    }
+
+    private static AdminShortFilmDto MapFilm(ShortFilm film) =>
+        new(
+            film.Id,
+            film.Title,
+            film.Description,
+            film.VideoUrl,
+            film.ThumbnailUrl,
+            film.DurationSeconds,
+            film.SectionId,
+            film.Section?.Name,
+            film.SeriesId,
+            film.Series?.Title,
+            film.EpisodeNumber,
+            film.SortOrder,
+            film.IsActive,
+            film.IsFeatured,
+            film.ViewCount,
+            film.CreatedByAdminId,
+            film.CreatedAt,
+            film.UpdatedAt);
 
     private static string? ReadString(JsonElement body, params string[] names)
     {

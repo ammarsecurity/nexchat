@@ -5,7 +5,9 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var secureOverlay: UIView?
   private var captureObserver: NSObjectProtocol?
+  private var screenshotObserver: NSObjectProtocol?
   private var secureEnabled = false
+  private var secureChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
@@ -38,6 +40,7 @@ import UIKit
     }
 
     let secure = FlutterMethodChannel(name: "nexchat/secure", binaryMessenger: registrar.messenger())
+    self.secureChannel = secure
     secure.setMethodCallHandler { [weak self] call, result in
       switch call.method {
       case "setSecure":
@@ -54,7 +57,8 @@ import UIKit
   }
 
   /// iOS cannot fully block screenshots like Android FLAG_SECURE.
-  /// We black out the UI while screen recording / mirroring is active.
+  /// We black out the UI while screen recording / mirroring is active,
+  /// and notify Flutter when a screenshot is taken during secure mode.
   private func setSecure(_ enabled: Bool) {
     secureEnabled = enabled
     if enabled {
@@ -67,11 +71,25 @@ import UIKit
           self?.updateCaptureOverlay()
         }
       }
+      if screenshotObserver == nil {
+        screenshotObserver = NotificationCenter.default.addObserver(
+          forName: UIApplication.userDidTakeScreenshotNotification,
+          object: nil,
+          queue: .main
+        ) { [weak self] _ in
+          guard self?.secureEnabled == true else { return }
+          self?.secureChannel?.invokeMethod("onScreenshot", arguments: nil)
+        }
+      }
       updateCaptureOverlay()
     } else {
       if let obs = captureObserver {
         NotificationCenter.default.removeObserver(obs)
         captureObserver = nil
+      }
+      if let obs = screenshotObserver {
+        NotificationCenter.default.removeObserver(obs)
+        screenshotObserver = nil
       }
       hideCaptureOverlay()
     }

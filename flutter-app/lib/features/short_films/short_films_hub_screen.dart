@@ -125,7 +125,10 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
         ],
         if (series.isNotEmpty) ...[
           if (showFeatured) const SizedBox(height: 20),
-          _SectionTitle(t('shortFilms.series')),
+          _SectionTitle(
+            t('shortFilms.series'),
+            onSeeAll: () => context.push('/short-films/catalog?kind=series'),
+          ),
           SizedBox(
             height: rowCardW * 14 / 9 + 4,
             child: ListView.separated(
@@ -139,7 +142,12 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
         ],
         if (grid.isNotEmpty) ...[
           if (showFeatured || series.isNotEmpty) const SizedBox(height: 20),
-          _SectionTitle(gridTitle),
+          _SectionTitle(
+            gridTitle,
+            onSeeAll: searching || st.selectedSectionId != null
+                ? null
+                : () => context.push('/short-films/catalog?kind=films'),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: GridView.builder(
@@ -245,14 +253,50 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {this.onSeeAll});
   final String text;
+  final VoidCallback? onSeeAll;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-        child: Text(text, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
-      );
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.textPrimary),
+            ),
+          ),
+          if (onSeeAll != null)
+            GestureDetector(
+              onTap: onSeeAll,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      t('shortFilms.seeAll'),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.primary),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Directionality.of(context) == TextDirection.rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
+                      size: 16,
+                      color: c.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionRing extends StatelessWidget {

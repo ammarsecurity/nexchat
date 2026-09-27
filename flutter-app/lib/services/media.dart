@@ -64,6 +64,7 @@ Future<void> downloadAlbumImages(List<String> urls) async {
 bool canDownloadMessage(Json msg) {
   final type = msg.s('type') ?? 'text';
   if (msg.b('deletedForEveryone')) return false;
+  if (msg.b('isViewOnce')) return false;
   final content = msg.str('content').trim();
   if (content.isEmpty) return false;
   if (type == 'album') return parseAlbumMessage(content)?.isNotEmpty ?? false;

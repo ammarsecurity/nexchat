@@ -519,7 +519,9 @@ export function navigateFromNotification(input) {
   }
 
   if (type === 'story_published' && d.userId) {
-    router.push(`/stories/view/${d.userId}`)
+    const q = {}
+    if (d.slideId) q.slideId = String(d.slideId)
+    router.push({ path: `/stories/view/${d.userId}`, query: q })
     return
   }
 

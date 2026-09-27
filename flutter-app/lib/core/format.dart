@@ -62,11 +62,22 @@ final _imageRe = RegExp(r'\.(jpg|jpeg|png|gif|webp)(\?|$)', caseSensitive: false
 final _audioRe = RegExp(r'\.(webm|m4a|ogg|opus|mp3|wav)(\?|$)', caseSensitive: false);
 final shortFilmLinkRe = RegExp(r'short-films/watch\?start=([0-9a-f-]{36})', caseSensitive: false);
 
+bool _isViewOncePreview(String? preview) {
+  if (preview == null || preview.isEmpty) return false;
+  final s = preview.trim();
+  return s.contains('مشاهدة مرة') ||
+      s.toLowerCase().contains('view once') ||
+      s == t('conversationChat.viewOncePhoto') ||
+      s == t('conversationChat.viewOnceVideo');
+}
+
 String? _previewFromType(String? type, String? preview) {
   switch (type) {
     case 'video':
+      if (_isViewOncePreview(preview)) return preview;
       return t('conversationChat.videoMessage');
     case 'image':
+      if (_isViewOncePreview(preview)) return preview;
       return t('conversationChat.replyPreviewImage');
     case 'audio':
       return t('conversationChat.voiceMessage');
@@ -75,6 +86,9 @@ String? _previewFromType(String? type, String? preview) {
     case 'short_film':
       if (preview == null || preview.isEmpty) return '🎬 ${t('shortFilms.title')}';
       return formatConversationListPreview(preview);
+    case 'story_share':
+      if (preview != null && preview.isNotEmpty && !preview.trim().startsWith('{')) return preview;
+      return parseStoryShareMessage('story_share', preview ?? '')?.listPreview ?? t('share.storySharePreview');
     case 'story_reply':
       return parseStoryReplyMessage('story_reply', preview ?? '')?.listPreview ?? t('stories.storyReplyPreview');
     case 'call':
@@ -133,6 +147,7 @@ String formatConversationListPreview(String? preview, {String? type}) {
   if (_audioRe.hasMatch(lower)) return t('conversationChat.voiceMessage');
   if (_imageRe.hasMatch(lower) && type != 'album') return t('conversationChat.replyPreviewImage');
   if (s.startsWith('🎬')) return s;
+  if (s.startsWith('◌')) return s;
   if (!s.startsWith('{')) return preview;
   if (parseAlbumMessage(s) != null) return albumListPreviewLabel(s, s);
   try {
@@ -174,6 +189,78 @@ ShortFilmRef? parseShortFilmMessage(String type, String content) {
 
 String buildShortFilmShareContent(String id, String title, String? thumbnailUrl) =>
     jsonEncode({'id': id, 'title': title, 'thumbnailUrl': thumbnailUrl});
+
+String buildStoryShareContent({
+  required String userId,
+  String? slideId,
+  required String name,
+  String? mediaUrl,
+  String mediaType = 'image',
+  String? caption,
+  String? backgroundColor,
+}) =>
+    jsonEncode({
+      'userId': userId,
+      if (slideId != null && slideId.isNotEmpty) 'slideId': slideId,
+      'name': name,
+      if (mediaUrl != null && mediaUrl.isNotEmpty) 'mediaUrl': mediaUrl,
+      'mediaType': mediaType,
+      if (caption != null && caption.isNotEmpty) 'caption': caption,
+      if (backgroundColor != null && backgroundColor.isNotEmpty) 'backgroundColor': backgroundColor,
+    });
+
+class StoryShareRef {
+  const StoryShareRef({
+    required this.userId,
+    required this.name,
+    this.slideId,
+    this.mediaUrl,
+    this.mediaType = 'image',
+    this.caption,
+    this.backgroundColor,
+  });
+
+  final String userId;
+  final String name;
+  final String? slideId;
+  final String? mediaUrl;
+  final String mediaType;
+  final String? caption;
+  final String? backgroundColor;
+
+  bool get isVideo =>
+      mediaType == 'video' || (mediaUrl != null && _videoRe.hasMatch(mediaUrl!.toLowerCase()));
+  bool get isText => mediaType == 'text' || mediaUrl == null || mediaUrl!.isEmpty;
+
+  String get listPreview {
+    final n = name.trim();
+    if (n.isEmpty) return t('share.storySharePreview');
+    final out = '◌ ${t('share.storyShareOf', {'name': n})}';
+    return out.length > 50 ? '${out.substring(0, 50)}…' : out;
+  }
+}
+
+StoryShareRef? parseStoryShareMessage(String type, String content) {
+  if (type != 'story_share' || content.isEmpty || !content.trim().startsWith('{')) return null;
+  try {
+    final data = jsonDecode(content);
+    if (data is! Map) return null;
+    final userId = '${data['userId'] ?? data['UserId'] ?? ''}'.trim();
+    if (userId.isEmpty) return null;
+    final name = '${data['name'] ?? data['Name'] ?? ''}'.trim();
+    return StoryShareRef(
+      userId: userId,
+      name: name.isEmpty ? t('stories.allStory') : name,
+      slideId: data['slideId']?.toString() ?? data['SlideId']?.toString(),
+      mediaUrl: (data['mediaUrl'] ?? data['MediaUrl']) as String?,
+      mediaType: '${data['mediaType'] ?? data['MediaType'] ?? 'image'}'.toLowerCase(),
+      caption: (data['caption'] ?? data['Caption']) as String?,
+      backgroundColor: (data['backgroundColor'] ?? data['BackgroundColor']) as String?,
+    );
+  } catch (_) {
+    return null;
+  }
+}
 
 class StoryReplyRef {
   const StoryReplyRef({

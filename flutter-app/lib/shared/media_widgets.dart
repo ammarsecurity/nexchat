@@ -13,6 +13,7 @@ import '../core/i18n/i18n.dart';
 import '../core/network/api_client.dart';
 import '../core/theme/app_colors.dart';
 import '../services/media.dart';
+import '../services/secure_screen.dart';
 import 'widgets.dart';
 
 /// Decode width for images shown inside message bubbles (full-screen viewer uses the original).
@@ -424,19 +425,37 @@ class _ChatVideoState extends State<ChatVideo> {
 }
 
 /// Full-screen image viewer with album paging and download (image-modal in ConversationChatView.vue).
-Future<void> showImageViewer(BuildContext context, List<String> urls, {int start = 0}) {
+Future<void> showImageViewer(
+  BuildContext context,
+  List<String> urls, {
+  int start = 0,
+  bool allowDownload = true,
+  VoidCallback? onScreenshot,
+}) {
   return Navigator.of(context, rootNavigator: true).push(PageRouteBuilder<void>(
     opaque: false,
     barrierColor: Colors.black,
-    pageBuilder: (_, _, _) => _ImageViewer(urls: urls, start: start),
+    pageBuilder: (_, _, _) => _ImageViewer(
+      urls: urls,
+      start: start,
+      allowDownload: allowDownload,
+      onScreenshot: onScreenshot,
+    ),
     transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
   ));
 }
 
 class _ImageViewer extends StatefulWidget {
-  const _ImageViewer({required this.urls, required this.start});
+  const _ImageViewer({
+    required this.urls,
+    required this.start,
+    this.allowDownload = true,
+    this.onScreenshot,
+  });
   final List<String> urls;
   final int start;
+  final bool allowDownload;
+  final VoidCallback? onScreenshot;
 
   @override
   State<_ImageViewer> createState() => _ImageViewerState();
@@ -446,6 +465,26 @@ class _ImageViewerState extends State<_ImageViewer> {
   late final _page = PageController(initialPage: widget.start);
   late int _index = widget.start;
   bool _downloading = false;
+  void Function()? _prevScreenshot;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.onScreenshot != null) {
+      SecureScreen.ensureHandler();
+      _prevScreenshot = SecureScreen.onScreenshot;
+      SecureScreen.onScreenshot = widget.onScreenshot;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.onScreenshot != null) {
+      SecureScreen.onScreenshot = _prevScreenshot;
+    }
+    _page.dispose();
+    super.dispose();
+  }
 
   Future<void> _run(Future<void> Function() task) async {
     if (_downloading) return;
@@ -521,10 +560,11 @@ class _ImageViewerState extends State<_ImageViewer> {
                     style: const TextStyle(color: Colors.white, fontSize: 13)),
               ),
             const Spacer(),
-            IconButton(
-              onPressed: _downloading ? null : _download,
-              icon: const Icon(LucideIcons.download, color: Colors.white, size: 20),
-            ),
+            if (widget.allowDownload)
+              IconButton(
+                onPressed: _downloading ? null : _download,
+                icon: const Icon(LucideIcons.download, color: Colors.white, size: 20),
+              ),
             IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(LucideIcons.x, color: Colors.white, size: 22)),
           ]),
         ),
@@ -555,16 +595,23 @@ class _ImageViewerState extends State<_ImageViewer> {
 }
 
 /// Full-screen video modal.
-Future<void> showVideoViewer(BuildContext context, String url) {
+Future<void> showVideoViewer(
+  BuildContext context,
+  String url, {
+  bool allowDownload = true,
+  VoidCallback? onScreenshot,
+}) {
   return Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
     fullscreenDialog: true,
-    builder: (_) => _VideoViewer(url: url),
+    builder: (_) => _VideoViewer(url: url, allowDownload: allowDownload, onScreenshot: onScreenshot),
   ));
 }
 
 class _VideoViewer extends StatefulWidget {
-  const _VideoViewer({required this.url});
+  const _VideoViewer({required this.url, this.allowDownload = true, this.onScreenshot});
   final String url;
+  final bool allowDownload;
+  final VoidCallback? onScreenshot;
 
   @override
   State<_VideoViewer> createState() => _VideoViewerState();
@@ -575,10 +622,16 @@ class _VideoViewerState extends State<_VideoViewer> {
   bool _ready = false;
   bool _failed = false;
   bool _downloading = false;
+  void Function()? _prevScreenshot;
 
   @override
   void initState() {
     super.initState();
+    if (widget.onScreenshot != null) {
+      SecureScreen.ensureHandler();
+      _prevScreenshot = SecureScreen.onScreenshot;
+      SecureScreen.onScreenshot = widget.onScreenshot;
+    }
     _ctrl.initialize().then((_) {
       if (!mounted) return;
       setState(() => _ready = true);
@@ -592,7 +645,7 @@ class _VideoViewerState extends State<_VideoViewer> {
   }
 
   Future<void> _download() async {
-    if (_downloading) return;
+    if (!widget.allowDownload || _downloading) return;
     setState(() => _downloading = true);
     try {
       await downloadMediaUrl(widget.url, kind: 'video');
@@ -606,6 +659,9 @@ class _VideoViewerState extends State<_VideoViewer> {
 
   @override
   void dispose() {
+    if (widget.onScreenshot != null) {
+      SecureScreen.onScreenshot = _prevScreenshot;
+    }
     _ctrl.dispose();
     super.dispose();
   }
@@ -639,12 +695,13 @@ class _VideoViewerState extends State<_VideoViewer> {
           child: Row(children: [
             IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(LucideIcons.x, color: Colors.white)),
             const Spacer(),
-            IconButton(
-              onPressed: _downloading ? null : _download,
-              icon: _downloading
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(LucideIcons.download, color: Colors.white, size: 20),
-            ),
+            if (widget.allowDownload)
+              IconButton(
+                onPressed: _downloading ? null : _download,
+                icon: _downloading
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(LucideIcons.download, color: Colors.white, size: 20),
+              ),
           ]),
         ),
         Positioned(

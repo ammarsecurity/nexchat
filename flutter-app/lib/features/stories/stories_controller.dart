@@ -22,6 +22,7 @@ class StoryRing {
     this.latestAt,
     this.slideCount = 0,
     this.isMine = false,
+    this.isOfficial = false,
   });
 
   final String userId;
@@ -32,6 +33,7 @@ class StoryRing {
   final String? latestAt;
   final int slideCount;
   final bool isMine;
+  final bool isOfficial;
 
   factory StoryRing.fromJson(Map r) => StoryRing(
         userId: r.str('userId'),
@@ -42,9 +44,19 @@ class StoryRing {
         latestAt: r.s('latestAt'),
         slideCount: r.i('slideCount'),
         isMine: r.b('isMine'),
+        isOfficial: r.b('isOfficial'),
       );
 
-  StoryRing copyWith({String? name, String? avatar, bool? hasUnseen, String? latestThumbUrl, String? latestAt, int? slideCount, bool? isMine}) =>
+  StoryRing copyWith({
+    String? name,
+    String? avatar,
+    bool? hasUnseen,
+    String? latestThumbUrl,
+    String? latestAt,
+    int? slideCount,
+    bool? isMine,
+    bool? isOfficial,
+  }) =>
       StoryRing(
         userId: userId,
         name: name ?? this.name,
@@ -54,7 +66,34 @@ class StoryRing {
         latestAt: latestAt ?? this.latestAt,
         slideCount: slideCount ?? this.slideCount,
         isMine: isMine ?? this.isMine,
+        isOfficial: isOfficial ?? this.isOfficial,
       );
+}
+
+int _ringSortRank(StoryRing r) {
+  // Higher = earlier in strip. Own story, then official NexChat, then everyone else.
+  if (r.isMine) return 2;
+  if (r.isOfficial) return 1;
+  return 0;
+}
+
+void sortStoryFeed(List<StoryRing> feed) {
+  feed.sort((a, b) {
+    final rank = _ringSortRank(b) - _ringSortRank(a);
+    if (rank != 0) return rank;
+    // Among peers only: newer first. Official never competes with friends on time.
+    final aAt = a.latestAt ?? '';
+    final bAt = b.latestAt ?? '';
+    return bAt.compareTo(aAt);
+  });
+}
+
+/// Non-mine rings with official always first, then the rest by feed order.
+List<StoryRing> othersStoryRings(List<StoryRing> feed) {
+  final others = feed.where((r) => !r.isMine).toList();
+  final official = others.where((r) => r.isOfficial).toList();
+  final rest = others.where((r) => !r.isOfficial).toList();
+  return [...official, ...rest];
 }
 
 class StoriesState {
@@ -85,7 +124,9 @@ class StoriesController extends Notifier<StoriesState> {
     state = state.copyWith(loading: true);
     try {
       final data = await Api.get('/stories/feed');
-      state = state.copyWith(feed: asJsonList(data).map(StoryRing.fromJson).toList(), loaded: true);
+      final feed = asJsonList(data).map(StoryRing.fromJson).toList();
+      sortStoryFeed(feed);
+      state = state.copyWith(feed: feed, loaded: true);
     } catch (_) {
       if (!state.loaded) state = state.copyWith(feed: const []);
     } finally {
@@ -99,22 +140,25 @@ class StoriesController extends Notifier<StoriesState> {
     final feed = [...state.feed];
     final idx = feed.indexWhere((r) => r.userId == userId);
     final prev = idx >= 0 ? feed[idx] : null;
+    final isOfficial = payload.b('isOfficial') || (prev?.isOfficial ?? false);
+    final isMine = prev?.isMine ?? false;
     final ring = StoryRing(
       userId: userId,
       name: payload.s('publisherName') ?? prev?.name ?? '—',
       avatar: payload.s('publisherAvatar') ?? payload.s('avatar') ?? prev?.avatar,
-      hasUnseen: true,
+      hasUnseen: !isMine,
       latestThumbUrl: payload.s('thumbUrl') ?? prev?.latestThumbUrl,
       latestAt: DateTime.now().toIso8601String(),
       slideCount: (prev?.slideCount ?? 0) + 1,
-      isMine: false,
+      isMine: isMine,
+      isOfficial: isOfficial,
     );
     if (idx >= 0) {
       feed[idx] = ring;
     } else {
-      feed.insert(0, ring);
+      feed.add(ring);
     }
-    feed.sort((a, b) => (b.isMine ? 1 : 0) - (a.isMine ? 1 : 0));
+    sortStoryFeed(feed);
     state = state.copyWith(feed: feed);
   }
 

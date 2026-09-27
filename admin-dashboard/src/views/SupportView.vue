@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import api from '../services/api'
 import AvatarCircle from '../components/AvatarCircle.vue'
+import AdminMessageBody from '../components/AdminMessageBody.vue'
 import { formatIraqDate, formatIraqDateTime, formatIraqTime } from '../utils/iraqTime'
 
 const conversations = ref([])
@@ -50,9 +51,9 @@ async function fetchMessages(sessionId) {
   loadingMessages.value = true
   msgPage.value = 1
   try {
-    const res = await api.get('/admin/messages', {
+    const res = await api.get('/admin/support/messages', {
       params: {
-        sessionId,
+        conversationId: sessionId,
         page: 1,
         pageSize: msgPageSize.value
       }
@@ -79,9 +80,9 @@ function selectConversation(session) {
 function loadMoreMessages() {
   if (!selectedSession.value || loadingMessages.value) return
   msgPage.value++
-  api.get('/admin/messages', {
+  api.get('/admin/support/messages', {
     params: {
-      sessionId: selectedSession.value.id,
+      conversationId: selectedSession.value.id,
       page: msgPage.value,
       pageSize: msgPageSize.value
     }
@@ -99,13 +100,13 @@ async function sendReply() {
   sending.value = true
   try {
     await api.post('/admin/support/send', {
-      sessionId: selectedSession.value.id,
+      conversationId: selectedSession.value.id,
       content: text
     })
     replyText.value = ''
     const newMsg = {
       id: crypto.randomUUID(),
-      senderName: 'دعم',
+      senderName: selectedSession.value.user1Name || 'دعم',
       content: text,
       type: 'text',
       sentAt: new Date().toISOString()
@@ -283,13 +284,12 @@ const filteredMessages = computed(() => {
                 <AvatarCircle :name="msg.senderName" :avatar="msg.senderAvatar" :size="22" />
                 <span>{{ msg.senderName }}</span>
               </div>
-              <template v-if="msg.type === 'image'">
-                <a :href="msg.content" target="_blank" class="msg-image-link">
-                  <v-icon size="20">mdi-image</v-icon>
-                  عرض الصورة
-                </a>
-              </template>
-              <div v-else class="msg-text">{{ msg.content }}</div>
+              <AdminMessageBody
+                :type="msg.type"
+                :content="msg.content"
+                :is-view-once="!!msg.isViewOnce"
+                :view-once-open-count="msg.viewOnceOpenCount || 0"
+              />
               <div class="msg-time">{{ formatTime(msg.sentAt) }}</div>
             </div>
           </div>

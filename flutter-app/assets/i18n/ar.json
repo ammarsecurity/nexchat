@@ -35,8 +35,8 @@
     "logoutConfirm": "تسجيل الخروج",
     "logoutConfirmText": "هل أنت متأكد من تسجيل الخروج؟",
     "onlineNow": "متصل الآن",
-    "startRandom": "ابدأ محادثة عشوائية",
-    "randomNav": "عشوائي",
+    "startRandom": "ابدأ محادثة فورية",
+    "randomNav": "فوري",
     "filterLabel": "فلتر المطابقة",
     "filterAll": "الكل",
     "filterMale": "ذكور",
@@ -65,7 +65,12 @@
     "goToConversations": "المحادثات",
     "addCode": "إضافة كود",
     "noSavedCodes": "لا توجد أكواد محفوظة",
-    "codeLabelPlaceholder": "تسمية (اختياري)"
+    "codeLabelPlaceholder": "تسمية (اختياري)",
+    "discoverSection": "اكتشف",
+    "quickActions": "اختصارات",
+    "exploreFilms": "تصفح الأفلام القصيرة",
+    "exploreFilmsHint": "مسلسلات ومقاطع جديدة كل يوم",
+    "openChatsHint": "تابع محادثاتك الحالية"
   },
   "profile": {
     "title": "الملف الشخصي",
@@ -295,7 +300,7 @@
     "start": "ابدأ",
     "slide1Title": "مرحباً بك في NexChat",
     "slide1Desc": "تواصل مع أشخاص جدد من حول العالم",
-    "slide2Title": "محادثات عشوائية",
+    "slide2Title": "محادثات فورية",
     "slide2Desc": "ابدأ محادثة مع شخص جديد بنقرة واحدة",
     "slide3Title": "مكالمات فيديو",
     "slide3Desc": "تواصل وجهًا لوجه مع من تتحدث"
@@ -317,7 +322,7 @@
     "accept": "قبول",
     "decline": "رفض",
     "skip": "تخطٍ",
-    "exitRandom": "الخروج من الدردشة العشوائية",
+    "exitRandom": "الخروج من المحادثة",
     "legalHint": "يمنع إساءة الاستخدام والتحرش. المحتوى المخالف يُبلّغ ويُراجع خلال 24 ساعة."
   },
   "randomChat": {
@@ -706,6 +711,17 @@
     "replyPreviewImage": "صورة",
     "replyPreviewVideo": "فيديو",
     "replyPreviewAlbum": "ألبوم صور",
+    "viewOnce": "مشاهدة مرة واحدة",
+    "viewOnceHint": "يمكن للمستلم فتح الصورة أو الفيديو مرة واحدة فقط، بدون تحميل أو مشاركة.",
+    "viewOnceSend": "إرسال كمشاهدة مرة واحدة",
+    "viewOnceSendNormal": "إرسال عادي",
+    "viewOncePhoto": "صورة · مشاهدة مرة واحدة",
+    "viewOnceVideo": "فيديو · مشاهدة مرة واحدة",
+    "viewOnceTapToOpen": "اضغط للعرض مرة واحدة",
+    "viewOnceOpened": "تم الفتح",
+    "viewOnceOpenFailed": "تعذّر فتح الوسائط",
+    "viewOnceAlreadyOpened": "تم فتحها مسبقاً",
+    "viewOnceScreenshotTaken": "التقط المستلم لقطة شاشة",
     "videoUploadFailed": "فشل رفع الفيديو",
     "albumUploadFailed": "فشل رفع الألبوم",
     "albumTooMany": "يمكن إرسال 10 صور كحد أقصى",
@@ -789,7 +805,10 @@
     "openingInvite": "جاري فتح الدعوة...",
     "shareInvite": "مشاركة الدعوة",
     "shareStory": "مشاركة الستوري",
-    "shareFilm": "مشاركة الفيلم"
+    "shareFilm": "مشاركة الفيلم",
+    "storySharePreview": "◌ ستوري",
+    "storyShareOf": "ستوري {name}",
+    "storyShareHint": "اضغط لفتح الستوري"
   },
   "calls": {
     "title": "المكالمات",

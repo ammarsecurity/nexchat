@@ -14,6 +14,8 @@ public class User
     public bool IsBanned { get; set; } = false;
     public bool IsAdmin { get; set; } = false;
     public bool IsFeatured { get; set; } = false;
+    /// <summary>حساب نظام ينشر الستوري الرسمي للجميع (NexChat).</summary>
+    public bool IsOfficialStoryPublisher { get; set; } = false;
     public string? Avatar { get; set; } = null;
     /// <summary>صورة غلاف الملف الشخصي.</summary>
     public string? CoverImageUrl { get; set; } = null;

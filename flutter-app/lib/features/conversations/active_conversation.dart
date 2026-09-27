@@ -7,6 +7,7 @@ class ActiveConversation {
     this.conversationId,
     this.partner,
     this.isGroup = false,
+    this.isSupport = false,
     this.messages = const [],
     this.partnerTyping = false,
     this.partnerLastReadAt,
@@ -15,6 +16,7 @@ class ActiveConversation {
   final String? conversationId;
   final Json? partner;
   final bool isGroup;
+  final bool isSupport;
   final List<Json> messages;
   final bool partnerTyping;
   final DateTime? partnerLastReadAt;
@@ -24,11 +26,13 @@ class ActiveConversation {
     List<Json>? messages,
     bool? partnerTyping,
     DateTime? partnerLastReadAt,
+    bool? isSupport,
   }) =>
       ActiveConversation(
         conversationId: conversationId,
         partner: partner ?? this.partner,
         isGroup: isGroup,
+        isSupport: isSupport ?? this.isSupport,
         messages: messages ?? this.messages,
         partnerTyping: partnerTyping ?? this.partnerTyping,
         partnerLastReadAt: partnerLastReadAt ?? this.partnerLastReadAt,
@@ -42,11 +46,11 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
   @override
   ActiveConversation build() => const ActiveConversation();
 
-  void setConversation(String id, Json? partner, {bool isGroup = false}) =>
-      state = ActiveConversation(conversationId: id, partner: partner, isGroup: isGroup);
+  void setConversation(String id, Json? partner, {bool isGroup = false, bool isSupport = false}) =>
+      state = ActiveConversation(conversationId: id, partner: partner, isGroup: isGroup, isSupport: isSupport);
 
-  void setConversationAndMessages(String id, Json? partner, {bool isGroup = false, required List<Json> messages}) =>
-      state = ActiveConversation(conversationId: id, partner: partner, isGroup: isGroup, messages: List.of(messages));
+  void setConversationAndMessages(String id, Json? partner, {bool isGroup = false, bool isSupport = false, required List<Json> messages}) =>
+      state = ActiveConversation(conversationId: id, partner: partner, isGroup: isGroup, isSupport: isSupport, messages: List.of(messages));
 
   void clear() => state = const ActiveConversation();
 
@@ -62,7 +66,11 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     state = state.copyWith(messages: [...fresh, ...state.messages]);
   }
 
-  void addMessage(Json m) => state = state.copyWith(messages: [...state.messages, m]);
+  void addMessage(Json m) {
+    final id = msgId(m);
+    if (id.isNotEmpty && state.messages.any((x) => msgId(x) == id)) return;
+    state = state.copyWith(messages: [...state.messages, m]);
+  }
 
   void setTyping(bool v) => state = state.copyWith(partnerTyping: v);
 
@@ -153,7 +161,14 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     final media = type == 'audio' || type == 'image' || type == 'video' || type == 'album';
     final idx = state.messages.indexWhere((m) {
       if (m['status'] != 'pending' || m.str('senderId') != sender || (m.s('type') ?? 'text') != type) return false;
-      if (media) return true;
+      if (media) {
+        if (m.b('isViewOnce') != server.b('isViewOnce')) return false;
+        // Prefer exact content match so two pending media of the same type don't cross-merge.
+        final local = m.s('content') ?? '';
+        final remote = server.s('content') ?? '';
+        if (local.isNotEmpty && remote.isNotEmpty) return local == remote;
+        return (m.s('replyToMessageId') ?? '') == reply;
+      }
       if (m.s('content') == server.s('content')) return true;
       return (m.s('replyToMessageId') ?? '') == reply;
     });

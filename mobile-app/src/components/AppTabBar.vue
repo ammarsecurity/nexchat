@@ -2,13 +2,10 @@
 import { useI18n } from 'vue-i18n'
 import { MessageCircle, Clapperboard, Rocket, User } from 'lucide-vue-next'
 import { useAppNav } from '../composables/useAppNav'
-import { useReducedMotion } from '../composables/useReducedMotion'
 import { hapticLight } from '../composables/useHaptics'
-import { publicUrl } from '../utils/publicUrl'
 
 const { t } = useI18n()
 const { tabs, showTabBar, isNavActive } = useAppNav()
-const { reducedMotion } = useReducedMotion()
 
 function onTabClick() {
   hapticLight()
@@ -30,17 +27,7 @@ defineExpose({ showTabBar })
       @click="onTabClick"
     >
       <span class="app-tab-bar__icon-wrap">
-        <Vue3Lottie
-          v-if="tab.icon === 'home' && !reducedMotion"
-          :animation-link="publicUrl('json/Rocket%20Lunch.json')"
-          :height="32"
-          :width="32"
-          :speed="0.9"
-          :loop="true"
-          :auto-play="true"
-          class="app-tab-bar__lottie"
-        />
-        <MessageCircle v-else-if="tab.icon === 'chat'" :size="22" stroke-width="2" />
+        <MessageCircle v-if="tab.icon === 'chat'" :size="22" stroke-width="2" />
         <Clapperboard v-else-if="tab.icon === 'films'" :size="22" stroke-width="2" />
         <Rocket v-else-if="tab.icon === 'home'" :size="22" stroke-width="2" />
         <User v-else :size="24" stroke-width="2" />
@@ -112,10 +99,6 @@ defineExpose({ showTabBar })
   align-items: center;
   justify-content: center;
   transition: background var(--motion-fast);
-}
-
-.app-tab-bar__lottie {
-  pointer-events: none;
 }
 
 .app-tab-bar__badge {

@@ -22,7 +22,8 @@ public class ConversationsController(
     AppDbContext db,
     NotificationOutboxService notificationOutbox,
     IConversationMessageCrypto messageCrypto,
-    IHubContext<ConversationHub> conversationHub) : ControllerBase
+    IHubContext<ConversationHub> conversationHub,
+    SupportConversationService supportConversations) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -38,6 +39,9 @@ public class ConversationsController(
         if (user == null) return NotFound();
         if (string.IsNullOrWhiteSpace(user.PhoneNumber))
             return BadRequest(new { message = "يجب إضافة رقم الهاتف من الإعدادات أولاً" });
+
+        // Always surface support chat in the inbox.
+        await supportConversations.EnsureForUserAsync(CurrentUserId);
 
         // page == null → legacy full list (Vue / silent refresh). page set → paged object for Flutter.
         var paged = page.HasValue;
@@ -205,6 +209,7 @@ public class ConversationsController(
             lastMsgDict.TryGetValue(c.Id, out var lastMsg);
             stateByConv.TryGetValue(c.Id, out var state);
             unreadByConv.TryGetValue(c.Id, out var unreadCount);
+            var isSupport = partnerUniqueCode == SupportConversationService.SupportUniqueCode;
 
             string? preview = null;
             string? lastType = null;
@@ -214,7 +219,8 @@ public class ConversationsController(
                 preview = ConversationPreviewHelper.BuildListPreview(
                     lastMsg.Type,
                     lastMsg.Content,
-                    messageCrypto.DecryptFromStorage);
+                    messageCrypto.DecryptFromStorage,
+                    lastMsg.IsViewOnce);
             }
 
             result.Add(new ConversationListItemDto(
@@ -228,16 +234,18 @@ public class ConversationsController(
                 lastType,
                 lastMsg?.SentAt,
                 unreadCount,
-                state?.IsPinned ?? false,
-                state?.IsArchived ?? false,
+                isSupport || (state?.IsPinned ?? false),
+                isSupport ? false : (state?.IsArchived ?? false),
                 c.Type == ConversationType.Group,
                 partnerIsOnline,
-                state?.IsHidden ?? false
+                isSupport ? false : (state?.IsHidden ?? false),
+                isSupport
             ));
         }
 
         result = result
-            .OrderByDescending(x => x.IsPinned)
+            .OrderByDescending(x => x.IsSupport)
+            .ThenByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.LastMessageAt ?? DateTime.MinValue)
             .ToList();
 
@@ -267,11 +275,28 @@ public class ConversationsController(
         if (conv == null) return NotFound();
         var deleted = await db.UserConversationDeletions
             .AnyAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
-        if (deleted) return NotFound();
+        if (deleted)
+        {
+            if (await supportConversations.IsSupportConversationAsync(id))
+            {
+                var del = await db.UserConversationDeletions
+                    .FirstOrDefaultAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
+                if (del != null)
+                {
+                    db.UserConversationDeletions.Remove(del);
+                    await db.SaveChangesAsync();
+                }
+            }
+            else
+            {
+                return NotFound();
+            }
+        }
         if (conv.Type == ConversationType.Group)
             return Ok(new { id = conv.Id, type = "group", groupName = conv.Name ?? "مجموعة", groupImageUrl = conv.ImageUrl, disappearMode = conv.DisappearMode });
         var partner = conv.User1Id == CurrentUserId ? conv.User2 : conv.User1;
         if (partner == null) return NotFound();
+        var isSupport = partner.UniqueCode == SupportConversationService.SupportUniqueCode;
         return Ok(new
         {
             id = conv.Id,
@@ -280,7 +305,8 @@ public class ConversationsController(
             partnerName = partner.Name,
             partnerAvatar = partner.Avatar,
             partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner),
-            disappearMode = conv.DisappearMode
+            disappearMode = conv.DisappearMode,
+            isSupport
         });
     }
 
@@ -506,6 +532,8 @@ public class ConversationsController(
     public async Task<IActionResult> TogglePin(Guid id)
     {
         if (!await IsParticipant(id)) return NotFound();
+        if (await supportConversations.IsSupportConversationAsync(id))
+            return BadRequest(new { message = "محادثة الدعم مثبتة دائماً" });
         var state = await GetOrCreateState(id);
         state.IsPinned = !state.IsPinned;
         state.UpdatedAt = DateTime.UtcNow;
@@ -517,6 +545,8 @@ public class ConversationsController(
     public async Task<IActionResult> ToggleArchive(Guid id)
     {
         if (!await IsParticipant(id)) return NotFound();
+        if (await supportConversations.IsSupportConversationAsync(id))
+            return BadRequest(new { message = "لا يمكن أرشفة محادثة الدعم" });
         var state = await GetOrCreateState(id);
         state.IsArchived = !state.IsArchived;
         state.UpdatedAt = DateTime.UtcNow;
@@ -528,6 +558,8 @@ public class ConversationsController(
     public async Task<IActionResult> ToggleHide(Guid id)
     {
         if (!await IsParticipant(id)) return NotFound();
+        if (await supportConversations.IsSupportConversationAsync(id))
+            return BadRequest(new { message = "لا يمكن إخفاء محادثة الدعم" });
         var state = await GetOrCreateState(id);
         state.IsHidden = !state.IsHidden;
         if (state.IsHidden)
@@ -765,6 +797,8 @@ public class ConversationsController(
     public async Task<IActionResult> DeleteForMe(Guid id)
     {
         if (!await IsParticipant(id)) return NotFound();
+        if (await supportConversations.IsSupportConversationAsync(id))
+            return BadRequest(new { message = "لا يمكن حذف محادثة الدعم" });
         var exists = await db.UserConversationDeletions
             .AnyAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
         if (exists) return Ok();
@@ -781,7 +815,7 @@ public class ConversationsController(
             .Where(d => d.UserId == CurrentUserId && messageIds.Contains(d.MessageId))
             .Select(d => d.MessageId)
             .ToListAsync();
-        foreach (var mid in messageIds.Where(id => !existingDeletions.Contains(id)))
+        foreach (var mid in messageIds.Where(mid => !existingDeletions.Contains(mid)))
         {
             db.UserMessageDeletions.Add(new UserMessageDeletion { UserId = CurrentUserId, MessageId = mid });
         }

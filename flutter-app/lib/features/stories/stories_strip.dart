@@ -66,9 +66,10 @@ class _StoriesStripState extends ConsumerState<StoriesStrip> {
                   onPlus: _openCreate,
                   child: _mineThumb(st, auth.user?.name, auth.avatar),
                 ),
-                for (final ring in st.feed.where((r) => !r.isMine))
+                for (final ring in othersStoryRings(st.feed))
                   _Ring(
                     unseen: ring.hasUnseen,
+                    official: ring.isOfficial,
                     label: ring.name,
                     onTap: () => _openRing(ring),
                     child: _ringThumb(ring),
@@ -130,7 +131,15 @@ class _StoriesStripState extends ConsumerState<StoriesStrip> {
 }
 
 class _Ring extends StatelessWidget {
-  const _Ring({required this.label, required this.onTap, required this.child, this.unseen = false, this.mine = false, this.onPlus});
+  const _Ring({
+    required this.label,
+    required this.onTap,
+    required this.child,
+    this.unseen = false,
+    this.mine = false,
+    this.official = false,
+    this.onPlus,
+  });
   static const innerSize = 42.0;
   final String label;
   final VoidCallback onTap;
@@ -138,9 +147,25 @@ class _Ring extends StatelessWidget {
   final Widget child;
   final bool unseen;
   final bool mine;
+  final bool official;
 
   @override
   Widget build(BuildContext context) {
+    final ringGradient = official
+        ? const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFD700), Color(0xFF2E86FB), Color(0xFF60A5FA)],
+            stops: [0, 0.45, 1],
+          )
+        : unseen
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFFFFFFF), Color(0xFFBFDBFE), Color(0xFF60A5FA)],
+                stops: [0, 0.55, 1],
+              )
+            : null;
     final inner = Container(
       width: _Ring.innerSize,
       height: _Ring.innerSize,
@@ -165,15 +190,8 @@ class _Ring extends StatelessWidget {
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: unseen ? null : Colors.white.withValues(alpha: 0.28),
-                  gradient: unseen
-                      ? const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFFFFFFFF), Color(0xFFBFDBFE), Color(0xFF60A5FA)],
-                          stops: [0, 0.55, 1],
-                        )
-                      : null,
+                  color: ringGradient == null ? Colors.white.withValues(alpha: 0.28) : null,
+                  gradient: ringGradient,
                 ),
                 child: inner,
               ),
@@ -195,6 +213,21 @@ class _Ring extends StatelessWidget {
                       ),
                       child: const Icon(LucideIcons.plus, size: 10, color: Color(0xFF2563EB)),
                     ),
+                  ),
+                ),
+              if (official)
+                PositionedDirectional(
+                  bottom: -1,
+                  end: -1,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E86FB),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: const Icon(Icons.verified, size: 10, color: Colors.white),
                   ),
                 ),
             ]),

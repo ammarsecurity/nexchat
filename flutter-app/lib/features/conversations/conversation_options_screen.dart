@@ -35,7 +35,18 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
   Future<void> _loadDisappearMode() async {
     try {
       final data = await Api.get('/conversations/${widget.conversationId}');
-      if (data is Map && mounted) setState(() => _disappearMode = data.i('disappearMode'));
+      if (data is Map && mounted) {
+        setState(() {
+          _disappearMode = data.i('disappearMode');
+          if (_conv != null) {
+            _conv = {
+              ..._conv!,
+              'isSupport': data.b('isSupport'),
+              'IsSupport': data.b('isSupport'),
+            };
+          }
+        });
+      }
     } catch (_) {}
   }
 
@@ -176,6 +187,7 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
     if (!_busy && latest != null) _conv = latest;
     final conv = _conv;
     final isGroup = conv?.b('isGroup') ?? false;
+    final isSupport = conv?.b('isSupport') ?? false;
     final isHidden = conv?.b('isHidden') ?? false;
     final ctrl = ref.read(conversationsListProvider.notifier);
 
@@ -195,29 +207,35 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                 UserAvatar(url: conv.s('partnerAvatar'), name: conv.s('partnerName') ?? '?', size: 96),
                 const SizedBox(height: 12),
                 Text(conv.s('partnerName') ?? '—', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                if (isSupport) ...[
+                  const SizedBox(height: 6),
+                  Text(t('settings.supportDesc'), textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: c.textSecondary)),
+                ],
                 const SizedBox(height: 24),
-                _OptionBtn(
-                  icon: isGroup ? LucideIcons.users : LucideIcons.user,
-                  label: isGroup ? t('groups.infoTitle') : t('profile.viewProfile'),
-                  onTap: () {
-                    if (isGroup) {
-                      context.push('/conversation/${widget.conversationId}/group-info');
-                      return;
-                    }
-                    final pid = conv.s('partnerId');
-                    if (pid == null) return;
-                    context.push('/profile/$pid', extra: {'conversationId': widget.conversationId});
-                  },
-                ),
-                _OptionBtn(
-                  icon: LucideIcons.pin,
-                  label: conv.b('isPinned') ? t('conversations.unpin') : t('conversations.pin'),
-                  onTap: () => _run(() async {
-                    await Api.put('/conversations/${widget.conversationId}/pin');
-                    ctrl.updateConversation(widget.conversationId, {'isPinned': !conv.b('isPinned')});
-                  }),
-                ),
-                if (!isHidden)
+                if (!isSupport)
+                  _OptionBtn(
+                    icon: isGroup ? LucideIcons.users : LucideIcons.user,
+                    label: isGroup ? t('groups.infoTitle') : t('profile.viewProfile'),
+                    onTap: () {
+                      if (isGroup) {
+                        context.push('/conversation/${widget.conversationId}/group-info');
+                        return;
+                      }
+                      final pid = conv.s('partnerId');
+                      if (pid == null) return;
+                      context.push('/profile/$pid', extra: {'conversationId': widget.conversationId});
+                    },
+                  ),
+                if (!isSupport)
+                  _OptionBtn(
+                    icon: LucideIcons.pin,
+                    label: conv.b('isPinned') ? t('conversations.unpin') : t('conversations.pin'),
+                    onTap: () => _run(() async {
+                      await Api.put('/conversations/${widget.conversationId}/pin');
+                      ctrl.updateConversation(widget.conversationId, {'isPinned': !conv.b('isPinned')});
+                    }),
+                  ),
+                if (!isSupport && !isHidden)
                   _OptionBtn(
                     icon: LucideIcons.archive,
                     label: conv.b('isArchived') ? t('conversations.unarchive') : t('conversations.archive'),
@@ -226,16 +244,18 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                       ctrl.updateConversation(widget.conversationId, {'isArchived': !conv.b('isArchived')});
                     }),
                   ),
-                _OptionBtn(
-                  icon: LucideIcons.timer,
-                  label: '${t('conversations.disappearTitle')}: ${_disappearLabel(_disappearMode)}',
-                  onTap: _pickDisappearMode,
-                ),
-                _OptionBtn(
-                  icon: isHidden ? LucideIcons.eye : LucideIcons.lock,
-                  label: isHidden ? t('conversations.unhide') : t('conversations.hide'),
-                  onTap: _toggleHide,
-                ),
+                if (!isSupport)
+                  _OptionBtn(
+                    icon: LucideIcons.timer,
+                    label: '${t('conversations.disappearTitle')}: ${_disappearLabel(_disappearMode)}',
+                    onTap: _pickDisappearMode,
+                  ),
+                if (!isSupport)
+                  _OptionBtn(
+                    icon: isHidden ? LucideIcons.eye : LucideIcons.lock,
+                    label: isHidden ? t('conversations.unhide') : t('conversations.hide'),
+                    onTap: _toggleHide,
+                  ),
                 if (conv.i('unreadCount') > 0)
                   _OptionBtn(
                     icon: LucideIcons.check,
@@ -245,17 +265,18 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                       ctrl.updateConversation(widget.conversationId, {'unreadCount': 0});
                     }),
                   ),
-                _OptionBtn(
-                  icon: LucideIcons.trash2,
-                  label: t('conversations.delete'),
-                  danger: true,
-                  onTap: () => _run(() async {
-                    await Api.delete('/conversations/${widget.conversationId}');
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      ctrl.removeConversation(widget.conversationId);
-                    });
-                  }),
-                ),
+                if (!isSupport)
+                  _OptionBtn(
+                    icon: LucideIcons.trash2,
+                    label: t('conversations.delete'),
+                    danger: true,
+                    onTap: () => _run(() async {
+                      await Api.delete('/conversations/${widget.conversationId}');
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        ctrl.removeConversation(widget.conversationId);
+                      });
+                    }),
+                  ),
                 if (_busy) ...[
                   const SizedBox(height: 16),
                   const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),

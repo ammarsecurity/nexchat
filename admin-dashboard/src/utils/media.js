@@ -2,9 +2,14 @@ const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || 'https://nexchat-cloud.xaro
 
 export function fullMediaUrl(url) {
   if (!url) return ''
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  const u = String(url).trim()
+  if (!u) return ''
+  if (u.startsWith('http://') || u.startsWith('https://')) return u
+  if (u.startsWith('//')) return `https:${u}`
+  // Host without scheme, e.g. cloud.xaronhost.com/uploads/...
+  if (/^[a-z0-9.-]+\.[a-z]{2,}\//i.test(u)) return `https://${u}`
   const base = MEDIA_BASE.replace(/\/$/, '')
-  return `${base}${url.startsWith('/') ? '' : '/'}${url}`
+  return `${base}${u.startsWith('/') ? '' : '/'}${u}`
 }
 
 export function hasAvatarImage(avatar) {

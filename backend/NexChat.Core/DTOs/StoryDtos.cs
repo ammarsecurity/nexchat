@@ -8,7 +8,8 @@ public record StoryRingDto(
     string? LatestThumbUrl,
     DateTime? LatestAt,
     int SlideCount,
-    bool IsMine
+    bool IsMine,
+    bool IsOfficial = false
 );
 
 public record StorySlideDto(
