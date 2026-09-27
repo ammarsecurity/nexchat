@@ -1238,7 +1238,8 @@ public class AdminController(
         var text = $"اختبار NexChat Evolution — {DateTime.UtcNow:HH:mm} UTC";
         var (ok, error) = await evolution.SendTextAsync(fullPhone, text);
         if (!ok)
-            return StatusCode(502, new { message = error });
+            // 422 (not nginx 502) so the dashboard shows Evolution's real message.
+            return UnprocessableEntity(new { message = error ?? "فشل إرسال رسالة الاختبار" });
         return Ok(new { message = "تم إرسال رسالة الاختبار عبر واتساب" });
     }
 

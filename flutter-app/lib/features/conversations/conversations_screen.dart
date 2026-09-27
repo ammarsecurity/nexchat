@@ -66,11 +66,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     super.initState();
     _listScroll.addListener(_onListScroll);
     Future.microtask(() {
+      if (!mounted) return;
       ref.read(notificationsProvider.notifier).load();
       if (NetworkStatus.online.value) ref.read(pendingRequestsProvider.notifier).fetch();
       ref.read(activeConversationProvider.notifier).clear();
+      unawaited(_fetch());
     });
-    _fetch();
     Hubs.conversation.start().catchError((_) {});
   }
 
@@ -112,8 +113,10 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       ];
 
   Future<void> _fetch({bool background = false}) async {
-    if (!background) setState(() => _loading = true);
-    ref.read(conversationsListFilterProvider.notifier).setFilter(_filter);
+    final filterCtrl = ref.read(conversationsListFilterProvider.notifier);
+    if (ref.read(conversationsListFilterProvider) != _filter) {
+      filterCtrl.setFilter(_filter);
+    }
     final list = ref.read(conversationsListProvider.notifier);
     if (!background) {
       final cached = Prefs.instance.getString(_cacheKey);
@@ -121,6 +124,13 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         try {
           list.setList(asJsonList(jsonDecode(cached)));
         } catch (_) {}
+      }
+      final hasCache = ref.read(conversationsListProvider).isNotEmpty;
+      if (mounted) {
+        setState(() {
+          _loading = !hasCache;
+          if (hasCache) _ready = true;
+        });
       }
     }
     _needPhone = false;
@@ -142,7 +152,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         'page': 1,
         'pageSize': _pageSize,
         if (_search.text.trim().isNotEmpty) 'search': _search.text.trim(),
-      });
+      }).timeout(const Duration(seconds: 25));
       final items = _normalize(asJsonList(data));
       list.setList(items);
       final hasMore = data is Map ? (data['hasMore'] == true || data['HasMore'] == true) : items.length >= _pageSize;
@@ -336,25 +346,24 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     final light = Theme.of(context).brightness == Brightness.light;
 
     // Flat list of row descriptors — widgets built only when visible.
+    // Keep showing cached/loaded rows while a refresh is in flight.
     final body = <({String kind, Json? conv, bool pinned})>[];
-    if (!_loading && !(_ready && filtered.isEmpty)) {
+    if (filtered.isNotEmpty) {
       if (showPinned) {
         body.add((kind: 'headPinned', conv: null, pinned: true));
         for (final conv in pinned) {
           body.add((kind: 'tile', conv: conv, pinned: true));
         }
       }
-      if (rest.isNotEmpty || filtered.isEmpty) {
-        body.add((kind: 'headAll', conv: null, pinned: false));
-        for (final conv in rest) {
-          body.add((kind: 'tile', conv: conv, pinned: false));
-        }
+      body.add((kind: 'headAll', conv: null, pinned: false));
+      for (final conv in rest) {
+        body.add((kind: 'tile', conv: conv, pinned: false));
       }
       if (_loadingMore) body.add((kind: 'more', conv: null, pinned: false));
     }
 
-    final emptyOrLoading = _loading || (_ready && filtered.isEmpty);
-    final itemCount = 3 + (emptyOrLoading ? 1 : body.length);
+    final showPlaceholder = filtered.isEmpty;
+    final itemCount = 3 + (showPlaceholder ? 1 : body.length);
 
     return RefreshIndicator(
       color: c.primary,
@@ -425,8 +434,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               ),
             );
           }
-          if (_loading) return const _ListSkeleton();
-          if (_ready && filtered.isEmpty) {
+          if (showPlaceholder) {
+            if (_loading || !_ready) return const _ListSkeleton();
             return EmptyState(
               icon: _filter == 'hidden' ? LucideIcons.lock : LucideIcons.messageCircle,
               text: _filter == 'hidden' ? t('conversations.noHiddenChats') : t('conversations.empty'),
@@ -435,7 +444,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                   : PillButton(label: t('conversations.newChat'), onPressed: () => _setSection('contacts')),
             );
           }
-          final row = body[index - 3];
+          final rowIndex = index - 3;
+          if (rowIndex < 0 || rowIndex >= body.length) return const SizedBox.shrink();
+          final row = body[rowIndex];
           return switch (row.kind) {
             'headPinned' => Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),

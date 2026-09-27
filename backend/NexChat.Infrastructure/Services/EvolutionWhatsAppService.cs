@@ -102,9 +102,14 @@ public class EvolutionWhatsAppService(
             if (!res.IsSuccessStatusCode)
             {
                 logger.LogWarning("Evolution sendText failed {Status}: {Body}", (int)res.StatusCode, body);
-                return (false, "فشل إرسال رسالة واتساب. تحقق من اتصال الـ Instance.");
+                return (false, DescribeEvolutionFailure(body));
             }
             return (true, null);
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Evolution sendText timed out for {Url}", url);
+            return (false, "انتهت مهلة الاتصال بخادم Evolution");
         }
         catch (Exception ex)
         {
@@ -146,6 +151,61 @@ public class EvolutionWhatsAppService(
             Encoding.UTF8.GetBytes(key),
             Encoding.UTF8.GetBytes((code ?? "").Trim()));
         return Convert.ToHexString(bytes);
+    }
+
+    private static string DescribeEvolutionFailure(string? body)
+    {
+        var detail = ExtractEvolutionMessage(body);
+        if (string.IsNullOrWhiteSpace(detail))
+            return "فشل إرسال رسالة واتساب. تحقق من اتصال الـ Instance.";
+
+        if (detail.Contains("Connection Closed", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("not connected", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
+        {
+            return "جلسة واتساب مغلقة على Evolution — افتح لوحة Evolution وأعد ربط الـ Instance (QR).";
+        }
+
+        return $"فشل إرسال واتساب: {detail}";
+    }
+
+    private static string? ExtractEvolutionMessage(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("response", out var response))
+            {
+                if (response.ValueKind == JsonValueKind.Object
+                    && response.TryGetProperty("message", out var nestedMsg))
+                {
+                    if (nestedMsg.ValueKind == JsonValueKind.String)
+                        return nestedMsg.GetString();
+                    if (nestedMsg.ValueKind == JsonValueKind.Array && nestedMsg.GetArrayLength() > 0)
+                        return nestedMsg[0].GetString() ?? nestedMsg[0].ToString();
+                }
+                if (response.ValueKind == JsonValueKind.String)
+                    return response.GetString();
+            }
+            if (root.TryGetProperty("message", out var message))
+            {
+                if (message.ValueKind == JsonValueKind.String)
+                    return message.GetString();
+                if (message.ValueKind == JsonValueKind.Array && message.GetArrayLength() > 0)
+                    return message[0].GetString() ?? message[0].ToString();
+            }
+            if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
+                return error.GetString();
+        }
+        catch
+        {
+            /* ignore parse errors */
+        }
+
+        var trimmed = body.Trim();
+        return trimmed.Length > 180 ? trimmed[..180] + "…" : trimmed;
     }
 
     private static EvolutionWhatsAppConfigDto Parse(string? content)

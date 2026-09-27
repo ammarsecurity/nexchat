@@ -85,7 +85,19 @@ String? _previewFromType(String? type, String? preview) {
       return albumListPreviewLabel(preview, preview);
     case 'short_film':
       if (preview == null || preview.isEmpty) return '🎬 ${t('shortFilms.title')}';
-      return formatConversationListPreview(preview);
+      // Do not recurse via formatConversationListPreview(..., type: short_film).
+      if (!preview.trim().startsWith('{')) {
+        return preview.startsWith('🎬') ? preview : '🎬 $preview';
+      }
+      try {
+        final data = jsonDecode(preview);
+        if (data is Map) {
+          final title = '${data['title'] ?? data['Title'] ?? ''}'.trim();
+          final out = '🎬 ${title.isEmpty ? t('shortFilms.title') : title}';
+          return out.length > 50 ? '${out.substring(0, 50)}…' : out;
+        }
+      } catch (_) {}
+      return '🎬 ${t('shortFilms.title')}';
     case 'story_share':
       if (preview != null && preview.isNotEmpty && !preview.trim().startsWith('{')) return preview;
       return parseStoryShareMessage('story_share', preview ?? '')?.listPreview ?? t('share.storySharePreview');
