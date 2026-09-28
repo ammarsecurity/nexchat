@@ -28,6 +28,7 @@ const routes = [
       { path: 'blocks', component: () => import('../views/BlockedView.vue') },
       { path: 'contacts', component: () => import('../views/ContactsView.vue') },
       { path: 'support', component: () => import('../views/SupportView.vue') },
+      { path: 'announcements', component: () => import('../views/AnnouncementsView.vue') },
       { path: 'reports', component: () => import('../views/ReportsView.vue') },
       { path: 'ads', component: () => import('../views/AdsView.vue') },
       { path: 'notifications', component: () => import('../views/NotificationsView.vue') },

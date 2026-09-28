@@ -180,6 +180,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     return _typeLabel(n['type']);
   }
 
+  /// Official / admin / NexChat brand rows — show the app logo instead of letter avatar.
+  bool _isBrandNotification(Json n) {
+    final type = '${n['type'] ?? ''}';
+    if (type == 'broadcast' || type == 'system') return true;
+    final official = t('conversations.officialName').trim().toLowerCase();
+    final title = (n.s('title') ?? '').trim().toLowerCase();
+    final name = _nameOf(n).trim().toLowerCase();
+    bool isBrand(String s) => s == 'nexchat' || s == 'نكس جات' || s == official;
+    return isBrand(title) || isBrand(name);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -242,6 +253,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                             style: style,
                             avatarUrl: _avatarOf(n),
                             avatarName: _nameOf(n),
+                            brandLogo: _isBrandNotification(n),
                             onTap: () => _open(n),
                             onLongPress: () => _deleteOne(n),
                           ),
@@ -285,6 +297,7 @@ class _NotificationCard extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     this.avatarUrl,
+    this.brandLogo = false,
   });
 
   final String title;
@@ -294,8 +307,34 @@ class _NotificationCard extends StatelessWidget {
   final _NotifStyle style;
   final String avatarName;
   final String? avatarUrl;
+  final bool brandLogo;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+
+  Widget _brandAvatar(BuildContext context, {required bool isDark}) {
+    final c = context.colors;
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isDark ? c.bgElevated : Colors.white,
+        border: Border.all(color: c.border),
+        boxShadow: [
+          BoxShadow(color: c.primary.withValues(alpha: isDark ? 0.28 : 0.14), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      alignment: Alignment.center,
+      child: Padding(
+        padding: const EdgeInsets.all(9),
+        child: Image.asset(
+          isDark ? 'assets/images/logo.png' : 'assets/images/logo-light.png',
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -312,17 +351,8 @@ class _NotificationCard extends StatelessWidget {
         : const [BoxShadow(color: Color(0x0F0F172A), blurRadius: 12, offset: Offset(0, 4))];
 
     Widget leading;
-    if (style.systemLeading) {
-      leading = Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(colors: [style.accent, style.accent.withValues(alpha: 0.75)]),
-          boxShadow: [BoxShadow(color: style.accent.withValues(alpha: isDark ? 0.35 : 0.25), blurRadius: 10, offset: const Offset(0, 4))],
-        ),
-        child: const Icon(LucideIcons.rocket, color: Colors.white, size: 24),
-      );
+    if (brandLogo || style.systemLeading) {
+      leading = _brandAvatar(context, isDark: isDark);
     } else {
       Widget avatar = UserAvatar(url: avatarUrl, name: avatarName, size: 56);
       if (style.storyRing) {

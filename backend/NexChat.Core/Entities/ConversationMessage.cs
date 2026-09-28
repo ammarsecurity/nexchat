@@ -20,6 +20,9 @@ public class ConversationMessage
     /// <summary>WhatsApp-style view-once image/video. Recipients open once via OpenViewOnce.</summary>
     public bool IsViewOnce { get; set; }
 
+    /// <summary>ربط رسالة محادثة ببث إعلان رسمي (للتعديل/الحذف الجماعي).</summary>
+    public Guid? BroadcastId { get; set; }
+
     public Conversation Conversation { get; set; } = null!;
     public User Sender { get; set; } = null!;
     public ICollection<ViewOnceReceipt> ViewOnceReceipts { get; set; } = new List<ViewOnceReceipt>();

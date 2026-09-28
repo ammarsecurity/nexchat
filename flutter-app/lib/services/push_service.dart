@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../core/config/env.dart';
 import '../core/network/api_client.dart';
+import 'call_native.dart';
 
 /// Mirrors the native part of mobile-app/src/services/notifications.js.
 class PushService {
@@ -143,6 +144,21 @@ class PushService {
     } catch (e) {
       if (kDebugMode) debugPrint('[push] register failed: $e');
     }
+  }
+
+  void bindVoipTokenUpload() {
+    CallNative.onVoipToken = (token) async {
+      try {
+        await Api.dio.post(
+          'notifications/voip-token',
+          data: {'token': token},
+          options: Options(extra: {'skipUnauthorizedEvent': true, 'skipGlobalLoader': true}),
+        );
+        if (kDebugMode) debugPrint('[push] voip token registered');
+      } catch (e) {
+        if (kDebugMode) debugPrint('[push] voip token register failed: $e');
+      }
+    };
   }
 
   Future<void> _linkExternalUser(String userId) async {

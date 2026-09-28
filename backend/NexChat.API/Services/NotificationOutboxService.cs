@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -54,6 +55,28 @@ public class NotificationOutboxService(
             if (immediate)
             {
                 await oneSignal.SendToUserAsync(recipientUserId, title, body, payload);
+                // PushKit VoIP: ring when app is killed; also cancel so CallKit dismisses.
+                if (type is "video_call" or "call_cancel")
+                {
+                    try
+                    {
+                        var voip = scope.ServiceProvider.GetService<ApnsVoipService>();
+                        if (voip?.IsConfigured == true)
+                        {
+                            var tokens = await db.DeviceSubscriptions.AsNoTracking()
+                                .Where(d => d.UserId == recipientUserId && d.VoipDeviceToken != null && d.VoipDeviceToken != "")
+                                .Select(d => d.VoipDeviceToken!)
+                                .Distinct()
+                                .ToListAsync();
+                            foreach (var t in tokens)
+                                await voip.SendVoipAsync(t, payload);
+                        }
+                    }
+                    catch (Exception vex)
+                    {
+                        logger.LogWarning(vex, "VoIP push failed for {Recipient}", recipientUserId);
+                    }
+                }
             }
             else
             {
@@ -75,7 +98,7 @@ public class NotificationOutboxService(
         }
     }
 
-    public Task CancelCallPushAsync(Guid recipientUserId, Guid conversationId) =>
+    public Task CancelCallPushAsync(Guid recipientUserId, Guid roomId) =>
         EnqueueAsync(
             recipientUserId,
             "call_cancel",
@@ -83,6 +106,7 @@ public class NotificationOutboxService(
             " ",
             new Dictionary<string, string>
             {
-                ["conversationId"] = conversationId.ToString(),
+                ["conversationId"] = roomId.ToString(),
+                ["sessionId"] = roomId.ToString(),
             });
 }

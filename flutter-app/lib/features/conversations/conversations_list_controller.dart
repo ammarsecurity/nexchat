@@ -9,14 +9,32 @@ class ConversationsListController extends Notifier<List<Json>> {
   @override
   List<Json> build() => [];
 
-  void setList(List<Json> items) => state = List.of(items);
+  void setList(List<Json> items) {
+    final list = List<Json>.of(items);
+    list.sort(_compareConversations);
+    state = list;
+  }
+
+  static int _compareConversations(Json a, Json b) {
+      final ao = a.b('isOfficial') || a.b('isReadOnly') || (a.s('partnerUniqueCode') ?? '') == 'NX-NEWS' || (a.s('partnerUniqueCode') ?? '') == 'NX-STORY';
+      final bo = b.b('isOfficial') || b.b('isReadOnly') || (b.s('partnerUniqueCode') ?? '') == 'NX-NEWS' || (b.s('partnerUniqueCode') ?? '') == 'NX-STORY';
+    if (ao != bo) return bo ? 1 : -1;
+    final as_ = a.b('isSupport'), bs = b.b('isSupport');
+    if (as_ != bs) return bs ? 1 : -1;
+    final ap = a.b('isPinned'), bp = b.b('isPinned');
+    if (ap != bp) return bp ? 1 : -1;
+    final ta = a.date('lastMessageAt') ?? DateTime(0), tb = b.date('lastMessageAt') ?? DateTime(0);
+    return tb.compareTo(ta);
+  }
 
   void appendList(List<Json> items) {
     if (items.isEmpty) return;
     final seen = {for (final c in state) c.str('id')};
     final added = [for (final c in items) if (seen.add(c.str('id'))) c];
     if (added.isEmpty) return;
-    state = [...state, ...added];
+    final list = [...state, ...added];
+    list.sort(_compareConversations);
+    state = list;
   }
 
   bool updateConversation(String conversationId, Json updates, {bool incrementUnread = false}) {
@@ -36,14 +54,7 @@ class ConversationsListController extends Notifier<List<Json>> {
     } else {
       list[idx] = item;
     }
-    list.sort((a, b) {
-      final as = a.b('isSupport'), bs = b.b('isSupport');
-      if (as != bs) return bs ? 1 : -1;
-      final ap = a.b('isPinned'), bp = b.b('isPinned');
-      if (ap != bp) return bp ? 1 : -1;
-      final ta = a.date('lastMessageAt') ?? DateTime(0), tb = b.date('lastMessageAt') ?? DateTime(0);
-      return tb.compareTo(ta);
-    });
+    list.sort(_compareConversations);
     state = list;
     return true;
   }

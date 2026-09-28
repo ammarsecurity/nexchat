@@ -43,7 +43,8 @@ public record ConversationListItemDto(
     bool IsGroup = false,
     bool PartnerIsOnline = false,
     bool IsHidden = false,
-    bool IsSupport = false
+    bool IsSupport = false,
+    bool IsOfficial = false
 );
 
 public record CreateConversationRequest(Guid ContactUserId);

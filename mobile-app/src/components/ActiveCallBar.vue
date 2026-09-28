@@ -5,6 +5,7 @@ import { PhoneOff, Mic } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useActiveCallStore } from '../stores/activeCall'
 import { getLiveKitRoom, getRemoteTracksMediaStream, leaveLiveKitRoom } from '../services/livekit'
+import { conversationHub, chatHub, ensureConnected } from '../services/signalr'
 import { ensureVideoPlaying } from '../utils/mobileVideoPlayback'
 import CachedAvatar from './CachedAvatar.vue'
 
@@ -89,9 +90,22 @@ function openFullCall() {
 }
 
 function endCallFromBar() {
+  const sid = activeCall.sessionId
+  const secs = elapsedSec.value
+  const isConv = activeCall.isConversation
   leaveLiveKitRoom()
   clearRemotePlayback()
   activeCall.clear()
+  if (!sid) return
+  if (isConv) {
+    ensureConnected(conversationHub)
+      .then(() => conversationHub.invoke('EndVideoCall', sid, secs))
+      .catch(() => {})
+  } else {
+    ensureConnected(chatHub)
+      .then(() => chatHub.invoke('EndVideoCall', sid))
+      .catch(() => {})
+  }
 }
 </script>
 

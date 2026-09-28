@@ -26,6 +26,26 @@ String formatRelative(DateTime? d) {
   return formatGregorianDateTime(d);
 }
 
+/// WhatsApp-style day label above a message group (Today / Yesterday / full date).
+String formatChatDayLabel(DateTime? d) {
+  if (d == null) return '';
+  final iraq = toIraq(d);
+  final now = iraqNow();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(iraq.year, iraq.month, iraq.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return t('conversationChat.today');
+  if (diff == 1) return t('conversationChat.yesterday');
+  return DateFormat('d MMMM yyyy', _tag()).format(iraq);
+}
+
+bool isSameChatDay(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return false;
+  final ia = toIraq(a);
+  final ib = toIraq(b);
+  return ia.year == ib.year && ia.month == ib.month && ia.day == ib.day;
+}
+
 // ---- conversationAlbum.js ----
 const maxAlbumImages = 10;
 

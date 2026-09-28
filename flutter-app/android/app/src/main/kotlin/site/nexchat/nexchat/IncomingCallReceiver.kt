@@ -29,7 +29,8 @@ class IncomingCallReceiver : BroadcastReceiver() {
                 )
                 context.startActivity(launch)
             }
-            ACTION_DECLINE, ACTION_DISMISS -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar)
+            ACTION_DECLINE -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, "declined")
+            ACTION_DISMISS -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, "missed")
         }
     }
 
@@ -47,6 +48,7 @@ class IncomingCallReceiver : BroadcastReceiver() {
                 pending["voiceOnly"] == true,
                 pending["callerName"] as? String ?: "",
                 pending["callerAvatar"] as? String,
+                "missed",
             )
         }
 
@@ -57,11 +59,13 @@ class IncomingCallReceiver : BroadcastReceiver() {
             voiceOnly: Boolean,
             callerName: String,
             callerAvatar: String?,
+            outcome: String = "missed",
         ) {
             IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
             IncomingCallNotifier.cancel(context)
+            CallDeclineHttp.declineAsync(context, conversationId, outcome)
             IncomingCallPlugin.notifyFlutterIfReady(context)
-            if (!IncomingCallPlugin.flutterReady) IncomingCallStore.clear(context)
+            // Do not clear: Flutter cold-start must still see the decline action.
         }
     }
 }

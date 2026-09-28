@@ -25,6 +25,7 @@
 		<string>remote-notification</string>
 		<string>fetch</string>
 		<string>audio</string>
+		<string>voip</string>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>

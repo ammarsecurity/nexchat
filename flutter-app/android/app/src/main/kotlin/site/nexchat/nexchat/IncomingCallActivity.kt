@@ -197,8 +197,9 @@ class IncomingCallActivity : Activity() {
     private fun decline() {
         IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
         IncomingCallNotifier.cancel(this, finishActivity = false)
+        CallDeclineHttp.declineAsync(this, conversationId, "declined")
         IncomingCallPlugin.notifyFlutterIfReady(this)
-        if (!IncomingCallPlugin.flutterReady) IncomingCallStore.clear(this)
+        // Keep store so Flutter can sync if it wakes; do not clear on kill-path.
         finish()
     }
 

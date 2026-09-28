@@ -1163,13 +1163,122 @@ a { color: inherit; }
   color: var(--ink);
 }
 
-.delete-account-page { max-width: 420px; }
+.delete-account-page { max-width: 640px; }
 
 .privacy-page h1,
 .delete-account-page h1 {
   font-size: 1.75rem;
   font-weight: 900;
   margin-bottom: 0.5rem;
+}
+
+.delete-brand {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--blue-deep);
+  background: rgba(46, 134, 251, 0.1);
+  border: 1px solid rgba(46, 134, 251, 0.2);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.delete-account-page h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin: 1.75rem 0 0.75rem;
+}
+
+.delete-warn {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.delete-steps {
+  margin: 0.5rem 0 1rem 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.delete-steps li { margin-bottom: 0.75rem; }
+
+.delete-list {
+  margin: 0.5rem 0 1rem 1.5rem;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.delete-list li { margin-bottom: 0.4rem; }
+
+.delete-account-page code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--bg-soft);
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
+
+.delete-account-page a {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.delete-account-page a:hover { text-decoration: underline; }
+
+.field-hint {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.req { color: #ef4444; }
+
+.delete-form textarea {
+  font-family: var(--font);
+  font-size: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  resize: vertical;
+  min-height: 96px;
+}
+
+.delete-form textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.delete-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.delete-check input {
+  margin-top: 0.25rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--blue);
+  flex-shrink: 0;
+}
+
+.form-error {
+  color: #dc2626;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
 }
 
 .privacy-page .updated {

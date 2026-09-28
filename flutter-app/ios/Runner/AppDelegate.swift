@@ -8,6 +8,7 @@ import UIKit
   private var screenshotObserver: NSObjectProtocol?
   private var secureEnabled = false
   private var secureChannel: FlutterMethodChannel?
+  private var callChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
@@ -19,9 +20,13 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NexChatCallChannel") else { return }
-    // Background audio (UIBackgroundModes) keeps LiveKit alive on iOS, so only proximity needs native code.
+
     let channel = FlutterMethodChannel(name: "nexchat/call", binaryMessenger: registrar.messenger())
-    channel.setMethodCallHandler { call, result in
+    callChannel = channel
+    IncomingCallKit.shared.attach(channel: channel)
+    VoipPushManager.shared.start(channel: channel)
+
+    channel.setMethodCallHandler { [weak self] call, result in
       switch call.method {
       case "proximity":
         let args = call.arguments as? [String: Any]
@@ -29,14 +34,38 @@ import UIKit
         result(nil)
       case "stop":
         UIDevice.current.isProximityMonitoringEnabled = false
+        IncomingCallKit.shared.dismissIncoming(clearStore: true)
         result(nil)
       case "start":
         result(nil)
-      case "showIncoming", "dismissIncoming", "setForeground", "ready", "consumePending", "isEmulator", "clearLockScreen":
+      case "showIncoming":
+        let args = call.arguments as? [String: Any] ?? [:]
+        IncomingCallKit.shared.showIncoming(
+          conversationId: args["conversationId"] as? String,
+          sessionId: args["sessionId"] as? String,
+          voiceOnly: (args["voiceOnly"] as? Bool) == true,
+          callerName: (args["callerName"] as? String) ?? "NexChat",
+          callerAvatar: args["callerAvatar"] as? String
+        )
+        result(nil)
+      case "dismissIncoming":
+        IncomingCallKit.shared.dismissIncoming(clearStore: true)
+        result(nil)
+      case "setForeground":
+        let args = call.arguments as? [String: Any]
+        IncomingCallKit.shared.setForeground((args?["value"] as? Bool) == true)
+        result(nil)
+      case "ready":
+        IncomingCallKit.shared.markReady()
+        result(nil)
+      case "consumePending":
+        result(IncomingCallKit.shared.consumePending())
+      case "isEmulator", "clearLockScreen":
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
+      _ = self
     }
 
     let secure = FlutterMethodChannel(name: "nexchat/secure", binaryMessenger: registrar.messenger())

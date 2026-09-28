@@ -321,7 +321,8 @@ public class OneSignalService
         IEnumerable<string> subscriptionIds,
         string title,
         string body,
-        string? imageUrl = null)
+        string? imageUrl = null,
+        Dictionary<string, string>? data = null)
     {
         if (!IsConfigured)
             return (false, 0, "OneSignal غير مُعد (AppId أو RestApiKey ناقص)");
@@ -334,11 +335,18 @@ public class OneSignalService
         if (ids.Length == 0)
             return (false, 0, "لا توجد أجهزة مشتركة للإرسال");
 
+        var payloadData = data != null
+            ? new Dictionary<string, string>(data)
+            : new Dictionary<string, string>();
+        if (!payloadData.ContainsKey("type"))
+            payloadData["type"] = "broadcast";
+
         var payloadBase = new Dictionary<string, object>
         {
             ["target_channel"] = "push",
             ["headings"] = new Dictionary<string, string> { ["ar"] = title, ["en"] = title },
-            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body }
+            ["contents"] = new Dictionary<string, string> { ["ar"] = body, ["en"] = body },
+            ["data"] = payloadData
         };
 
         if (!string.IsNullOrWhiteSpace(imageUrl))

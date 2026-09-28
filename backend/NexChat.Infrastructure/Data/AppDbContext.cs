@@ -26,6 +26,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
     public DbSet<MessageRequest> MessageRequests => Set<MessageRequest>();
     public DbSet<BroadcastNotificationHistory> BroadcastNotificationHistory => Set<BroadcastNotificationHistory>();
+    public DbSet<OfficialChatBroadcast> OfficialChatBroadcasts => Set<OfficialChatBroadcast>();
     public DbSet<NotificationOutboxItem> NotificationOutboxItems => Set<NotificationOutboxItem>();
     public DbSet<NotificationDeliveryLog> NotificationDeliveryLogs => Set<NotificationDeliveryLog>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
@@ -117,6 +118,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.UserId, x.OneSignalPlayerId }).IsUnique();
             e.Property(x => x.OneSignalPlayerId).HasMaxLength(64);
+            e.Property(x => x.VoipDeviceToken).HasMaxLength(200);
             e.Property(x => x.Platform).HasMaxLength(20);
         });
 
@@ -225,6 +227,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Content).HasColumnType("longtext");
             e.Property(x => x.Type).HasMaxLength(20);
             e.HasIndex(x => new { x.ConversationId, x.SentAt });
+            e.HasIndex(x => x.BroadcastId);
+        });
+
+        modelBuilder.Entity<OfficialChatBroadcast>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Content).HasColumnType("longtext");
+            e.Property(x => x.Type).HasMaxLength(20);
+            e.Property(x => x.Caption).HasColumnType("longtext");
+            e.HasIndex(x => x.SentAt);
         });
 
         modelBuilder.Entity<ViewOnceReceipt>(e =>

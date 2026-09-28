@@ -83,7 +83,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _otpSent = true;
-        _resendIn = 45;
+        _resendIn = 60;
       });
       _tickResend();
     } catch (e) {

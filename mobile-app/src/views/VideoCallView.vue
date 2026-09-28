@@ -20,6 +20,7 @@ import { ensureVideoPlaying } from '../utils/mobileVideoPlayback'
 import { Track } from 'livekit-client'
 import LoaderOverlay from '../components/LoaderOverlay.vue'
 import CachedAvatar from '../components/CachedAvatar.vue'
+import { conversationHub, chatHub, ensureConnected } from '../services/signalr'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,9 +112,37 @@ function exitCallAfterFailure() {
   filterPipelineRef.value?.stop()
   filterPipelineRef.value = null
   nativeResetAudioMode()
+  notifyServerCallCleanup()
   leaveLiveKitRoom()
   roomRef.value = null
   goBackAfterCall()
+}
+
+function notifyServerCallCleanup() {
+  const sid = sessionId
+  if (!sid) return
+  const secs = callDuration.value || 0
+  if (isConversationCallContext()) {
+    if (connected.value) {
+      ensureConnected(conversationHub)
+        .then(() => conversationHub.invoke('EndVideoCall', sid, secs))
+        .catch(() => {})
+    } else {
+      ensureConnected(conversationHub)
+        .then(() => conversationHub.invoke('DeclineVideoCall', sid))
+        .catch(() => {})
+    }
+    return
+  }
+  if (connected.value) {
+    ensureConnected(chatHub)
+      .then(() => chatHub.invoke('EndVideoCall', sid))
+      .catch(() => {})
+  } else {
+    ensureConnected(chatHub)
+      .then(() => chatHub.invoke('DeclineVideoCall', sid))
+      .catch(() => {})
+  }
 }
 
 function isConversationRoom() {
@@ -311,6 +340,8 @@ onUnmounted(() => {
     return
   }
 
+  // Leaving call UI without hangup button (back/system) — clear server busy.
+  if (!failureReturnStarted) notifyServerCallCleanup()
   leaveLiveKitRoom()
   if (activeCall.sessionId === sessionId) activeCall.clear()
 })
@@ -355,6 +386,7 @@ function toggleCamera() {
 }
 
 function endCall() {
+  notifyServerCallCleanup()
   goBackAfterCall()
 }
 

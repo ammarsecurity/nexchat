@@ -32,7 +32,50 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
-// Services (In-Memory Matching - no Redis needed)
+// Call busy/pending: in-memory is enough for a single API instance.
+// Redis is optional (only needed if multiple API replicas share call state).
+var redisCs = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisCs))
+{
+    try
+    {
+        var opts = StackExchange.Redis.ConfigurationOptions.Parse(redisCs);
+        opts.AbortOnConnectFail = false;
+        opts.ConnectTimeout = 2000;
+        opts.SyncTimeout = 2000;
+        var mux = await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(opts);
+        if (mux.IsConnected)
+        {
+            builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(mux);
+            CallPresenceStore.Configure(mux);
+            Console.WriteLine($"[CallPresence] Redis connected ({string.Join(",", mux.GetEndPoints().Select(e => e.ToString()))})");
+        }
+        else
+        {
+            CallPresenceStore.Configure(null);
+            Console.WriteLine("[CallPresence] single-instance in-memory store (Redis not connected)");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[CallPresence] single-instance in-memory store: {ex.Message}");
+        CallPresenceStore.Configure(null);
+    }
+}
+else
+{
+    CallPresenceStore.Configure(null);
+    Console.WriteLine("[CallPresence] single-instance in-memory store");
+}
+
+// Services (call presence: memory by default; ApnsVoip silent until Apple .p8 configured)
+builder.Services.Configure<ApnsVoipOptions>(builder.Configuration.GetSection(ApnsVoipOptions.SectionName));
+builder.Services.AddHttpClient("apns-voip", c =>
+{
+    c.DefaultRequestVersion = new Version(2, 0);
+    c.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddSingleton<ApnsVoipService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<MatchingService>();
 builder.Services.AddMemoryCache();
@@ -52,6 +95,7 @@ builder.Services.AddSingleton<UserPresenceService>();
 builder.Services.AddScoped<StoryAudienceService>();
 builder.Services.AddScoped<OfficialStoryPublisherService>();
 builder.Services.AddScoped<SupportConversationService>();
+builder.Services.AddScoped<OfficialAnnouncementConversationService>();
 builder.Services.AddHostedService<NotificationOutboxDispatcherService>();
 builder.Services.AddHostedService<InactiveSessionCleanupService>();
 builder.Services.AddHostedService<StoryExpiryBackgroundService>();
@@ -240,6 +284,16 @@ using (var scope = app.Services.CreateScope())
             IsAdmin = false
         });
         await dbCtx.SaveChangesAsync();
+    }
+
+    try
+    {
+        await scope.ServiceProvider.GetRequiredService<OfficialAnnouncementConversationService>().EnsureOfficialUserAsync();
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+        logger.LogError(ex, "Failed to ensure official announcement user (NX-NEWS)");
     }
 
     try

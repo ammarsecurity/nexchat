@@ -229,7 +229,12 @@ class AuthError extends StatelessWidget {
         children: [
           Icon(LucideIcons.circleAlert, size: 18, color: c.danger),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: TextStyle(color: c.danger, fontSize: 14))),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: c.danger, fontSize: 14, height: 1.45, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );

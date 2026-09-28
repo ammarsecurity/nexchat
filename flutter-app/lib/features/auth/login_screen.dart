@@ -45,11 +45,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  PhoneResult? get _phoneValidation {
+    if (_mode != 'phone') return null;
+    final national = normalizeNationalNumber(_phone.text);
+    if (national.isEmpty) return null;
+    return validatePhone(_dial, national);
+  }
+
+  String get _phoneError {
+    if (_mode != 'phone') return '';
+    if (_phone.text.trim().isEmpty) return '';
+    final r = _phoneValidation;
+    if (r == null) return '';
+    return r.valid ? '' : r.message;
+  }
+
   String? get _loginIdentifier {
     if (_mode == 'phone') {
-      final national = normalizeNationalNumber(_phone.text);
-      if (national.isEmpty) return null;
-      return '$_dial$national';
+      final check = _phoneValidation;
+      if (check == null || !check.valid) return null;
+      return '$_dial${check.normalized}';
     }
     final name = _name.text.trim();
     return name.isEmpty ? null : name;
@@ -58,15 +73,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool get _canSubmit => _loginIdentifier != null && _password.text.isNotEmpty && !_loading;
 
   Future<void> _submit() async {
-    if (!_canSubmit) return;
-    final id = _loginIdentifier!;
     if (_mode == 'phone') {
-      final check = validatePhone(_dial, normalizeNationalNumber(_phone.text));
+      final national = normalizeNationalNumber(_phone.text);
+      final check = validatePhone(_dial, national);
       if (!check.valid) {
         setState(() => _error = check.message);
         return;
       }
     }
+    if (!_canSubmit) return;
+    final id = _loginIdentifier!;
     setState(() {
       _loading = true;
       _error = '';
@@ -127,14 +143,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         autofillHints: const [AutofillHints.username],
                         onChanged: (_) => setState(() {}),
                       )
-                    else
+                    else ...[
                       PhoneAuthField(
                         countryCode: _country,
                         controller: _phone,
                         hint: t('login.phonePlaceholder'),
-                        onCountryChanged: (x) => setState(() => _country = x.code),
-                        onChanged: (_) => setState(() {}),
+                        error: _phoneError.isNotEmpty,
+                        onCountryChanged: (x) => setState(() {
+                          _country = x.code;
+                          _error = '';
+                        }),
+                        onChanged: (_) => setState(() => _error = ''),
                       ),
+                      if (_phoneError.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(_phoneError, style: TextStyle(fontFamily: kAppFont, fontSize: 12, height: 1.4, color: c.danger)),
+                      ] else ...[
+                        const SizedBox(height: 6),
+                        Text(t('login.phoneHint'), style: TextStyle(fontFamily: kAppFont, fontSize: 12, height: 1.4, color: c.textMuted)),
+                      ],
+                    ],
                     const SizedBox(height: 12),
                     AuthField(
                       controller: _password,
@@ -161,19 +189,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     if (_error.isNotEmpty) ...[const SizedBox(height: 10), AuthError(_error)],
                     const SizedBox(height: 14),
                     AuthSubmit(label: t('login.submit'), onPressed: _canSubmit && !_loading ? _submit : null),
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(t('login.noAccount'),
-                            style: TextStyle(fontFamily: kAppFont, color: c.textSecondary, fontSize: 14)),
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          onTap: () => context.go(widget.invite == null ? '/register' : '/register?invite=${widget.invite}'),
-                          child: Text(t('login.createAccount'),
-                              style: TextStyle(fontFamily: kAppFont, color: c.primary, fontWeight: FontWeight.w700, fontSize: 14)),
-                        ),
-                      ],
+                    const SizedBox(height: 20),
+                    _NewUserRegisterCard(
+                      onTap: () => context.go(
+                        widget.invite == null || widget.invite!.isEmpty
+                            ? '/register'
+                            : '/register?invite=${Uri.encodeQueryComponent(widget.invite!)}',
+                      ),
                     ),
                     const SizedBox(height: 16),
                     LegalLinks(
@@ -258,6 +280,77 @@ class _LoginModeTabs extends StatelessWidget {
         tab('name', LucideIcons.userRound, t('login.modeUsername')),
         tab('phone', LucideIcons.phone, t('login.modePhone')),
       ]),
+    );
+  }
+}
+
+class _NewUserRegisterCard extends StatelessWidget {
+  const _NewUserRegisterCard({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final light = Theme.of(context).brightness == Brightness.light;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: light ? c.primary.withValues(alpha: 0.07) : c.primary.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: c.primary.withValues(alpha: light ? 0.28 : 0.4), width: 1.4),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: c.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(LucideIcons.userPlus, size: 22, color: c.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t('login.newUserQuestion'),
+                        style: TextStyle(
+                          fontFamily: kAppFont,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: c.textPrimary,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        t('login.newUserAction'),
+                        style: TextStyle(
+                          fontFamily: kAppFont,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: c.primary,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(LucideIcons.chevronLeft, size: 20, color: c.primary),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -295,21 +295,40 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   }
 
   /// Clears server busy/pending: End if Media connected, else Decline (cancel).
+  /// Also used when CallKit/FSI is dismissed after connect.
   void _notifyServerCallCleanup() {
-    if (!_isConversationContext) return;
     final secs = _duration.value;
+    if (_isConversationContext) {
+      if (_connected) {
+        unawaited(
+          Hubs.conversation
+              .ensureConnected()
+              .then((_) => Hubs.conversation.invoke('EndVideoCall', [_sid, secs]))
+              .catchError((_) => null),
+        );
+      } else {
+        unawaited(
+          Hubs.conversation
+              .ensureConnected()
+              .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_sid]))
+              .catchError((_) => null),
+        );
+      }
+      return;
+    }
+    // Matching / random chat (ChatHub)
     if (_connected) {
       unawaited(
-        Hubs.conversation
+        Hubs.chat
             .ensureConnected()
-            .then((_) => Hubs.conversation.invoke('EndVideoCall', [_sid, secs]))
+            .then((_) => Hubs.chat.invoke('EndVideoCall', [_sid, secs]))
             .catchError((_) => null),
       );
     } else {
       unawaited(
-        Hubs.conversation
+        Hubs.chat
             .ensureConnected()
-            .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_sid]))
+            .then((_) => Hubs.chat.invoke('DeclineVideoCall', [_sid]))
             .catchError((_) => null),
       );
     }

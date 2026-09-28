@@ -258,6 +258,9 @@ namespace NexChat.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid?>("BroadcastId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -296,6 +299,8 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BroadcastId");
+
                     b.HasIndex("SenderId");
 
                     b.HasIndex("ConversationId", "SentAt");
@@ -323,6 +328,10 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("char(36)");
+
+                    b.Property<string>("VoipDeviceToken")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
 
                     b.HasKey("Id");
 
@@ -524,6 +533,40 @@ namespace NexChat.Infrastructure.Migrations
                     b.HasIndex("Status", "NextAttemptAt");
 
                     b.ToTable("NotificationOutboxItems");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.OfficialChatBroadcast", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Caption")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("RecipientsCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SentAt");
+
+                    b.ToTable("OfficialChatBroadcasts");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.OtpChallenge", b =>

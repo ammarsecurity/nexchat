@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using NexChat.Core.Entities;
@@ -37,7 +38,10 @@ public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutb
                     .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
 
                 foreach (var sid in activeSessions)
+                {
+                    CallPresenceStore.ClearRoom(sid);
                     await Clients.Group(sid.ToString()).SendAsync("SessionEnded", userId);
+                }
             }
         }
         await base.OnDisconnectedAsync(exception);
@@ -166,12 +170,13 @@ public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutb
         {
             session.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+            CallPresenceStore.ClearRoom(sid);
             await Clients.Group(sessionId).SendAsync("SessionEnded", userId);
         }
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId);
     }
 
-    public async Task RequestVideoCall(string sessionId)
+    public async Task RequestVideoCall(string sessionId, bool voiceOnly = false)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
             return;
@@ -179,19 +184,65 @@ public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutb
             .FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
             s.EndedAt == null &&
-            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
+            s.Type != "support");
         if (session == null) return;
-        await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall");
         var recipientId = session.User1Id == userId ? session.User2Id : session.User1Id;
+        var blocked = await db.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == userId && b.BlockedUserId == recipientId) ||
+            (b.BlockerId == recipientId && b.BlockedUserId == userId));
+        if (blocked) return;
+
+        CallPresenceStore.PurgeStale();
+
+        if (CallPresenceStore.IsBusyElsewhere(userId, sid))
+        {
+            await Clients.Caller.SendAsync("VideoCallBusy", sid.ToString());
+            return;
+        }
+        if (CallPresenceStore.IsBusyElsewhere(recipientId, sid))
+        {
+            await PersistCallMessageAsync(sid, userId, recipientId, voiceOnly, "busy", 0);
+            await Clients.Caller.SendAsync("VideoCallBusy", sid.ToString());
+            return;
+        }
+
+        if (CallPresenceStore.Pending.TryGetValue(sid, out var existing))
+        {
+            if (existing.Accepted)
+            {
+                CallPresenceStore.ClearRoom(sid);
+                await Clients.User(recipientId.ToString()).SendAsync("VideoCallEnded", 0);
+                await Clients.Caller.SendAsync("VideoCallEnded", 0);
+            }
+            else if (existing.CallerId == userId)
+            {
+                return;
+            }
+            else
+            {
+                await Clients.Caller.SendAsync("VideoCallBusy", sid.ToString());
+                return;
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        CallPresenceStore.Pending[sid] = new CallPresenceStore.PendingCall(userId, voiceOnly, Accepted: false, now);
+        CallPresenceStore.Busy[userId] = new CallPresenceStore.BusyCall(sid, now);
+        CallPresenceStore.Busy[recipientId] = new CallPresenceStore.BusyCall(sid, now);
+
+        await Clients.OthersInGroup(sessionId).SendAsync("IncomingVideoCall", voiceOnly);
         var caller = session.User1Id == userId ? session.User1 : session.User2;
         await notificationOutbox.EnqueueAsync(
             recipientId,
             "video_call",
-            "مكالمة فيديو",
-            $"{caller?.Name ?? "شخص"} يطلب مكالمة فيديو",
+            voiceOnly ? "مكالمة صوتية" : "مكالمة فيديو",
+            voiceOnly
+                ? $"{caller?.Name ?? "شخص"} يطلب مكالمة صوتية"
+                : $"{caller?.Name ?? "شخص"} يطلب مكالمة فيديو",
             new Dictionary<string, string>
             {
                 ["sessionId"] = sid.ToString(),
+                ["voiceOnly"] = voiceOnly ? "true" : "false",
                 ["callerName"] = caller?.Name ?? ""
             });
     }
@@ -203,21 +254,143 @@ public class ChatHub(AppDbContext db, NotificationOutboxService notificationOutb
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
             s.EndedAt == null &&
-            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
+            s.Type != "support");
         if (session == null) return;
+
+        if (!CallPresenceStore.Pending.TryGetValue(sid, out var pending) ||
+            pending.Accepted ||
+            pending.CallerId == userId)
+        {
+            await Clients.Caller.SendAsync("VideoCallEnded", 0);
+            return;
+        }
+
+        var accepted = pending with { Accepted = true, StartedUtc = DateTime.UtcNow };
+        if (!CallPresenceStore.Pending.TryUpdate(sid, accepted, pending))
+        {
+            await Clients.Caller.SendAsync("VideoCallEnded", 0);
+            return;
+        }
+
+        var other = session.User1Id == userId ? session.User2Id : session.User1Id;
+        var now = DateTime.UtcNow;
+        CallPresenceStore.Busy[userId] = new CallPresenceStore.BusyCall(sid, now);
+        CallPresenceStore.Busy[other] = new CallPresenceStore.BusyCall(sid, now);
+
+        await notificationOutbox.CancelCallPushAsync(session.User1Id, sid);
+        await notificationOutbox.CancelCallPushAsync(session.User2Id, sid);
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallAccepted");
     }
 
-    public async Task DeclineVideoCall(string sessionId)
+    public async Task DeclineVideoCall(string sessionId, string? outcome = null)
     {
         if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
             return;
         var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
             s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
             s.EndedAt == null &&
-            s.Type != "support"); // دردشة الدعم لا تدعم اتصال الفيديو
+            s.Type != "support");
         if (session == null) return;
+
+        CallPresenceStore.Pending.TryRemove(sid, out var pending);
+        var hadBusy = CallPresenceStore.Busy.TryGetValue(userId, out var myBusy) && myBusy.ConversationId == sid;
+        var other = session.User1Id == userId ? session.User2Id : session.User1Id;
+
+        if (pending is { Accepted: true })
+        {
+            CallPresenceStore.ClearBusyForRoom(sid, userId, other);
+            await PersistCallMessageAsync(sid, pending.CallerId, other, pending.VoiceOnly, "ended", 0);
+            await notificationOutbox.CancelCallPushAsync(session.User1Id, sid);
+            await notificationOutbox.CancelCallPushAsync(session.User2Id, sid);
+            await Clients.OthersInGroup(sessionId).SendAsync("VideoCallEnded", 0);
+            return;
+        }
+
+        if (pending is null && !hadBusy)
+        {
+            await notificationOutbox.CancelCallPushAsync(session.User1Id, sid);
+            await notificationOutbox.CancelCallPushAsync(session.User2Id, sid);
+            return;
+        }
+
+        var callerId = pending?.CallerId ?? userId;
+        var voiceOnly = pending?.VoiceOnly ?? false;
+        var normalized = (outcome ?? "").Trim().ToLowerInvariant();
+        string status;
+        if (normalized is "missed" or "no_answer" or "noanswer")
+            status = "missed";
+        else if (normalized is "cancelled" or "declined" or "ended" or "busy")
+            status = normalized;
+        else
+            status = pending == null || pending.CallerId == userId ? "cancelled" : "declined";
+
+        CallPresenceStore.ClearBusyForRoom(sid, userId, other);
+        await PersistCallMessageAsync(sid, callerId, other, voiceOnly, status, 0);
+        await notificationOutbox.CancelCallPushAsync(session.User1Id, sid);
+        await notificationOutbox.CancelCallPushAsync(session.User2Id, sid);
         await Clients.OthersInGroup(sessionId).SendAsync("VideoCallDeclined");
+    }
+
+    public async Task EndVideoCall(string sessionId, int durationSec = 0)
+    {
+        if (!TryGetUserId(out var userId) || !Guid.TryParse(sessionId, out var sid))
+            return;
+        var session = await db.ChatSessions.FirstOrDefaultAsync(s =>
+            s.Id == sid && (s.User1Id == userId || s.User2Id == userId) &&
+            s.Type != "support");
+        if (session == null) return;
+
+        var other = session.User1Id == userId ? session.User2Id : session.User1Id;
+        CallPresenceStore.ClearBusyForRoom(sid, userId, other);
+
+        if (!CallPresenceStore.Pending.TryRemove(sid, out var pending))
+        {
+            await notificationOutbox.CancelCallPushAsync(session.User1Id, sid);
+            await notificationOutbox.CancelCallPushAsync(session.User2Id, sid);
+            return;
+        }
+
+        var secs = Math.Max(0, durationSec);
+        await PersistCallMessageAsync(sid, pending.CallerId, other, pending.VoiceOnly, "ended", secs);
+        await notificationOutbox.CancelCallPushAsync(session.User1Id, sid);
+        await notificationOutbox.CancelCallPushAsync(session.User2Id, sid);
+        await Clients.OthersInGroup(sessionId).SendAsync("VideoCallEnded", secs);
+    }
+
+    private async Task PersistCallMessageAsync(
+        Guid sessionId,
+        Guid callerId,
+        Guid otherUserId,
+        bool voiceOnly,
+        string status,
+        int durationSec)
+    {
+        try
+        {
+            if (otherUserId == callerId) return;
+            var plain = JsonSerializer.Serialize(new { status, voiceOnly, durationSec });
+            var message = new Message
+            {
+                SessionId = sessionId,
+                SenderId = callerId,
+                Content = plain,
+                Type = "call",
+            };
+            db.Messages.Add(message);
+            await db.SaveChangesAsync();
+            await Clients.Group(sessionId.ToString()).SendAsync("ReceiveMessage", new
+            {
+                message.Id,
+                message.SenderId,
+                message.Content,
+                message.Type,
+                message.SentAt
+            });
+        }
+        catch
+        {
+            // Don't fail signaling if history write fails.
+        }
     }
 
     public async Task ReportUser(string sessionId, string reason, string? reportedMessageContent = null)

@@ -23,7 +23,8 @@ public class ConversationsController(
     NotificationOutboxService notificationOutbox,
     IConversationMessageCrypto messageCrypto,
     IHubContext<ConversationHub> conversationHub,
-    SupportConversationService supportConversations) : ControllerBase
+    SupportConversationService supportConversations,
+    OfficialAnnouncementConversationService officialAnnouncements) : ControllerBase
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -40,8 +41,9 @@ public class ConversationsController(
         if (string.IsNullOrWhiteSpace(user.PhoneNumber))
             return BadRequest(new { message = "يجب إضافة رقم الهاتف من الإعدادات أولاً" });
 
-        // Always surface support chat in the inbox.
+        // Always surface support + official announcement chats in the inbox.
         await supportConversations.EnsureForUserAsync(CurrentUserId);
+        await officialAnnouncements.EnsureForUserAsync(CurrentUserId);
 
         // page == null → legacy full list (Vue / silent refresh). page set → paged object for Flutter.
         var paged = page.HasValue;
@@ -210,6 +212,8 @@ public class ConversationsController(
             stateByConv.TryGetValue(c.Id, out var state);
             unreadByConv.TryGetValue(c.Id, out var unreadCount);
             var isSupport = partnerUniqueCode == SupportConversationService.SupportUniqueCode;
+            var isOfficial = OfficialAnnouncementConversationService.IsOfficialUniqueCode(partnerUniqueCode);
+            var locked = isSupport || isOfficial;
 
             string? preview = null;
             string? lastType = null;
@@ -234,17 +238,19 @@ public class ConversationsController(
                 lastType,
                 lastMsg?.SentAt,
                 unreadCount,
-                isSupport || (state?.IsPinned ?? false),
-                isSupport ? false : (state?.IsArchived ?? false),
+                locked || (state?.IsPinned ?? false),
+                locked ? false : (state?.IsArchived ?? false),
                 c.Type == ConversationType.Group,
                 partnerIsOnline,
-                isSupport ? false : (state?.IsHidden ?? false),
-                isSupport
+                locked ? false : (state?.IsHidden ?? false),
+                isSupport,
+                isOfficial
             ));
         }
 
         result = result
-            .OrderByDescending(x => x.IsSupport)
+            .OrderByDescending(x => x.IsOfficial)
+            .ThenByDescending(x => x.IsSupport)
             .ThenByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.LastMessageAt ?? DateTime.MinValue)
             .ToList();
@@ -277,7 +283,8 @@ public class ConversationsController(
             .AnyAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
         if (deleted)
         {
-            if (await supportConversations.IsSupportConversationAsync(id))
+            if (await supportConversations.IsSupportConversationAsync(id)
+                || await officialAnnouncements.IsOfficialConversationAsync(id))
             {
                 var del = await db.UserConversationDeletions
                     .FirstOrDefaultAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
@@ -297,6 +304,7 @@ public class ConversationsController(
         var partner = conv.User1Id == CurrentUserId ? conv.User2 : conv.User1;
         if (partner == null) return NotFound();
         var isSupport = partner.UniqueCode == SupportConversationService.SupportUniqueCode;
+        var isOfficial = OfficialAnnouncementConversationService.IsOfficialAccount(partner);
         return Ok(new
         {
             id = conv.Id,
@@ -306,7 +314,9 @@ public class ConversationsController(
             partnerAvatar = partner.Avatar,
             partnerIsOnline = UserOnlineVisibility.VisibleToOthers(partner),
             disappearMode = conv.DisappearMode,
-            isSupport
+            isSupport,
+            isOfficial,
+            isReadOnly = isOfficial
         });
     }
 
@@ -534,6 +544,8 @@ public class ConversationsController(
         if (!await IsParticipant(id)) return NotFound();
         if (await supportConversations.IsSupportConversationAsync(id))
             return BadRequest(new { message = "محادثة الدعم مثبتة دائماً" });
+        if (await officialAnnouncements.IsOfficialConversationAsync(id))
+            return BadRequest(new { message = "محادثة NexChat الرسمية مثبتة دائماً" });
         var state = await GetOrCreateState(id);
         state.IsPinned = !state.IsPinned;
         state.UpdatedAt = DateTime.UtcNow;
@@ -547,6 +559,8 @@ public class ConversationsController(
         if (!await IsParticipant(id)) return NotFound();
         if (await supportConversations.IsSupportConversationAsync(id))
             return BadRequest(new { message = "لا يمكن أرشفة محادثة الدعم" });
+        if (await officialAnnouncements.IsOfficialConversationAsync(id))
+            return BadRequest(new { message = "لا يمكن أرشفة محادثة NexChat الرسمية" });
         var state = await GetOrCreateState(id);
         state.IsArchived = !state.IsArchived;
         state.UpdatedAt = DateTime.UtcNow;
@@ -560,6 +574,8 @@ public class ConversationsController(
         if (!await IsParticipant(id)) return NotFound();
         if (await supportConversations.IsSupportConversationAsync(id))
             return BadRequest(new { message = "لا يمكن إخفاء محادثة الدعم" });
+        if (await officialAnnouncements.IsOfficialConversationAsync(id))
+            return BadRequest(new { message = "لا يمكن إخفاء محادثة NexChat الرسمية" });
         var state = await GetOrCreateState(id);
         state.IsHidden = !state.IsHidden;
         if (state.IsHidden)
@@ -799,6 +815,8 @@ public class ConversationsController(
         if (!await IsParticipant(id)) return NotFound();
         if (await supportConversations.IsSupportConversationAsync(id))
             return BadRequest(new { message = "لا يمكن حذف محادثة الدعم" });
+        if (await officialAnnouncements.IsOfficialConversationAsync(id))
+            return BadRequest(new { message = "لا يمكن حذف محادثة NexChat الرسمية" });
         var exists = await db.UserConversationDeletions
             .AnyAsync(d => d.UserId == CurrentUserId && d.ConversationId == id);
         if (exists) return Ok();

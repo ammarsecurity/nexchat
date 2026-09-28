@@ -157,16 +157,61 @@ public class EvolutionWhatsAppService(
     {
         var detail = ExtractEvolutionMessage(body);
         if (string.IsNullOrWhiteSpace(detail))
-            return "فشل إرسال رسالة واتساب. تحقق من اتصال الـ Instance.";
+            return "تعذّر إرسال رسالة واتساب حالياً. حاول مرة أخرى بعد قليل.";
+
+        if (detail.Contains("exists\":false", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("\"exists\": false", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("exists=false", StringComparison.OrdinalIgnoreCase)
+            || LooksLikeWhatsAppNumberMissing(detail))
+        {
+            return "رقم الهاتف غير مسجّل على واتساب. تأكد من الرقم مع رمز الدولة وأعد المحاولة.";
+        }
 
         if (detail.Contains("Connection Closed", StringComparison.OrdinalIgnoreCase)
             || detail.Contains("not connected", StringComparison.OrdinalIgnoreCase)
             || detail.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
         {
-            return "جلسة واتساب مغلقة على Evolution — افتح لوحة Evolution وأعد ربط الـ Instance (QR).";
+            return "خدمة واتساب غير متصلة مؤقتاً. حاول مرة أخرى بعد قليل.";
         }
 
-        return $"فشل إرسال واتساب: {detail}";
+        if (detail.StartsWith('{') || detail.StartsWith('['))
+            return "تعذّر إرسال رمز التحقق عبر واتساب. تحقق من الرقم وحاول مجدداً.";
+
+        // Never surface raw vendor payloads to end users.
+        if (detail.Length > 120 || detail.Contains('{') || detail.Contains("jid", StringComparison.OrdinalIgnoreCase))
+            return "تعذّر إرسال رمز التحقق عبر واتساب. تحقق من الرقم وحاول مجدداً.";
+
+        return detail;
+    }
+
+    private static bool LooksLikeWhatsAppNumberMissing(string detail)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(detail.StartsWith('{') || detail.StartsWith('[') ? detail : $"{{\"x\":{detail}}}");
+            var el = doc.RootElement;
+            if (el.ValueKind == JsonValueKind.Object && el.TryGetProperty("x", out var wrapped))
+                el = wrapped;
+            if (el.ValueKind == JsonValueKind.Object
+                && el.TryGetProperty("exists", out var exists)
+                && exists.ValueKind is JsonValueKind.False)
+                return true;
+            if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in el.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.Object
+                        && item.TryGetProperty("exists", out var e)
+                        && e.ValueKind is JsonValueKind.False)
+                        return true;
+                }
+            }
+        }
+        catch
+        {
+            /* ignore */
+        }
+        return false;
     }
 
     private static string? ExtractEvolutionMessage(string? body)
@@ -184,7 +229,13 @@ public class EvolutionWhatsAppService(
                     if (nestedMsg.ValueKind == JsonValueKind.String)
                         return nestedMsg.GetString();
                     if (nestedMsg.ValueKind == JsonValueKind.Array && nestedMsg.GetArrayLength() > 0)
-                        return nestedMsg[0].GetString() ?? nestedMsg[0].ToString();
+                    {
+                        var first = nestedMsg[0];
+                        if (first.ValueKind == JsonValueKind.String)
+                            return first.GetString();
+                        // Object payloads like { jid, exists:false, number } — keep JSON for DescribeEvolutionFailure.
+                        return first.GetRawText();
+                    }
                 }
                 if (response.ValueKind == JsonValueKind.String)
                     return response.GetString();
@@ -194,10 +245,18 @@ public class EvolutionWhatsAppService(
                 if (message.ValueKind == JsonValueKind.String)
                     return message.GetString();
                 if (message.ValueKind == JsonValueKind.Array && message.GetArrayLength() > 0)
-                    return message[0].GetString() ?? message[0].ToString();
+                {
+                    var first = message[0];
+                    if (first.ValueKind == JsonValueKind.String)
+                        return first.GetString();
+                    return first.GetRawText();
+                }
             }
             if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
                 return error.GetString();
+
+            // Fall back to full body so exists:false can still be detected upstream.
+            return root.GetRawText();
         }
         catch
         {

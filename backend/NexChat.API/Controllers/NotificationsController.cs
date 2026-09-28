@@ -58,6 +58,47 @@ public class NotificationsController(AppDbContext db) : ControllerBase
         return Ok();
     }
 
+    /// <summary>Registers iOS PushKit VoIP token for CallKit when the app is killed.</summary>
+    [HttpPost("voip-token")]
+    public async Task<IActionResult> RegisterVoip([FromBody] RegisterVoipRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Token))
+            return BadRequest(new { message = "token مطلوب" });
+
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized();
+
+        var token = req.Token.Replace(" ", "").Trim();
+        if (token.Length > 200) token = token[..200];
+
+        // Attach to newest iOS subscription row when possible; else create voip-only row.
+        var row = await db.DeviceSubscriptions
+            .Where(d => d.UserId == userId && (d.Platform == "ios" || d.Platform == "iOS"))
+            .OrderByDescending(d => d.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (row == null)
+        {
+            row = new DeviceSubscription
+            {
+                UserId = userId,
+                OneSignalPlayerId = $"voip:{token[..Math.Min(40, token.Length)]}",
+                Platform = "ios",
+                VoipDeviceToken = token,
+            };
+            db.DeviceSubscriptions.Add(row);
+        }
+        else
+        {
+            row.VoipDeviceToken = token;
+            row.CreatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
     [HttpPost("unregister")]
     public async Task<IActionResult> Unregister([FromBody] RegisterDeviceRequest req)
     {
@@ -77,3 +118,4 @@ public class NotificationsController(AppDbContext db) : ControllerBase
 }
 
 public record RegisterDeviceRequest(string PlayerId, string? Platform);
+public record RegisterVoipRequest(string Token);

@@ -210,47 +210,92 @@ class UserAvatar extends StatelessWidget {
   }
 }
 
-/// `.modern-glass-btn`
+/// `.modern-glass-btn` — header action chip used across the app.
 class GlassIconButton extends StatelessWidget {
-  const GlassIconButton({super.key, required this.icon, required this.onTap, this.color, this.badgeDot = false, this.overlay = false});
+  const GlassIconButton({
+    super.key,
+    required this.icon,
+    required this.onTap,
+    this.color,
+    this.badgeDot = false,
+    this.overlay = false,
+    this.size = 44,
+  });
   final IconData icon;
   final VoidCallback? onTap;
   final Color? color;
   final bool badgeDot;
   final bool overlay;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final radius = BorderRadius.circular(14);
+    final iconColor = overlay ? Colors.white : (color ?? c.textPrimary);
     return Material(
-      color: overlay ? const Color(0x590F172A) : c.bgCard,
-      borderRadius: BorderRadius.circular(14),
-      shadowColor: c.shadow,
-      elevation: overlay ? 0 : 1,
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: radius,
         onTap: onTap,
-        child: SizedBox(
-          width: 48,
-          height: 48,
+        child: Ink(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: overlay ? const Color(0x590F172A) : c.bgCard,
+            borderRadius: radius,
+            border: overlay ? null : Border.all(color: c.border),
+            boxShadow: overlay
+                ? null
+                : [BoxShadow(color: c.shadow, blurRadius: 10, offset: const Offset(0, 3))],
+          ),
           child: Stack(alignment: Alignment.center, children: [
-            Icon(icon, size: 20, color: overlay ? Colors.white : (color ?? c.textPrimary)),
+            Icon(icon, size: size <= 40 ? 18 : 20, color: iconColor),
             if (badgeDot)
               PositionedDirectional(
-                top: 10,
-                end: 11,
+                top: size * 0.2,
+                end: size * 0.22,
                 child: Container(
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
+                    color: c.danger,
                     shape: BoxShape.circle,
-                    border: Border.all(color: c.bgCard, width: 2),
+                    border: Border.all(color: overlay ? const Color(0x590F172A) : c.bgCard, width: 1.5),
                   ),
                 ),
               ),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+/// Root tab header — start-aligned title + trailing glass actions (conversations / home / settings).
+class AppTabHeader extends StatelessWidget {
+  const AppTabHeader({super.key, required this.title, this.actions = const []});
+  final String title;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final pad = MediaQuery.paddingOf(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.textPrimary, height: 1.2),
+            ),
+          ),
+          if (actions.isNotEmpty) Row(mainAxisSize: MainAxisSize.min, children: actions),
+        ],
       ),
     );
   }
@@ -293,27 +338,34 @@ class ModernPage extends StatelessWidget {
       }
     }
 
+    final actionRow = actions.isEmpty ? null : Row(mainAxisSize: MainAxisSize.min, children: actions);
+
+    // Tab roots (no back): title start-aligned like conversations.
+    // Stack pages: centered title between glass back + actions.
+    final header = showBack
+        ? Padding(
+            padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 12),
+            child: Row(children: [
+              GlassIconButton(icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft, onTap: back),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.textPrimary),
+                ),
+              ),
+              const SizedBox(width: 10),
+              if (actionRow != null) actionRow else const SizedBox(width: 44),
+            ]),
+          )
+        : AppTabHeader(title: title, actions: actions);
+
     return Scaffold(
       backgroundColor: c.bgPrimary,
       body: Column(children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 12),
-          child: Row(children: [
-            if (showBack)
-              GlassIconButton(icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft, onTap: back)
-            else
-              const SizedBox(width: 48),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(title,
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.textPrimary)),
-            ),
-            const SizedBox(width: 10),
-            if (actions.isEmpty) const SizedBox(width: 48) else Row(mainAxisSize: MainAxisSize.min, children: actions),
-          ]),
-        ),
+        header,
         Expanded(
           child: scroll
               ? SingleChildScrollView(
@@ -343,22 +395,34 @@ class PageHeader extends StatelessWidget {
     final c = context.colors;
     final rtl = Directionality.of(context) == TextDirection.rtl;
     return Padding(
-      padding: EdgeInsets.fromLTRB(8, MediaQuery.paddingOf(context).top + 8, 8, 8),
+      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 10, 16, 8),
       child: Row(
         children: [
           if (showBack)
-            IconButton(
-              onPressed: onBack ?? () => Navigator.of(context).maybePop(),
-              icon: Icon(rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft, color: c.textPrimary),
+            GlassIconButton(
+              icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+              onTap: onBack ?? () => Navigator.of(context).maybePop(),
             )
           else
-            const SizedBox(width: 12),
+            const SizedBox(width: 4),
+          if (showBack) const SizedBox(width: 10),
           Expanded(
-            child: Text(title,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.textPrimary)),
+            child: Text(
+              title,
+              textAlign: showBack ? TextAlign.center : TextAlign.start,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: showBack ? 18 : 22,
+                fontWeight: showBack ? FontWeight.w700 : FontWeight.w800,
+                color: c.textPrimary,
+              ),
+            ),
           ),
-          ...actions,
+          if (showBack) const SizedBox(width: 10),
+          if (actions.isEmpty && showBack)
+            const SizedBox(width: 44)
+          else
+            Row(mainAxisSize: MainAxisSize.min, children: actions),
         ],
       ),
     );
@@ -683,7 +747,7 @@ class AppToast {
     if (message.isEmpty) return;
     current.value = (message: message, type: type, id: ++_seq);
     _hide?.cancel();
-    _hide = Timer(const Duration(milliseconds: 3800), close);
+    _hide = Timer(const Duration(milliseconds: 3200), close);
   }
 
   static void close() {
@@ -695,97 +759,106 @@ class AppToast {
 void showToast(BuildContext context, String message, {bool error = false, bool success = false}) =>
     AppToast.show(message, error ? ToastType.error : (success ? ToastType.success : ToastType.info));
 
-/// components/AppToast.vue
+/// In-app toast — same glass-card language as the rest of the UI (bottom snack).
 class AppToastHost extends StatelessWidget {
   const AppToastHost({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final top = MediaQuery.paddingOf(context).top;
+    final pad = MediaQuery.paddingOf(context);
     return ValueListenableBuilder(
       valueListenable: AppToast.current,
-      builder: (context, toast, _) => AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        transitionBuilder: (child, a) => FadeTransition(
-          opacity: a,
-          child: SlideTransition(position: Tween(begin: const Offset(0, -0.3), end: Offset.zero).animate(a), child: child),
-        ),
-        child: toast == null
-            ? const SizedBox.shrink()
-            : Align(
-                key: ValueKey(toast.id),
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(12, top > 12 ? top : 12, 12, 0),
-                  child: _ToastCard(message: toast.message, type: toast.type, colors: c),
+      builder: (context, toast, _) {
+        if (toast == null) return const SizedBox.shrink();
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, pad.bottom + 24),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 240),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, a) => FadeTransition(
+                opacity: a,
+                child: SlideTransition(
+                  position: Tween(begin: const Offset(0, 0.35), end: Offset.zero).animate(a),
+                  child: child,
                 ),
               ),
-      ),
+              child: _ToastCard(
+                key: ValueKey(toast.id),
+                message: toast.message,
+                type: toast.type,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 class _ToastCard extends StatelessWidget {
-  const _ToastCard({required this.message, required this.type, required this.colors});
+  const _ToastCard({super.key, required this.message, required this.type});
   final String message;
   final ToastType type;
-  final AppColors colors;
 
   @override
   Widget build(BuildContext context) {
-    final c = colors;
-    const danger = Color(0xFFFF6584);
-    final (Color fg, Color iconBg, BoxDecoration deco, IconData icon) = switch (type) {
-      ToastType.error => (
-          c.danger,
-          danger.withValues(alpha: 0.2),
-          BoxDecoration(
-            gradient: LinearGradient(colors: [danger.withValues(alpha: 0.18), danger.withValues(alpha: 0.08)]),
-            border: Border.all(color: danger.withValues(alpha: 0.4)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          LucideIcons.circleAlert,
-        ),
-      ToastType.success => (
-          c.primary,
-          c.primary.withValues(alpha: 0.18),
-          BoxDecoration(
-            gradient: LinearGradient(colors: [c.primary.withValues(alpha: 0.2), c.primary.withValues(alpha: 0.08)]),
-            border: Border.all(color: c.primary.withValues(alpha: 0.4)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          LucideIcons.circleCheck,
-        ),
-      ToastType.info => (
-          c.textPrimary,
-          c.primary.withValues(alpha: 0.12),
-          BoxDecoration(color: c.bgCard, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(14)),
-          LucideIcons.info,
-        ),
+    final c = context.colors;
+    final (Color accent, IconData icon) = switch (type) {
+      ToastType.success => (c.success, LucideIcons.check),
+      ToastType.error => (c.danger, LucideIcons.x),
+      ToastType.info => (c.primary, LucideIcons.info),
     };
+
     return Material(
-      type: MaterialType.transparency,
+      color: Colors.transparent,
       child: GestureDetector(
         onTap: AppToast.close,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: deco.copyWith(
-            color: type == ToastType.info ? c.bgCard : c.bgPrimary,
-            boxShadow: const [BoxShadow(color: Color(0x38000000), blurRadius: 28, offset: Offset(0, 8))],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: c.bgCard,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(color: c.border),
+              boxShadow: [
+                BoxShadow(color: c.shadow, blurRadius: 24, offset: const Offset(0, 10)),
+                BoxShadow(color: c.primary.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, 4)),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(icon, size: 18, color: accent),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      message,
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          child: Row(children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, size: 20, color: fg),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(message, style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w600, height: 1.35)),
-            ),
-          ]),
         ),
       ),
     );

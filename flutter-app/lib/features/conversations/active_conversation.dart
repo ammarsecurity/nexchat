@@ -8,6 +8,7 @@ class ActiveConversation {
     this.partner,
     this.isGroup = false,
     this.isSupport = false,
+    this.isOfficial = false,
     this.messages = const [],
     this.partnerTyping = false,
     this.partnerLastReadAt,
@@ -17,9 +18,14 @@ class ActiveConversation {
   final Json? partner;
   final bool isGroup;
   final bool isSupport;
+  /// Official NexChat announcements — read-only, undeletable.
+  final bool isOfficial;
   final List<Json> messages;
   final bool partnerTyping;
   final DateTime? partnerLastReadAt;
+
+  bool get isLockedSystem => isSupport || isOfficial;
+  bool get isReadOnly => isOfficial;
 
   ActiveConversation copyWith({
     Json? partner,
@@ -27,12 +33,14 @@ class ActiveConversation {
     bool? partnerTyping,
     DateTime? partnerLastReadAt,
     bool? isSupport,
+    bool? isOfficial,
   }) =>
       ActiveConversation(
         conversationId: conversationId,
         partner: partner ?? this.partner,
         isGroup: isGroup,
         isSupport: isSupport ?? this.isSupport,
+        isOfficial: isOfficial ?? this.isOfficial,
         messages: messages ?? this.messages,
         partnerTyping: partnerTyping ?? this.partnerTyping,
         partnerLastReadAt: partnerLastReadAt ?? this.partnerLastReadAt,
@@ -41,16 +49,49 @@ class ActiveConversation {
 
 String msgId(Json m) => m.str('id');
 
+bool isOfficialConversation(Json? x) {
+  if (x == null) return false;
+  if (x.b('isOfficial') || x.b('isReadOnly')) return true;
+  final code = x.s('partnerUniqueCode') ?? x.s('uniqueCode') ?? '';
+  return code == 'NX-NEWS' || code == 'NX-STORY';
+}
+
 /// stores/conversation.js
 class ActiveConversationController extends Notifier<ActiveConversation> {
   @override
   ActiveConversation build() => const ActiveConversation();
 
-  void setConversation(String id, Json? partner, {bool isGroup = false, bool isSupport = false}) =>
-      state = ActiveConversation(conversationId: id, partner: partner, isGroup: isGroup, isSupport: isSupport);
+  void setConversation(
+    String id,
+    Json? partner, {
+    bool isGroup = false,
+    bool isSupport = false,
+    bool isOfficial = false,
+  }) =>
+      state = ActiveConversation(
+        conversationId: id,
+        partner: partner,
+        isGroup: isGroup,
+        isSupport: isSupport,
+        isOfficial: isOfficial,
+      );
 
-  void setConversationAndMessages(String id, Json? partner, {bool isGroup = false, bool isSupport = false, required List<Json> messages}) =>
-      state = ActiveConversation(conversationId: id, partner: partner, isGroup: isGroup, isSupport: isSupport, messages: List.of(messages));
+  void setConversationAndMessages(
+    String id,
+    Json? partner, {
+    bool isGroup = false,
+    bool isSupport = false,
+    bool isOfficial = false,
+    required List<Json> messages,
+  }) =>
+      state = ActiveConversation(
+        conversationId: id,
+        partner: partner,
+        isGroup: isGroup,
+        isSupport: isSupport,
+        isOfficial: isOfficial,
+        messages: List.of(messages),
+      );
 
   void clear() => state = const ActiveConversation();
 
@@ -153,8 +194,6 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     updateById(messageId, {'reactions': next});
   }
 
-  /// Replace an optimistic outgoing message with the server echo.
-  /// Matches `pending` or hub-acked `sent` rows that still only have a tempId.
   bool updatePendingMessage(Json server) {
     final type = server.s('type') ?? 'text';
     final sender = server.str('senderId').toLowerCase();
@@ -168,7 +207,6 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
       return id == null || id.isEmpty;
     }
 
-    // Prefer the newest matching optimistic row so rapid sends don't cross-merge.
     var idx = -1;
     for (var i = state.messages.length - 1; i >= 0; i--) {
       final m = state.messages[i];
@@ -190,7 +228,6 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
         if (local == remote) {
           // ok
         } else if ((m.s('replyToMessageId') ?? '') == reply) {
-          // Profanity mask may alter content — only merge when unique among peers.
           final peers = state.messages.where((x) =>
               isOptimistic(x) &&
               x.str('senderId').toLowerCase() == sender &&

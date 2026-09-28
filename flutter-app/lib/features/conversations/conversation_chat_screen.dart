@@ -204,6 +204,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           };
     var isGroup = fromList?.b('isGroup') ?? false;
     var isSupport = fromList?.b('isSupport') ?? false;
+    var isOfficial = isOfficialConversation(fromList);
     if (fromList == null && ref.read(networkProvider)) {
       try {
         final data = await Api.get('/conversations/$_cid') as Map;
@@ -212,12 +213,26 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           partner = {'id': _cid, 'name': data.s('groupName') ?? 'مجموعة', 'avatar': data.s('groupImageUrl')};
         } else if (data.s('partnerId') != null) {
           isSupport = data.b('isSupport');
-          partner = {'id': data.s('partnerId'), 'name': data.s('partnerName') ?? '', 'avatar': data.s('partnerAvatar'), 'isOnline': data.b('partnerIsOnline')};
+          isOfficial = data.b('isOfficial') || data.b('isReadOnly');
+          partner = {
+            'id': data.s('partnerId'),
+            'name': data.s('partnerName') ?? '',
+            'avatar': data.s('partnerAvatar'),
+            'isOnline': data.b('partnerIsOnline'),
+            'uniqueCode': isOfficial ? 'NX-NEWS' : (isSupport ? 'NX-SUPPORT' : null),
+          };
         }
       } catch (_) {}
     }
     if (!mounted || !_ownsStore) return;
-    _store.setConversation(_cid, partner, isGroup: isGroup, isSupport: isSupport);
+    if (isOfficial) {
+      partner = {
+        ...?partner,
+        'name': t('conversations.officialName'),
+        'uniqueCode': 'NX-NEWS',
+      };
+    }
+    _store.setConversation(_cid, partner, isGroup: isGroup, isSupport: isSupport, isOfficial: isOfficial);
     if (isGroup && ref.read(networkProvider)) _fetchGroupSenders();
 
     final cached = Prefs.instance.getString(_cacheKey);
@@ -250,6 +265,18 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       }),
       h.on('MessageDeletedForMe', (a) => _store.removeMessage('${a.firstOrNull}')),
       h.on('MessageDeletedForEveryone', (a) => _store.setDeletedForEveryone('${a.firstOrNull}')),
+      h.on('MessageUpdated', (a) {
+        final raw = a.firstOrNull;
+        if (raw is! Map) return;
+        final m = Map<String, dynamic>.from(raw);
+        final id = m.str('id');
+        if (id.isEmpty) return;
+        _store.updateById(id, {
+          'content': m.s('content') ?? m['content'],
+          'type': m.s('type') ?? m['type'],
+          'deletedForEveryone': false,
+        });
+      }),
       h.on('MessagesExpired', (a) {
         final p = a.firstOrNull;
         final ids = p is Map ? p.v('messageIds') : null;
@@ -477,7 +504,13 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final isSupport = ref.read(activeConversationProvider).isSupport ||
         partner?.s('uniqueCode') == 'NX-SUPPORT' ||
         (partner?.s('name') == 'دعم');
-    _store.setConversationAndMessages(_cid, partner, isGroup: isGroup, isSupport: isSupport, messages: merged);
+    final isOfficial = ref.read(activeConversationProvider).isOfficial ||
+        isOfficialConversation(partner) ||
+        partner?.s('uniqueCode') == 'NX-NEWS';
+    if (isOfficial) {
+      partner = {...?partner, 'name': t('conversations.officialName'), 'uniqueCode': 'NX-NEWS'};
+    }
+    _store.setConversationAndMessages(_cid, partner, isGroup: isGroup, isSupport: isSupport, isOfficial: isOfficial, messages: merged);
     final mode = raw.i('disappearMode');
     final hasMore = raw.b('hasMore') || raw.v('HasMore') == true;
     final effectiveMode = isGroup && mode == 1 ? 0 : mode;
@@ -1155,26 +1188,29 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _ => t('conversationChat.downloadImage'),
     };
     final viewOnce = msg.b('isViewOnce');
+    final isOfficial = ref.read(activeConversationProvider).isOfficial;
     showAppSheet<void>(
       context,
       builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            for (final e in reactionEmojis)
-              GestureDetector(
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickReaction(msg, e);
-                },
-                child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(e, style: const TextStyle(fontSize: 28))),
-              ),
-          ]),
-        ),
-        SheetAction(icon: LucideIcons.reply, label: t('conversationChat.reply'), onTap: () {
-          Navigator.pop(ctx);
-          _reply(msg);
-        }),
+        if (!isOfficial)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              for (final e in reactionEmojis)
+                GestureDetector(
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickReaction(msg, e);
+                  },
+                  child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(e, style: const TextStyle(fontSize: 28))),
+                ),
+            ]),
+          ),
+        if (!isOfficial)
+          SheetAction(icon: LucideIcons.reply, label: t('conversationChat.reply'), onTap: () {
+            Navigator.pop(ctx);
+            _reply(msg);
+          }),
         if (!viewOnce)
           SheetAction(icon: LucideIcons.forward, label: t('conversationChat.share'), onTap: () {
             Navigator.pop(ctx);
@@ -1185,12 +1221,13 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
             Navigator.pop(ctx);
             _download(msg);
           }),
-        SheetAction(icon: LucideIcons.trash2, label: t('conversationChat.deleteForMe'), onTap: () {
-          Navigator.pop(ctx);
-          if (!_requireOnline()) return;
-          Hubs.conversation.invoke('DeleteMessageForMe', [_cid, msg.str('id')]).catchError((_) => null);
-        }),
-        if (msg['senderId'] == _me)
+        if (!isOfficial)
+          SheetAction(icon: LucideIcons.trash2, label: t('conversationChat.deleteForMe'), onTap: () {
+            Navigator.pop(ctx);
+            if (!_requireOnline()) return;
+            Hubs.conversation.invoke('DeleteMessageForMe', [_cid, msg.str('id')]).catchError((_) => null);
+          }),
+        if (!isOfficial && msg['senderId'] == _me)
           SheetAction(icon: LucideIcons.userX, label: t('conversationChat.deleteForEveryone'), danger: true, onTap: () {
             Navigator.pop(ctx);
             if (!_requireOnline()) return;
@@ -1202,6 +1239,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   void _openReactionPicker(Json msg) {
+    if (ref.read(activeConversationProvider).isOfficial) return;
     if (msg['id'] == null || msg.b('deletedForEveryone')) return;
     showAppSheet<void>(
       context,
@@ -1349,8 +1387,15 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   Future<void> _deleteConversation() async {
     if (!_requireOnline()) return;
-    if (ref.read(activeConversationProvider).isSupport) {
-      if (mounted) showToast(context, t('settings.supportDesc'), error: true);
+    final active = ref.read(activeConversationProvider);
+    if (active.isSupport || active.isOfficial) {
+      if (mounted) {
+        showToast(
+          context,
+          active.isOfficial ? t('conversations.officialReadOnly') : t('settings.supportDesc'),
+          error: true,
+        );
+      }
       return;
     }
     final ok = await confirmDialog(
@@ -1371,7 +1416,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   void _openPartner() {
     final s = ref.read(activeConversationProvider);
-    if (s.isSupport) return;
+    if (s.isSupport || s.isOfficial) return;
     if (s.isGroup) {
       context.push('/conversation/$_cid/group-info');
       return;
@@ -1416,10 +1461,15 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final partner = ref.watch(activeConversationProvider.select((s) => s.partner));
     final isGroup = ref.watch(activeConversationProvider.select((s) => s.isGroup));
     final isSupport = ref.watch(activeConversationProvider.select((s) => s.isSupport));
+    final isOfficial = ref.watch(activeConversationProvider.select((s) => s.isOfficial));
+    final locked = isSupport || isOfficial;
     final partnerTyping = ref.watch(activeConversationProvider.select((s) => s.partnerTyping));
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final pad = MediaQuery.paddingOf(context);
     final online = partner?.b('isOnline') ?? false;
+    final displayName = isOfficial
+        ? t('conversations.officialName')
+        : (partner?.s('name') ?? (isGroup ? t('groupInfo.title') : '—'));
 
     return Scaffold(
       backgroundColor: c.bgPrimary,
@@ -1452,8 +1502,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                         Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            UserAvatar(url: partner?.s('avatar'), name: partner?.s('name') ?? '', size: 44),
-                            if (!isGroup)
+                            UserAvatar(url: partner?.s('avatar'), name: displayName, size: 44),
+                            if (!isGroup && !isOfficial)
                               PositionedDirectional(
                                 end: 0,
                                 bottom: 0,
@@ -1474,23 +1524,33 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                partner?.s('name') ?? '…',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: c.textPrimary,
-                                  height: 1.2,
+                              Row(children: [
+                                Flexible(
+                                  child: Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: c.textPrimary,
+                                      height: 1.2,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                if (isOfficial || isSupport) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.verified, size: 16, color: c.primary),
+                                ],
+                              ]),
                               const SizedBox(height: 3),
                               if (partnerTyping)
                                 Text(
                                   t('conversationChat.typing'),
                                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary),
                                 )
+                              else if (isOfficial)
+                                Text(t('conversations.officialSubtitle'), style: TextStyle(fontSize: 12, color: c.textMuted))
                               else if (isGroup)
                                 Text(t('groups.members'), style: TextStyle(fontSize: 12, color: c.textMuted))
                               else
@@ -1511,13 +1571,13 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                 ),
               ),
               const SizedBox(width: 4),
-              if (!isGroup && !isSupport) ...[
+              if (!isGroup && !locked) ...[
                 _HeaderAction(icon: LucideIcons.video, onTap: () => _startCall(voiceOnly: false)),
                 const SizedBox(width: 6),
                 _HeaderAction(icon: LucideIcons.phone, onTap: () => _startCall(voiceOnly: true)),
                 const SizedBox(width: 6),
               ],
-              if (!isSupport)
+              if (!locked)
                 _HeaderAction(icon: LucideIcons.trash2, onTap: _deleteConversation, danger: true),
             ]),
           ),
@@ -1554,7 +1614,15 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                   final lastRead = ref.watch(activeConversationProvider.select((s) => s.partnerLastReadAt));
                   final group = ref.watch(activeConversationProvider.select((s) => s.isGroup));
                   if (messages.isEmpty && !typing) {
-                    return Center(child: Text(t('conversationChat.empty'), style: TextStyle(color: c.textMuted, fontSize: 13)));
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      children: [
+                        _ChatDateChip(label: formatChatDayLabel(iraqNow())),
+                        const _ChatEncryptionBanner(),
+                        const SizedBox(height: 24),
+                        Center(child: Text(t('conversationChat.empty'), style: TextStyle(color: c.textMuted, fontSize: 13))),
+                      ],
+                    );
                   }
                   return Stack(
                     children: [
@@ -1575,25 +1643,37 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                               ),
                             );
                           }
-                          final msg = messages[messages.length - 1 - msgIndexFromEnd];
+                          final ci = messages.length - 1 - msgIndexFromEnd;
+                          final msg = messages[ci];
+                          final prev = ci > 0 ? messages[ci - 1] : null;
+                          final showDate = prev == null || !isSameChatDay(msg.date('sentAt'), prev.date('sentAt'));
+                          final showEncryption = ci == 0;
                           final key = _keys.putIfAbsent(msgKey(msg), GlobalKey.new);
                           return KeyedSubtree(
                             key: key,
-                            child: MessageItem(
-                              msg: msg,
-                              mine: msg['senderId'] == _me,
-                              me: _me,
-                              isGroup: group,
-                              sender: _groupSenders[msg.str('senderId')],
-                              highlighted: _highlighted == msgKey(msg),
-                              read: _isRead(msg, lastRead, isGroup: group),
-                              onMenu: () => _openMenu(msg),
-                              onLongPress: () => _openReactionPicker(msg),
-                              onReaction: (e) => _pickReaction(msg, e),
-                              onRetry: () => _retry(msg),
-                              onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
-                              onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
-                              onViewOnceOpen: () => _openViewOnce(msg),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // WhatsApp order: day chip → encryption notice → messages
+                                if (showDate) _ChatDateChip(label: formatChatDayLabel(msg.date('sentAt'))),
+                                if (showEncryption) const _ChatEncryptionBanner(),
+                                MessageItem(
+                                  msg: msg,
+                                  mine: msg['senderId'] == _me,
+                                  me: _me,
+                                  isGroup: group,
+                                  sender: _groupSenders[msg.str('senderId')],
+                                  highlighted: _highlighted == msgKey(msg),
+                                  read: _isRead(msg, lastRead, isGroup: group),
+                                  onMenu: () => _openMenu(msg),
+                                  onLongPress: () => _openReactionPicker(msg),
+                                  onReaction: (e) => _pickReaction(msg, e),
+                                  onRetry: () => _retry(msg),
+                                  onReplyTap: () => _scrollToReplied(msg.s('replyToMessageId')),
+                                  onSenderTap: () => context.push('/profile/${msg.str('senderId')}', extra: {'conversationId': _cid}),
+                                  onViewOnceOpen: () => _openViewOnce(msg),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -1637,7 +1717,9 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
               ),
             ),
           ),
-          _buildInput(context),
+          isOfficial
+              ? _buildOfficialReadOnlyBar(context)
+              : _buildInput(context),
         ]),
         LoaderOverlay(
           show: _loading || _uploadingVideo || _uploadingAlbum,
@@ -1676,6 +1758,31 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
             ),
           ),
       ]),
+    );
+  }
+
+  Widget _buildOfficialReadOnlyBar(BuildContext context) {
+    final c = context.colors;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottom),
+      decoration: BoxDecoration(
+        color: c.bgCard,
+        border: Border(top: BorderSide(color: c.border)),
+      ),
+      child: Row(
+        children: [
+          Icon(LucideIcons.megaphone, size: 18, color: c.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              t('conversations.officialReadOnly'),
+              style: TextStyle(fontSize: 13, height: 1.4, color: c.textSecondary, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2617,6 +2724,212 @@ class _CallHistoryRow extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// WhatsApp-style day separator pill between message groups.
+class _ChatDateChip extends StatelessWidget {
+  const _ChatDateChip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.isEmpty) return const SizedBox.shrink();
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: c.bgCard,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: c.border),
+            boxShadow: [BoxShadow(color: c.shadow, blurRadius: 6, offset: const Offset(0, 2))],
+          ),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.textSecondary, height: 1.2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// End-to-end encryption notice shown at the start of every conversation.
+class _ChatEncryptionBanner extends StatelessWidget {
+  const _ChatEncryptionBanner();
+
+  Future<void> _openSheet(BuildContext context) {
+    final c = context.colors;
+    return showAppSheet(
+      context,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Spacer(),
+                GlassIconButton(
+                  icon: LucideIcons.x,
+                  color: c.textMuted,
+                  onTap: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: AppColors.brandGradient,
+                boxShadow: [BoxShadow(color: c.primary.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8))],
+              ),
+              alignment: Alignment.center,
+              child: const Icon(LucideIcons.lockKeyhole, size: 36, color: Colors.white),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              t('conversationChat.encryptionSheetTitle'),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: c.textPrimary, height: 1.35),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              t('conversationChat.encryptionSheetBody'),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, color: c.textSecondary, height: 1.55, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: c.bgElevated,
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                border: Border.all(color: c.border),
+              ),
+              child: Column(
+                children: [
+                  _EncryptionFeature(icon: LucideIcons.messageCircle, label: t('conversationChat.encryptionFeatureMessages')),
+                  _EncryptionFeature(icon: LucideIcons.phone, label: t('conversationChat.encryptionFeatureCalls')),
+                  _EncryptionFeature(icon: LucideIcons.paperclip, label: t('conversationChat.encryptionFeatureMedia')),
+                  _EncryptionFeature(icon: LucideIcons.mapPin, label: t('conversationChat.encryptionFeatureLocation')),
+                  _EncryptionFeature(icon: LucideIcons.circleDashed, label: t('conversationChat.encryptionFeatureStatus')),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            GradientButton(
+              label: t('conversationChat.encryptionLearnMore'),
+              icon: LucideIcons.shield,
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/privacy');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Color.alphaBlend(c.primary.withValues(alpha: 0.18), c.bgCard) : const Color(0xFFEFF6FF);
+    final fg = isDark ? c.textPrimary : const Color(0xFF1E3A5F);
+    final border = c.primary.withValues(alpha: isDark ? 0.28 : 0.18);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: InkWell(
+          onTap: () => _openSheet(context),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: c.primary.withValues(alpha: 0.14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(LucideIcons.lock, size: 13, color: c.primary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      style: TextStyle(fontSize: 12.5, height: 1.45, color: fg, fontWeight: FontWeight.w500),
+                      children: [
+                        TextSpan(text: '${t('conversationChat.encryptionBanner')} '),
+                        TextSpan(
+                          text: t('conversationChat.encryptionLearnMore'),
+                          style: TextStyle(color: c.primary, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.start,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EncryptionFeature extends StatelessWidget {
+  const _EncryptionFeature({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: c.primarySoft,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 17, color: c.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.textPrimary, height: 1.3),
+            ),
+          ),
+        ],
       ),
     );
   }

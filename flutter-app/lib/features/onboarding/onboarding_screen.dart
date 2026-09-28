@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -10,23 +10,20 @@ import '../../app/router.dart';
 import '../../core/feature_flags.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/storage/prefs.dart';
-import '../../core/theme/app_colors.dart';
-import '../../shared/widgets.dart';
+
+const _kBlue = Color(0xFF0084FF);
+const _kPurple = Color(0xFF8E54E9);
+const _kTitle = Color(0xFF0A1931);
+const _kBody = Color(0xFF7E8A97);
 
 class _Slide {
-  const _Slide(this.title, this.description, [this.imageUrl = '']);
-  final String title;
-  final String description;
-  final String imageUrl;
+  const _Slide(this.asset, this.titleKey, this.descKey);
+  final String asset;
+  final String titleKey;
+  final String descKey;
 }
 
-List<_Slide> _localizedDefaults() => [
-      _Slide(t('onboarding.slide1Title'), t('onboarding.slide1Desc')),
-      _Slide(t('onboarding.slide2Title'), t('onboarding.slide2Desc')),
-      _Slide(t('onboarding.slide3Title'), t('onboarding.slide3Desc')),
-    ];
-
-/// views/OnboardingView.vue
+/// Onboarding matching product mockups: hero image + soft wave + pill CTA.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -35,44 +32,45 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  List<_Slide> _slides = const [];
+  late final PageController _page;
   int _index = 0;
-  bool _loading = true;
+  bool _ready = false;
+
+  static const _slides = [
+    _Slide('assets/images/1.png', 'onboarding.slide1Title', 'onboarding.slide1Desc'),
+    _Slide('assets/images/2.png', 'onboarding.slide2Title', 'onboarding.slide2Desc'),
+    _Slide('assets/images/3.png', 'onboarding.slide3Title', 'onboarding.slide3Desc'),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _page = PageController();
+    _bootstrap();
   }
 
-  Future<void> _load() async {
-    var slides = _localizedDefaults();
+  @override
+  void dispose() {
+    _page.dispose();
+    super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    // Admin kill-switch only — never override local images/copy (breaks the designed UI).
     final content = await fetchSiteContent('onboarding');
     if (content != null && '$content'.isNotEmpty) {
       try {
         final parsed = jsonDecode('$content');
         if (parsed is Map && parsed['enabled'] == false) {
-          if (mounted) setState(() => _loading = false);
-          _finish();
+          if (mounted) {
+            setState(() => _ready = true);
+            _finish();
+          }
           return;
-        }
-        final list = parsed is Map ? parsed['slides'] : null;
-        if (list is List && list.isNotEmpty) {
-          final sorted = list.whereType<Map>().toList()
-            ..sort((a, b) => (num.tryParse('${a['order']}') ?? 0).compareTo(num.tryParse('${b['order']}') ?? 0));
-          final parsedSlides = sorted
-              .map((m) => _Slide('${m['title'] ?? ''}', '${m['description'] ?? ''}', '${m['imageUrl'] ?? ''}'))
-              .toList();
-          if (parsedSlides.isNotEmpty) slides = parsedSlides;
         }
       } catch (_) {}
     }
-    if (mounted) {
-      setState(() {
-        _slides = slides;
-        _loading = false;
-      });
-    }
+    if (mounted) setState(() => _ready = true);
   }
 
   void _finish() {
@@ -83,150 +81,153 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   bool get _isLast => _index >= _slides.length - 1;
 
-  @override
-  Widget build(BuildContext context) => PopScope(canPop: false, child: _page(context));
+  void _goTo(int i) {
+    if (i < 0 || i >= _slides.length) return;
+    _page.animateToPage(i, duration: const Duration(milliseconds: 340), curve: Curves.easeOutCubic);
+  }
 
-  Widget _page(BuildContext context) {
-    final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
-    final pad = MediaQuery.paddingOf(context);
-    if (_loading) {
-      return Scaffold(
-        backgroundColor: c.bgPrimary,
-        body: PageLoader(text: t('common.loading')),
-      );
-    }
-    final slide = _slides[_index];
-    return Scaffold(
-      backgroundColor: c.bgPrimary,
-      body: Padding(
-        padding: EdgeInsets.fromLTRB(16, pad.top + 16, 16, pad.bottom + 24),
-        child: Column(
-          children: [
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
-                onPressed: _finish,
-                child: Text(t('onboarding.skip'), style: TextStyle(color: c.textMuted, fontSize: 15)),
-              ),
+  void _next() => _isLast ? _finish() : _goTo(_index + 1);
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(localeProvider);
+    return PopScope(
+      canPop: false,
+      child: !_ready
+          ? const Scaffold(backgroundColor: Colors.white, body: SizedBox.expand())
+          : _OnboardingBody(
+              page: _page,
+              index: _index,
+              slides: _slides,
+              isLast: _isLast,
+              onPageChanged: (i) => setState(() => _index = i),
+              onDotTap: _goTo,
+              onNext: _next,
             ),
-            Expanded(
-              child: GestureDetector(
-                onHorizontalDragEnd: (d) {
-                  final v = d.primaryVelocity ?? 0;
-                  if (v > 200 && !_isLast) setState(() => _index++);
-                  if (v < -200 && _index > 0) setState(() => _index--);
-                },
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  transitionBuilder: (child, anim) => FadeTransition(
-                    opacity: anim,
-                    child: SlideTransition(
-                      position: Tween(begin: const Offset(0.06, 0), end: Offset.zero).animate(anim),
-                      child: child,
-                    ),
-                  ),
-                  child: ConstrainedBox(
-                    key: ValueKey(_index),
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (slide.imageUrl.isNotEmpty)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              width: 200,
-                              height: 200,
-                              color: c.bgCard,
-                              child: CachedNetworkImage(imageUrl: slide.imageUrl, fit: BoxFit.cover),
-                            ),
-                          )
-                        else
-                          Container(
-                            width: 140,
-                            height: 140,
-                            decoration: BoxDecoration(color: c.bgCard, borderRadius: BorderRadius.circular(24)),
-                            alignment: Alignment.center,
-                            child: Image.asset(light ? 'assets/images/logo-light.png' : 'assets/images/logo.png', height: 80),
-                          ),
-                        const SizedBox(height: 24),
-                        Text(slide.title,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                        const SizedBox(height: 12),
-                        Text(slide.description,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 15, color: c.textSecondary, height: 1.6)),
-                      ],
-                    ),
-                  ),
+    );
+  }
+}
+
+class _OnboardingBody extends StatelessWidget {
+  const _OnboardingBody({
+    required this.page,
+    required this.index,
+    required this.slides,
+    required this.isLast,
+    required this.onPageChanged,
+    required this.onDotTap,
+    required this.onNext,
+  });
+
+  final PageController page;
+  final int index;
+  final List<_Slide> slides;
+  final bool isLast;
+  final ValueChanged<int> onPageChanged;
+  final ValueChanged<int> onDotTap;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final pad = MediaQuery.paddingOf(context);
+    final h = MediaQuery.sizeOf(context).height;
+    final cardH = (h * 0.38).clamp(290.0, 360.0);
+    final slide = slides[index];
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: PageView.builder(
+                controller: page,
+                itemCount: slides.length,
+                onPageChanged: onPageChanged,
+                itemBuilder: (_, i) => Image.asset(
+                  slides[i].asset,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  width: double.infinity,
+                  height: double.infinity,
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < _slides.length; i++)
-                    GestureDetector(
-                      onTap: () => setState(() => _index = i),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(shape: BoxShape.circle, color: i == _index ? c.primary : c.border),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: Row(
-                children: [
-                  Opacity(
-                    opacity: _index == 0 ? 0.4 : 1,
-                    child: SizedBox(
-                      width: 52,
-                      height: 52,
-                      child: Material(
-                        color: c.bgCard,
-                        borderRadius: BorderRadius.circular(14),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: _index == 0 ? null : () => setState(() => _index--),
-                          child: Icon(LucideIcons.chevronRight, color: c.textSecondary),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: Material(
-                        color: c.primary,
-                        borderRadius: BorderRadius.circular(14),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => _isLast ? _finish() : setState(() => _index++),
-                          child: Row(
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: cardH,
+              child: CustomPaint(
+                painter: const _WaveCardPainter(),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(28, 52, 28, pad.bottom + 8),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 260),
+                          child: Column(
+                            key: ValueKey(index),
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(_isLast ? t('onboarding.start') : t('onboarding.next'),
-                                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-                              const SizedBox(width: 8),
-                              const Icon(LucideIcons.chevronLeft, size: 20, color: Colors.white),
+                              Text(
+                                t(slide.titleKey),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  color: _kTitle,
+                                  height: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                t(slide.descKey),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: _kBody,
+                                  height: 1.65,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ),
-                    ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var i = 0; i < slides.length; i++)
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => onDotTap(i),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: i == index ? 9 : 7,
+                                  height: i == index ? 9 : 7,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: i == index ? _kBlue : const Color(0xFFD0D7E2),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      _PillCta(
+                        label: isLast ? t('onboarding.start') : t('onboarding.next'),
+                        onTap: onNext,
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -234,4 +235,90 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       ),
     );
   }
+}
+
+class _PillCta extends StatelessWidget {
+  const _PillCta({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [_kBlue, _kPurple],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(27),
+          boxShadow: const [
+            BoxShadow(color: Color(0x332E86FB), blurRadius: 18, offset: Offset(0, 8)),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(27),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Positioned(
+                  right: 10,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(LucideIcons.chevronRight, color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// White bottom card with soft asymmetrical wave (matches mockups).
+class _WaveCardPainter extends CustomPainter {
+  const _WaveCardPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    final path = Path()
+      ..moveTo(0, 42)
+      ..cubicTo(size.width * 0.18, 8, size.width * 0.38, 8, size.width * 0.52, 26)
+      ..cubicTo(size.width * 0.72, 48, size.width * 0.88, 40, size.width, 18)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

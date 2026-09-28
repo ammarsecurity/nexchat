@@ -13,6 +13,7 @@ import '../../shared/country_picker.dart';
 import '../../shared/widgets.dart';
 import 'auth_controller.dart';
 import 'auth_widgets.dart';
+import 'register_otp_screen.dart';
 
 /// views/auth/RegisterView.vue
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -27,7 +28,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _name = TextEditingController();
   final _password = TextEditingController();
   final _phone = TextEditingController();
-  final _otp = TextEditingController();
   String _country = 'IQ';
   int? _day, _month, _year;
   String _gender = '';
@@ -35,8 +35,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   bool _loading = false;
   String _error = '';
   bool? _otpEnabled;
-  bool _otpSent = false;
-  int _resendIn = 0;
 
   String get _dial => countryByCode(_country)?.dialCode ?? '964';
 
@@ -51,7 +49,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _name.dispose();
     _password.dispose();
     _phone.dispose();
-    _otp.dispose();
     super.dispose();
   }
 
@@ -97,7 +94,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   bool get _canSubmit {
     if (!_baseReady || _loading) return false;
-    if (_otpEnabled == true) return _otpSent && _otp.text.trim().length >= 4;
+    // OTP is verified on a dedicated screen.
     return true;
   }
 
@@ -105,52 +102,25 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (_day != null && _day! > _daysInMonth) _day = _daysInMonth;
   }
 
-  void _tickResend() async {
-    while (mounted && _resendIn > 0) {
-      await Future<void>.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
-      setState(() => _resendIn--);
-    }
-  }
-
-  Future<void> _sendOtp() async {
-    final phone = _phoneValidation;
-    if (phone == null || !phone.valid) {
-      setState(() => _error = phone?.message ?? t('phoneValidation.required'));
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
-    try {
-      await Api.post('/otp/send', {
-        'purpose': 'register',
-        'countryCode': _dial,
-        'phoneNumber': phone.normalized,
-        'country': _country,
-      });
-      if (!mounted) return;
-      setState(() {
-        _otpSent = true;
-        _resendIn = 45;
-        _otp.clear();
-      });
-      _tickResend();
-    } catch (e) {
-      if (mounted) setState(() => _error = Api.errorMessage(e, t('common.error')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
   Future<void> _submit() async {
-    if (_otpEnabled == true && !_otpSent) {
-      await _sendOtp();
-      return;
-    }
     if (!_canSubmit) return;
     final phone = _phoneValidation!;
+    if (_otpEnabled == true) {
+      context.push(
+        '/register/otp',
+        extra: RegisterOtpArgs(
+          name: _name.text.trim(),
+          password: _password.text,
+          gender: _gender,
+          birthDate: _birthDate,
+          country: _country,
+          countryCode: _dial,
+          phoneNumber: phone.normalized!,
+          invite: widget.invite,
+        ),
+      );
+      return;
+    }
     setState(() {
       _loading = true;
       _error = '';
@@ -164,7 +134,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             country: _country,
             countryCode: _dial,
             phoneNumber: phone.normalized!,
-            otpCode: _otpEnabled == true ? _otp.text.trim() : null,
           );
       if (!mounted) return;
       final invite = takePendingInvite(widget.invite);
@@ -198,7 +167,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     final submitLabel = _loading
         ? t('register.loading')
-        : (_otpEnabled == true && !_otpSent ? t('otp.sendWhatsApp') : t('register.submit'));
+        : (_otpEnabled == true ? t('otp.continueToVerify') : t('register.submit'));
 
     final page = Scaffold(
       backgroundColor: Colors.transparent,
@@ -236,11 +205,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     countryCode: _country,
                     controller: _phone,
                     error: phoneError.isNotEmpty,
-                    onCountryChanged: (x) => setState(() {
-                      _country = x.code;
-                      _otpSent = false;
-                    }),
-                    onChanged: (_) => setState(() => _otpSent = false),
+                    onCountryChanged: (x) => setState(() => _country = x.code),
+                    onChanged: (_) => setState(() {}),
                   ),
                   if (phoneError.isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -248,26 +214,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ] else ...[
                     const SizedBox(height: 6),
                     Text(t('register.phoneHint'), style: TextStyle(fontSize: 12, height: 1.4, color: c.textMuted)),
-                  ],
-                  if (_otpEnabled == true && _otpSent) ...[
-                    const SizedBox(height: 12),
-                    AuthField(
-                      controller: _otp,
-                      hint: t('otp.codeHint'),
-                      keyboardType: TextInputType.number,
-                      maxLength: 8,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: TextButton(
-                        onPressed: _resendIn > 0 || _loading ? null : _sendOtp,
-                        child: Text(
-                          _resendIn > 0 ? t('otp.resendIn', {'s': _resendIn}) : t('otp.resend'),
-                          style: TextStyle(color: c.primary, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
                   ],
                   const SizedBox(height: 18),
                   sectionLabel(t('register.sectionAbout'), LucideIcons.calendar),
@@ -374,11 +320,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   AuthSubmit(
                     label: submitLabel,
                     pill: true,
-                    onPressed: (_otpEnabled == true && !_otpSent
-                            ? (_baseReady && !_loading)
-                            : _canSubmit)
-                        ? _submit
-                        : null,
+                    onPressed: _canSubmit ? _submit : null,
                   ),
                   const SizedBox(height: 24),
                   Row(

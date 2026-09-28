@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-/// Native call helpers: Android foreground service, proximity, incoming-call UI.
+/// Native call helpers: Android FGS / FSI, iOS CallKit, proximity, pending store.
 class CallNative {
   CallNative._();
 
@@ -12,25 +12,32 @@ class CallNative {
 
   static void Function(Map<String, dynamic> event)? onIncomingEvent;
 
+  static bool get _mobile => Platform.isAndroid || Platform.isIOS;
+
   static void listen() {
     if (_listening) return;
     _listening = true;
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'incomingEvent' && call.arguments is Map) {
         onIncomingEvent?.call(Map<String, dynamic>.from(call.arguments as Map));
+      } else if (call.method == 'voipToken' && call.arguments is Map) {
+        final token = (call.arguments as Map)['token']?.toString();
+        if (token != null && token.isNotEmpty) onVoipToken?.call(token);
       }
     });
   }
 
+  static void Function(String token)? onVoipToken;
+
   static Future<void> ready() async {
     try {
-      if (Platform.isAndroid) await _channel.invokeMethod('ready');
+      if (_mobile) await _channel.invokeMethod('ready');
     } catch (_) {}
   }
 
   static Future<void> setForeground(bool value) async {
     try {
-      if (Platform.isAndroid) await _channel.invokeMethod('setForeground', {'value': value});
+      if (_mobile) await _channel.invokeMethod('setForeground', {'value': value});
     } catch (_) {}
   }
 
@@ -42,7 +49,7 @@ class CallNative {
     String? callerAvatar,
   }) async {
     try {
-      if (Platform.isAndroid) {
+      if (_mobile) {
         await _channel.invokeMethod('showIncoming', {
           'conversationId': conversationId,
           'sessionId': sessionId,
@@ -56,14 +63,14 @@ class CallNative {
 
   static Future<void> dismissIncoming() async {
     try {
-      if (Platform.isAndroid) await _channel.invokeMethod('dismissIncoming');
+      if (_mobile) await _channel.invokeMethod('dismissIncoming');
     } catch (_) {}
   }
 
   static Future<void> start({required bool video, required String title, required String text}) async {
     try {
       await WakelockPlus.enable();
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (_mobile) {
         await _channel.invokeMethod('start', {'video': video, 'title': title, 'text': text});
       }
     } catch (_) {}
@@ -72,7 +79,7 @@ class CallNative {
   static Future<void> stop() async {
     try {
       await WakelockPlus.disable();
-      if (Platform.isAndroid || Platform.isIOS) await _channel.invokeMethod('stop');
+      if (_mobile) await _channel.invokeMethod('stop');
     } catch (_) {}
   }
 
@@ -87,20 +94,21 @@ class CallNative {
 
   static Future<void> proximity(bool enabled) async {
     try {
-      if (Platform.isAndroid || Platform.isIOS) await _channel.invokeMethod('proximity', {'enabled': enabled});
+      if (_mobile) await _channel.invokeMethod('proximity', {'enabled': enabled});
     } catch (_) {}
   }
 
   static Future<void> clearLockScreen() async {
     try {
       if (Platform.isAndroid) await _channel.invokeMethod('clearLockScreen');
+      if (Platform.isIOS) await _channel.invokeMethod('dismissIncoming');
     } catch (_) {}
   }
 
   /// Returns a pending incoming-call payload (if any) and clears native storage.
   static Future<Map<String, dynamic>?> consumePending() async {
     try {
-      if (!Platform.isAndroid) return null;
+      if (!_mobile) return null;
       final raw = await _channel.invokeMethod<dynamic>('consumePending');
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (_) {}

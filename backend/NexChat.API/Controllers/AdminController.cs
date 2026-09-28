@@ -23,6 +23,7 @@ public class AdminController(
     StoryAudienceService storyAudience,
     OfficialStoryPublisherService officialStoryPublisher,
     SupportConversationService supportConversations,
+    OfficialAnnouncementConversationService officialAnnouncements,
     NotificationOutboxService notificationOutbox,
     OneSignalService oneSignal,
     EvolutionWhatsAppService evolution,
@@ -38,15 +39,19 @@ public class AdminController(
     {
         var today = IraqTime.TodayUtcStart;
 
+        // Matching (legacy) + conversation messages — "رسائل اليوم" must reflect real chat traffic.
+        var matchingMessagesToday = await db.Messages.CountAsync(m => m.SentAt >= today);
+        var conversationMessagesToday = await db.ConversationMessages.CountAsync(m => m.SentAt >= today);
+
         var stats = new AdminStatsDto(
             TotalUsers: await db.Users.CountAsync(),
             OnlineUsers: await db.Users.CountAsync(u => u.IsOnline),
             ActiveSessions: await db.ChatSessions.CountAsync(s => s.EndedAt == null),
             TotalSessionsToday: await db.ChatSessions.CountAsync(s => s.StartedAt >= today),
-            TotalMessagesToday: await db.Messages.CountAsync(m => m.SentAt >= today),
+            TotalMessagesToday: matchingMessagesToday + conversationMessagesToday,
             PendingReports: await db.Reports.CountAsync(r => !r.IsReviewed),
             TotalConversations: await db.Conversations.CountAsync(),
-            TotalConversationMessagesToday: await db.ConversationMessages.CountAsync(m => m.SentAt >= today),
+            TotalConversationMessagesToday: conversationMessagesToday,
             TotalContacts: await db.Contacts.CountAsync(),
             TotalBlocks: await db.UserBlocks.CountAsync()
         );
@@ -1329,6 +1334,385 @@ public class AdminController(
         return StatusCode(502, new { message = error ?? "فشل إرسال الإشعار", recipientsCount });
     }
 
+    public record OfficialChatBroadcastDto(
+        string? Content = null,
+        string? Type = "text",
+        string? Caption = null,
+        string? MediaUrl = null);
+
+    public record OfficialChatBroadcastEditDto(
+        string? Content = null,
+        string? Caption = null,
+        string? MediaUrl = null,
+        string? Type = null);
+
+    /// <summary>
+    /// إرسال رسالة محادثة رسمية من حساب NexChat إلى كل المستخدمين — قراءة فقط.
+    /// يدعم نصاً و/أو صورة/فيديو (MediaUrl).
+    /// </summary>
+    [HttpPost("announcements/broadcast")]
+    public async Task<IActionResult> BroadcastOfficialChat([FromBody] OfficialChatBroadcastDto dto)
+    {
+        try
+        {
+            if (dto == null)
+                return BadRequest(new { message = "البيانات مطلوبة" });
+
+            var type = string.IsNullOrWhiteSpace(dto.Type) ? "text" : dto.Type.Trim().ToLowerInvariant();
+            if (type is not ("text" or "image" or "video"))
+                type = "text";
+
+            var caption = string.IsNullOrWhiteSpace(dto.Caption) ? null : dto.Caption.Trim();
+            if (caption is { Length: > 5000 })
+                return BadRequest(new { message = "التعليق طويل جداً" });
+
+            string body;
+            if (type is "image" or "video")
+            {
+                body = (dto.MediaUrl ?? dto.Content ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(body))
+                    return BadRequest(new { message = "رابط الصورة أو الفيديو مطلوب" });
+                if (body.Length > 2000)
+                    return BadRequest(new { message = "رابط الوسائط طويل جداً" });
+            }
+            else
+            {
+                body = (dto.Content ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(body))
+                    return BadRequest(new { message = "نص الرسالة مطلوب" });
+                if (body.Length > 5000)
+                    return BadRequest(new { message = "النص طويل جداً" });
+            }
+
+            var official = await officialAnnouncements.EnsureOfficialUserAsync();
+            var userIds = await db.Users
+                .AsNoTracking()
+                .Where(u => !u.IsAdmin
+                            && u.UniqueCode != SupportConversationService.SupportUniqueCode
+                            && u.UniqueCode != OfficialAnnouncementConversationService.OfficialUniqueCode
+                            && u.UniqueCode != OfficialAnnouncementConversationService.StoryUniqueCode
+                            && !u.IsOfficialStoryPublisher
+                            && u.Id != official.Id)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            var sentAt = DateTime.UtcNow;
+            var broadcast = new OfficialChatBroadcast
+            {
+                Content = body,
+                Type = type,
+                Caption = caption,
+                SentAt = sentAt,
+                RecipientsCount = 0
+            };
+            db.OfficialChatBroadcasts.Add(broadcast);
+            await db.SaveChangesAsync();
+
+            var encryptedBody = messageCrypto.EncryptForStorage(body);
+            var encryptedCaption = caption != null ? messageCrypto.EncryptForStorage(caption) : null;
+            var delivered = 0;
+            const int batchSize = 50;
+
+            for (var i = 0; i < userIds.Count; i += batchSize)
+            {
+                var batch = userIds.Skip(i).Take(batchSize).ToList();
+                foreach (var userId in batch)
+                {
+                    var ensured = await officialAnnouncements.EnsureForUserAsync(userId);
+                    if (ensured == null) continue;
+                    var (conv, _) = ensured.Value;
+
+                    if (encryptedCaption != null)
+                    {
+                        var captionMsg = new ConversationMessage
+                        {
+                            ConversationId = conv.Id,
+                            SenderId = official.Id,
+                            Content = encryptedCaption,
+                            Type = "text",
+                            SentAt = sentAt,
+                            BroadcastId = broadcast.Id,
+                            DisappearMode = DisappearMode.Off,
+                            IsRead = false
+                        };
+                        db.ConversationMessages.Add(captionMsg);
+
+                        await conversationHub.Clients.User(userId.ToString()).SendAsync("ReceiveMessage", new
+                        {
+                            id = captionMsg.Id,
+                            conversationId = conv.Id,
+                            senderId = official.Id,
+                            content = caption,
+                            type = "text",
+                            sentAt,
+                            isMine = false,
+                            isRead = false,
+                            isViewOnce = false,
+                            disappearMode = 0,
+                            expiresAt = (DateTime?)null,
+                            broadcastId = broadcast.Id
+                        });
+                    }
+
+                    var msg = new ConversationMessage
+                    {
+                        ConversationId = conv.Id,
+                        SenderId = official.Id,
+                        Content = encryptedBody,
+                        Type = type,
+                        SentAt = sentAt.AddMilliseconds(encryptedCaption != null ? 1 : 0),
+                        BroadcastId = broadcast.Id,
+                        DisappearMode = DisappearMode.Off,
+                        IsRead = false
+                    };
+                    db.ConversationMessages.Add(msg);
+                    delivered++;
+
+                    var preview = type == "text"
+                        ? (body.Length > 80 ? body[..80] + "…" : body)
+                        : (type == "image" ? "📷 صورة" : type == "video" ? "🎬 فيديو" : "رسالة");
+                    if (caption != null && type != "text")
+                        preview = caption.Length > 60 ? caption[..60] + "…" : caption;
+
+                    await conversationHub.Clients.User(userId.ToString()).SendAsync("ReceiveMessage", new
+                    {
+                        id = msg.Id,
+                        conversationId = conv.Id,
+                        senderId = official.Id,
+                        content = body,
+                        type,
+                        sentAt = msg.SentAt,
+                        isMine = false,
+                        isRead = false,
+                        isViewOnce = false,
+                        disappearMode = 0,
+                        expiresAt = (DateTime?)null,
+                        broadcastId = broadcast.Id
+                    });
+                    await conversationHub.Clients.User(userId.ToString()).SendAsync("ConversationListUpdated", new
+                    {
+                        conversationId = conv.Id,
+                        lastMessagePreview = preview,
+                        lastMessageType = type,
+                        lastMessageAt = msg.SentAt,
+                        partnerName = OfficialAnnouncementConversationService.DisplayName,
+                        partnerUniqueCode = official.UniqueCode,
+                        isOfficial = true,
+                        isSupport = false
+                    });
+                }
+                await db.SaveChangesAsync();
+                // Detach tracked graph to keep memory stable across large fan-outs.
+                db.ChangeTracker.Clear();
+                official = await officialAnnouncements.EnsureOfficialUserAsync();
+            }
+
+            broadcast = await db.OfficialChatBroadcasts.FirstAsync(b => b.Id == broadcast.Id);
+            broadcast.RecipientsCount = delivered;
+            await db.SaveChangesAsync();
+
+            try
+            {
+                var playerIds = await db.DeviceSubscriptions
+                    .Select(d => d.OneSignalPlayerId)
+                    .Where(id => id != "")
+                    .Distinct()
+                    .ToListAsync();
+                var pushBody = type == "text"
+                    ? (body.Length > 120 ? body[..120] + "…" : body)
+                    : (caption ?? "رسالة جديدة من NexChat");
+                await oneSignal.SendBroadcastAsync(playerIds, "NexChat", pushBody, type == "image" ? body : null);
+            }
+            catch
+            {
+                /* ignore push failures */
+            }
+
+            return Ok(new
+            {
+                message = "تم إرسال الرسالة الرسمية",
+                id = broadcast.Id,
+                recipientsCount = delivered,
+                totalUsers = userIds.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "فشل إرسال الرسالة الرسمية", detail = ex.GetBaseException().Message });
+        }
+    }
+
+    [HttpGet("announcements/history")]
+    public async Task<IActionResult> GetOfficialAnnouncementHistory(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        var query = db.OfficialChatBroadcasts.AsNoTracking().OrderByDescending(b => b.SentAt);
+        var total = await query.CountAsync();
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(b => new
+            {
+                b.Id,
+                b.Content,
+                b.Type,
+                b.Caption,
+                b.RecipientsCount,
+                b.SentAt,
+                b.UpdatedAt
+            })
+            .ToListAsync();
+        return Ok(new { items, total, page, pageSize });
+    }
+
+    [HttpPut("announcements/{id:guid}")]
+    public async Task<IActionResult> EditOfficialAnnouncement(Guid id, [FromBody] OfficialChatBroadcastEditDto dto)
+    {
+        var broadcast = await db.OfficialChatBroadcasts.FirstOrDefaultAsync(b => b.Id == id);
+        if (broadcast == null)
+            return NotFound(new { message = "البث غير موجود" });
+
+        var type = string.IsNullOrWhiteSpace(dto.Type) ? broadcast.Type : dto.Type!.Trim().ToLowerInvariant();
+        if (type is not ("text" or "image" or "video"))
+            type = broadcast.Type;
+
+        string newBody;
+        if (type is "image" or "video")
+        {
+            newBody = (dto.MediaUrl ?? dto.Content ?? broadcast.Content).Trim();
+            if (string.IsNullOrWhiteSpace(newBody))
+                return BadRequest(new { message = "رابط الوسائط مطلوب" });
+        }
+        else
+        {
+            newBody = (dto.Content ?? broadcast.Content).Trim();
+            if (string.IsNullOrWhiteSpace(newBody))
+                return BadRequest(new { message = "نص الرسالة مطلوب" });
+            if (newBody.Length > 5000)
+                return BadRequest(new { message = "النص طويل جداً" });
+        }
+
+        string? newCaption = dto.Caption != null
+            ? (string.IsNullOrWhiteSpace(dto.Caption) ? null : dto.Caption.Trim())
+            : broadcast.Caption;
+
+        broadcast.Content = newBody;
+        broadcast.Type = type;
+        broadcast.Caption = newCaption;
+        broadcast.UpdatedAt = DateTime.UtcNow;
+
+        var msgs = await db.ConversationMessages
+            .Where(m => m.BroadcastId == id && !m.DeletedForEveryone)
+            .ToListAsync();
+
+        var encryptedBody = messageCrypto.EncryptForStorage(newBody);
+        var hasMediaSibling = msgs.Any(m => m.Type is "image" or "video");
+        foreach (var m in msgs)
+        {
+            if (m.Type == "text" && hasMediaSibling)
+            {
+                if (newCaption == null)
+                    m.DeletedForEveryone = true;
+                else
+                    m.Content = messageCrypto.EncryptForStorage(newCaption);
+            }
+            else
+            {
+                m.Content = encryptedBody;
+                m.Type = type;
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        foreach (var m in msgs.Where(x => !x.DeletedForEveryone))
+        {
+            var plain = messageCrypto.DecryptFromStorage(m.Content);
+            await conversationHub.Clients.Group(m.ConversationId.ToString()).SendAsync("MessageUpdated", new
+            {
+                id = m.Id,
+                conversationId = m.ConversationId,
+                content = plain,
+                type = m.Type,
+                broadcastId = id
+            });
+        }
+        foreach (var m in msgs.Where(x => x.DeletedForEveryone))
+            await conversationHub.Clients.Group(m.ConversationId.ToString()).SendAsync("MessageDeletedForEveryone", m.Id);
+
+        return Ok(new
+        {
+            message = "تم تحديث الرسالة",
+            id = broadcast.Id,
+            content = broadcast.Content,
+            type = broadcast.Type,
+            caption = broadcast.Caption,
+            updatedAt = broadcast.UpdatedAt
+        });
+    }
+
+    [HttpDelete("announcements/{id:guid}")]
+    public async Task<IActionResult> DeleteOfficialAnnouncement(Guid id)
+    {
+        var broadcast = await db.OfficialChatBroadcasts.FirstOrDefaultAsync(b => b.Id == id);
+        if (broadcast == null)
+            return NotFound(new { message = "البث غير موجود" });
+
+        var msgs = await db.ConversationMessages
+            .Where(m => m.BroadcastId == id && !m.DeletedForEveryone)
+            .ToListAsync();
+
+        foreach (var m in msgs)
+            m.DeletedForEveryone = true;
+
+        db.OfficialChatBroadcasts.Remove(broadcast);
+        await db.SaveChangesAsync();
+
+        foreach (var m in msgs)
+            await conversationHub.Clients.Group(m.ConversationId.ToString()).SendAsync("MessageDeletedForEveryone", m.Id);
+
+        return Ok(new { message = "تم حذف الرسالة من عند الجميع", deletedMessages = msgs.Count });
+    }
+
+    [HttpPost("announcements/upload")]
+    public async Task<IActionResult> UploadAnnouncementMedia(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم تحديد ملف" });
+
+        var contentType = (file.ContentType ?? "").ToLowerInvariant();
+        var isImage = contentType is "image/jpeg" or "image/png" or "image/gif" or "image/webp";
+        var isVideo = contentType.StartsWith("video/");
+        if (!isImage && !isVideo)
+            return BadRequest(new { message = "الملفات المسموحة: صور أو فيديو" });
+
+        var maxBytes = isVideo ? 80L * 1024 * 1024 : 8L * 1024 * 1024;
+        if (file.Length > maxBytes)
+            return BadRequest(new { message = isVideo ? "الحد الأقصى للفيديو 80 ميجابايت" : "الحد الأقصى للصورة 8 ميجابايت" });
+
+        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
+        Directory.CreateDirectory(uploadsPath);
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (isImage && ext is not (".jpg" or ".jpeg" or ".png" or ".gif" or ".webp"))
+            ext = ".jpg";
+        if (isVideo && string.IsNullOrEmpty(ext))
+            ext = ".mp4";
+
+        var fileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploadsPath, fileName);
+        await using (var dest = new FileStream(filePath, FileMode.Create))
+            await file.CopyToAsync(dest);
+
+        var baseUrl = config["Media:BaseUrl"];
+        var url = !string.IsNullOrEmpty(baseUrl)
+            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
+            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+
+        return Ok(new { url, type = isVideo ? "video" : "image" });
+    }
+
     [HttpGet("notifications/broadcast-history")]
     public async Task<ActionResult<PagedResult<AdminBroadcastNotificationDto>>> GetBroadcastHistory(
         [FromQuery] int page = 1,
@@ -1610,7 +1994,17 @@ public class AdminController(
                 ? "ستوري جديد من NexChat"
                 : slide.Caption!;
             var imageUrl = mediaType == StoryMediaType.Image ? slide.MediaUrl : null;
-            await oneSignal.SendBroadcastAsync(subscriptionIds, title, body, imageUrl);
+            await oneSignal.SendBroadcastAsync(
+                subscriptionIds,
+                title,
+                body,
+                imageUrl,
+                new Dictionary<string, string>
+                {
+                    ["type"] = "story_published",
+                    ["userId"] = publisher.Id.ToString(),
+                    ["slideId"] = slide.Id.ToString()
+                });
         }
 
         return Ok(new AdminStorySlideDto(

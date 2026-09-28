@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/i18n/i18n.dart';
+import '../../core/network/hubs.dart';
 import 'call_state.dart';
 import 'video_call_screen.dart';
 import 'whatsapp_call_ui.dart';
@@ -88,8 +89,27 @@ class _ActiveCallBarState extends ConsumerState<ActiveCallBar> {
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: () {
+                  final sid = a.sessionId;
+                  final secs = _elapsed;
+                  final isConv = a.isConversation;
                   unawaited(LiveKitService.instance.leave());
                   ref.read(activeCallProvider.notifier).clear();
+                  if (sid == null || sid.isEmpty) return;
+                  if (isConv) {
+                    unawaited(
+                      Hubs.conversation
+                          .ensureConnected()
+                          .then((_) => Hubs.conversation.invoke('EndVideoCall', [sid, secs]))
+                          .catchError((_) => null),
+                    );
+                  } else {
+                    unawaited(
+                      Hubs.chat
+                          .ensureConnected()
+                          .then((_) => Hubs.chat.invoke('EndVideoCall', [sid, secs]))
+                          .catchError((_) => null),
+                    );
+                  }
                 },
                 child: const Icon(LucideIcons.phoneOff, size: 18, color: Colors.white),
               ),

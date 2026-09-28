@@ -10,6 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../app/router.dart';
 import '../../core/feature_flags.dart';
 import '../../core/format.dart';
+import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
@@ -784,6 +785,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(color: c.systemMsgBg, borderRadius: BorderRadius.circular(20)),
             child: Text(m.str('content'), textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: c.textMuted)),
+          ),
+        );
+      }
+      if (type == 'call') {
+        final mine = m.str('senderId') == (me ?? '') && me != null;
+        return Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(color: c.systemMsgBg, borderRadius: BorderRadius.circular(20)),
+            child: Text(
+              formatCallMessagePreview(m.str('content'), mine: mine),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: c.textMuted),
+            ),
           ),
         );
       }

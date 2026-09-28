@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using NexChat.API.Hubs;
 using NexChat.Core.DTOs;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -19,6 +20,8 @@ public class CallsController(AppDbContext db, IConversationMessageCrypto message
 {
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    public record CallSignalingDeclineDto(Guid ConversationId, bool Busy = false, string? Outcome = null);
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CallHistoryItemDto>>> List([FromQuery] int take = 100)
@@ -87,6 +90,22 @@ public class CallsController(AppDbContext db, IConversationMessageCrypto message
         }
 
         return Ok(list);
+    }
+
+    /// <summary>
+    /// Decline/timeout من Android بدون Flutter (Full-screen / notification action).
+    /// يستخدم نفس حالة المكالمة في ConversationHub.
+    /// </summary>
+    [HttpPost("signaling/decline")]
+    public async Task<IActionResult> SignalingDecline(
+        [FromBody] CallSignalingDeclineDto dto,
+        [FromServices] IServiceScopeFactory scopes)
+    {
+        if (dto == null || dto.ConversationId == Guid.Empty)
+            return BadRequest(new { message = "conversationId مطلوب" });
+        var ok = await ConversationHub.DeclineFromHttpAsync(
+            scopes, CurrentUserId, dto.ConversationId, dto.Busy, dto.Outcome);
+        return ok ? Ok(new { declined = true }) : NotFound(new { message = "المكالمة غير موجودة أو غير مسموحة" });
     }
 
     [HttpDelete("{messageId:guid}")]

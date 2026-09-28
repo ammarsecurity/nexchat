@@ -3,56 +3,182 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="طلب حذف حساب نيكس شات" />
-  <meta name="theme-color" content="#0D0D1A" />
-  <title>طلب حذف الحساب | NexChat – نيكس شات</title>
+  <meta name="description" content="طلب حذف حساب تطبيق NexChat – نيكس شات والبيانات المرتبطة به" />
+  <meta name="theme-color" content="#F4F7FC" />
+  <title>حذف الحساب | NexChat – نيكس شات</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div class="page-bg" aria-hidden="true"></div>
+
   <article class="delete-account-page">
     <a href="index.html" class="back-link">← العودة للرئيسية</a>
 
-    <h1>طلب حذف الحساب</h1>
-    <p class="delete-intro">أدخل كود حسابك لإرسال طلب حذف الحساب.</p>
+    <p class="delete-brand">NexChat – نيكس شات</p>
+    <h1>طلب حذف الحساب والبيانات</h1>
+    <p class="delete-intro">
+      هذه الصفحة مخصّصة لمستخدمي تطبيق <strong>NexChat (نيكس شات)</strong> لطلب حذف حسابهم والبيانات المرتبطة به،
+      بما يتوافق مع متطلبات Google Play. يمكنك إرسال الطلب من هنا دون الحاجة لإعادة تثبيت التطبيق.
+    </p>
 
+    <div class="delete-warn" role="note">
+      <strong>تنبيه:</strong> حذف الحساب نهائي ولا يمكن التراجع عنه بعد اكتمال المعالجة. تأكد أنك تريد المتابعة قبل إرسال الطلب.
+    </div>
+
+    <h2>كيف تحذف حسابك؟</h2>
+    <ol class="delete-steps">
+      <li>
+        <strong>من داخل التطبيق (الأسرع):</strong>
+        افتح NexChat → الإعدادات → احذف الحساب، ثم أكّد بكلمة المرور.
+      </li>
+      <li>
+        <strong>من هذه الصفحة (إن حذفت التطبيق):</strong>
+        عبّئ النموذج أدناه برقم الهاتف المسجّل في الحساب وسبب اختياري، ثم اضغط «إرسال طلب الحذف».
+        سيُفتح بريدك لإرسال الطلب إلى فريق الدعم.
+      </li>
+      <li>
+        <strong>بالبريد مباشرة:</strong>
+        راسلنا على
+        <a href="mailto:info@nexchat.site?subject=طلب%20حذف%20حساب%20NexChat">info@nexchat.site</a>
+        مع كتابة رقم الهاتف المسجّل واسم المستخدم إن أمكن للتحقق من هويتك.
+      </li>
+    </ol>
+
+    <h2>إرسال طلب حذف عبر النموذج</h2>
     <form id="deleteForm" class="delete-form" novalidate>
       <div class="form-group">
-        <label for="userCode">كود الحساب</label>
+        <label for="phone">رقم الهاتف المسجّل <span class="req">*</span></label>
         <input
-          type="text"
-          id="userCode"
-          name="userCode"
-          placeholder="NX-0000"
-          autocomplete="off"
+          type="tel"
+          id="phone"
+          name="phone"
+          placeholder="+9647XXXXXXXXX"
+          autocomplete="tel"
+          maxlength="20"
           required
         />
+        <p class="field-hint">أدخل نفس الرقم المرتبط بحسابك في NexChat (مع رمز الدولة إن أمكن).</p>
       </div>
-      <button type="submit" class="btn btn-primary btn-submit">
-        إرسال الطلب
-      </button>
+      <div class="form-group">
+        <label for="userName">اسم المستخدم (اختياري)</label>
+        <input type="text" id="userName" name="userName" placeholder="الاسم الظاهر في التطبيق" maxlength="50" />
+      </div>
+      <div class="form-group">
+        <label for="note">ملاحظة (اختياري)</label>
+        <textarea id="note" name="note" rows="3" maxlength="500" placeholder="سبب الطلب أو أي تفاصيل تساعدنا على التحقق"></textarea>
+      </div>
+      <label class="delete-check">
+        <input type="checkbox" id="confirmDelete" required />
+        <span>أفهم أن حذف حساب NexChat نهائي، وأن البيانات المرتبطة ستُحذف وفق التفاصيل أدناه.</span>
+      </label>
+      <p id="formError" class="form-error" hidden></p>
+      <button type="submit" class="btn btn-primary btn-submit">إرسال طلب الحذف</button>
     </form>
 
     <div id="successMessage" class="success-message" hidden>
-      <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
         <polyline points="22 4 12 14.01 9 11.01"/>
       </svg>
-      <p>تم الإرسال</p>
+      <p><strong>تم تجهيز طلبك</strong></p>
+      <p>إذا لم يُفتح تطبيق البريد تلقائياً، انسخ التفاصيل وأرسلها يدوياً إلى
+        <a href="mailto:info@nexchat.site">info@nexchat.site</a>.
+      </p>
+      <p class="field-hint">نعالج الطلبات عادة خلال <strong>7 أيام عمل</strong> بعد التحقق من هوية صاحب الحساب.</p>
+      <button type="button" class="btn btn-primary btn-submit" id="resetForm">إرسال طلب آخر</button>
     </div>
+
+    <h2>ما الذي يُحذف؟</h2>
+    <ul class="delete-list">
+      <li>حساب المستخدم وبيانات الملف الشخصي (الاسم، رقم الهاتف، الصورة إن وُجدت).</li>
+      <li>المحادثات والرسائل المرتبطة بحسابك (ضمن حدود ما نخزّنه على خوادمنا).</li>
+      <li>جهات الاتصال داخل التطبيق، والاشتراكات في الإشعارات المرتبطة بالحساب.</li>
+      <li>بيانات الجلسات والأجهزة المرتبطة بالحساب.</li>
+    </ul>
+
+    <h2>ما الذي قد يُحتفظ به؟</h2>
+    <ul class="delete-list">
+      <li>سجلات مطلوبة قانونياً أو لأغراض منع الاحتيال والأمان لفترة محدودة.</li>
+      <li>بيانات مجهّلة أو مجمّعة للتحليلات لا تُعرّفك شخصياً.</li>
+      <li>نسخ احتياطية قد تستغرق وقتاً قصيراً حتى تُزال تلقائياً وفق دورة النسخ.</li>
+      <li>بيانات سبق مشاركتها مع شركاء قياس (مثل أحداث التطبيق) قد تبقى لديهم وفق سياساتهم بعد حذف الحساب من طرفنا.</li>
+    </ul>
+
+    <h2>المدة المتوقعة</h2>
+    <p>بعد استلام طلب مكتمل والتحقق من هويتك، نهدف إلى إتمام الحذف خلال <strong>7 أيام عمل</strong>. قد نطلب تأكيداً إضافياً عبر البريد أو الهاتف المسجّل.</p>
+
+    <h2>سياسة الخصوصية والدعم</h2>
+    <p>
+      لمزيد من التفاصيل راجع
+      <a href="privacy.html">سياسة الخصوصية</a>.
+      للاستفسار: <a href="mailto:info@nexchat.site">info@nexchat.site</a>
+    </p>
   </article>
 
   <script>
     (function () {
-      const form = document.getElementById('deleteForm');
-      const successMessage = document.getElementById('successMessage');
+      var form = document.getElementById('deleteForm');
+      var success = document.getElementById('successMessage');
+      var errorEl = document.getElementById('formError');
+      var resetBtn = document.getElementById('resetForm');
+      var support = 'info@nexchat.site';
+
+      function showError(msg) {
+        errorEl.hidden = !msg;
+        errorEl.textContent = msg || '';
+      }
+
+      function normalizePhone(raw) {
+        return (raw || '').trim().replace(/[\s\-()]/g, '');
+      }
 
       form.addEventListener('submit', function (e) {
         e.preventDefault();
+        showError('');
+
+        var phone = normalizePhone(document.getElementById('phone').value);
+        var name = (document.getElementById('userName').value || '').trim();
+        var note = (document.getElementById('note').value || '').trim();
+        var confirmed = document.getElementById('confirmDelete').checked;
+        var digits = phone.replace(/\D/g, '');
+
+        if (digits.length < 8 || digits.length > 15) {
+          showError('أدخل رقم هاتف صالحاً مسجّلاً في الحساب');
+          return;
+        }
+        if (!confirmed) {
+          showError('يجب تأكيد فهمك أن الحذف نهائي');
+          return;
+        }
+
+        var subject = 'طلب حذف حساب NexChat – ' + phone;
+        var body = [
+          'أرغب بحذف حسابي في تطبيق NexChat (نيكس شات) وجميع البيانات المرتبطة به.',
+          '',
+          'رقم الهاتف: ' + phone,
+          'اسم المستخدم: ' + (name || '—'),
+          'ملاحظة: ' + (note || '—'),
+          '',
+          'أؤكد أنني صاحب هذا الحساب وأنني أفهم أن الحذف نهائي.'
+        ].join('\n');
+
+        var mailto = 'mailto:' + support
+          + '?subject=' + encodeURIComponent(subject)
+          + '&body=' + encodeURIComponent(body);
+
+        window.location.href = mailto;
         form.hidden = true;
-        successMessage.hidden = false;
+        success.hidden = false;
+      });
+
+      resetBtn.addEventListener('click', function () {
+        form.reset();
+        showError('');
+        success.hidden = true;
+        form.hidden = false;
       });
     })();
   </script>

@@ -92,11 +92,20 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         'type': nav['type'] ?? data['type'] ?? 'message',
         'title': (title?.isNotEmpty ?? false) ? title : (data['title'] ?? 'إشعار'),
         'body': (body?.isNotEmpty ?? false) ? body : (data['body'] ?? ''),
-        'timestamp': createdAt ?? DateTime.now().toIso8601String(),
+        // Event time only — never stamp delivery time (late pushes looked "new").
+        if (createdAt != null) 'timestamp': createdAt,
         'isRead': isRead,
         'avatar': nav['callerAvatar'] ?? nav['requesterAvatar'] ?? data['avatar'] ?? data['senderAvatar'] ?? data['publisherAvatar'],
         'actorName': nav['callerName'] ?? nav['requesterName'] ?? data['senderName'] ?? data['publisherName'] ?? title,
       };
+    }
+
+    Future<void> syncNotifications() async {
+      try {
+        final data = await Api.get('/user-notifications', query: {'take': 60});
+        final normalized = asJsonList(data).map(normalizeServerNotification).toList();
+        ref.read(notificationsProvider.notifier).mergeServer(normalized);
+      } catch (_) {}
     }
 
     PushService.instance
@@ -104,6 +113,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         if ('${data['type'] ?? ''}' == 'call_cancel') return;
         final item = storeItem(data, title, body, true);
         ref.read(notificationsProvider.notifier).add(item);
+        unawaited(syncNotifications());
         final d = parseNotificationData(data);
         if (d['type'] == 'message_request') {
           unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
@@ -113,6 +123,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       ..onForeground = (data, title, body) {
         if ('${data['type'] ?? ''}' == 'call_cancel') return;
         ref.read(notificationsProvider.notifier).add(storeItem(data, title, body, false));
+        unawaited(syncNotifications());
         final d = parseNotificationData(data);
         if (d['type'] == 'message_request') {
           // Show the tab badge immediately; refetch for the accurate count.
@@ -155,6 +166,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       queueOrApplyIncomingCall(ref, e);
     };
     CallNative.listen();
+    PushService.instance.bindVoipTokenUpload();
     unawaited(() async {
       await CallNative.ready();
       // Intent may land after markReady on a cold start — pick up leftovers.

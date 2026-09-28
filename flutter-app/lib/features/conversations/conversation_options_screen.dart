@@ -8,6 +8,7 @@ import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
+import 'active_conversation.dart';
 import 'conversations_list_controller.dart';
 import 'hidden_chats_pin_dialog.dart';
 
@@ -43,6 +44,9 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
               ..._conv!,
               'isSupport': data.b('isSupport'),
               'IsSupport': data.b('isSupport'),
+              'isOfficial': data.b('isOfficial') || data.b('isReadOnly'),
+              'IsOfficial': data.b('isOfficial') || data.b('isReadOnly'),
+              'partnerUniqueCode': data.s('partnerUniqueCode') ?? _conv!.s('partnerUniqueCode'),
             };
           }
         });
@@ -188,8 +192,11 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
     final conv = _conv;
     final isGroup = conv?.b('isGroup') ?? false;
     final isSupport = conv?.b('isSupport') ?? false;
+    final isOfficial = isOfficialConversation(conv);
+    final locked = isSupport || isOfficial;
     final isHidden = conv?.b('isHidden') ?? false;
     final ctrl = ref.read(conversationsListProvider.notifier);
+    final displayName = isOfficial ? t('conversations.officialName') : (conv?.s('partnerName') ?? '—');
 
     return ModernPage(
       title: t('conversations.optionsTitle'),
@@ -204,15 +211,29 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
               absorbing: _busy,
               child: Column(children: [
                 const SizedBox(height: 16),
-                UserAvatar(url: conv.s('partnerAvatar'), name: conv.s('partnerName') ?? '?', size: 96),
+                UserAvatar(url: conv.s('partnerAvatar'), name: displayName, size: 96),
                 const SizedBox(height: 12),
-                Text(conv.s('partnerName') ?? '—', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                if (isSupport) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(displayName, textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                    ),
+                    if (isSupport || isOfficial) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.verified, size: 20, color: c.primary),
+                    ],
+                  ],
+                ),
+                if (isOfficial) ...[
+                  const SizedBox(height: 6),
+                  Text(t('conversations.officialDesc'), textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: c.textSecondary)),
+                ] else if (isSupport) ...[
                   const SizedBox(height: 6),
                   Text(t('settings.supportDesc'), textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: c.textSecondary)),
                 ],
                 const SizedBox(height: 24),
-                if (!isSupport)
+                if (!locked)
                   _OptionBtn(
                     icon: isGroup ? LucideIcons.users : LucideIcons.user,
                     label: isGroup ? t('groups.infoTitle') : t('profile.viewProfile'),
@@ -226,7 +247,7 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                       context.push('/profile/$pid', extra: {'conversationId': widget.conversationId});
                     },
                   ),
-                if (!isSupport)
+                if (!locked)
                   _OptionBtn(
                     icon: LucideIcons.pin,
                     label: conv.b('isPinned') ? t('conversations.unpin') : t('conversations.pin'),
@@ -235,7 +256,7 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                       ctrl.updateConversation(widget.conversationId, {'isPinned': !conv.b('isPinned')});
                     }),
                   ),
-                if (!isSupport && !isHidden)
+                if (!locked && !isHidden)
                   _OptionBtn(
                     icon: LucideIcons.archive,
                     label: conv.b('isArchived') ? t('conversations.unarchive') : t('conversations.archive'),
@@ -244,13 +265,13 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                       ctrl.updateConversation(widget.conversationId, {'isArchived': !conv.b('isArchived')});
                     }),
                   ),
-                if (!isSupport)
+                if (!locked)
                   _OptionBtn(
                     icon: LucideIcons.timer,
                     label: '${t('conversations.disappearTitle')}: ${_disappearLabel(_disappearMode)}',
                     onTap: _pickDisappearMode,
                   ),
-                if (!isSupport)
+                if (!locked)
                   _OptionBtn(
                     icon: isHidden ? LucideIcons.eye : LucideIcons.lock,
                     label: isHidden ? t('conversations.unhide') : t('conversations.hide'),
@@ -265,7 +286,7 @@ class _ConversationOptionsScreenState extends ConsumerState<ConversationOptionsS
                       ctrl.updateConversation(widget.conversationId, {'unreadCount': 0});
                     }),
                   ),
-                if (!isSupport)
+                if (!locked)
                   _OptionBtn(
                     icon: LucideIcons.trash2,
                     label: t('conversations.delete'),

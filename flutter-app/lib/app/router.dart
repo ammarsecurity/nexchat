@@ -10,6 +10,7 @@ import '../features/auth/auth_controller.dart';
 import '../features/auth/complete_profile_screen.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/auth/register_otp_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/calls/calls_screen.dart';
 import '../features/calls/video_call_screen.dart';
@@ -55,6 +56,7 @@ final Map<RegExp, _Meta> _meta = {
   RegExp(r'^/onboarding$'): const _Meta(public: true),
   RegExp(r'^/login$'): const _Meta(public: true),
   RegExp(r'^/register$'): const _Meta(public: true),
+  RegExp(r'^/register/otp$'): const _Meta(public: true),
   RegExp(r'^/forgot-password$'): const _Meta(public: true),
   RegExp(r'^/privacy$'): const _Meta(public: true),
   RegExp(r'^/terms$'): const _Meta(public: true),
@@ -137,6 +139,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       page('/onboarding', (_) => const OnboardingScreen(), swipeBack: false),
       page('/login', (s) => LoginScreen(invite: s.uri.queryParameters['invite']), swipeBack: false),
       page('/register', (s) => RegisterScreen(invite: s.uri.queryParameters['invite']), swipeBack: false),
+      page(
+        '/register/otp',
+        (s) {
+          final args = s.extra;
+          if (args is! RegisterOtpArgs) {
+            return const _RegisterOtpMissing();
+          }
+          return RegisterOtpScreen(args: args);
+        },
+        swipeBack: true,
+      ),
       page('/forgot-password', (_) => const ForgotPasswordScreen(), swipeBack: false),
       page('/complete-profile', (s) => CompleteProfileScreen(fromSettings: s.uri.queryParameters['from'] == 'settings'),
           swipeBack: false),
@@ -280,4 +293,25 @@ Future<void> navigateDefaultForSession(GoRouter router, WidgetRef ref) async {
   }
   final flags = await ref.read(featureFlagsProvider.future);
   router.go(flags.defaultRoute);
+}
+
+/// Deep-link / refresh fallback when OTP args are missing.
+class _RegisterOtpMissing extends StatefulWidget {
+  const _RegisterOtpMissing();
+
+  @override
+  State<_RegisterOtpMissing> createState() => _RegisterOtpMissingState();
+}
+
+class _RegisterOtpMissingState extends State<_RegisterOtpMissing> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.go('/register');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

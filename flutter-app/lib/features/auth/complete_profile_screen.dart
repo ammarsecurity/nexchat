@@ -153,7 +153,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
       if (!mounted) return;
       setState(() {
         _otpSent = true;
-        _resendIn = 45;
+        _resendIn = 60;
         _otp.clear();
       });
       _tickResend();

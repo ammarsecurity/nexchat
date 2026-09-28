@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../app/router.dart';
 import '../core/feature_flags.dart';
@@ -81,5 +82,12 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
     router.push('/chat/${d['sessionId']}');
     return;
   }
-  // broadcast / system / unknown — stay on list (already marked read by caller)
+  // broadcast / system / admin push / unknown → notifications centre
+  _openNotificationsCentre(router);
+}
+
+void _openNotificationsCentre(GoRouter router) {
+  final path = router.routerDelegate.currentConfiguration.uri.path;
+  if (path == '/notifications') return;
+  router.push('/notifications');
 }

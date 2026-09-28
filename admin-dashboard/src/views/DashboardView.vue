@@ -63,7 +63,6 @@ const statCards = [
   { key: 'totalMessagesToday', label: 'رسائل اليوم', icon: 'mdi-message', color: '#F59E0B', suffix: '' },
   { key: 'pendingReports', label: 'بلاغات معلقة', icon: 'mdi-flag', color: '#EF4444', suffix: '' },
   { key: 'totalConversations', label: 'المحادثات', icon: 'mdi-forum', color: '#6366F1', suffix: '' },
-  { key: 'totalConversationMessagesToday', label: 'رسائل المحادثات اليوم', icon: 'mdi-message-reply-text', color: '#0EA5E9', suffix: '' },
   { key: 'totalContacts', label: 'جهات الاتصال', icon: 'mdi-account-multiple', color: '#06B6D4', suffix: '' },
   { key: 'totalBlocks', label: 'المحظورون', icon: 'mdi-block-helper', color: '#F97316', suffix: '' },
 ]

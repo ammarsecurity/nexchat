@@ -345,31 +345,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    final header = Padding(
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 6),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(
-            child: Text(t('nav.connect'), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: c.textPrimary, height: 1.15)),
-          ),
-          GlassIconButton(icon: LucideIcons.bell, color: c.textSecondary, badgeDot: unread > 0, onTap: () => context.push('/notifications')),
-        ]),
-        if (user != null) ...[
-          const SizedBox(height: 10),
-          Row(children: [
-            avatarBadge(size: 42),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '${t('home.greeting')} ${user.name}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textPrimary),
+    final header = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppTabHeader(
+          title: t('nav.connect'),
+          actions: [
+            GlassIconButton(icon: LucideIcons.bell, badgeDot: unread > 0, onTap: () => context.push('/notifications')),
+          ],
+        ),
+        if (user != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: Row(children: [
+              avatarBadge(size: 42),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${t('home.greeting')} ${user.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textPrimary),
+                ),
               ),
-            ),
-          ]),
-        ],
-      ]),
+            ]),
+          ),
+      ],
     );
 
     final codeChip = (uniqueCode != null && uniqueCode.isNotEmpty && codeOn)

@@ -477,12 +477,16 @@ export function normalizeServerNotification(x) {
 
 function buildStoreItem(data, notifMeta, isRead) {
   const nav = parseNotificationData(data)
+  const serverId = data?.notificationId || data?.NotificationId || nav.notificationId
+  const createdAt = data?.createdAt || data?.CreatedAt || nav.createdAt
   return {
     ...nav,
+    ...(serverId ? { serverId, id: `srv-${serverId}` } : {}),
     type: nav.type || data?.type || 'message',
     title: notifMeta?.title || data?.title || 'إشعار',
     body: notifMeta?.body || data?.body || '',
-    timestamp: Date.now(),
+    // Event time only — never stamp delivery time for late pushes.
+    ...(createdAt ? { timestamp: createdAt } : {}),
     isRead: isRead === true
   }
 }
@@ -562,6 +566,12 @@ export function navigateFromNotification(input) {
 
   if (d.sessionId) {
     router.push(`/chat/${d.sessionId}`)
+    return
+  }
+
+  // broadcast / system / admin push / unknown → notifications centre
+  if (router.currentRoute.value?.path !== '/notifications') {
+    router.push('/notifications')
   }
 }
 

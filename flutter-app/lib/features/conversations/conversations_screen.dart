@@ -282,7 +282,6 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       }
     });
     final c = context.colors;
-    final pad = MediaQuery.paddingOf(context);
     final pending = ref.watch(pendingRequestsProvider);
     final notifCount = ref.watch(unreadNotificationsProvider);
 
@@ -290,12 +289,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       backgroundColor: c.bgPrimary,
       body: Stack(children: [
         Column(children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 8),
-            child: Row(children: [
-              Expanded(
-                child: Text(t('conversations.title'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.textPrimary)),
-              ),
+          AppTabHeader(
+            title: t('conversations.title'),
+            actions: [
               if (_section == 'contacts') ...[
                 GlassIconButton(icon: LucideIcons.contact, color: c.primary, onTap: () => _contactsKey.currentState?.openPhoneBookSync()),
                 const SizedBox(width: 8),
@@ -307,7 +303,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 const SizedBox(width: 8),
               ],
               GlassIconButton(icon: LucideIcons.bell, badgeDot: notifCount > 0, onTap: () => context.push('/notifications')),
-            ]),
+            ],
           ),
           const AppUpdateBanner(),
           _MainTabs(section: _section, pending: pending, onChanged: _setSection),
@@ -985,15 +981,29 @@ class ConversationTile extends ConsumerWidget {
     final c = context.colors;
     final isGroup = conv.b('isGroup');
     final isSupport = conv.b('isSupport');
+    final isOfficial = isOfficialConversation(conv);
     final unread = conv.i('unreadCount');
-    final name = conv.s('partnerName') ?? '—';
+    final name = isOfficial ? t('conversations.officialName') : (conv.s('partnerName') ?? '—');
     final partnerId = conv.s('partnerId');
     final avatar = (partnerId != null ? ref.watch(avatarOverridesProvider)[partnerId] : null) ?? conv.s('partnerAvatar');
     final hasImage = avatar != null && (avatar.startsWith('http') || avatar.startsWith('/'));
     final hasEmoji = avatar != null && avatar.trim().isNotEmpty && !hasImage;
+    final systemBorder = isGroup || isSupport || isOfficial;
 
     Widget avatarWidget;
-    if (isSupport && !hasImage && !hasEmoji) {
+    if (isOfficial && !hasImage && !hasEmoji) {
+      avatarWidget = Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0x332E86FB),
+          border: Border.all(color: c.border),
+        ),
+        alignment: Alignment.center,
+        child: Icon(LucideIcons.megaphone, size: 20, color: c.primary),
+      );
+    } else if (isSupport && !hasImage && !hasEmoji) {
       avatarWidget = Container(
         width: 50,
         height: 50,
@@ -1033,9 +1043,9 @@ class ConversationTile extends ConsumerWidget {
           onLongPress: () => _open(context, '/conversations/${conv.str('id')}/options'),
           child: Container(
             constraints: const BoxConstraints(minHeight: 72),
-            padding: EdgeInsetsDirectional.fromSTEB(isGroup || isSupport ? 11 : 14, 12, 14, 12),
+            padding: EdgeInsetsDirectional.fromSTEB(systemBorder ? 11 : 14, 12, 14, 12),
             decoration: BoxDecoration(
-              border: (isGroup || isSupport) ? BorderDirectional(start: BorderSide(color: c.primary, width: 3)) : null,
+              border: systemBorder ? BorderDirectional(start: BorderSide(color: c.primary, width: 3)) : null,
               boxShadow: [BoxShadow(color: c.shadow, blurRadius: 4)],
             ),
             child: Row(children: [
@@ -1053,7 +1063,7 @@ class ConversationTile extends ConsumerWidget {
                               style: TextStyle(
                                   fontSize: 16, height: 1.2, fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600, color: c.textPrimary)),
                         ),
-                        if (isSupport) ...[
+                        if (isSupport || isOfficial) ...[
                           const SizedBox(width: 4),
                           Icon(Icons.verified, size: 16, color: c.primary),
                         ],
@@ -1073,7 +1083,14 @@ class ConversationTile extends ConsumerWidget {
                               color: c.textSecondary,
                               fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.w400)),
                     ),
-                    if (isSupport)
+                    if (isOfficial)
+                      Container(
+                        margin: const EdgeInsetsDirectional.only(start: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        decoration: BoxDecoration(color: const Color(0x262E86FB), borderRadius: BorderRadius.circular(4)),
+                        child: Text(t('conversations.officialBadge'), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary)),
+                      )
+                    else if (isSupport)
                       Container(
                         margin: const EdgeInsetsDirectional.only(start: 6),
                         padding: const EdgeInsets.symmetric(horizontal: 5),
