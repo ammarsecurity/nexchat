@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "site.nexchat.app",
+      "sha256_cert_fingerprints": [
+        "B6:38:11:52:68:FD:C4:91:92:F1:8B:68:6B:48:8F:BE:33:7D:D3:72:E2:08:AB:CA:6C:58:94:E5:43:07:2A:5E"
+      ]
+    }
+  }
+]

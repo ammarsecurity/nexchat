@@ -771,6 +771,8 @@ public class ConversationHub(
         PurgeStaleCallState();
         ReleaseGhostBusy(userId);
         ReleaseGhostBusy(recipientId);
+        ClearOrphanBusyIfNeeded(userId);
+        ClearOrphanBusyIfNeeded(recipientId);
 
         // المتصل مشغول بمكالمة أخرى حقيقية → لا نبدأ طلباً جديداً.
         if (CallPresenceStore.Busy.TryGetValue(userId, out var callerBusy) && callerBusy.ConversationId != cid)
@@ -1242,7 +1244,27 @@ public class ConversationHub(
                 return;
             }
             // مكالمة مقبولة: امسح busy لهذا المستخدم فقط؛ الطرف الآخر يبقى حتى End أو TTL.
+            var anyoneLeft = CallPresenceStore.Busy.Any(kv => kv.Value.ConversationId == busy.ConversationId);
+            if (!anyoneLeft)
+                CallPresenceStore.Pending.TryRemove(busy.ConversationId, out _);
         }
+    }
+
+    /// <summary>
+    /// busy بلا pending، أو رنين/قبول تجاوز TTL — امسحه حتى لا يبقى الحساب «في مكالمة أخرى» للأبد.
+    /// </summary>
+    private static void ClearOrphanBusyIfNeeded(Guid userId)
+    {
+        if (!CallPresenceStore.Busy.TryGetValue(userId, out var busy)) return;
+        var now = DateTime.UtcNow;
+        if (!CallPresenceStore.Pending.TryGetValue(busy.ConversationId, out var pending))
+        {
+            CallPresenceStore.Busy.TryRemove(userId, out _);
+            return;
+        }
+        var limit = pending.Accepted ? CallPresenceStore.InCallStaleAfter : CallPresenceStore.RingingStaleAfter;
+        if (now - pending.StartedUtc > limit || now - busy.SinceUtc > limit)
+            CallPresenceStore.ClearRoom(busy.ConversationId);
     }
 
     /// <summary>عند انقطاع آخر اتصال SignalR: امسح رنين صادر عالق للمتصل مع سجل cancelled.</summary>
@@ -1454,12 +1476,12 @@ public class ConversationHub(
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        // لا نمسح busy لمكالمة مقبولة فوراً (LiveKit قد يستمر مع انقطاع SignalR قصير).
-        // نمسح فقط رنين صادر عالق عندما يختفي آخر اتصال للمستخدم، + TTL/ghost عند RequestVideoCall.
+        // عند اختفاء آخر اتصال: امسح رنين عالق + busy اليتيم؛ accepted يبقى لـ TTL القصير (5د).
         if (TryGetUserId(out var userId))
         {
             await presence.OnDisconnectedAsync(userId, Context.ConnectionId);
             ReleaseRingingOnCallerOffline(userId);
+            ReleaseGhostBusy(userId);
         }
         await base.OnDisconnectedAsync(exception);
     }

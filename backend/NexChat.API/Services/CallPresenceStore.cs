@@ -11,7 +11,8 @@ namespace NexChat.API.Services;
 public static class CallPresenceStore
 {
     public static readonly TimeSpan RingingStaleAfter = TimeSpan.FromSeconds(65);
-    public static readonly TimeSpan InCallStaleAfter = TimeSpan.FromMinutes(45);
+    /// <summary>سقف أمان لحالة accepted عالقة بدون End (كان 45د → الجميع يشوف busy).</summary>
+    public static readonly TimeSpan InCallStaleAfter = TimeSpan.FromMinutes(5);
 
     public sealed record PendingCall(Guid CallerId, bool VoiceOnly, bool Accepted, DateTime StartedUtc);
     public sealed record BusyCall(Guid ConversationId, DateTime SinceUtc);
