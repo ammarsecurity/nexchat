@@ -10,17 +10,37 @@ import org.json.JSONObject
 class IncomingCallNotificationExtension : INotificationServiceExtension {
     override fun onNotificationReceived(event: INotificationReceivedEvent) {
         try {
-            val data = event.notification.additionalData ?: return
-            val type = data.optString("type")
             val context = event.context.applicationContext
+            val data = event.notification.additionalData
+            if (data == null || !IncomingCallStore.acceptsRecipient(context, null)) {
+                event.preventDefault()
+                return
+            }
+            val type = data.optString("type")
 
+            val recipient = data.stringOrNull("recipientUserId")
+            if (!IncomingCallStore.acceptsRecipient(context, recipient) ||
+                (type != "broadcast" && recipient.isNullOrBlank())) {
+                event.preventDefault()
+                return
+            }
+            val callId = data.stringOrNull("callId")
             if (type == "call_cancel") {
                 event.preventDefault()
-                IncomingCallNotifier.cancel(context)
-                IncomingCallStore.clear(context)
+                val alreadyAnsweredHere = data.optString("reason") == "answered" &&
+                    IncomingCallStore.peek(context)?.get("action") == IncomingCallStore.ACTION_ACCEPT
+                if (IncomingCallStore.matches(context, callId) && !alreadyAnsweredHere) {
+                    IncomingCallNotifier.cancel(context)
+                    IncomingCallStore.endFromPush(context, callId)
+                }
                 return
             }
             if (type != "video_call") return
+            event.preventDefault()
+            if (callId.isNullOrBlank()) return
+            val ongoing = IncomingCallStore.ongoingCall(context)
+            if (ongoing != null && ongoing != callId) return
+            if (IncomingCallStore.matches(context, callId)) return
 
             val conversationId = data.stringOrNull("conversationId")
             val sessionId = data.stringOrNull("sessionId")
@@ -38,6 +58,7 @@ class IncomingCallNotificationExtension : INotificationServiceExtension {
                 callerName,
                 callerAvatar,
                 IncomingCallStore.ACTION_RING,
+                callId,
             )
             event.preventDefault()
 
@@ -50,10 +71,11 @@ class IncomingCallNotificationExtension : INotificationServiceExtension {
                 return
             }
 
-            IncomingCallNotifier.show(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar)
+            IncomingCallNotifier.show(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, callId)
             IncomingCallPlugin.notifyFlutterIfReady(context)
         } catch (_: Exception) {
-            // Never swallow regular OneSignal notifications if call parsing fails.
+            // An unparseable payload cannot establish account ownership.
+            event.preventDefault()
         }
     }
 

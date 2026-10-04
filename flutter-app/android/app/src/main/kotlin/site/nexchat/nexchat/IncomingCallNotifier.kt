@@ -28,17 +28,19 @@ object IncomingCallNotifier {
         voiceOnly: Boolean,
         callerName: String,
         callerAvatar: String?,
+        callId: String? = null,
     ) {
+        if (callId.isNullOrBlank() || !IncomingCallStore.acceptsRecipient(context, null)) return
         val app = context.applicationContext
         val name = callerName.ifBlank { "NexChat" }
         val status = if (voiceOnly) "مكالمة صوتية واردة" else "مكالمة فيديو واردة"
-        IncomingCallStore.save(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_RING)
+        IncomingCallStore.save(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_RING, callId)
         ensureChannel(app)
 
-        val fullScreen = activityIntent(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_RING, 11)
+        val fullScreen = activityIntent(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_RING, 11, callId)
         // CallStyle accept must be an Activity PendingIntent — BroadcastReceivers are unreliable from the shade.
-        val accept = mainActivityIntent(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_ACCEPT, 12)
-        val decline = actionIntent(app, IncomingCallReceiver.ACTION_DECLINE, conversationId, sessionId, voiceOnly, name, callerAvatar, 13)
+        val accept = mainActivityIntent(app, conversationId, sessionId, voiceOnly, name, callerAvatar, IncomingCallStore.ACTION_ACCEPT, 12, callId)
+        val decline = actionIntent(app, IncomingCallReceiver.ACTION_DECLINE, conversationId, sessionId, voiceOnly, name, callerAvatar, 13, callId)
 
         val person = Person.Builder().setName(name).setImportant(true).build()
         val builder = NotificationCompat.Builder(app, CHANNEL_ID)
@@ -70,7 +72,7 @@ object IncomingCallNotifier {
         manager.notify(NOTIFICATION_ID, builder.build())
         // Ring even if the full-screen Activity is delayed / blocked by OEM policies.
         IncomingCallRinger.start(app)
-        scheduleTimeout(app)
+        scheduleTimeout(app, callId)
     }
 
     fun cancel(context: Context, finishActivity: Boolean = true) {
@@ -81,9 +83,11 @@ object IncomingCallNotifier {
             .cancel(NOTIFICATION_ID)
     }
 
-    private fun scheduleTimeout(context: Context) {
+    private fun scheduleTimeout(context: Context, callId: String) {
         cancelTimeout()
-        val run = Runnable { IncomingCallReceiver.timeoutDecline(context) }
+        val run = Runnable {
+            if (IncomingCallStore.matches(context, callId)) IncomingCallReceiver.timeoutDecline(context)
+        }
         timeout = run
         handler.postDelayed(run, 60_000)
     }
@@ -122,6 +126,7 @@ object IncomingCallNotifier {
         callerAvatar: String?,
         action: String,
         requestCode: Int,
+        callId: String? = null,
     ): PendingIntent {
         val intent = IncomingCallStore.putOn(
             Intent(context, IncomingCallActivity::class.java)
@@ -132,10 +137,11 @@ object IncomingCallNotifier {
             callerName,
             callerAvatar,
             action,
+            callId,
         )
         return PendingIntent.getActivity(
             context,
-            requestCode,
+            31 * (callId?.hashCode() ?: 0) + requestCode,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -151,6 +157,7 @@ object IncomingCallNotifier {
         callerAvatar: String?,
         action: String,
         requestCode: Int,
+        callId: String? = null,
     ): PendingIntent {
         val intent = IncomingCallStore.putOn(
             Intent(context, MainActivity::class.java)
@@ -161,10 +168,11 @@ object IncomingCallNotifier {
             callerName,
             callerAvatar,
             action,
+            callId,
         )
         return PendingIntent.getActivity(
             context,
-            requestCode,
+            31 * (callId?.hashCode() ?: 0) + requestCode,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -179,6 +187,7 @@ object IncomingCallNotifier {
         callerName: String,
         callerAvatar: String?,
         requestCode: Int,
+        callId: String? = null,
     ): PendingIntent {
         val intent = IncomingCallStore.putOn(
             Intent(context, IncomingCallReceiver::class.java).setAction(action),
@@ -188,10 +197,11 @@ object IncomingCallNotifier {
             callerName,
             callerAvatar,
             if (action == IncomingCallReceiver.ACTION_ACCEPT) IncomingCallStore.ACTION_ACCEPT else IncomingCallStore.ACTION_DECLINE,
+            callId,
         )
         return PendingIntent.getBroadcast(
             context,
-            requestCode,
+            31 * (callId?.hashCode() ?: 0) + requestCode,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )

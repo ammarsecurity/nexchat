@@ -19,6 +19,7 @@ import kotlin.math.roundToInt
 
 /** Lock-screen incoming-call UI shown via the full-screen intent. */
 class IncomingCallActivity : Activity() {
+    private var callId: String? = null
     private var conversationId: String? = null
     private var sessionId: String? = null
     private var voiceOnly = false
@@ -29,10 +30,14 @@ class IncomingCallActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        readExtras(intent)
+        if (!IncomingCallStore.acceptsRecipient(this, null) || !IncomingCallStore.matches(this, callId)) {
+            finish()
+            return
+        }
         IncomingCallUi.activity = this
         applyLockScreenFlags()
-        readExtras(intent)
-        IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_RING)
+        IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_RING, callId)
         IncomingCallRinger.start(this)
         setContentView(buildUi())
         handler.postDelayed(expire, 60_000)
@@ -42,16 +47,21 @@ class IncomingCallActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         readExtras(intent)
+        if (!IncomingCallStore.matches(this, callId)) { finish(); return }
+        handler.removeCallbacks(expire)
+        handler.postDelayed(expire, 60_000)
+        setContentView(buildUi())
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(expire)
         if (IncomingCallUi.activity === this) IncomingCallUi.activity = null
-        IncomingCallRinger.stop()
+        if (IncomingCallStore.matches(this, callId)) IncomingCallRinger.stop()
         super.onDestroy()
     }
 
     private fun readExtras(intent: Intent) {
+        callId = intent.getStringExtra(IncomingCallStore.EXTRA_CALL_ID)
         conversationId = intent.getStringExtra(IncomingCallStore.EXTRA_CONVERSATION_ID)?.ifBlank { null }
         sessionId = intent.getStringExtra(IncomingCallStore.EXTRA_SESSION_ID)?.ifBlank { null }
         voiceOnly = intent.getBooleanExtra(IncomingCallStore.EXTRA_VOICE_ONLY, false)
@@ -176,7 +186,8 @@ class IncomingCallActivity : Activity() {
     }
 
     private fun accept() {
-        IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_ACCEPT)
+        if (!IncomingCallStore.matches(this, callId)) { finish(); return }
+        IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_ACCEPT, callId)
         IncomingCallNotifier.cancel(this, finishActivity = false)
         IncomingCallPlugin.notifyFlutterIfReady(this)
         startActivity(
@@ -189,15 +200,17 @@ class IncomingCallActivity : Activity() {
                 callerName,
                 callerAvatar,
                 IncomingCallStore.ACTION_ACCEPT,
+                callId,
             ),
         )
         finish()
     }
 
     private fun decline() {
-        IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
+        if (!IncomingCallStore.matches(this, callId)) { finish(); return }
+        IncomingCallStore.save(this, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE, callId)
         IncomingCallNotifier.cancel(this, finishActivity = false)
-        CallDeclineHttp.declineAsync(this, conversationId, "declined")
+        CallDeclineHttp.declineAsync(this, conversationId, "declined", callId, sessionId)
         IncomingCallPlugin.notifyFlutterIfReady(this)
         // Keep store so Flutter can sync if it wakes; do not clear on kill-path.
         finish()

@@ -37,7 +37,7 @@ class NexChatApp extends ConsumerStatefulWidget {
 class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObserver {
   static const _updatePoll = Duration(seconds: 90);
   Timer? _updateTimer;
-  StreamSubscription<void>? _unauthorizedSub;
+  StreamSubscription<String>? _unauthorizedSub;
   bool _handlingUnauthorized = false;
   bool _online = true;
 
@@ -47,7 +47,7 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     _runUpdateCheck();
     _updateTimer = Timer.periodic(_updatePoll, (_) => _runUpdateCheck());
-    _unauthorizedSub = Api.unauthorized.stream.listen((_) => _handleUnauthorized());
+    _unauthorizedSub = Api.unauthorized.stream.listen(_handleUnauthorized);
   }
 
   @override
@@ -68,7 +68,7 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
         unawaited(RingSound.start());
       }
       _runUpdateCheck();
-      if (ref.read(networkProvider)) unawaited(Hubs.forceReconnectAll());
+      if (ref.read(networkProvider)) unawaited(Hubs.resumeAll());
       if (ref.read(authProvider).isLoggedIn) {
         unawaited(PushService.instance.refreshRegistration());
         unawaited(ref.read(pendingRequestsProvider.notifier).fetch());
@@ -139,8 +139,8 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
     await _onCameOnline();
   }
 
-  Future<void> _handleUnauthorized() async {
-    if (_handlingUnauthorized) return;
+  Future<void> _handleUnauthorized(String rejectedToken) async {
+    if (ref.read(authProvider).token != rejectedToken || _handlingUnauthorized) return;
     _handlingUnauthorized = true;
     try {
       await ref.read(authProvider.notifier).logout();

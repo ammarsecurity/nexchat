@@ -28,6 +28,7 @@ public class NotificationOutboxService(
                 ? new Dictionary<string, string>(data)
                 : new Dictionary<string, string>();
             payload["type"] = type;
+            payload["recipientUserId"] = recipientUserId.ToString();
             payload["title"] = title;
             payload["body"] = body;
 
@@ -55,8 +56,9 @@ public class NotificationOutboxService(
             if (immediate)
             {
                 await oneSignal.SendToUserAsync(recipientUserId, title, body, payload);
-                // PushKit VoIP: ring when app is killed; also cancel so CallKit dismisses.
-                if (type is "video_call" or "call_cancel")
+                // PushKit must report a new incoming call. Cancellation uses SignalR and
+                // ordinary push (best effort on iOS); native ring timeout is the fallback.
+                if (type == "video_call")
                 {
                     try
                     {
@@ -98,7 +100,7 @@ public class NotificationOutboxService(
         }
     }
 
-    public Task CancelCallPushAsync(Guid recipientUserId, Guid roomId) =>
+    public Task CancelCallPushAsync(Guid recipientUserId, Guid roomId, Guid? callId = null, string? reason = null) =>
         EnqueueAsync(
             recipientUserId,
             "call_cancel",
@@ -108,5 +110,7 @@ public class NotificationOutboxService(
             {
                 ["conversationId"] = roomId.ToString(),
                 ["sessionId"] = roomId.ToString(),
+                ["callId"] = callId?.ToString() ?? "",
+                ["reason"] = reason ?? "ended",
             });
 }

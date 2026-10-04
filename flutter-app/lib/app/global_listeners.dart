@@ -19,6 +19,9 @@ import '../features/chat/chat_session.dart';
 import '../features/conversations/active_conversation.dart';
 import '../features/conversations/avatar_overrides.dart';
 import '../features/conversations/conversations_list_controller.dart';
+import '../features/conversations/conversation_cache.dart';
+import '../features/conversations/message_contract.dart';
+import '../features/conversations/message_outbox.dart';
 import '../features/matching/matching_controller.dart';
 import '../features/matching/matching_dialogs.dart';
 import '../features/notifications/notifications_controller.dart';
@@ -46,7 +49,12 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
   @override
   void initState() {
     super.initState();
+    unawaited(ConversationCache.removeLegacy());
     _bindConversationHub();
+    _disposers.add(Hubs.chat.on('VideoCallEnded', (a) {
+      if (a.length < 3) return;
+      terminateMatchingCall(ref, '${a[1]}', a[2]?.toString(), isConversation: false);
+    }));
     _bindStoryHub();
     _disposers.addAll(bindMatchingHub(ref));
     _bindPush();
@@ -70,13 +78,22 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
   Future<void> _initExistingSession() async {
     final auth = ref.read(authProvider);
     final user = auth.user;
-    if (!auth.isLoggedIn || user == null) return;
-    if (!auth.needsProfileContactRedirect) await ref.read(authProvider.notifier).fetchProfileContactStatus();
-    PushService.instance.init(user.id).then((granted) {
-      if (!granted) PushService.promptNotifications.value = true;
-    });
+    final token = auth.token;
+    if (!auth.isLoggedIn || user == null || token == null) return;
+    bool current() {
+      if (!mounted) return false;
+      final now = ref.read(authProvider);
+      return now.isLoggedIn && now.user?.id == user.id && now.token == token;
+    }
+    if (!auth.needsProfileContactRedirect) {
+      await ref.read(authProvider.notifier).fetchProfileContactStatus();
+    }
+    if (!current()) return;
+    final granted = await PushService.instance.init(user.id);
+    if (!current()) return;
+    if (!granted) PushService.promptNotifications.value = true;
     Future<void>.delayed(const Duration(seconds: 4), () {
-      if (ref.read(authProvider).isLoggedIn) unawaited(PushService.instance.init(user.id, promptPermission: false));
+      if (current()) unawaited(PushService.instance.init(user.id, promptPermission: false));
     });
   }
 
@@ -93,7 +110,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         'title': (title?.isNotEmpty ?? false) ? title : (data['title'] ?? 'إشعار'),
         'body': (body?.isNotEmpty ?? false) ? body : (data['body'] ?? ''),
         // Event time only — never stamp delivery time (late pushes looked "new").
-        if (createdAt != null) 'timestamp': createdAt,
+        'timestamp': ?createdAt,
         'isRead': isRead,
         'avatar': nav['callerAvatar'] ?? nav['requesterAvatar'] ?? data['avatar'] ?? data['senderAvatar'] ?? data['publisherAvatar'],
         'actorName': nav['callerName'] ?? nav['requesterName'] ?? data['senderName'] ?? data['publisherName'] ?? title,
@@ -137,13 +154,14 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
 
     NotificationHooks.onConversationCall = (d) {
       final id = d['conversationId'];
-      if (id == null || id.isEmpty) return;
-      if (isInAnotherCall(ref, exceptId: id)) {
-        declineBusyConversationCall(id);
+      if (id == null || id.isEmpty || (d['callId'] ?? '').isEmpty) return;
+      if (isInAnotherCall(ref, exceptId: id, exceptCallId: d['callId'])) {
+        declineBusyConversationCall(id, d['callId']);
         return;
       }
       ref.read(incomingConvCallProvider.notifier).setIncoming(IncomingConvCall(
             conversationId: id,
+            callId: d['callId'],
             voiceOnly: incomingCallAsBool(d['voiceOnly']),
             callerName: d['callerName'] ?? '',
             callerAvatar: d['callerAvatar'],
@@ -185,6 +203,74 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
 
   void _bindConversationHub() {
     final h = Hubs.conversation;
+    final reconnect = h.onReconnected.listen((_) {
+      final account = ref.read(authProvider).user?.id ?? '';
+      if (account.isEmpty) return;
+      unawaited(ref.read(conversationsListProvider.notifier).refreshSilently());
+      unawaited(MessageOutbox.flush(account));
+    });
+    _disposers.add(() => unawaited(reconnect.cancel()));
+    _disposers.add(h.on('ConversationRead', (args) {
+      final payload = args.firstOrNull;
+      if (payload is! Map) return;
+      final cid = payload.str('conversationId');
+      if (cid.isEmpty) return;
+      ref.read(conversationsListProvider.notifier).updateConversation(cid, {'unreadCount': payload.i('unreadCount'), 'UnreadCount': payload.i('unreadCount')});
+      final account = ref.read(authProvider).user?.id ?? '';
+      if (account.isNotEmpty) unawaited(Prefs.instance.setString(ConversationCache.inboxKey(account, ref.read(conversationsListFilterProvider)), jsonEncode(ref.read(conversationsListProvider))));
+    }));
+    _disposers.add(h.on('ReceiveMessage', (args) {
+      final payload = args.firstOrNull;
+      final account = ref.read(authProvider).user?.id ?? '';
+      if (account.isEmpty || payload is! Map || payload.str('conversationId').isEmpty) return;
+      final message = {...normalizeMsg(payload), 'status': 'sent'};
+      unawaited(ConversationCache.receive(account, message));
+      if (message.str('senderId') == account) unawaited(MessageOutbox.acknowledge(account, message));
+    }));
+    for (final event in ['MessageDeletedForMeV2', 'MessageDeletedForEveryoneV2', 'MessagesExpired', 'ReplyPreviewsRedacted']) {
+      _disposers.add(h.on(event, (args) {
+        final payload = args.firstOrNull;
+        final account = ref.read(authProvider).user?.id ?? '';
+        if (account.isEmpty || payload is! Map) return;
+        final cid = payload.str('conversationId');
+        if (cid.isEmpty) return;
+        final ids = payload.v('messageIds');
+        final deleted = ids is List ? ids.map((id) => '$id').toList() : [payload.str('messageId')];
+        unawaited(ConversationCache.redact(account, cid, deleted.where((id) => id.isNotEmpty)));
+      }));
+    }
+    _disposers.add(h.on('MessagesExpiring', (args) {
+      final payload = args.firstOrNull;
+      final account = ref.read(authProvider).user?.id ?? '';
+      if (account.isEmpty || payload is! Map || payload.str('conversationId').isEmpty) return;
+      final ids = payload.v('messageIds');
+      if (ids is List) unawaited(ConversationCache.setExpiry(account, payload.str('conversationId'), ids.map((id) => '$id').toSet(), payload.s('expiresAt')));
+    }));
+    _disposers.add(h.on('MessageUpdated', (args) {
+      final payload = args.firstOrNull;
+      final account = ref.read(authProvider).user?.id ?? '';
+      if (account.isEmpty || payload is! Map || payload.str('conversationId').isEmpty) return;
+      final cid = payload.str('conversationId');
+      final messages = ConversationCache.read(account, cid);
+      unawaited(ConversationCache.save(account, cid, [
+        for (final message in messages)
+          if (message.str('id') == payload.str('id')) {...message, 'content': payload.s('content'), 'type': payload.s('type')}
+          else message,
+      ]));
+    }));
+    for (final event in ['ConversationRemoved', 'ConversationDeletedForMeV2']) {
+      _disposers.add(h.on(event, (args) {
+        final payload = args.firstOrNull;
+        final account = ref.read(authProvider).user?.id ?? '';
+        if (account.isEmpty || payload is! Map) return;
+        final cid = payload.str('conversationId');
+        if (cid.isEmpty) return;
+        ref.read(conversationsListProvider.notifier).removeConversation(cid);
+        unawaited(Prefs.instance.setString(ConversationCache.inboxKey(account, ref.read(conversationsListFilterProvider)), jsonEncode(ref.read(conversationsListProvider))));
+        unawaited(ConversationCache.forget(account, cid));
+        unawaited(MessageOutbox.forgetConversation(account, cid));
+      }));
+    }
     _disposers.add(h.on('ConversationListUpdated', (a) {
       final payload = a.isEmpty ? null : a.first;
       if (payload is! Map) return;
@@ -193,6 +279,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       final type = payload.s('lastMessageType');
       final senderId = payload.str('senderId');
       final me = ref.read(authProvider).user?.id ?? '';
+      if (me.isEmpty) return;
       final viewing = ref.read(activeConversationProvider).conversationId == convId;
       final fromMe = senderId.isNotEmpty && senderId == me;
       final updated = ref.read(conversationsListProvider.notifier).updateConversation(
@@ -201,16 +288,19 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
           'lastMessagePreview': formatConversationListPreview(payload.s('lastMessagePreview'), type: type),
           'lastMessageAt': payload.v('lastMessageAt'),
           'lastMessageType': type,
+          if (payload.v('unreadCount') != null) 'unreadCount': viewing ? 0 : payload.i('unreadCount'),
+          if (payload.v('unreadCount') != null) 'UnreadCount': viewing ? 0 : payload.i('unreadCount'),
         },
-        incrementUnread: !fromMe && !viewing,
+        incrementUnread: payload.v('unreadCount') == null && !fromMe && !viewing,
       );
       if (updated) {
-        Prefs.instance.setString('nexchat_conversations_cache', jsonEncode(ref.read(conversationsListProvider)));
+        Prefs.instance.setString(ConversationCache.inboxKey(me, ref.read(conversationsListFilterProvider)), jsonEncode(ref.read(conversationsListProvider)));
       } else {
         // Don't replace an unlocked vault list with the main inbox.
         final filter = ref.read(conversationsListFilterProvider);
         if (filter == 'hidden') return;
         Api.get('/conversations', query: {'filter': filter}).then((data) {
+          if (ref.read(authProvider).user?.id != me || ref.read(conversationsListFilterProvider) != filter) return;
           ref.read(conversationsListProvider.notifier).setList(asJsonList(data));
         }).catchError((_) => null);
       }
@@ -222,69 +312,32 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       if (cid == null) return;
       final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
       if (path == '/video/$cid') return;
-      if (isInAnotherCall(ref, exceptId: cid)) {
-        declineBusyConversationCall(cid);
+      if (isInAnotherCall(ref, exceptId: cid, exceptCallId: parsed.callId)) {
+        declineBusyConversationCall(cid, parsed.callId);
         return;
       }
       final prev = ref.read(incomingConvCallProvider);
       if (prev.visible && prev.conversationId != null && prev.conversationId != cid) {
-        declineBusyConversationCall(cid);
+        declineBusyConversationCall(cid, parsed.callId);
         return;
       }
       ref.read(incomingConvCallProvider.notifier).setIncoming(parsed);
-      notifyOutgoingCallRinging(cid);
+      notifyOutgoingCallRinging(cid, parsed.callId);
     }));
 
-    _disposers.add(h.on('VideoCallDeclined', (a) {
-      unawaited(RingSound.stop());
-      final cid = '${a.firstOrNull ?? ''}';
-      final incoming = ref.read(incomingConvCallProvider);
-      if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
-        ref.read(incomingConvCallProvider.notifier).clear();
-        unawaited(CallNative.dismissIncoming());
-      }
-      final active = ref.read(activeCallProvider);
-      if (active.sessionId != null &&
-          (cid.isEmpty || cid == 'null' || cid == active.sessionId) &&
-          videoScreenMounts(active.sessionId!) == 0 &&
-          !LiveKitService.instance.isInSession(active.sessionId!)) {
-        ref.read(activeCallProvider.notifier).clear();
-      }
-    }));
-
-    _disposers.add(h.on('VideoCallEnded', (a) {
-      unawaited(RingSound.stop());
-      final cid = '${a.firstOrNull ?? ''}';
-      final active = ref.read(activeCallProvider);
-      if (active.sessionId != null && (cid.isEmpty || cid == 'null' || cid == active.sessionId)) {
-        ref.read(activeCallProvider.notifier).clear();
-        if (!LiveKitService.instance.isInSession(active.sessionId!)) {
-          unawaited(LiveKitService.instance.leave());
+    for (final event in ['VideoCallDeclined', 'VideoCallEnded', 'VideoCallBusy']) {
+      _disposers.add(h.on(event, (a) {
+        final index = event == 'VideoCallEnded' ? 2 : 1;
+        if (a.length <= index) return;
+        final cid = '${a[0]}';
+        final callId = a[index]?.toString();
+        final active = ref.read(activeCallProvider);
+        if (event == 'VideoCallBusy' && sameCall(active.sessionId, active.callId, cid, callId)) {
+          unawaited(RingSound.playBusy());
         }
-      }
-      final incoming = ref.read(incomingConvCallProvider);
-      if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
-        ref.read(incomingConvCallProvider.notifier).clear();
-        unawaited(CallNative.dismissIncoming());
-      }
-    }));
-
-    _disposers.add(h.on('VideoCallBusy', (a) {
-      final cid = '${a.firstOrNull ?? ''}';
-      final active = ref.read(activeCallProvider);
-      final mine = active.sessionId != null &&
-          active.sessionId!.isNotEmpty &&
-          (cid.isEmpty || cid == 'null' || cid == active.sessionId);
-      if (mine) {
-        unawaited(RingSound.playBusy());
-        ref.read(activeCallProvider.notifier).clear();
-      }
-      final incoming = ref.read(incomingConvCallProvider);
-      if (incoming.conversationId != null && (cid.isEmpty || cid == 'null' || cid == incoming.conversationId)) {
-        ref.read(incomingConvCallProvider.notifier).clear();
-        unawaited(CallNative.dismissIncoming());
-      }
-    }));
+        terminateMatchingCall(ref, cid, callId, isConversation: true);
+      }));
+    }
 
     _disposers.add(h.on('VideoCallAccepted', (a) {
       unawaited(RingSound.stop());
@@ -294,13 +347,13 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       final existing = ref.read(activeCallProvider);
       final path = ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
       final alreadyOnCall = path == '/video/$cid' || videoScreenMounts(cid) > 0;
-      final expecting = existing.sessionId == cid;
+      final expecting = sameCall(existing.sessionId, existing.callId, cid, parsed.callId);
       // Caller cancelled locally before accept arrived — ignore late VideoCallAccepted.
-      if (!expecting && !alreadyOnCall) {
+      if (!expecting) {
         unawaited(
           Hubs.conversation
               .ensureConnected()
-              .then((_) => Hubs.conversation.invoke('ReleaseVideoCallBusy', [cid]))
+              .then((_) => Hubs.conversation.invoke('ReleaseVideoCallBusyV2', [cid, parsed.callId ?? '']))
               .catchError((_) => null),
         );
         return;
@@ -309,6 +362,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       final item = ref.read(conversationsListProvider).where((c) => c.str('id') == cid).firstOrNull;
       ref.read(activeCallProvider.notifier).syncMeta(
             sessionId: cid,
+            callId: parsed.callId,
             voiceOnly: voiceOnly,
             isConversation: true,
             partnerName: existing.partnerName.isNotEmpty ? existing.partnerName : (item?.s('partnerName') ?? ''),
@@ -317,7 +371,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
           );
       ref.read(activeCallProvider.notifier).expand();
       if (alreadyOnCall) return;
-      openAcceptedCall(ref.read(routerProvider), cid, voiceOnly);
+      openAcceptedCall(ref.read(routerProvider), cid, voiceOnly, parsed.callId!);
     }));
 
     _disposers.add(h.on('UserAvatarUpdated', (a) {
@@ -355,7 +409,13 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
   Future<void> _syncHubs() async {
     final auth = ref.read(authProvider);
     if (!auth.isLoggedIn) {
+      ref.read(activeConversationProvider.notifier).clear();
+      ref.read(conversationsListProvider.notifier).setList([]);
+      ref.read(conversationsListFilterProvider.notifier).setFilter('all');
+      ref.invalidate(avatarOverridesProvider);
+      ref.read(pendingRequestsProvider.notifier).set(0);
       await Hubs.stopAll();
+      if (ref.read(authProvider).isLoggedIn) return;
       ref.invalidate(storiesProvider);
       ref.invalidate(shortFilmsProvider);
       ref.read(incomingConvCallProvider.notifier).clear();
@@ -367,10 +427,11 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       ref.invalidate(matchingProvider);
       return;
     }
-    Hubs.conversation.start().catchError((_) {});
+    Hubs.conversation.start().then((_) => MessageOutbox.flush(auth.user?.id ?? '')).catchError((_) {});
     Hubs.story.start().catchError((_) {});
     if (NetworkStatus.online.value) ref.read(storiesProvider.notifier).fetchFeed(force: true);
     final flags = await ref.read(featureFlagsProvider.future);
+    if (ref.read(authProvider).user?.id != auth.user?.id) return;
     if (flags.connectHub) {
       Hubs.matching.start().catchError((_) {});
     } else {
@@ -381,9 +442,12 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(authProvider.select((s) => s.isLoggedIn), (prev, next) {
+    ref.listen(authProvider.select((s) => s.user?.id), (prev, next) {
       _syncHubs();
-      if (next) flushPendingIncomingCall(ref);
+      if (next != null) flushPendingIncomingCall(ref);
+    });
+    ref.listen(networkProvider, (_, online) {
+      if (online) unawaited(MessageOutbox.flush(ref.read(authProvider).user?.id ?? ''));
     });
     ref.listen(featureFlagsProvider.select((a) => a.value?.connectHub), (_, _) => _syncHubs());
     final loggedIn = ref.watch(authProvider.select((s) => s.isLoggedIn));

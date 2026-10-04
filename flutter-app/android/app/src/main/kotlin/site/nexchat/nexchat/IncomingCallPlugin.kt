@@ -28,8 +28,11 @@ object IncomingCallPlugin {
     fun notifyFlutterIfReady(context: Context) {
         if (!flutterReady) return
         val data = IncomingCallStore.take(context) ?: return
+        val user = data["recipientUserId"] as? String ?: return
         Handler(Looper.getMainLooper()).post {
-            channel?.invokeMethod("incomingEvent", data)
+            if (IncomingCallStore.authenticatedUser(context) == user) {
+                channel?.invokeMethod("incomingEvent", data)
+            }
         }
     }
 }

@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -9,8 +11,33 @@ namespace NexChat.API.Controllers;
 [Route("api/media")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class MediaController(IWebHostEnvironment env, IConfiguration config) : ControllerBase
+public class MediaController(IWebHostEnvironment env, IConfiguration config, MediaStorageService storage, ViewOnceMediaService viewOnceMedia) : ControllerBase
 {
+    private Guid OwnerId => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
+
+    [HttpGet("view-once/{sessionId:guid}")]
+    public async Task<IActionResult> GetViewOnce(Guid sessionId)
+    {
+        Response.Headers.CacheControl = "private, no-store, max-age=0";
+        Response.Headers.Pragma = "no-cache";
+        Response.Headers.Expires = "0";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        if (OwnerId == Guid.Empty) return Unauthorized();
+        var path = await viewOnceMedia.ResolveAsync(sessionId, OwnerId);
+        if (path == null) return NotFound();
+        if (!new FileExtensionContentTypeProvider().TryGetContentType(path, out var type)) return NotFound();
+        // Multiple authenticated ranges within one bounded session are required by video players.
+        return PhysicalFile(path, type, enableRangeProcessing: true);
+    }
+
+    [HttpDelete("view-once/{sessionId:guid}")]
+    public async Task<IActionResult> CloseViewOnce(Guid sessionId)
+    {
+        if (OwnerId == Guid.Empty) return Unauthorized();
+        await viewOnceMedia.CloseAsync(sessionId, OwnerId);
+        return NoContent();
+    }
+
     private static readonly string[] AllowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
     private static bool IsValidImageContent(Stream stream)
@@ -34,7 +61,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
     }
 
     [HttpPost("upload")]
-    public async Task<IActionResult> Upload(IFormFile file)
+    public async Task<IActionResult> Upload(IFormFile file, [FromQuery] bool viewOnce = false)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided" });
@@ -49,8 +76,8 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
         if (!IsValidImageContent(stream))
             return BadRequest(new { message = "File content does not match image format" });
 
-        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
-        Directory.CreateDirectory(uploadsPath);
+        if (viewOnce && OwnerId == Guid.Empty) return Unauthorized();
+        var uploadsPath = storage.UploadDirectory(OwnerId, viewOnce);
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (!new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" }.Contains(ext))
@@ -65,7 +92,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
             fileName = $"{Guid.NewGuid()}{optimized.Extension}";
             var filePath = Path.Combine(uploadsPath, fileName);
             await System.IO.File.WriteAllBytesAsync(filePath, optimized.Bytes);
-            if (optimized.ThumbBytes is { Length: > 0 })
+            if (!viewOnce && optimized.ThumbBytes is { Length: > 0 })
             {
                 var thumbName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
                 await System.IO.File.WriteAllBytesAsync(Path.Combine(uploadsPath, thumbName), optimized.ThumbBytes);
@@ -84,10 +111,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
             await stream.CopyToAsync(dest);
         }
 
-        var baseUrl = config["Media:BaseUrl"];
-        var url = !string.IsNullOrEmpty(baseUrl)
-            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
-            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+        var url = storage.UploadUrl(OwnerId, fileName, viewOnce, Request);
         return Ok(new { url, thumbUrl });
     }
 
@@ -138,12 +162,13 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
     }
 
     [HttpPost("upload-chat-video")]
-    public async Task<IActionResult> UploadChatVideo(IFormFile file)
+    public async Task<IActionResult> UploadChatVideo(IFormFile file, [FromQuery] bool viewOnce = false)
     {
-        return await UploadChatVideoInternal(file);
+        if (viewOnce && OwnerId == Guid.Empty) return Unauthorized();
+        return await UploadChatVideoInternal(file, viewOnce);
     }
 
-    private async Task<IActionResult> UploadChatVideoInternal(IFormFile file)
+    private async Task<IActionResult> UploadChatVideoInternal(IFormFile file, bool viewOnce = false)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided" });
@@ -156,13 +181,12 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
             return BadRequest(new { message = "Max file size is 30MB" });
 
         await using var stream = await BufferUploadAsync(file);
-        return Ok(new { url = await SaveUploadAsync(stream, file.FileName, [".mp4", ".webm", ".mov"], ".mp4") });
+        return Ok(new { url = await SaveUploadAsync(stream, file.FileName, [".mp4", ".webm", ".mov"], ".mp4", viewOnce) });
     }
 
-    private async Task<string> SaveUploadAsync(Stream stream, string originalFileName, string[] allowedExts, string defaultExt)
+    private async Task<string> SaveUploadAsync(Stream stream, string originalFileName, string[] allowedExts, string defaultExt, bool viewOnce = false)
     {
-        var uploadsPath = Path.Combine(env.WebRootPath ?? "wwwroot", "uploads");
-        Directory.CreateDirectory(uploadsPath);
+        var uploadsPath = storage.UploadDirectory(OwnerId, viewOnce);
 
         var ext = Path.GetExtension(originalFileName).ToLower();
         if (string.IsNullOrEmpty(ext) || !allowedExts.Contains(ext))
@@ -174,10 +198,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config) : C
         await using (var dest = new FileStream(filePath, FileMode.Create))
             await stream.CopyToAsync(dest);
 
-        var baseUrl = config["Media:BaseUrl"];
-        return !string.IsNullOrEmpty(baseUrl)
-            ? $"{baseUrl.TrimEnd('/')}/uploads/{fileName}"
-            : $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+        return storage.UploadUrl(OwnerId, fileName, viewOnce, Request);
     }
 
     [HttpPost("upload-audio")]

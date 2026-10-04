@@ -19,11 +19,12 @@ Future<List<XFile>> pickImages({int limit = maxAlbumImages}) => _picker.pickMult
 Future<XFile?> pickVideo({ImageSource source = ImageSource.gallery}) => _picker.pickVideo(source: source);
 
 /// POST multipart to one of the `/media/upload*` endpoints, returns the stored url.
-Future<String> uploadFile(String endpoint, String path, {String? filename, Duration timeout = const Duration(seconds: 60)}) async {
-  final form = FormData.fromMap({'file': await MultipartFile.fromFile(path, filename: filename ?? path.split(Platform.pathSeparator).last)});
+Future<String> uploadFile(String endpoint, String path, {String? filename, bool viewOnce = false, Duration timeout = const Duration(seconds: 60)}) async {
+  final form = FormData.fromMap({'file': await mediaUploadPart(endpoint, path, filename: filename)});
   final res = await Api.dio.post(
     endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
     data: form,
+    queryParameters: viewOnce ? {'viewOnce': true} : null,
     options: Options(sendTimeout: timeout, receiveTimeout: timeout),
   );
   final data = res.data;
@@ -32,10 +33,50 @@ Future<String> uploadFile(String endpoint, String path, {String? filename, Durat
   return url;
 }
 
+/// Explicit format mapping matches the API allowlists; unknown formats fail
+/// locally instead of silently sending application/octet-stream.
+DioMediaType mediaContentType(String endpoint, String filename) {
+  final ext = filename.split('.').last.toLowerCase();
+  final kind = endpoint.contains('audio') ? 'audio' : endpoint.contains('video') ? 'video' : 'image';
+  final types = switch (kind) {
+    'audio' => const {'m4a': 'audio/mp4', 'mp4': 'audio/mp4', 'webm': 'audio/webm', 'ogg': 'audio/ogg', 'opus': 'audio/ogg', 'mp3': 'audio/mpeg', 'wav': 'audio/wav'},
+    'video' => const {'mp4': 'video/mp4', 'mov': 'video/quicktime', 'webm': 'video/webm'},
+    _ => const {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp'},
+  };
+  final type = types[ext];
+  if (type == null) throw ArgumentError('Unsupported $kind file format');
+  return DioMediaType.parse(type);
+}
+
+Future<MultipartFile> mediaUploadPart(String endpoint, String path, {String? filename}) {
+  final name = filename ?? path.split(Platform.pathSeparator).last;
+  return MultipartFile.fromFile(path, filename: name, contentType: mediaContentType(endpoint, name));
+}
+
+// Never attach session credentials to public downloads or their redirects.
+final publicMediaClient = Dio(BaseOptions(connectTimeout: const Duration(seconds: 15), receiveTimeout: const Duration(seconds: 60)));
+
+bool isViewOnceDelivery(String url) {
+  final absolute = Api.absoluteUrl(url);
+  final uri = absolute == null ? null : Uri.tryParse(absolute);
+  return uri != null && Api.isApiOrigin(uri) && RegExp(r'^/api/media/view-once/[0-9a-fA-F-]{36}$').hasMatch(uri.path);
+}
+
+Future<void> closeViewOnceDelivery(String url) async {
+  if (!isViewOnceDelivery(url)) return;
+  try { await Api.dio.delete(Api.absoluteUrl(url)!, options: Options(extra: {'skipGlobalLoader': true})); } catch (_) {
+    // Offline/app termination cannot extend the fixed server session deadline.
+  }
+}
+
 Future<File> _download(String url, String name) async {
   final dir = await getTemporaryDirectory();
   final file = File('${dir.path}/$name');
-  await Api.dio.download(Api.absoluteUrl(url)!, file.path);
+  final absolute = Api.absoluteUrl(url);
+  if (absolute == null || isViewOnceDelivery(url) || url.contains('/api/media/private/')) {
+    throw ArgumentError('This media cannot be downloaded');
+  }
+  await publicMediaClient.download(absolute, file.path);
   return file;
 }
 

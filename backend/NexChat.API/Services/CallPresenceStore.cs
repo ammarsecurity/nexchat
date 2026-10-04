@@ -1,320 +1,241 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using StackExchange.Redis;
 
 namespace NexChat.API.Services;
 
-/// <summary>
-/// حالة busy/pending للمكالمات. الذاكرة كافية لـ API واحد؛
-/// Redis اختياري فقط عند تشغيل عدة instances.
-/// </summary>
+/// <summary>Atomic call attempts and renewable liveness leases. Redis is authoritative when configured.</summary>
 public static class CallPresenceStore
 {
     public static readonly TimeSpan RingingStaleAfter = TimeSpan.FromSeconds(65);
-    /// <summary>سقف أمان لحالة accepted عالقة بدون End (كان 45د → الجميع يشوف busy).</summary>
     public static readonly TimeSpan InCallStaleAfter = TimeSpan.FromMinutes(5);
-
-    public sealed record PendingCall(Guid CallerId, bool VoiceOnly, bool Accepted, DateTime StartedUtc);
-    public sealed record BusyCall(Guid ConversationId, DateTime SinceUtc);
-
-    private static readonly ConcurrentDictionary<Guid, PendingCall> MemPending = new();
-    private static readonly ConcurrentDictionary<Guid, BusyCall> MemBusy = new();
+    public sealed record PendingCall(Guid CallerId, bool VoiceOnly, bool Accepted, DateTime StartedUtc,
+        Guid CallId = default, Guid RecipientId = default, DateTime LastSeenUtc = default);
+    public sealed record BusyCall(Guid ConversationId, DateTime SinceUtc, Guid CallId = default);
+    private static readonly Dictionary<Guid, PendingCall> MemPending = new();
+    private static readonly Dictionary<Guid, BusyCall> MemBusy = new();
+    private static readonly Dictionary<Guid, DateTime> Completed = new();
+    private const string DoneKey = "nexchat:{calls}:completed";
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-    private static IDatabase? _db;
     private static readonly object Gate = new();
+    // The common hash tag makes every transition a single Redis Cluster slot operation.
+    private const string PendingKey = "nexchat:{calls}:pending";
+    private const string BusyKey = "nexchat:{calls}:busy";
+    private static IDatabase? _db;
+    private static TimeProvider _clock = TimeProvider.System;
+    private static DateTime Now => _clock.GetUtcNow().UtcDateTime;
+    private static string Key(Guid id) => id.ToString();
+    private static string Json<T>(T value) => JsonSerializer.Serialize(value, JsonOpts);
 
-    /// <summary>يُستدعى من Program عند الإقلاع. null = ذاكرة فقط.</summary>
-    public static void Configure(IConnectionMultiplexer? mux)
+    public static void Configure(IConnectionMultiplexer? mux, TimeProvider? clock = null)
     {
+        lock (Gate) { _db = mux?.GetDatabase(); _clock = clock ?? TimeProvider.System; MemPending.Clear(); MemBusy.Clear(); Completed.Clear(); }
+    }
+    public static bool UsesRedis => _db != null;
+    public static PendingBag Pending { get; } = new();
+    public static BusyBag Busy { get; } = new();
+    public static bool IsStale(PendingCall p) => Now - (p.LastSeenUtc == default ? p.StartedUtc : p.LastSeenUtc) >
+        (p.Accepted ? InCallStaleAfter : RingingStaleAfter);
+    public static int Duration(PendingCall p) => p.Accepted ? Math.Max(0, (int)(Now - p.StartedUtc).TotalSeconds) : 0;
+
+    public static bool TryStart(Guid roomId, Guid callerId, Guid recipientId, bool voiceOnly, Guid callId, out PendingCall pending)
+    {
+        var now = Now;
+        pending = new(callerId, voiceOnly, false, now, callId, recipientId, now);
+        if (callId == Guid.Empty || callerId == recipientId) return false;
+        var busy = new BusyCall(roomId, now, callId);
         lock (Gate)
         {
-            _db = mux?.GetDatabase();
+            if (_db != null)
+                return (int)_db.ScriptEvaluate("""
+                    if redis.call('ZSCORE', KEYS[3], ARGV[6]) or redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 or
+                       redis.call('HEXISTS', KEYS[2], ARGV[2]) == 1 or
+                       redis.call('HEXISTS', KEYS[2], ARGV[3]) == 1 then return 0 end
+                    redis.call('HSET', KEYS[1], ARGV[1], ARGV[4])
+                    redis.call('HSET', KEYS[2], ARGV[2], ARGV[5], ARGV[3], ARGV[5])
+                    return 1
+                    """, [PendingKey, BusyKey, DoneKey], [Key(roomId), Key(callerId), Key(recipientId), Json(pending), Json(busy), Key(callId)]) == 1;
+            foreach (var old in Completed.Where(kv => now - kv.Value > TimeSpan.FromDays(7)).Select(kv => kv.Key).ToArray()) Completed.Remove(old);
+            if (Completed.ContainsKey(callId) || MemPending.ContainsKey(roomId) || MemBusy.ContainsKey(callerId) || MemBusy.ContainsKey(recipientId)) return false;
+            MemPending[roomId] = pending; MemBusy[callerId] = busy; MemBusy[recipientId] = busy;
+            return true;
         }
     }
 
-    public static bool UsesRedis
+    public static bool TryAccept(Guid roomId, Guid callId, Guid userId, out PendingCall? accepted)
     {
-        get { lock (Gate) return _db != null; }
+        accepted = null;
+        if (!TryGetPending(roomId, out var p) || p == null || p.CallId != callId || p.RecipientId != userId || IsStale(p)) return false;
+        if (p.Accepted) { accepted = p; return true; } // duplicate accept of the same attempt
+        var now = Now;
+        var updated = p with { Accepted = true, StartedUtc = now, LastSeenUtc = now };
+        if (!TryUpdatePending(roomId, updated, p)) return false;
+        accepted = updated; return true;
     }
 
-    // --- Compatibility surface used by hubs (dictionary-like) ---
-    public static PendingBag Pending { get; } = new();
-    public static BusyBag Busy { get; } = new();
-
-    public static bool IsBusy(Guid userId) => TryGetBusy(userId, out _);
-
-    public static bool IsBusyElsewhere(Guid userId, Guid roomId) =>
-        TryGetBusy(userId, out var b) && b!.ConversationId != roomId;
-
-    public static void ClearBusyForRoom(Guid roomId, Guid a, Guid b)
+    public static bool Heartbeat(Guid roomId, Guid callId, Guid userId)
     {
-        if (TryGetBusy(a, out var ca) && ca!.ConversationId == roomId)
-            TryRemoveBusy(a);
-        if (TryGetBusy(b, out var cb) && cb!.ConversationId == roomId)
-            TryRemoveBusy(b);
-    }
-
-    public static void ClearRoom(Guid roomId)
-    {
-        TryRemovePending(roomId, out _);
-        foreach (var kv in SnapshotBusy())
+        // Retry a concurrent peer heartbeat; never recreate a consumed attempt.
+        for (var i = 0; i < 3; i++)
         {
-            if (kv.Value.ConversationId == roomId)
-                TryRemoveBusy(kv.Key);
+            if (!TryGetPending(roomId, out var p) || p == null || !p.Accepted || p.CallId != callId ||
+                (p.CallerId != userId && p.RecipientId != userId) || IsStale(p)) return false;
+            if (TryUpdatePending(roomId, p with { LastSeenUtc = Now }, p)) return true;
+        }
+        return false;
+    }
+
+    public static bool TryEnd(Guid roomId, Guid callId, Guid userId, out PendingCall? pending)
+    {
+        pending = null;
+        if (!TryGetPending(roomId, out var p) || p == null || p.CallId != callId ||
+            (p.CallerId != userId && p.RecipientId != userId)) return false;
+        // Heartbeats can race terminal events. Re-read, but always match this attempt.
+        while (p != null && p.CallId == callId)
+        {
+            if (TryRemoveExact(roomId, p)) { pending = p; return true; }
+            if (!TryGetPending(roomId, out p)) return false;
+        }
+        return false;
+    }
+
+    public static bool TryGetPending(Guid roomId, out PendingCall? pending)
+    {
+        lock (Gate)
+        {
+            if (_db != null)
+            {
+                var value = _db.HashGet(PendingKey, Key(roomId));
+                pending = value.IsNullOrEmpty ? null : JsonSerializer.Deserialize<PendingCall>((string)value!, JsonOpts);
+                return pending != null;
+            }
+            return MemPending.TryGetValue(roomId, out pending);
+        }
+    }
+
+    public static bool TryUpdatePending(Guid roomId, PendingCall updated, PendingCall expected)
+    {
+        if (updated.CallId != expected.CallId || updated.CallerId != expected.CallerId || updated.RecipientId != expected.RecipientId) return false;
+        var busy = new BusyCall(roomId, updated.LastSeenUtc, updated.CallId);
+        lock (Gate)
+        {
+            if (_db != null)
+                return (int)_db.ScriptEvaluate("""
+                    if redis.call('HGET', KEYS[1], ARGV[1]) ~= ARGV[2] then return 0 end
+                    redis.call('HSET', KEYS[1], ARGV[1], ARGV[3])
+                    redis.call('HSET', KEYS[2], ARGV[4], ARGV[6], ARGV[5], ARGV[6])
+                    return 1
+                    """, [PendingKey, BusyKey], [Key(roomId), Json(expected), Json(updated), Key(updated.CallerId), Key(updated.RecipientId), Json(busy)]) == 1;
+            if (!MemPending.TryGetValue(roomId, out var current) || current != expected) return false;
+            MemPending[roomId] = updated;
+            MemBusy[updated.CallerId] = busy; MemBusy[updated.RecipientId] = busy;
+            return true;
+        }
+    }
+
+    private static bool TryRemoveExact(Guid roomId, PendingCall expected)
+    {
+        lock (Gate)
+        {
+            if (_db != null)
+                return (int)_db.ScriptEvaluate("""
+                    if redis.call('HGET', KEYS[1], ARGV[1]) ~= ARGV[2] then return 0 end
+                    redis.call('HDEL', KEYS[1], ARGV[1])
+                    redis.call('ZADD', KEYS[3], ARGV[6], ARGV[5])
+                    redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', tonumber(ARGV[6]) - 604800)
+                    for i = 3, 4 do
+                        local b = redis.call('HGET', KEYS[2], ARGV[i])
+                        if b and cjson.decode(b).callId == ARGV[5] then redis.call('HDEL', KEYS[2], ARGV[i]) end
+                    end
+                    return 1
+                    """, [PendingKey, BusyKey, DoneKey], [Key(roomId), Json(expected), Key(expected.CallerId), Key(expected.RecipientId), Key(expected.CallId), new DateTimeOffset(Now).ToUnixTimeSeconds()]) == 1;
+            if (!MemPending.TryGetValue(roomId, out var current) || current != expected) return false;
+            MemPending.Remove(roomId);
+            Completed[expected.CallId] = Now;
+            foreach (var user in new[] { expected.CallerId, expected.RecipientId })
+                if (MemBusy.TryGetValue(user, out var b) && b.CallId == expected.CallId) MemBusy.Remove(user);
+            return true;
         }
     }
 
     public static void PurgeStale(Action<Guid, PendingCall>? onPurged = null)
     {
-        var now = DateTime.UtcNow;
-        foreach (var kv in SnapshotPending())
-        {
-            var limit = kv.Value.Accepted ? InCallStaleAfter : RingingStaleAfter;
-            if (now - kv.Value.StartedUtc <= limit) continue;
-            var snapshot = kv.Value;
-            ClearRoom(kv.Key);
-            onPurged?.Invoke(kv.Key, snapshot);
-        }
-
-        foreach (var kv in SnapshotBusy())
-        {
-            var hasPending = TryGetPending(kv.Value.ConversationId, out var p);
-            var limit = hasPending && p!.Accepted ? InCallStaleAfter : RingingStaleAfter;
-            if (now - kv.Value.SinceUtc <= limit) continue;
-            TryRemoveBusy(kv.Key);
-        }
+        foreach (var (roomId, p) in SnapshotPending())
+            if (IsStale(p) && TryRemoveExact(roomId, p)) onPurged?.Invoke(roomId, p);
     }
-
-    public static bool TryGetPending(Guid roomId, out PendingCall? pending)
-    {
-        if (TryRedisGetPending(roomId, out pending))
-        {
-            if (pending != null) MemPending[roomId] = pending;
-            else MemPending.TryRemove(roomId, out _);
-            return pending != null;
-        }
-        return MemPending.TryGetValue(roomId, out pending!);
-    }
-
-    public static void SetPending(Guid roomId, PendingCall pending)
-    {
-        MemPending[roomId] = pending;
-        var ttl = pending.Accepted ? InCallStaleAfter : RingingStaleAfter;
-        TryRedisSet($"nexchat:call:pending:{roomId:N}", pending, ttl);
-    }
-
     public static bool TryRemovePending(Guid roomId, out PendingCall? pending)
     {
-        MemPending.TryRemove(roomId, out var mem);
-        TryRedisGetPending(roomId, out var redis);
-        pending = redis ?? mem;
-        TryRedisDel($"nexchat:call:pending:{roomId:N}");
-        return pending != null;
+        pending = null;
+        while (TryGetPending(roomId, out var p) && p != null)
+            if (TryRemoveExact(roomId, p)) { pending = p; return true; }
+        return false;
     }
-
-    public static bool TryUpdatePending(Guid roomId, PendingCall updated, PendingCall expected)
-    {
-        // Optimistic: compare current then set.
-        if (!TryGetPending(roomId, out var cur) || cur is null) return false;
-        if (cur.CallerId != expected.CallerId || cur.Accepted != expected.Accepted ||
-            cur.VoiceOnly != expected.VoiceOnly || cur.StartedUtc != expected.StartedUtc)
-            return false;
-        SetPending(roomId, updated);
-        return true;
-    }
-
+    public static void ClearRoom(Guid roomId) => TryRemovePending(roomId, out _);
     public static bool TryGetBusy(Guid userId, out BusyCall? busy)
     {
-        if (TryRedisGetBusy(userId, out busy))
+        lock (Gate)
         {
-            if (busy != null) MemBusy[userId] = busy;
-            else MemBusy.TryRemove(userId, out _);
-            return busy != null;
+            if (_db != null)
+            {
+                var value = _db.HashGet(BusyKey, Key(userId));
+                busy = value.IsNullOrEmpty ? null : JsonSerializer.Deserialize<BusyCall>((string)value!, JsonOpts);
+                return busy != null;
+            }
+            return MemBusy.TryGetValue(userId, out busy);
         }
-        return MemBusy.TryGetValue(userId, out busy!);
     }
-
-    public static void SetBusy(Guid userId, BusyCall busy)
+    public static bool IsBusy(Guid userId) => TryGetBusy(userId, out _);
+    public static bool IsBusyElsewhere(Guid userId, Guid roomId) => TryGetBusy(userId, out var b) && b!.ConversationId != roomId;
+    public static bool AnyBusyForRoom(Guid roomId) => SnapshotBusy().Any(kv => kv.Value.ConversationId == roomId);
+    public static void ClearBusyForRoom(Guid roomId, Guid a, Guid b)
     {
-        MemBusy[userId] = busy;
-        var ttl = InCallStaleAfter;
-        if (TryGetPending(busy.ConversationId, out var p) && p is { Accepted: false })
-            ttl = RingingStaleAfter;
-        TryRedisSet($"nexchat:call:busy:{userId:N}", busy, ttl);
+        // A busy reservation is owned by its pending attempt. Never release it independently.
+        if (!HasPending(roomId)) { RemoveOrphanBusy(a, roomId); RemoveOrphanBusy(b, roomId); }
     }
-
+    private static void RemoveOrphanBusy(Guid userId, Guid roomId)
+    {
+        lock (Gate)
+        {
+            if (_db != null)
+            {
+                _db.ScriptEvaluate("""
+                    local b = redis.call('HGET', KEYS[2], ARGV[1])
+                    if b and cjson.decode(b).conversationId == ARGV[2] and redis.call('HEXISTS', KEYS[1], ARGV[2]) == 0 then
+                        return redis.call('HDEL', KEYS[2], ARGV[1]) end
+                    return 0
+                    """, [PendingKey, BusyKey], [Key(userId), Key(roomId)]);
+            }
+            else if (!MemPending.ContainsKey(roomId) && MemBusy.TryGetValue(userId, out var b) && b.ConversationId == roomId) MemBusy.Remove(userId);
+        }
+    }
     public static bool TryRemoveBusy(Guid userId)
     {
-        MemBusy.TryRemove(userId, out _);
-        TryRedisDel($"nexchat:call:busy:{userId:N}");
-        return true;
+        if (!TryGetBusy(userId, out var b) || b == null) return false;
+        RemoveOrphanBusy(userId, b.ConversationId); return true;
     }
-
-    public static bool AnyBusyForRoom(Guid roomId) =>
-        SnapshotBusy().Any(kv => kv.Value.ConversationId == roomId);
-
     public static KeyValuePair<Guid, PendingCall>[] SnapshotPending()
     {
-        if (_db != null)
-        {
-            try
-            {
-                var server = _db.Multiplexer.GetServers().FirstOrDefault(s => s.IsConnected);
-                if (server != null)
-                {
-                    var list = new List<KeyValuePair<Guid, PendingCall>>();
-                    foreach (var key in server.Keys(pattern: "nexchat:call:pending:*"))
-                    {
-                        var idPart = key.ToString().Split(':').LastOrDefault();
-                        if (!Guid.TryParseExact(idPart, "N", out var roomId)) continue;
-                        if (TryRedisGetPending(roomId, out var p) && p != null)
-                            list.Add(new(roomId, p));
-                    }
-                    if (list.Count > 0) return list.ToArray();
-                }
-            }
-            catch { /* fall through */ }
-        }
-        return MemPending.ToArray();
+        lock (Gate) return _db == null ? MemPending.ToArray() : _db.HashGetAll(PendingKey)
+            .Select(e => new KeyValuePair<Guid, PendingCall>(Guid.Parse((string)e.Name!), JsonSerializer.Deserialize<PendingCall>((string)e.Value!, JsonOpts)!)).ToArray();
     }
-
     public static KeyValuePair<Guid, BusyCall>[] SnapshotBusy()
     {
-        if (_db != null)
-        {
-            try
-            {
-                var server = _db.Multiplexer.GetServers().FirstOrDefault(s => s.IsConnected);
-                if (server != null)
-                {
-                    var list = new List<KeyValuePair<Guid, BusyCall>>();
-                    foreach (var key in server.Keys(pattern: "nexchat:call:busy:*"))
-                    {
-                        var idPart = key.ToString().Split(':').LastOrDefault();
-                        if (!Guid.TryParseExact(idPart, "N", out var userId)) continue;
-                        if (TryRedisGetBusy(userId, out var b) && b != null)
-                            list.Add(new(userId, b));
-                    }
-                    if (list.Count > 0) return list.ToArray();
-                }
-            }
-            catch { /* fall through */ }
-        }
-        return MemBusy.ToArray();
+        lock (Gate) return _db == null ? MemBusy.ToArray() : _db.HashGetAll(BusyKey)
+            .Select(e => new KeyValuePair<Guid, BusyCall>(Guid.Parse((string)e.Name!), JsonSerializer.Deserialize<BusyCall>((string)e.Value!, JsonOpts)!)).ToArray();
     }
-
     public static bool HasPending(Guid roomId) => TryGetPending(roomId, out _);
-
-    // --- Compatibility wrappers so hubs can keep dictionary-style calls ---
     public sealed class PendingBag
     {
-        public PendingCall this[Guid roomId]
-        {
-            set => SetPending(roomId, value);
-        }
-
-        public bool TryGetValue(Guid roomId, out PendingCall pending)
-        {
-            var ok = TryGetPending(roomId, out var p);
-            pending = p!;
-            return ok;
-        }
-
-        public bool TryRemove(Guid roomId, out PendingCall pending)
-        {
-            var ok = TryRemovePending(roomId, out var p);
-            pending = p!;
-            return ok;
-        }
-
-        public bool TryUpdate(Guid roomId, PendingCall updated, PendingCall expected) =>
-            TryUpdatePending(roomId, updated, expected);
-
+        public bool TryGetValue(Guid roomId, out PendingCall pending) { var ok = TryGetPending(roomId, out var p); pending = p!; return ok; }
+        public bool TryRemove(Guid roomId, out PendingCall pending) { var ok = TryRemovePending(roomId, out var p); pending = p!; return ok; }
+        public bool TryUpdate(Guid roomId, PendingCall updated, PendingCall expected) => TryUpdatePending(roomId, updated, expected);
         public bool ContainsKey(Guid roomId) => HasPending(roomId);
-
         public KeyValuePair<Guid, PendingCall>[] ToArray() => SnapshotPending();
     }
-
     public sealed class BusyBag
     {
-        public BusyCall this[Guid userId]
-        {
-            set => SetBusy(userId, value);
-        }
-
-        public bool TryGetValue(Guid userId, out BusyCall busy)
-        {
-            var ok = TryGetBusy(userId, out var b);
-            busy = b!;
-            return ok;
-        }
-
-        public bool TryRemove(Guid userId, out BusyCall busy)
-        {
-            var had = TryGetBusy(userId, out var b);
-            busy = b!;
-            TryRemoveBusy(userId);
-            return had;
-        }
-
-        public bool Any(Func<KeyValuePair<Guid, BusyCall>, bool> pred) =>
-            SnapshotBusy().Any(pred);
-
+        public bool TryGetValue(Guid userId, out BusyCall busy) { var ok = TryGetBusy(userId, out var b); busy = b!; return ok; }
+        public bool TryRemove(Guid userId, out BusyCall busy) { var had = TryGetBusy(userId, out var b); busy = b!; TryRemoveBusy(userId); return had; }
+        public bool Any(Func<KeyValuePair<Guid, BusyCall>, bool> pred) => SnapshotBusy().Any(pred);
         public KeyValuePair<Guid, BusyCall>[] ToArray() => SnapshotBusy();
-    }
-
-    private static bool TryRedisGetPending(Guid roomId, out PendingCall? pending)
-    {
-        pending = null;
-        var db = _db;
-        if (db == null) return false;
-        try
-        {
-            var val = db.StringGet($"nexchat:call:pending:{roomId:N}");
-            if (val.IsNullOrEmpty) { pending = null; return true; }
-            pending = JsonSerializer.Deserialize<PendingCall>((string)val!, JsonOpts);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryRedisGetBusy(Guid userId, out BusyCall? busy)
-    {
-        busy = null;
-        var db = _db;
-        if (db == null) return false;
-        try
-        {
-            var val = db.StringGet($"nexchat:call:busy:{userId:N}");
-            if (val.IsNullOrEmpty) { busy = null; return true; }
-            busy = JsonSerializer.Deserialize<BusyCall>((string)val!, JsonOpts);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static void TryRedisSet<T>(string key, T value, TimeSpan ttl)
-    {
-        var db = _db;
-        if (db == null) return;
-        try
-        {
-            var json = JsonSerializer.Serialize(value, JsonOpts);
-            db.StringSet(key, json, ttl);
-        }
-        catch { /* memory remains source for this process */ }
-    }
-
-    private static void TryRedisDel(string key)
-    {
-        var db = _db;
-        if (db == null) return;
-        try { db.KeyDelete(key); } catch { }
     }
 }

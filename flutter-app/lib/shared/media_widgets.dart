@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -27,6 +30,57 @@ ImageProvider mediaImage(String url, {int? cacheWidth}) {
     provider = CachedNetworkImageProvider(Api.absoluteUrl(url)!);
   }
   return ResizeImage.resizeIfNeeded(cacheWidth, null, provider);
+}
+
+/// A protected image never enters cached_network_image's persistent disk cache.
+/// Its decoded in-memory image is evicted as soon as the viewer is dismissed.
+class ViewOnceImage extends StatefulWidget {
+  const ViewOnceImage({super.key, required this.url});
+  final String url;
+  @override
+  State<ViewOnceImage> createState() => _ViewOnceImageState();
+}
+
+class _ViewOnceImageState extends State<ViewOnceImage> {
+  MemoryImage? _image;
+  bool _failed = false;
+  final _cancel = CancelToken();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      if (!isViewOnceDelivery(widget.url)) throw ArgumentError('Invalid protected media URL');
+      final response = await Api.dio.get<List<int>>(Api.absoluteUrl(widget.url)!,
+        cancelToken: _cancel,
+        options: Options(responseType: ResponseType.bytes, followRedirects: false, headers: {'Cache-Control': 'no-store'}));
+      if (!mounted) return;
+      final bytes = response.data;
+      if (bytes == null || bytes.isEmpty) throw StateError('Empty media');
+      setState(() => _image = MemoryImage(Uint8List.fromList(bytes)));
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancel.cancel();
+    _image?.evict();
+    _image = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _image != null
+      ? Image(image: _image!, fit: BoxFit.contain)
+      : _failed
+          ? const Icon(Icons.broken_image_outlined, color: Colors.white70)
+          : const CircularProgressIndicator(color: Colors.white);
 }
 
 /// linkifyText() — URLs become tappable spans.
@@ -463,7 +517,9 @@ class _ImageViewer extends StatefulWidget {
   State<_ImageViewer> createState() => _ImageViewerState();
 }
 
-class _ImageViewerState extends State<_ImageViewer> {
+class _ImageViewerState extends State<_ImageViewer> with WidgetsBindingObserver {
+  bool get _protected => widget.urls.any(isViewOnceDelivery);
+  bool _protectedClosed = false;
   late final _page = PageController(initialPage: widget.start);
   late int _index = widget.start;
   bool _downloading = false;
@@ -472,6 +528,7 @@ class _ImageViewerState extends State<_ImageViewer> {
   @override
   void initState() {
     super.initState();
+    if (_protected) WidgetsBinding.instance.addObserver(this);
     if (widget.onScreenshot != null) {
       SecureScreen.ensureHandler();
       _prevScreenshot = SecureScreen.onScreenshot;
@@ -480,7 +537,29 @@ class _ImageViewerState extends State<_ImageViewer> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_protected && state != AppLifecycleState.resumed) {
+      // Backgrounding can suspend route animations before dispose. Revoke now.
+      _closeProtected();
+      if (mounted) {
+        setState(() {});
+        if (ModalRoute.of(context)?.isCurrent == true) Navigator.of(context).pop();
+      }
+    }
+  }
+
+  void _closeProtected() {
+    if (!_protected || _protectedClosed) return;
+    _protectedClosed = true;
+    for (final url in widget.urls.where(isViewOnceDelivery)) {
+      unawaited(closeViewOnceDelivery(url));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _closeProtected();
     if (widget.onScreenshot != null) {
       SecureScreen.onScreenshot = _prevScreenshot;
     }
@@ -534,6 +613,7 @@ class _ImageViewerState extends State<_ImageViewer> {
 
   @override
   Widget build(BuildContext context) {
+    if (_protectedClosed) return const Scaffold(backgroundColor: Colors.black);
     final multi = widget.urls.length > 1;
     final pad = MediaQuery.paddingOf(context);
     return Scaffold(
@@ -546,7 +626,9 @@ class _ImageViewerState extends State<_ImageViewer> {
           itemBuilder: (_, i) => InteractiveViewer(
             minScale: 1,
             maxScale: 4,
-            child: Center(child: Image(image: mediaImage(widget.urls[i]), fit: BoxFit.contain)),
+            child: Center(child: isViewOnceDelivery(widget.urls[i])
+                ? ViewOnceImage(url: widget.urls[i])
+                : Image(image: mediaImage(widget.urls[i]), fit: BoxFit.contain)),
           ),
         ),
         Positioned(
@@ -562,7 +644,7 @@ class _ImageViewerState extends State<_ImageViewer> {
                     style: const TextStyle(color: Colors.white, fontSize: 13)),
               ),
             const Spacer(),
-            if (widget.allowDownload)
+            if (widget.allowDownload && !_protected)
               IconButton(
                 onPressed: _downloading ? null : _download,
                 icon: const Icon(LucideIcons.download, color: Colors.white, size: 20),
@@ -619,8 +701,13 @@ class _VideoViewer extends StatefulWidget {
   State<_VideoViewer> createState() => _VideoViewerState();
 }
 
-class _VideoViewerState extends State<_VideoViewer> {
-  late final VideoPlayerController _ctrl = VideoPlayerController.networkUrl(Uri.parse(Api.absoluteUrl(widget.url)!));
+class _VideoViewerState extends State<_VideoViewer> with WidgetsBindingObserver {
+  bool get _protected => isViewOnceDelivery(widget.url);
+  bool _protectedClosed = false;
+  late final VideoPlayerController _ctrl = VideoPlayerController.networkUrl(
+    Uri.parse(Api.absoluteUrl(widget.url)!),
+    httpHeaders: _protected ? Api.mediaAuthHeaders(widget.url) : const {},
+  );
   bool _ready = false;
   bool _failed = false;
   bool _downloading = false;
@@ -629,13 +716,14 @@ class _VideoViewerState extends State<_VideoViewer> {
   @override
   void initState() {
     super.initState();
+    if (_protected) WidgetsBinding.instance.addObserver(this);
     if (widget.onScreenshot != null) {
       SecureScreen.ensureHandler();
       _prevScreenshot = SecureScreen.onScreenshot;
       SecureScreen.onScreenshot = widget.onScreenshot;
     }
     _ctrl.initialize().then((_) {
-      if (!mounted) return;
+      if (!mounted || _protectedClosed) return;
       setState(() => _ready = true);
       _ctrl.play();
     }).catchError((Object _) {
@@ -647,7 +735,7 @@ class _VideoViewerState extends State<_VideoViewer> {
   }
 
   Future<void> _download() async {
-    if (!widget.allowDownload || _downloading) return;
+    if (!widget.allowDownload || _protected || _downloading) return;
     setState(() => _downloading = true);
     try {
       await downloadMediaUrl(widget.url, kind: 'video');
@@ -660,7 +748,27 @@ class _VideoViewerState extends State<_VideoViewer> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_protected && state != AppLifecycleState.resumed) {
+      _closeProtected();
+      unawaited(_ctrl.pause().catchError((Object _) {}));
+      if (mounted) {
+        setState(() {});
+        if (ModalRoute.of(context)?.isCurrent == true) Navigator.of(context).pop();
+      }
+    }
+  }
+
+  void _closeProtected() {
+    if (!_protected || _protectedClosed) return;
+    _protectedClosed = true;
+    unawaited(closeViewOnceDelivery(widget.url));
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _closeProtected();
     if (widget.onScreenshot != null) {
       SecureScreen.onScreenshot = _prevScreenshot;
     }
@@ -670,6 +778,7 @@ class _VideoViewerState extends State<_VideoViewer> {
 
   @override
   Widget build(BuildContext context) {
+    if (_protectedClosed) return const Scaffold(backgroundColor: Colors.black);
     final v = _ctrl.value;
     final pad = MediaQuery.paddingOf(context);
     final pct = v.duration.inMilliseconds == 0 ? 0.0 : v.position.inMilliseconds / v.duration.inMilliseconds;
@@ -697,7 +806,7 @@ class _VideoViewerState extends State<_VideoViewer> {
           child: Row(children: [
             IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(LucideIcons.x, color: Colors.white)),
             const Spacer(),
-            if (widget.allowDownload)
+            if (widget.allowDownload && !_protected)
               IconButton(
                 onPressed: _downloading ? null : _download,
                 icon: _downloading

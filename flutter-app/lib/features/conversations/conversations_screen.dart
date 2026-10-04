@@ -21,6 +21,8 @@ import '../../core/theme/layout.dart';
 import '../../shared/app_update_banner.dart';
 import '../../shared/widgets.dart';
 import '../notifications/notifications_controller.dart';
+import '../auth/auth_controller.dart';
+import 'conversation_cache.dart';
 import '../stories/stories_strip.dart';
 import 'active_conversation.dart';
 import 'avatar_overrides.dart';
@@ -29,7 +31,6 @@ import 'conversations_list_controller.dart';
 import 'hidden_chats_vault.dart';
 import 'message_requests_panel.dart';
 
-const _cacheKey = 'nexchat_conversations_cache';
 
 /// views/ConversationsView.vue (mobile layout of MessagingLayout).
 class ConversationsScreen extends ConsumerStatefulWidget {
@@ -44,6 +45,9 @@ class ConversationsScreen extends ConsumerStatefulWidget {
 
 class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   String _filter = 'all';
+  late final String _accountId;
+  String get _cacheKey => ConversationCache.inboxKey(_accountId, _filter);
+  bool get _sameAccount => mounted && ref.read(authProvider).user?.id == _accountId;
   final _search = TextEditingController();
   bool _ready = false;
   bool _loading = true;
@@ -64,6 +68,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   @override
   void initState() {
     super.initState();
+    _accountId = ref.read(authProvider).user?.id ?? '';
     _listScroll.addListener(_onListScroll);
     Future.microtask(() {
       if (!mounted) return;
@@ -113,6 +118,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       ];
 
   Future<void> _fetch({bool background = false}) async {
+    if (!_sameAccount) return;
+    final requestedFilter = _filter;
+    final requestedSearch = _search.text.trim();
     final filterCtrl = ref.read(conversationsListFilterProvider.notifier);
     if (ref.read(conversationsListFilterProvider) != _filter) {
       filterCtrl.setFilter(_filter);
@@ -153,12 +161,13 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         'pageSize': _pageSize,
         if (_search.text.trim().isNotEmpty) 'search': _search.text.trim(),
       }).timeout(const Duration(seconds: 25));
+      if (!_sameAccount || _filter != requestedFilter || _search.text.trim() != requestedSearch) return;
       final items = _normalize(asJsonList(data));
       list.setList(items);
       final hasMore = data is Map ? (data['hasMore'] == true || data['HasMore'] == true) : items.length >= _pageSize;
       _hasMore = hasMore;
       _page = 1;
-      if (_filter == 'all') Prefs.instance.setString(_cacheKey, jsonEncode(items));
+      Prefs.instance.setString(_cacheKey, jsonEncode(items));
     } catch (e) {
       final msg = Api.errorMessage(e);
       if (msg.contains('رقم الهاتف')) _needPhone = true;
@@ -175,6 +184,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _loading) return;
+    if (!_sameAccount) return;
+    final requestedFilter = _filter;
+    final requestedSearch = _search.text.trim();
     setState(() => _loadingMore = true);
     try {
       final next = _page + 1;
@@ -184,6 +196,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         'pageSize': _pageSize,
         if (_search.text.trim().isNotEmpty) 'search': _search.text.trim(),
       });
+      if (!_sameAccount || _filter != requestedFilter || _search.text.trim() != requestedSearch) return;
       final items = _normalize(asJsonList(data));
       ref.read(conversationsListProvider.notifier).appendList(items);
       final hasMore = data is Map ? (data['hasMore'] == true || data['HasMore'] == true) : items.length >= _pageSize;

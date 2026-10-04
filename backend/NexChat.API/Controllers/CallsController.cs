@@ -21,7 +21,7 @@ public class CallsController(AppDbContext db, IConversationMessageCrypto message
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    public record CallSignalingDeclineDto(Guid ConversationId, bool Busy = false, string? Outcome = null);
+    public record CallSignalingDeclineDto(Guid ConversationId = default, bool Busy = false, string? Outcome = null, Guid? CallId = null, Guid? SessionId = null);
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CallHistoryItemDto>>> List([FromQuery] int take = 100)
@@ -101,10 +101,11 @@ public class CallsController(AppDbContext db, IConversationMessageCrypto message
         [FromBody] CallSignalingDeclineDto dto,
         [FromServices] IServiceScopeFactory scopes)
     {
-        if (dto == null || dto.ConversationId == Guid.Empty)
+        if (dto == null || (dto.ConversationId == Guid.Empty && (dto.SessionId == null || dto.SessionId == Guid.Empty)))
             return BadRequest(new { message = "conversationId مطلوب" });
-        var ok = await ConversationHub.DeclineFromHttpAsync(
-            scopes, CurrentUserId, dto.ConversationId, dto.Busy, dto.Outcome);
+        var ok = dto.SessionId is { } sid && sid != Guid.Empty
+            ? await ChatHub.DeclineFromHttpAsync(scopes, CurrentUserId, sid, dto.Outcome, dto.CallId)
+            : await ConversationHub.DeclineFromHttpAsync(scopes, CurrentUserId, dto.ConversationId, dto.Busy, dto.Outcome, dto.CallId);
         return ok ? Ok(new { declined = true }) : NotFound(new { message = "المكالمة غير موجودة أو غير مسموحة" });
     }
 

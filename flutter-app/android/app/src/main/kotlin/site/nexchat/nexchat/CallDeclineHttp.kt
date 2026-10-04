@@ -16,19 +16,19 @@ object CallDeclineHttp {
     private val io = Executors.newSingleThreadExecutor()
     private const val TAG = "CallDeclineHttp"
 
-    fun declineAsync(context: Context, conversationId: String?, outcome: String) {
-        if (conversationId.isNullOrBlank()) return
+    fun declineAsync(context: Context, conversationId: String?, outcome: String, callId: String? = null, sessionId: String? = null) {
+        if ((conversationId.isNullOrBlank() && sessionId.isNullOrBlank()) || callId.isNullOrBlank()) return
         val app = context.applicationContext
         io.execute {
             try {
-                decline(app, conversationId, outcome)
+                decline(app, conversationId, outcome, callId, sessionId)
             } catch (e: Exception) {
                 Log.w(TAG, "decline failed: ${e.message}")
             }
         }
     }
 
-    private fun decline(context: Context, conversationId: String, outcome: String) {
+    private fun decline(context: Context, conversationId: String?, outcome: String, callId: String, sessionId: String?) {
         val flutterPrefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val token = flutterPrefs.getString("flutter.nexchat_native_token", null)?.trim().orEmpty()
         val apiBase = flutterPrefs.getString("flutter.nexchat_native_api", null)?.trim().orEmpty()
@@ -48,11 +48,12 @@ object CallDeclineHttp {
             setRequestProperty("Authorization", "Bearer $token")
         }
         val body = JSONObject()
-            .put("conversationId", conversationId)
+            .put("callId", callId)
             .put("busy", false)
             .put("outcome", outcome)
-            .toString()
-        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body) }
+        if (!conversationId.isNullOrBlank()) body.put("conversationId", conversationId)
+        else body.put("sessionId", sessionId)
+        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
         val code = conn.responseCode
         conn.disconnect()
         if (code !in 200..299) {

@@ -22,7 +22,9 @@ import 'whatsapp_call_ui.dart';
 /// Replaces the current route with [path], popping instead when it is already the route underneath (avoids a duplicate chat screen).
 void returnToRoute(GoRouter router, String path) {
   final matches = router.routerDelegate.currentConfiguration.matches;
-  final below = matches.length >= 2 ? matches[matches.length - 2].matchedLocation : null;
+  final below = matches.length >= 2
+      ? matches[matches.length - 2].matchedLocation
+      : null;
   if (below == path && router.canPop()) {
     router.pop();
   } else {
@@ -36,14 +38,24 @@ final _videoScreenMounts = <String, int>{};
 int videoScreenMounts(String sessionId) => _videoScreenMounts[sessionId] ?? 0;
 
 /// Shows the call screen for [sessionId], popping back to an existing one instead of stacking a second instance.
-void openVideoRoute(GoRouter router, String sessionId, Map<String, Object?> extra) {
+void openVideoRoute(
+  GoRouter router,
+  String sessionId,
+  Map<String, Object?> extra,
+) {
   final path = router.routerDelegate.currentConfiguration.uri.path;
   if (path == '/video/$sessionId' || _openingVideoSid == sessionId) return;
   final matches = router.routerDelegate.currentConfiguration.matches;
-  final i = matches.lastIndexWhere((m) => m.matchedLocation == '/video/$sessionId');
+  final i = matches.lastIndexWhere(
+    (m) => m.matchedLocation == '/video/$sessionId',
+  );
   if (i >= 0) {
     var above = matches.length - 1 - i;
-    if (above > 0) router.routerDelegate.navigatorKey.currentState?.popUntil((_) => above-- <= 0);
+    if (above > 0) {
+      router.routerDelegate.navigatorKey.currentState?.popUntil(
+        (_) => above-- <= 0,
+      );
+    }
     return;
   }
   _openingVideoSid = sessionId;
@@ -52,6 +64,7 @@ void openVideoRoute(GoRouter router, String sessionId, Map<String, Object?> extr
     queryParameters: {
       if (extra['voiceOnly'] == true) 'voice': '1',
       if (extra['fromConversation'] == true) 'conv': '1',
+      if (extra['callId'] != null) 'callId': '${extra['callId']}',
     },
   ).toString();
   router.push(loc, extra: extra);
@@ -62,8 +75,15 @@ void openVideoRoute(GoRouter router, String sessionId, Map<String, Object?> extr
 
 /// views/VideoCallView.vue
 class VideoCallScreen extends ConsumerStatefulWidget {
-  const VideoCallScreen({super.key, required this.sessionId, this.voiceOnly = false, this.fromConversation = false});
+  const VideoCallScreen({
+    super.key,
+    required this.sessionId,
+    this.callId,
+    this.voiceOnly = false,
+    this.fromConversation = false,
+  });
   final String sessionId;
+  final String? callId;
   final bool voiceOnly;
   final bool fromConversation;
 
@@ -75,6 +95,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   final _lk = LiveKitService.instance;
   late final ActiveCallController _activeCtrl;
   late final GoRouter _router;
+  late final String _callId;
+  late final bool _isConversationContext;
+  bool _cleanupSent = false;
   bool _muted = false;
   bool _speakerOn = true;
   bool _cameraOff = false;
@@ -93,7 +116,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   int _ownedGen = 0;
 
   String get _sid => widget.sessionId;
-  bool get _voiceOnly => widget.voiceOnly || (_activeCtrl.current.sessionId == _sid && _activeCtrl.current.voiceOnly);
+  bool get _voiceOnly =>
+      widget.voiceOnly ||
+      (_activeCtrl.current.sessionId == _sid && _activeCtrl.current.voiceOnly);
 
   @override
   void initState() {
@@ -102,6 +127,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     if (_openingVideoSid == _sid) _openingVideoSid = null;
     _activeCtrl = ref.read(activeCallProvider.notifier);
     _router = GoRouter.of(context);
+    _callId = widget.callId ?? _activeCtrl.current.callId ?? '';
+    _isConversationContext =
+        widget.fromConversation ||
+        _activeCtrl.current.isConversation ||
+        ref.read(activeConversationProvider).conversationId == _sid;
     // Voice defaults to earpiece (Vue). Emulator keeps speaker so proximity never blacks the screen.
     _speakerOn = !_voiceOnly;
     unawaited(SecureScreen.acquire());
@@ -109,17 +139,12 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       if (!mounted) return;
       _syncMeta();
       unawaited(CallNative.clearLockScreen());
-      unawaited(CallNative.dismissIncoming());
+      unawaited(CallNative.acceptIncoming(callId: _callId));
       // Second frame: chrome is painted before permissions / LiveKit / FGS.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_start());
       });
     });
-  }
-
-  bool get _isConversationContext {
-    final conv = ref.read(activeConversationProvider);
-    return conv.conversationId == _sid || _activeCtrl.current.isConversation || widget.fromConversation;
   }
 
   CallPartner get _partner => resolveCallPartner(ref, _sid);
@@ -129,6 +154,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     final ac = _activeCtrl.current;
     _activeCtrl.syncMeta(
       sessionId: _sid,
+      callId: _callId,
       voiceOnly: widget.voiceOnly || ac.voiceOnly,
       isConversation: _isConversationContext,
       partnerName: p.name.isNotEmpty ? p.name : ac.partnerName,
@@ -159,8 +185,16 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   String _mediaErrorMessage(Object e) {
     final s = '$e'.toLowerCase();
-    if (s.contains('notallowed') || s.contains('permission') || s.contains('denied')) return t('videoCall.permissionDenied');
-    if (s.contains('notfound') || s.contains('not found') || s.contains('no device')) return t('videoCall.deviceNotFound');
+    if (s.contains('notallowed') ||
+        s.contains('permission') ||
+        s.contains('denied')) {
+      return t('videoCall.permissionDenied');
+    }
+    if (s.contains('notfound') ||
+        s.contains('not found') ||
+        s.contains('no device')) {
+      return t('videoCall.deviceNotFound');
+    }
     return t('videoCall.mediaError');
   }
 
@@ -170,11 +204,24 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         final emu = await CallNative.isEmulator();
         if (mounted && emu) setState(() => _speakerOn = true);
       }
-      final statuses = await [Permission.microphone, if (!_voiceOnly) Permission.camera].request();
+      final statuses = await [
+        Permission.microphone,
+        if (!_voiceOnly) Permission.camera,
+      ].request();
       if (!mounted) return;
       if (statuses.values.any((s) => !s.isGranted && !s.isLimited)) {
         _error = t('videoCall.permissionDenied');
         _exitAfterFailure();
+        return;
+      }
+      if (!mounted ||
+          _callId.isEmpty ||
+          !sameCall(
+            _activeCtrl.current.sessionId,
+            _activeCtrl.current.callId,
+            _sid,
+            _callId,
+          )) {
         return;
       }
       final h = _lk.handlers;
@@ -203,10 +250,24 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         if (mounted) setState(() {});
       };
       final p = _partner;
-      final reused = await _lk.join(_sid,
-          voiceOnly: _voiceOnly, partnerName: p.name.isNotEmpty ? p.name : _activeCtrl.current.partnerName);
+      final reused = await _lk.join(
+        _sid,
+        callId: _callId,
+        isConversation: _isConversationContext,
+        voiceOnly: _voiceOnly,
+        partnerName: p.name.isNotEmpty
+            ? p.name
+            : _activeCtrl.current.partnerName,
+      );
       if (reused == null) {
-        if (_lk.isInSession(_sid) || (_activeCtrl.current.minimized && _activeCtrl.current.sessionId == _sid)) {
+        if ((_lk.ownsCall(_sid, _callId) && _lk.isInSession(_sid)) ||
+            (_activeCtrl.current.minimized &&
+                sameCall(
+                  _activeCtrl.current.sessionId,
+                  _activeCtrl.current.callId,
+                  _sid,
+                  _callId,
+                ))) {
           if (mounted) {
             _room = _lk.room;
             _ownedGen = _lk.generation;
@@ -223,9 +284,18 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
         if (videoScreenMounts(_sid) <= 1) _exitAfterFailure();
         return;
       }
-      if (!mounted) {
+      if (!mounted ||
+          !sameCall(
+            _activeCtrl.current.sessionId,
+            _activeCtrl.current.callId,
+            _sid,
+            _callId,
+          )) {
         final ac = _activeCtrl.current;
-        if (!(ac.minimized && ac.sessionId == _sid)) unawaited(_lk.leave());
+        if (!(ac.minimized &&
+            sameCall(ac.sessionId, ac.callId, _sid, _callId))) {
+          unawaited(_lk.leaveCall(_sid, _callId));
+        }
         return;
       }
       _room = _lk.room;
@@ -254,14 +324,18 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   }
 
   Future<void> _armNativeAndTimer({required bool reused}) async {
+    if (!_lk.ownsCall(_sid, _callId)) return;
     if (reused) {
       final started = _activeCtrl.current.startedAt;
-      _duration.value = started == null ? 0 : DateTime.now().difference(started).inSeconds;
+      _duration.value = started == null
+          ? 0
+          : DateTime.now().difference(started).inSeconds;
     }
     if (!_nativeStarted) {
       _nativeStarted = true;
       final p = _partner;
       await CallNative.start(
+        callId: _callId,
         video: !_voiceOnly,
         title: t('videoCall.callInBackground'),
         text: p.name.isNotEmpty ? p.name : _activeCtrl.current.partnerName,
@@ -277,7 +351,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
   Future<void> _applySpeaker() async {
     try {
-      await AudioManager.instance.setSpeakerOutputPreferred(_speakerOn, force: _speakerOn);
+      await AudioManager.instance.setSpeakerOutputPreferred(
+        _speakerOn,
+        force: _speakerOn,
+      );
     } catch (_) {}
     unawaited(CallNative.proximity(_connected && _voiceOnly && !_speakerOn));
   }
@@ -290,27 +367,42 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _peerWait?.cancel();
     if (mounted) setState(() => _initializing = false);
     _notifyServerCallCleanup();
-    unawaited(_lk.leave());
+    unawaited(_lk.leaveCall(_sid, _callId));
     _goBackAfterCall();
   }
 
   /// Clears server busy/pending: End if Media connected, else Decline (cancel).
   /// Also used when CallKit/FSI is dismissed after connect.
   void _notifyServerCallCleanup() {
+    if (_cleanupSent || _callId.isEmpty) return;
+    _cleanupSent = true;
     final secs = _duration.value;
     if (_isConversationContext) {
       if (_connected) {
         unawaited(
           Hubs.conversation
               .ensureConnected()
-              .then((_) => Hubs.conversation.invoke('EndVideoCall', [_sid, secs]))
+              .then(
+                (_) => Hubs.conversation.invoke('EndVideoCallV2', [
+                  _sid,
+                  secs,
+                  _callId,
+                ]),
+              )
               .catchError((_) => null),
         );
       } else {
         unawaited(
           Hubs.conversation
               .ensureConnected()
-              .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_sid]))
+              .then(
+                (_) => Hubs.conversation.invoke('DeclineVideoCallV2', [
+                  _sid,
+                  false,
+                  'cancelled',
+                  _callId,
+                ]),
+              )
               .catchError((_) => null),
         );
       }
@@ -321,32 +413,51 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       unawaited(
         Hubs.chat
             .ensureConnected()
-            .then((_) => Hubs.chat.invoke('EndVideoCall', [_sid, secs]))
+            .then(
+              (_) => Hubs.chat.invoke('EndVideoCallV2', [_sid, secs, _callId]),
+            )
             .catchError((_) => null),
       );
     } else {
       unawaited(
         Hubs.chat
             .ensureConnected()
-            .then((_) => Hubs.chat.invoke('DeclineVideoCall', [_sid]))
+            .then(
+              (_) => Hubs.chat.invoke('DeclineVideoCallV2', [
+                _sid,
+                'cancelled',
+                _callId,
+              ]),
+            )
             .catchError((_) => null),
       );
     }
   }
 
   void _goBackAfterCall() {
+    _notifyServerCallCleanup();
     final toConv = _isConversationContext;
-    _activeCtrl.clear();
+    unawaited(_lk.leaveCall(_sid, _callId));
+    if (sameCall(
+      _activeCtrl.current.sessionId,
+      _activeCtrl.current.callId,
+      _sid,
+      _callId,
+    )) {
+      _activeCtrl.clear();
+    }
     if (!mounted) return;
     returnToRoute(_router, toConv ? '/conversation/$_sid' : '/chat/$_sid');
   }
 
   void _openChatDuringCall() {
+    if (_initializing) return;
     final toConv = _isConversationContext;
     final p = _partner;
     final ac = _activeCtrl.current;
     _activeCtrl.syncMeta(
       sessionId: _sid,
+      callId: _callId,
       voiceOnly: _voiceOnly,
       isConversation: toConv,
       partnerName: p.name.isNotEmpty ? p.name : ac.partnerName,
@@ -377,27 +488,58 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       return;
     }
     final ac = _activeCtrl.current;
-    final owns = _ownedGen != 0 && _lk.generation == _ownedGen && _lk.sessionId == _sid;
-    if (ac.minimized && ac.sessionId == _sid && owns) {
+    final owns =
+        _lk.ownsCall(_sid, _callId) &&
+        (_ownedGen == 0 || _lk.generation == _ownedGen);
+    if (ac.minimized &&
+        sameCall(ac.sessionId, ac.callId, _sid, _callId) &&
+        owns) {
       _lk.handlers
         ..onParticipantLeft = () {
-          unawaited(_lk.leave());
-          _activeCtrl.clear();
+          _notifyServerCallCleanup();
+          unawaited(_lk.leaveCall(_sid, _callId));
+          if (sameCall(
+            _activeCtrl.current.sessionId,
+            _activeCtrl.current.callId,
+            _sid,
+            _callId,
+          )) {
+            _activeCtrl.clear();
+          }
         }
         ..onDisconnected = () {
-          unawaited(_lk.leave());
-          _activeCtrl.clear();
+          _notifyServerCallCleanup();
+          unawaited(_lk.leaveCall(_sid, _callId));
+          if (sameCall(
+            _activeCtrl.current.sessionId,
+            _activeCtrl.current.callId,
+            _sid,
+            _callId,
+          )) {
+            _activeCtrl.clear();
+          }
         }
         ..onRemoteTrack = null
         ..onLocalTrack = null
         ..onMediaError = null
         ..onReconnecting = null
         ..onTracksChanged = null;
-    } else if (owns) {
+    } else if (owns || sameCall(ac.sessionId, ac.callId, _sid, _callId)) {
       // Leaving call UI without hangup button (back/system) — clear server busy.
       _notifyServerCallCleanup();
-      unawaited(_lk.leave());
-      if (ac.sessionId == _sid) Future.microtask(_activeCtrl.clear);
+      unawaited(_lk.leaveCall(_sid, _callId));
+      if (sameCall(ac.sessionId, ac.callId, _sid, _callId)) {
+        Future.microtask(() {
+          if (sameCall(
+            _activeCtrl.current.sessionId,
+            _activeCtrl.current.callId,
+            _sid,
+            _callId,
+          )) {
+            _activeCtrl.clear();
+          }
+        });
+      }
     }
     super.dispose();
   }
@@ -434,13 +576,15 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     _suppressDisconnectNavigate = true;
     _peerWait?.cancel();
     _notifyServerCallCleanup();
-    unawaited(_lk.leave());
+    unawaited(_lk.leaveCall(_sid, _callId));
     _goBackAfterCall();
   }
 
-  Widget _timeText(TextStyle style, {String prefix = ''}) => ValueListenableBuilder<int>(
+  Widget _timeText(TextStyle style, {String prefix = ''}) =>
+      ValueListenableBuilder<int>(
         valueListenable: _duration,
-        builder: (_, sec, _) => Text('$prefix${formatCallTime(sec)}', style: style),
+        builder: (_, sec, _) =>
+            Text('$prefix${formatCallTime(sec)}', style: style),
       );
 
   @override
@@ -459,49 +603,65 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     final status = _error.isNotEmpty
         ? _error
         : _reconnecting
-            ? t('videoCall.reconnecting')
-            : _connected
-                ? (vo ? t('videoCall.voiceCallLive') : '')
-                : t('conversationChat.connectingCall');
+        ? t('videoCall.reconnecting')
+        : _connected
+        ? (vo ? t('videoCall.voiceCallLive') : '')
+        : t('conversationChat.connectingCall');
 
     Widget controls() => Material(
-          color: Colors.transparent,
-          elevation: 24,
-          child: Container(
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [Color(0xF0000000), Color(0x00000000)],
-              ),
-            ),
-            padding: EdgeInsets.fromLTRB(20, 16, 20, 28 + pad.bottom),
-            child: Row(
-              textDirection: TextDirection.ltr,
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                CallCircleButton(icon: _muted ? LucideIcons.micOff : LucideIcons.mic, onTap: _toggleMute, active: _muted, size: 58),
-                CallCircleButton(
-                  icon: _speakerOn ? LucideIcons.volume2 : LucideIcons.volume,
-                  onTap: _toggleSpeaker,
-                  active: _speakerOn,
-                  size: 58,
-                ),
-                CallCircleButton(icon: LucideIcons.phoneOff, onTap: _endCall, background: WaCall.decline, size: 68, iconSize: 28),
-                if (!vo) ...[
-                  CallCircleButton(
-                    icon: _cameraOff ? LucideIcons.videoOff : LucideIcons.video,
-                    onTap: _toggleCamera,
-                    active: _cameraOff,
-                    size: 58,
-                  ),
-                  CallCircleButton(icon: LucideIcons.switchCamera, onTap: _flipCamera, active: _flipping, size: 58),
-                ],
-              ],
-            ),
+      color: Colors.transparent,
+      elevation: 24,
+      child: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [Color(0xF0000000), Color(0x00000000)],
           ),
-        );
+        ),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 28 + pad.bottom),
+        child: Row(
+          textDirection: TextDirection.ltr,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            CallCircleButton(
+              icon: _muted ? LucideIcons.micOff : LucideIcons.mic,
+              onTap: _toggleMute,
+              active: _muted,
+              size: 58,
+            ),
+            CallCircleButton(
+              icon: _speakerOn ? LucideIcons.volume2 : LucideIcons.volume,
+              onTap: _toggleSpeaker,
+              active: _speakerOn,
+              size: 58,
+            ),
+            CallCircleButton(
+              icon: LucideIcons.phoneOff,
+              onTap: _endCall,
+              background: WaCall.decline,
+              size: 68,
+              iconSize: 28,
+            ),
+            if (!vo) ...[
+              CallCircleButton(
+                icon: _cameraOff ? LucideIcons.videoOff : LucideIcons.video,
+                onTap: _toggleCamera,
+                active: _cameraOff,
+                size: 58,
+              ),
+              CallCircleButton(
+                icon: LucideIcons.switchCamera,
+                onTap: _flipCamera,
+                active: _flipping,
+                size: 58,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
 
     return PopScope(
       canPop: false,
@@ -529,7 +689,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                     remote,
                     fit: VideoViewFit.cover,
                     renderMode: VideoRenderMode.texture,
-                    placeholderBuilder: (_) => const ColoredBox(color: WaCall.bgTop),
+                    placeholderBuilder: (_) =>
+                        const ColoredBox(color: WaCall.bgTop),
                   ),
                 ),
               // Chrome is always opaque for voice / waiting. For live video: solid top+bottom bars only
@@ -542,13 +703,15 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                     status: status,
                     pulse: !_connected,
                     statusExtra: _connected
-                        ? _timeText(const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 1,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ))
+                        ? _timeText(
+                            const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 1,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          )
                         : null,
                     actions: const [],
                     top: WhatsAppCallTopBar(
@@ -556,7 +719,11 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                       onMinimize: _openChatDuringCall,
                       trailing: IconButton(
                         onPressed: _openChatDuringCall,
-                        icon: const Icon(LucideIcons.messageSquare, color: Colors.white, size: 22),
+                        icon: const Icon(
+                          LucideIcons.messageSquare,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                     ),
                   ),
@@ -571,21 +738,29 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                     elevation: 24,
                     child: WhatsAppCallTopBar(
                       name: name,
-                      subtitle: _reconnecting ? t('videoCall.reconnecting') : null,
+                      subtitle: _reconnecting
+                          ? t('videoCall.reconnecting')
+                          : null,
                       onMinimize: _openChatDuringCall,
                       trailing: _connected
                           ? Padding(
                               padding: const EdgeInsets.only(right: 8),
-                              child: _timeText(const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              )),
+                              child: _timeText(
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                              ),
                             )
                           : IconButton(
                               onPressed: _openChatDuringCall,
-                              icon: const Icon(LucideIcons.messageSquare, color: Colors.white, size: 22),
+                              icon: const Icon(
+                                LucideIcons.messageSquare,
+                                color: Colors.white,
+                                size: 22,
+                              ),
                             ),
                     ),
                   ),
@@ -604,18 +779,28 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                       width: 108,
                       height: 144,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.28), width: 1.5),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.28),
+                          width: 1.5,
+                        ),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: _cameraOff || local == null
-                          ? Center(child: Icon(LucideIcons.videoOff, size: 28, color: Colors.white.withValues(alpha: 0.55)))
+                          ? Center(
+                              child: Icon(
+                                LucideIcons.videoOff,
+                                size: 28,
+                                color: Colors.white.withValues(alpha: 0.55),
+                              ),
+                            )
                           : GestureDetector(
                               onDoubleTap: _flipCamera,
                               child: VideoTrackRenderer(
                                 local,
                                 fit: VideoViewFit.cover,
                                 renderMode: VideoRenderMode.texture,
-                                mirrorMode: _lk.cameraPosition == CameraPosition.front
+                                mirrorMode:
+                                    _lk.cameraPosition == CameraPosition.front
                                     ? VideoViewMirrorMode.mirror
                                     : VideoViewMirrorMode.off,
                               ),
@@ -624,7 +809,10 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                   ),
                 ),
               Positioned(left: 0, right: 0, bottom: 0, child: controls()),
-              LoaderOverlay(show: _initializing, text: t('videoCall.preparing')),
+              LoaderOverlay(
+                show: _initializing,
+                text: t('videoCall.preparing'),
+              ),
             ],
           ),
         ),
@@ -632,5 +820,3 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     );
   }
 }
-
-

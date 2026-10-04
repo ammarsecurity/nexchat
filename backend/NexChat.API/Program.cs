@@ -13,7 +13,10 @@ using NexChat.API.Services;
 using NexChat.API.Services.StockVideo;
 using NexChat.Infrastructure.Data;
 using NexChat.Infrastructure.Services;
-var builder = WebApplication.CreateBuilder(args);
+// Maintenance is explicit and exits before migrations, hosted services or HTTP serving.
+var mediaPreflight = args.Contains("--media-preflight", StringComparer.Ordinal);
+var mediaQuarantine = args.Contains("--quarantine-legacy-view-once", StringComparer.Ordinal);
+var builder = WebApplication.CreateBuilder(args.Where(a => a != "--media-preflight" && a != "--quarantine-legacy-view-once").ToArray());
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -80,6 +83,9 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<MatchingService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SiteContentFeatureService>();
+builder.Services.AddScoped<MediaStorageService>();
+builder.Services.AddScoped<ViewOnceMediaService>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<NotificationFeaturesOptions>(
     builder.Configuration.GetSection("NotificationFeatures"));
 builder.Services.Configure<NexChat.Infrastructure.Services.OneSignalOptions>(
@@ -232,6 +238,18 @@ builder.Services.AddCors(opt =>
 );
 
 var app = builder.Build();
+
+if (mediaPreflight || mediaQuarantine)
+{
+    using var maintenanceScope = app.Services.CreateScope();
+    var maintenanceDb = maintenanceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var storage = maintenanceScope.ServiceProvider.GetRequiredService<MediaStorageService>();
+    var crypto = maintenanceScope.ServiceProvider.GetRequiredService<IConversationMessageCrypto>();
+    var report = await storage.PreflightLegacyViewOnceAsync(maintenanceDb, crypto);
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    if (mediaQuarantine) await storage.QuarantineLegacyViewOnceAsync(maintenanceDb, crypto);
+    return;
+}
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 

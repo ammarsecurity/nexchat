@@ -22,7 +22,7 @@ final _silentPaths = RegExp(
 class Api {
   Api._();
 
-  static final unauthorized = StreamController<void>.broadcast();
+  static final unauthorized = StreamController<String>.broadcast();
 
   /// stores/apiLoading.js — shown by the global overlay after 300 ms.
   static final loadingOverlay = ValueNotifier<bool>(false);
@@ -60,6 +60,8 @@ class Api {
       baseUrl: '${Env.apiUrl}/',
       connectTimeout: const Duration(seconds: 8),
       receiveTimeout: const Duration(seconds: 20),
+      // Authenticated requests never follow redirects to an unverified destination.
+      followRedirects: false,
     ),
   )..interceptors.add(
       InterceptorsWrapper(
@@ -76,10 +78,7 @@ class Api {
             );
             return;
           }
-          final token = Prefs.instance.token;
-          if (token != null && token.isNotEmpty) {
-            options.headers['Authorization'] = 'Bearer $token';
-          }
+          applyCredentialPolicy(options, Prefs.instance.token);
           if (RegExp(r'/?media/upload', caseSensitive: false).hasMatch(options.path)) {
             options.sendTimeout = mediaUploadTimeout;
             options.receiveTimeout = mediaUploadTimeout;
@@ -103,13 +102,58 @@ class Api {
           } else if (e.response != null) {
             NetworkStatus.onTransportSuccess?.call();
           }
-          if (e.response?.statusCode == 401 && e.requestOptions.extra['skipUnauthorizedEvent'] != true) {
-            unauthorized.add(null);
+          final currentToken = Prefs.instance.token;
+          final requestAuthorization = e.requestOptions.headers.entries
+              .where((entry) => entry.key.toLowerCase() == 'authorization')
+              .firstOrNull?.value;
+          if (isApiOrigin(e.requestOptions.uri) &&
+              e.response?.statusCode == 401 &&
+              e.requestOptions.extra['skipUnauthorizedEvent'] != true &&
+              currentToken != null && currentToken.isNotEmpty &&
+              requestAuthorization == 'Bearer $currentToken') {
+            // Scope the asynchronous event too: a newer login may complete before
+            // the application listener processes this rejected request.
+            unauthorized.add(currentToken);
           }
           handler.next(e);
         },
       ),
     );
+
+  /// Exact scheme, hostname and effective port; suffix matches are never trusted.
+  static bool isApiOrigin(Uri uri) {
+    final origin = Uri.parse(Env.apiUrl);
+    return (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.userInfo.isEmpty && uri.scheme == origin.scheme &&
+        uri.host.toLowerCase() == origin.host.toLowerCase() && uri.port == origin.port;
+  }
+
+  static void applyCredentialPolicy(RequestOptions options, String? token) {
+    final pinned = options.headers.entries.where((entry) => entry.key.toLowerCase() == 'authorization').firstOrNull?.value;
+    // Rebuild rather than remove/reinsert keys in Dio's custom case-insensitive
+    // LinkedHashMap. Preserve unrelated request headers exactly.
+    final headers = Map<String, dynamic>.fromEntries(
+      options.headers.entries.where((entry) => entry.key.toLowerCase() != 'authorization'),
+    );
+    if (isApiOrigin(options.uri)) {
+      options.followRedirects = false;
+      if (options.extra['preserveAuthorization'] == true) {
+        if (pinned != null) headers['Authorization'] = pinned;
+      } else if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    }
+    options.headers = headers;
+  }
+
+  /// Only protected API media players need these headers. Public downloads use a
+  /// separate credential-free client, even when their initial URL is first-party.
+  static Map<String, String> mediaAuthHeaders(String url) {
+    final uri = Uri.tryParse(absoluteUrl(url) ?? '');
+    if (uri == null || !isApiOrigin(uri)) return const {};
+    final token = Prefs.instance.token;
+    return token == null || token.isEmpty ? const {} : {'Authorization': 'Bearer $token'};
+  }
 
   static String _p(String path) => path.startsWith('/') ? path.substring(1) : path;
 
@@ -148,7 +192,10 @@ class Api {
   /// Uploaded files come back as `/uploads/...`; make them absolute against the API host.
   static String? absoluteUrl(String? url) {
     if (url == null || url.isEmpty) return null;
-    if (url.startsWith('http')) return url;
+    final parsed = Uri.tryParse(url);
+    if (parsed == null) return null;
+    if (parsed.hasScheme) return parsed.scheme == 'http' || parsed.scheme == 'https' ? url : null;
+    if (parsed.hasAuthority) return null;
     return '${Env.apiHost}${url.startsWith('/') ? '' : '/'}$url';
   }
 }

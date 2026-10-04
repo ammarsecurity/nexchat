@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/network_status.dart';
+import '../auth/auth_controller.dart';
 
 /// Mirrors stores/conversationsList.js.
 class ConversationsListController extends Notifier<List<Json>> {
   @override
-  List<Json> build() => [];
+  List<Json> build() { ref.watch(authProvider.select((s) => s.user?.id)); return []; }
 
   void setList(List<Json> items) {
     final list = List<Json>.of(items);
@@ -79,10 +80,12 @@ class ConversationsListController extends Notifier<List<Json>> {
   /// Uses the screen's active filter so an unlocked vault is not replaced by the main inbox.
   Future<void> refreshSilently() async {
     if (!NetworkStatus.online.value) return;
+    final account = ref.read(authProvider).user?.id;
     try {
       final filter = ref.read(conversationsListFilterProvider);
       final data = await Api.get('/conversations', query: {'filter': filter}, skipUnauthorized: true);
-      state = asJsonList(data);
+      if (ref.read(authProvider).user?.id != account || ref.read(conversationsListFilterProvider) != filter) return;
+      setList(asJsonList(data));
     } catch (_) {}
   }
 }
@@ -92,7 +95,7 @@ final conversationsListProvider = NotifierProvider<ConversationsListController, 
 /// Active list filter on the conversations screen (`all` / `unread` / `archived` / `hidden`).
 class ConversationsListFilterController extends Notifier<String> {
   @override
-  String build() => 'all';
+  String build() { ref.watch(authProvider.select((s) => s.user?.id)); return 'all'; }
 
   void setFilter(String value) => state = value;
 }
@@ -105,12 +108,14 @@ final totalUnreadProvider = Provider<int>((ref) => ref.watch(conversationsListPr
 /// Mirrors stores/messageRequests.js.
 class PendingRequestsController extends Notifier<int> {
   @override
-  int build() => 0;
+  int build() { ref.watch(authProvider.select((s) => s.user?.id)); return 0; }
 
   Future<void> fetch() async {
     if (!NetworkStatus.online.value) return;
+    final account = ref.read(authProvider).user?.id;
     try {
       final data = await Api.get('/message-requests/pending-count', skipUnauthorized: true);
+      if (ref.read(authProvider).user?.id != account) return;
       state = data is num ? data.toInt() : int.tryParse('$data') ?? 0;
     } catch (_) {}
   }

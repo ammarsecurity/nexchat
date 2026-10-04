@@ -45,7 +45,12 @@ class MainActivity : FlutterActivity() {
         IncomingCallPlugin.attach(channel)
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "setAuthenticatedUser" -> {
+                    IncomingCallStore.setAuthenticatedUser(applicationContext, call.argument<String>("userId"))
+                    result.success(null)
+                }
                 "start" -> {
+                    IncomingCallStore.setOngoingCall(applicationContext, call.argument<String>("callId"))
                     CallService.start(
                         applicationContext,
                         call.argument<Boolean>("video") == true,
@@ -55,6 +60,15 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "stop" -> {
+                    val callId = call.argument<String>("callId")
+                    val pending = IncomingCallStore.peek(applicationContext)
+                    val ongoing = IncomingCallStore.ongoingCall(applicationContext)
+                    if (callId != null && ((ongoing != null && ongoing != callId) ||
+                            (pending != null && !IncomingCallStore.matches(applicationContext, callId)))) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    IncomingCallStore.setOngoingCall(applicationContext, null)
                     CallService.stop(applicationContext)
                     setProximity(false)
                     applyLockScreen(false)
@@ -76,12 +90,24 @@ class MainActivity : FlutterActivity() {
                         call.argument<Boolean>("voiceOnly") == true,
                         call.argument<String>("callerName") ?: "NexChat",
                         call.argument<String>("callerAvatar"),
+                        call.argument<String>("callId"),
                     )
                     result.success(null)
                 }
+                "acceptIncoming" -> {
+                    val callId = call.argument<String>("callId")
+                    if (callId != null && IncomingCallStore.matches(applicationContext, callId)) {
+                        IncomingCallStore.markAccepted(applicationContext, callId)
+                        IncomingCallNotifier.cancel(applicationContext)
+                    }
+                    result.success(null)
+                }
                 "dismissIncoming" -> {
-                    IncomingCallNotifier.cancel(applicationContext)
-                    IncomingCallStore.clear(applicationContext)
+                    val callId = call.argument<String>("callId")
+                    if (callId == null || IncomingCallStore.matches(applicationContext, callId)) {
+                        IncomingCallNotifier.cancel(applicationContext)
+                        IncomingCallStore.clear(applicationContext)
+                    }
                     result.success(null)
                 }
                 "setForeground" -> {
@@ -144,6 +170,8 @@ class MainActivity : FlutterActivity() {
 
     private fun applyIncomingIntent(intent: Intent?) {
         if (intent == null || !intentHasIncoming(intent)) return
+        val callId = intent.getStringExtra(IncomingCallStore.EXTRA_CALL_ID)
+        if (!IncomingCallStore.acceptsRecipient(this, null) || !IncomingCallStore.matches(this, callId)) return
         val action = intent.getStringExtra(IncomingCallStore.EXTRA_ACTION) ?: IncomingCallStore.ACTION_RING
         IncomingCallStore.saveFromIntent(this, intent, action)
         if (action == IncomingCallStore.ACTION_ACCEPT || action == IncomingCallStore.ACTION_DECLINE) {

@@ -17,6 +17,19 @@ import UIKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  override func application(
+    _ application: UIApplication,
+    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+  ) {
+    let custom = userInfo["custom"] as? [String: Any]
+    let data = (custom?["a"] as? [String: Any]) ?? (userInfo["data"] as? [String: Any]) ?? [:]
+    if data["type"] as? String == "call_cancel", let callId = data["callId"] as? String {
+      IncomingCallKit.shared.dismissIncoming(clearStore: true, callId: callId, reason: data["reason"] as? String)
+    }
+    super.application(application, didReceiveRemoteNotification: userInfo, fetchCompletionHandler: completionHandler)
+  }
+
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NexChatCallChannel") else { return }
@@ -28,19 +41,30 @@ import UIKit
 
     channel.setMethodCallHandler { [weak self] call, result in
       switch call.method {
+      case "getVoipToken":
+        result(VoipPushManager.shared.currentToken)
+      case "setAuthenticatedUser":
+        let args = call.arguments as? [String: Any]
+        VoipPushManager.shared.setAuthenticatedUser(args?["userId"] as? String)
+        result(nil)
       case "proximity":
         let args = call.arguments as? [String: Any]
         UIDevice.current.isProximityMonitoringEnabled = (args?["enabled"] as? Bool) == true
         result(nil)
       case "stop":
-        UIDevice.current.isProximityMonitoringEnabled = false
-        IncomingCallKit.shared.dismissIncoming(clearStore: true)
+        let args = call.arguments as? [String: Any]
+        if IncomingCallKit.shared.stop(callId: args?["callId"] as? String) {
+          UIDevice.current.isProximityMonitoringEnabled = false
+        }
         result(nil)
       case "start":
+        let args = call.arguments as? [String: Any]
+        IncomingCallKit.shared.start(callId: args?["callId"] as? String)
         result(nil)
       case "showIncoming":
         let args = call.arguments as? [String: Any] ?? [:]
         IncomingCallKit.shared.showIncoming(
+          callId: args["callId"] as? String,
           conversationId: args["conversationId"] as? String,
           sessionId: args["sessionId"] as? String,
           voiceOnly: (args["voiceOnly"] as? Bool) == true,
@@ -48,8 +72,13 @@ import UIKit
           callerAvatar: args["callerAvatar"] as? String
         )
         result(nil)
+      case "acceptIncoming":
+        let args = call.arguments as? [String: Any]
+        if let callId = args?["callId"] as? String { IncomingCallKit.shared.acceptIncoming(callId: callId) }
+        result(nil)
       case "dismissIncoming":
-        IncomingCallKit.shared.dismissIncoming(clearStore: true)
+        let args = call.arguments as? [String: Any]
+        IncomingCallKit.shared.dismissIncoming(clearStore: true, callId: args?["callId"] as? String)
         result(nil)
       case "setForeground":
         let args = call.arguments as? [String: Any]

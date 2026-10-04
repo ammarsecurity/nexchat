@@ -663,6 +663,10 @@
     "groupLabel": "Group"
   },
   "conversationChat": {
+    "refreshFailed": "Could not refresh messages. Try again.",
+    "copy": "Copy",
+    "copied": "Text copied",
+    "quoteUnavailable": "Message unavailable",
     "empty": "Start the conversation with your first message! 👋",
     "typing": "Typing...",
     "messagePlaceholder": "Message",

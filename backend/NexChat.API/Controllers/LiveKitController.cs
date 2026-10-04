@@ -69,6 +69,14 @@ public class LiveKitController(
         if (!allowed)
             return StatusCode(403, new { message = "لا يمكن الانضمام للمكالمة. تأكد أن الجلسة أو المحادثة نشطة وأنك طرف فيها." });
 
+        // The room membership check above is necessary but not sufficient: media is
+        // granted only for this accepted attempt. Legacy clients resolve the live attempt.
+        if (!CallPresenceStore.TryGetPending(roomId, out var pending) || pending is not { Accepted: true } ||
+            CallPresenceStore.IsStale(pending) || (pending.CallerId != userId && pending.RecipientId != userId) ||
+            (req.CallId != null && req.CallId != pending.CallId))
+            return Conflict(new { message = "المكالمة انتهت أو لم تُقبل بعد" });
+        var mediaRoom = $"{roomId:N}:{pending.CallId:N}";
+
         var apiKey = config["LiveKit:ApiKey"];
         var apiSecret = config["LiveKit:ApiSecret"];
         var url = config["LiveKit:Url"] ?? "wss://livelik.tanfeeth-iq.tech";
@@ -82,7 +90,7 @@ public class LiveKitController(
             .WithGrants(new VideoGrants
             {
                 RoomJoin = true,
-                Room = req.RoomName,
+                Room = mediaRoom,
                 CanPublish = true,
                 CanSubscribe = true
             })
@@ -94,4 +102,4 @@ public class LiveKitController(
     }
 }
 
-public record LiveKitTokenRequest(string RoomName);
+public record LiveKitTokenRequest(string RoomName, Guid? CallId = null);

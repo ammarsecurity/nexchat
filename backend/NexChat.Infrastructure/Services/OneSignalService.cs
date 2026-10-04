@@ -71,6 +71,8 @@ public class OneSignalService
         Dictionary<string, string>? dataDict,
         string type)
     {
+        dataDict ??= new Dictionary<string, string>();
+        dataDict["recipientUserId"] = userId.ToString();
         var subIds = await GetRecentSubscriptionIdsAsync(userId);
 
         if (subIds.Count > 0)
@@ -93,7 +95,8 @@ public class OneSignalService
     {
         return await _db.DeviceSubscriptions
             .AsNoTracking()
-            .Where(d => d.UserId == userId && d.OneSignalPlayerId != "")
+            .Where(d => d.UserId == userId && d.OneSignalPlayerId != "" &&
+                !d.OneSignalPlayerId.StartsWith("voip:") && !d.OneSignalPlayerId.StartsWith("installation:"))
             .OrderByDescending(d => d.CreatedAt)
             .Select(d => d.OneSignalPlayerId)
             .Take(8)
@@ -130,6 +133,17 @@ public class OneSignalService
         if (type is "video_call" or "call_cancel" or "code_connected")
             AddUrgencyOptions(payload, dataDict);
 
+        if (type == "call_cancel")
+        {
+            // Ordinary data push, not PushKit: both native handlers scope by callId.
+            // Delivery is best effort; SignalR and the ring timeout remain primary.
+            payload.Remove("headings");
+            payload.Remove("contents");
+            payload.Remove("ios_sound");
+            payload.Remove("ios_interruption_level");
+            payload["content_available"] = true;
+            payload["priority"] = 5;
+        }
         return payload;
     }
 
@@ -252,6 +266,8 @@ public class OneSignalService
             ["requesterIsFeatured"] = requesterIsFeatured ? "true" : "false"
         };
 
+        if (recipientId.HasValue) data["recipientUserId"] = recipientId.Value.ToString();
+
         Dictionary<string, object> payload;
         var ids = subscriptionIds?.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray() ?? Array.Empty<string>();
 
@@ -301,7 +317,9 @@ public class OneSignalService
 
         if (data != null)
         {
-            if (data.TryGetValue("conversationId", out var cid) && !string.IsNullOrWhiteSpace(cid))
+            if (data.TryGetValue("callId", out var callId) && !string.IsNullOrWhiteSpace(callId))
+                payload["collapse_id"] = $"call_{callId}";
+            else if (data.TryGetValue("conversationId", out var cid) && !string.IsNullOrWhiteSpace(cid))
                 payload["collapse_id"] = $"call_{cid}";
             else if (data.TryGetValue("sessionId", out var sid) && !string.IsNullOrWhiteSpace(sid))
                 payload["collapse_id"] = $"call_{sid}";

@@ -663,6 +663,10 @@
     "groupLabel": "مجموعة"
   },
   "conversationChat": {
+    "refreshFailed": "تعذر تحديث الرسائل. حاول مرة أخرى.",
+    "copy": "نسخ",
+    "copied": "تم نسخ النص",
+    "quoteUnavailable": "الرسالة غير متاحة",
     "empty": "ابدأ المحادثة بأول رسالة! 👋",
     "typing": "يكتب...",
     "messagePlaceholder": "رسالة",

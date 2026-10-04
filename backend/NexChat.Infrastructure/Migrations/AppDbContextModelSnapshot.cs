@@ -261,6 +261,11 @@ namespace NexChat.Infrastructure.Migrations
                     b.Property<Guid?>("BroadcastId")
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("ClientMessageId")
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)")
+                        .UseCollation("utf8mb4_bin");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -305,6 +310,9 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.HasIndex("ConversationId", "SentAt");
 
+                    b.HasIndex("ConversationId", "SenderId", "ClientMessageId")
+                        .IsUnique();
+
                     b.ToTable("ConversationMessages");
                 });
 
@@ -316,6 +324,10 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<string>("InstallationId")
+                        .HasMaxLength(36)
+                        .HasColumnType("varchar(36)");
 
                     b.Property<string>("OneSignalPlayerId")
                         .IsRequired()
@@ -335,8 +347,11 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "OneSignalPlayerId")
-                        .IsUnique();
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("OneSignalPlayerId").IsUnique();
+                    b.HasIndex("InstallationId").IsUnique();
+                    b.HasIndex("VoipDeviceToken").IsUnique();
 
                     b.ToTable("DeviceSubscriptions");
                 });
@@ -347,10 +362,15 @@ namespace NexChat.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("ClientMessageId")
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)")
+                        .UseCollation("utf8mb4_bin");
+
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("varchar(2000)");
+                        .HasMaxLength(5000)
+                        .HasColumnType("varchar(5000)");
 
                     b.Property<Guid>("SenderId")
                         .HasColumnType("char(36)");
@@ -370,6 +390,9 @@ namespace NexChat.Infrastructure.Migrations
                     b.HasIndex("SenderId");
 
                     b.HasIndex("SessionId");
+
+                    b.HasIndex("SessionId", "SenderId", "ClientMessageId")
+                        .IsUnique();
 
                     b.ToTable("Messages");
                 });
@@ -1216,6 +1239,33 @@ namespace NexChat.Infrastructure.Migrations
                     b.ToTable("UserNotifications");
                 });
 
+            modelBuilder.Entity("NexChat.Core.Entities.ViewOnceMediaSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("MessageId", "UserId");
+
+                    b.ToTable("ViewOnceMediaSessions");
+                });
+
             modelBuilder.Entity("NexChat.Core.Entities.ViewOnceReceipt", b =>
                 {
                     b.Property<Guid>("MessageId")
@@ -1619,6 +1669,17 @@ namespace NexChat.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ViewOnceMediaSession", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.ConversationMessage", "Message")
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Message");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.ViewOnceReceipt", b =>

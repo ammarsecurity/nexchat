@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +15,6 @@ import '../../core/json.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
 import '../../core/network/network_status.dart';
-import '../../core/storage/prefs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/media.dart';
 import '../../services/ring_sound.dart';
@@ -30,41 +30,13 @@ import '../calls/whatsapp_call_ui.dart';
 import '../stories/stories_controller.dart';
 import 'active_conversation.dart';
 import 'conversations_list_controller.dart';
+import 'conversation_cache.dart';
+import 'conversation_refresh.dart';
+import 'message_contract.dart';
+import 'message_copy_action.dart';
+import 'message_outbox.dart';
 
 const reactionEmojis = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
-
-Json normalizeMsg(Map<dynamic, dynamic> m) => {
-      'id': m.s('id'),
-      'senderId': m.s('senderId'),
-      'content': m.s('content'),
-      'type': m.s('type') ?? 'text',
-      'sentAt': m.s('sentAt'),
-      'deletedForEveryone': m.b('deletedForEveryone'),
-      'isRead': m.b('isRead'),
-      'replyToMessageId': m.s('replyToMessageId'),
-      'replyToContent': m.s('replyToContent'),
-      'replyToSenderName': m.s('replyToSenderName'),
-      'replyToType': m.s('replyToType'),
-      'senderName': m.s('senderName'),
-      'senderAvatar': m.s('senderAvatar'),
-      'reactions': m.v('reactions') ?? const [],
-      'myReaction': m.s('myReaction'),
-      'disappearMode': m.i('disappearMode'),
-      'expiresAt': m.s('expiresAt'),
-      'isViewOnce': m.b('isViewOnce'),
-      'viewOnceOpened': m.b('viewOnceOpened'),
-    };
-
-bool messageIsExpired(Json m, [DateTime? now]) {
-  final at = m.date('expiresAt');
-  if (at == null) return false;
-  return !at.isAfter(now ?? DateTime.now().toUtc());
-}
-
-List<Json> withoutExpiredMessages(List<Json> msgs) {
-  final now = DateTime.now().toUtc();
-  return [for (final m in msgs) if (!messageIsExpired(m, now)) m];
-}
 
 String msgKey(Json m) => '${m['tempId'] ?? m['id']}';
 
@@ -109,11 +81,16 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   Timer? _markReadInterval;
   Timer? _saveTimer;
   bool _loading = true;
+  bool _refreshing = false;
+  Object? _refreshError;
+  late final ConversationRefreshController _refresh;
+  late final String? _sessionToken;
   bool _uploadingImage = false, _uploadingVideo = false, _uploadingAlbum = false, _uploadingVoice = false;
   Json? _replyingTo;
   Map<String, Json> _groupSenders = {};
   String? _highlighted;
   final _keys = <String, GlobalKey>{};
+  String? _outgoingCallId;
   bool _callingOut = false;
   bool _callingVoiceOnly = false;
   /// `calling` = جاري الاتصال · `ringing` = يرن عنده
@@ -125,7 +102,6 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   bool _loadingOlder = false;
   bool _showJumpFab = false;
   int _unreadWhileAway = 0;
-  bool _flushingOutbox = false;
   Timer? _typingExpire;
   Timer? _expirySweep;
   int _disappearMode = 0;
@@ -138,58 +114,95 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   late final ActiveConversationController _store;
 
-  String get _me => ref.read(authProvider).user?.id ?? '';
+  late final String _accountId;
+  String get _me => _accountId;
   bool get _uploading => _uploadingImage || _uploadingVideo || _uploadingAlbum || _uploadingVoice;
-  bool get _ownsStore => identical(_storeOwner, this);
+  bool get _ownsStore => mounted && identical(_storeOwner, this) && ref.read(authProvider).user?.id == _accountId && ref.read(authProvider).token == _sessionToken;
 
   @override
   void initState() {
     super.initState();
+    _accountId = ref.read(authProvider).user?.id ?? '';
+    _sessionToken = ref.read(authProvider).token;
     _store = ref.read(activeConversationProvider.notifier);
     _storeOwner = this;
     _joinCounts.update(_cid, (n) => n + 1, ifAbsent: () => 1);
     WidgetsBinding.instance.addObserver(this);
     unawaited(SecureScreen.acquire());
+    _refresh = ConversationRefreshController(
+      conversation: _cid,
+      isCurrent: () => _ownsStore && ref.read(activeConversationProvider).conversationId == _cid,
+      load: () async => Map<String, dynamic>.from((await Api.dio.get(
+        'conversations/$_cid/messages',
+        options: Options(headers: {'Authorization': 'Bearer $_sessionToken'},
+          extra: {'preserveAuthorization': true}),
+      )).data as Map),
+      readMessages: () => ref.read(activeConversationProvider).messages,
+      apply: (messages, hasMore) {
+        _store.setMessages(messages);
+        _hasMore = hasMore;
+        for (final m in messages) {
+          if (m.str('senderId') == _accountId && m['status'] == 'sent') {
+            unawaited(MessageOutbox.acknowledge(_accountId, m));
+          }
+        }
+        _scheduleExpirySweep();
+        _saveDebounced();
+        _scrollToBottom();
+        _markReadDebounced();
+      },
+      onState: (loading, error) {
+        if (_ownsStore) setState(() { _refreshing = loading; _refreshError = error; });
+      },
+    );
+    ref.listenManual(conversationRefreshIntentProvider, (_, intent) {
+      if (intent.conversation == _cid) unawaited(_refresh.refresh());
+    });
     Future.microtask(_init);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _markRead();
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refresh.refresh());
+      _markRead();
+    }
   }
 
-  String get _cacheKey => 'nexchat_msgs_$_cid';
-  String get _outboxKey => 'nexchat_outbox_$_cid';
+  void _saveNow() {
+    if (!_ownsStore) return;
+    final active = ref.read(activeConversationProvider);
+    if (active.conversationId != _cid) return;
+    unawaited(ConversationCache.save(_accountId, _cid, active.messages));
+    _persistOutbox();
+  }
 
   void _saveDebounced() {
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 400), () {
-      final active = ref.read(activeConversationProvider);
-      if (active.conversationId != _cid) return;
-      final list = withoutExpiredMessages(
-        active.messages.where((m) => m['status'] != 'pending' && m['status'] != 'failed').toList(),
-      );
-      final tail = list.length > 150 ? list.sublist(list.length - 150) : list;
-      Prefs.instance.setString(_cacheKey, jsonEncode(tail));
-      _persistOutbox();
-    });
+    _saveTimer = Timer(const Duration(milliseconds: 400), _saveNow);
   }
 
   void _persistOutbox() {
+    if (!_ownsStore) return;
     final active = ref.read(activeConversationProvider);
     if (active.conversationId != _cid) return;
-    final pending = active.messages
-        .where((m) => (m['status'] == 'pending' || m['status'] == 'failed') && (m.s('type') ?? 'text') == 'text')
-        .toList();
-    Prefs.instance.setString(_outboxKey, pending.isEmpty ? null : jsonEncode(pending));
+    for (final message in active.messages) {
+      if ((message['status'] == 'pending' || message['status'] == 'failed') && (message.s('type') ?? 'text') == 'text') {
+        unawaited(MessageOutbox.enqueue(_accountId, {...message, 'conversationId': _cid}));
+      }
+    }
   }
 
-  List<Json> _readOutbox() {
-    try {
-      return asJsonList(jsonDecode(Prefs.instance.getString(_outboxKey) ?? '[]'));
-    } catch (_) {
-      return [];
-    }
+  bool _accepts(Object? payload) => _ownsStore && payload is Map && belongsToConversation(payload, _cid);
+
+  void _deleteMessage(Object? payload, {required bool everyone}) {
+    if (!_accepts(payload)) return;
+    final id = (payload as Map).str('messageId');
+    if (id.isEmpty) return;
+    if (everyone) { _store.setDeletedForEveryone(id); } else { _refresh.removedIds.add(id); _store.removeMessage(id); }
+    if (_replyingTo?.str('id') == id && mounted) setState(() => _replyingTo = null);
+    unawaited(ConversationCache.redact(_accountId, _cid, [id]));
+    _saveNow();
   }
 
   Future<void> _init() async {
@@ -202,28 +215,9 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
             'avatar': fromList.s('partnerAvatar'),
             'isOnline': fromList.b('partnerIsOnline'),
           };
-    var isGroup = fromList?.b('isGroup') ?? false;
-    var isSupport = fromList?.b('isSupport') ?? false;
-    var isOfficial = isOfficialConversation(fromList);
-    if (fromList == null && ref.read(networkProvider)) {
-      try {
-        final data = await Api.get('/conversations/$_cid') as Map;
-        if (data.s('type') == 'group') {
-          isGroup = true;
-          partner = {'id': _cid, 'name': data.s('groupName') ?? 'مجموعة', 'avatar': data.s('groupImageUrl')};
-        } else if (data.s('partnerId') != null) {
-          isSupport = data.b('isSupport');
-          isOfficial = data.b('isOfficial') || data.b('isReadOnly');
-          partner = {
-            'id': data.s('partnerId'),
-            'name': data.s('partnerName') ?? '',
-            'avatar': data.s('partnerAvatar'),
-            'isOnline': data.b('partnerIsOnline'),
-            'uniqueCode': isOfficial ? 'NX-NEWS' : (isSupport ? 'NX-SUPPORT' : null),
-          };
-        }
-      } catch (_) {}
-    }
+    final isGroup = fromList?.b('isGroup') ?? false;
+    final isSupport = fromList?.b('isSupport') ?? false;
+    final isOfficial = isOfficialConversation(fromList);
     if (!mounted || !_ownsStore) return;
     if (isOfficial) {
       partner = {
@@ -235,39 +229,50 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _store.setConversation(_cid, partner, isGroup: isGroup, isSupport: isSupport, isOfficial: isOfficial);
     if (isGroup && ref.read(networkProvider)) _fetchGroupSenders();
 
-    final cached = Prefs.instance.getString(_cacheKey);
-    if (cached != null) {
-      try {
-        final msgs = withoutExpiredMessages(asJsonList(jsonDecode(cached)));
-        final outbox = _readOutbox();
-        final ids = msgs.map((m) => m['tempId'] ?? m['id']).toSet();
-        final merged = [...msgs, ...outbox.where((m) => !ids.contains(m['tempId'] ?? m['id']))];
-        _store.setMessages(merged);
-        _scrollToBottom(force: true);
-        _scheduleExpirySweep();
-      } catch (_) {}
-    }
+    final msgs = ConversationCache.read(_accountId, _cid);
+    final outbox = MessageOutbox.read(_accountId, _cid);
+    final ids = msgs.map(clientMessageId).where((id) => id.isNotEmpty).toSet();
+    _store.setMessages([...msgs, ...outbox.where((m) => !ids.contains(clientMessageId(m)))]);
+    _scrollToBottom(force: true);
+    _scheduleExpirySweep();
     setState(() => _loading = false);
     _scroll.addListener(_onScroll);
 
+    final ackSub = MessageOutbox.acknowledgments.stream.listen((event) {
+      if (event.account != _accountId || !_accepts(event.message)) return;
+      if (!_store.updatePendingMessage(event.message)) _store.addMessage(event.message);
+      _saveDebounced();
+    });
+    final failedSub = MessageOutbox.failures.stream.listen((event) {
+      if (!_ownsStore || event.account != _accountId || event.conversation != _cid) return;
+      _store.updateByTempId(event.clientId, {'status': 'failed'});
+    });
+    _disposers.add(() { unawaited(ackSub.cancel()); unawaited(failedSub.cancel()); });
     final h = Hubs.conversation;
     _disposers.addAll([
       h.on('ConversationListUpdated', (a) => _onListUpdated(a.firstOrNull)),
       h.on('ReceiveMessage', (a) => _onReceive(a.firstOrNull)),
-      h.on('UserTyping', (_) {
+      h.on('UserTypingV2', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         _store.setTyping(true);
         _typingExpire?.cancel();
         _typingExpire = Timer(const Duration(seconds: 3), () => _store.setTyping(false));
       }),
-      h.on('UserStoppedTyping', (_) {
+      h.on('UserStoppedTypingV2', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         _typingExpire?.cancel();
         _store.setTyping(false);
       }),
-      h.on('MessageDeletedForMe', (a) => _store.removeMessage('${a.firstOrNull}')),
-      h.on('MessageDeletedForEveryone', (a) => _store.setDeletedForEveryone('${a.firstOrNull}')),
+      h.on('MessageDeletedForMeV2', (a) => _deleteMessage(a.firstOrNull, everyone: false)),
+      h.on('MessageDeletedForEveryoneV2', (a) => _deleteMessage(a.firstOrNull, everyone: true)),
+      h.on('ReplyPreviewsRedacted', (a) {
+        if (!_accepts(a.firstOrNull)) return;
+        final ids = (a.first as Map).v('messageIds');
+        if (ids is List) { _store.redactReplies(ids.map((id) => '$id')); _saveNow(); }
+      }),
       h.on('MessageUpdated', (a) {
         final raw = a.firstOrNull;
-        if (raw is! Map) return;
+        if (!_accepts(raw) || raw is! Map) return;
         final m = Map<String, dynamic>.from(raw);
         final id = m.str('id');
         if (id.isEmpty) return;
@@ -276,16 +281,20 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           'type': m.s('type') ?? m['type'],
           'deletedForEveryone': false,
         });
+        _saveNow();
       }),
       h.on('MessagesExpired', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         final p = a.firstOrNull;
         final ids = p is Map ? p.v('messageIds') : null;
         if (ids is List && ids.isNotEmpty) {
+          _refresh.removedIds.addAll(ids.map((e) => '$e'));
           _store.removeMessages(ids.map((e) => '$e'));
           _saveDebounced();
         }
       }),
       h.on('MessagesExpiring', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         final p = a.firstOrNull;
         if (p is! Map) return;
         final ids = p.v('messageIds');
@@ -296,6 +305,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         _saveDebounced();
       }),
       h.on('DisappearModeChanged', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         final p = a.firstOrNull;
         if (p is! Map) return;
         final cid = '${p.v('conversationId') ?? p.v('ConversationId') ?? ''}';
@@ -303,21 +313,21 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         final mode = p.i('disappearMode');
         if (mounted) setState(() => _disappearMode = mode);
       }),
-      h.on('ConversationDeletedForMe', (_) {
-        ref.read(conversationsListProvider.notifier).removeConversation(_cid);
-        Prefs.instance.setString(_cacheKey, null);
-        Prefs.instance.setString(_outboxKey, null);
-        if (mounted) context.go('/conversations');
-      }),
+      h.on('ConversationDeletedForMeV2', (a) => _onConversationRemoved(a.firstOrNull)),
+      h.on('ConversationRemoved', (a) => _onConversationRemoved(a.firstOrNull)),
       h.on('ConversationJoined', (a) => _onJoined(a.firstOrNull)),
       h.on('OlderMessages', (a) => _onOlderMessages(a.firstOrNull)),
       h.on('PartnerReadUpTo', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         final p = a.firstOrNull;
         if (p is! Map || p.str('readerId') == _me) return;
+        final active = ref.read(activeConversationProvider);
+        if (!active.isGroup && p.str('readerId') != active.partner?.str('id')) return;
         final at = p.date('lastReadAt');
         if (at != null) _store.setPartnerLastReadAt(at);
       }),
       h.on('MessagesRead', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         // Private chats use PartnerReadUpTo / lastReadAt for ticks — skip heavy list patch.
         if (!ref.read(activeConversationProvider).isGroup) return;
         final p = a.firstOrNull;
@@ -328,6 +338,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         if ('${a.firstOrNull}'.contains('not found') && mounted) context.go('/conversations');
       }),
       h.on('ReactionUpdated', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         final p = a.firstOrNull;
         if (p is! Map) return;
         final mid = p.s('messageId');
@@ -337,6 +348,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         }
       }),
       h.on('ViewOnceOpened', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         final p = a.firstOrNull;
         if (p is! Map) return;
         final mid = p.s('messageId') ?? '${p.v('messageId') ?? ''}';
@@ -352,11 +364,17 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         }
       }),
       h.on('ViewOnceScreenshot', (a) {
+        if (!_accepts(a.firstOrNull)) return;
         if (mounted) showToast(context, t('conversationChat.viewOnceScreenshotTaken'));
+      }),
+      h.on('VideoCallEnded', (a) {
+        if (a.length < 3 || a[0] != _cid || a[2] != _outgoingCallId) return;
+        _stopOutgoingRingUi();
+        if (mounted) setState(() => _callingOut = false);
       }),
       h.on('VideoCallDeclined', (a) {
         final cid = '${a.firstOrNull ?? ''}';
-        if (cid.isNotEmpty && cid != _cid) return;
+        if (cid != _cid || a.length < 2 || a[1] != _outgoingCallId) return;
         if (!mounted) return;
         _stopOutgoingRingUi();
         if (ref.read(activeCallProvider).sessionId == _cid) {
@@ -373,7 +391,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       }),
       h.on('VideoCallBusy', (a) {
         final cid = '${a.firstOrNull ?? ''}';
-        if (cid.isNotEmpty && cid != _cid) return;
+        if (cid != _cid || a.length < 2 || a[1] != _outgoingCallId) return;
         if (!mounted) return;
         _stopOutgoingRingUi();
         if (ref.read(activeCallProvider).sessionId == _cid) {
@@ -390,22 +408,27 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       }),
       h.on('VideoCallRinging', (a) {
         final cid = '${a.firstOrNull ?? ''}';
-        if (cid.isNotEmpty && cid != _cid) return;
+        if (cid != _cid || a.length < 2 || a[1] != _outgoingCallId) return;
         if (!mounted || !_callingOut) return;
         if (_callPhase == 'ringing') return;
         setState(() => _callPhase = 'ringing');
         unawaited(RingSound.start(RingKind.outgoing));
       }),
-      h.on('VideoCallAccepted', (_) {
+      h.on('VideoCallAccepted', (a) {
+        if (a.length < 3 || a[0] != _cid || a[2] != _outgoingCallId) return;
         _stopOutgoingRingUi();
         if (mounted) setState(() => _callingOut = false);
       }),
     ]);
     _reconnectSub = h.onReconnected.listen((_) async {
+      if (!_ownsStore) return;
+      unawaited(_refresh.refresh());
       await h.invoke('JoinConversation', [_cid]).catchError((_) => null);
       await _flushOutbox();
     });
 
+    unawaited(_refresh.refresh());
+    if (fromList == null) unawaited(_loadMetadata());
     if (!ref.read(networkProvider)) return;
     try {
       await h.invoke('JoinConversation', [_cid]);
@@ -417,8 +440,31 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     });
   }
 
+  Future<void> _loadMetadata() async {
+    try {
+      final data = (await Api.dio.get('conversations/$_cid', options: Options(
+        headers: {'Authorization': 'Bearer $_sessionToken'}, extra: {'preserveAuthorization': true},
+      ))).data as Map;
+      if (!_ownsStore || ref.read(activeConversationProvider).conversationId != _cid) return;
+      final active = ref.read(activeConversationProvider);
+      // A joined hub may already have supplied richer metadata while HTTP ran.
+      if (active.partner != null) return;
+      final group = data.s('type') == 'group';
+      final support = data.b('isSupport');
+      final official = data.b('isOfficial') || data.b('isReadOnly');
+      final partner = group
+          ? <String, dynamic>{'id': _cid, 'name': data.s('groupName') ?? 'مجموعة', 'avatar': data.s('groupImageUrl')}
+          : <String, dynamic>{'id': data.s('partnerId'), 'name': official ? t('conversations.officialName') : data.s('partnerName') ?? '',
+              'avatar': data.s('partnerAvatar'), 'isOnline': data.b('partnerIsOnline'),
+              'uniqueCode': official ? 'NX-NEWS' : (support ? 'NX-SUPPORT' : null)};
+      _store.setConversationAndMessages(_cid, partner, isGroup: group,
+        isSupport: support, isOfficial: official, messages: active.messages);
+      if (group) unawaited(_fetchGroupSenders());
+    } catch (_) {}
+  }
+
   void _markRead() {
-    if (!mounted || !ref.read(networkProvider)) return;
+    if (!_ownsStore || !ref.read(networkProvider)) return;
     Hubs.conversation.invoke('MarkAsRead', [_cid]).catchError((_) => null);
   }
 
@@ -438,11 +484,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   void _onReceive(Object? raw) {
-    if (raw is! Map) return;
+    if (!_accepts(raw) || raw is! Map) return;
     final m = normalizeMsg(raw);
     if (messageIsExpired(m)) return;
     final fromMe = m.str('senderId').toLowerCase() == _me.toLowerCase();
     if (fromMe) {
+      unawaited(MessageOutbox.acknowledge(_accountId, {...m, 'status': 'sent'}));
       if (!_store.updatePendingMessage(m)) _store.addMessage({...m, 'status': 'sent'});
     } else {
       _store.addMessage({...m, 'status': 'sent'});
@@ -454,15 +501,20 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   void _scheduleExpirySweep() {
+    if (!_ownsStore) return;
     _expirySweep?.cancel();
+    _store.setMessages(withoutExpiredMessages(ref.read(activeConversationProvider).messages));
     final msgs = ref.read(activeConversationProvider).messages;
     DateTime? next;
     final now = DateTime.now().toUtc();
     for (final m in msgs) {
+      final replyAt = m.date('replyToExpiresAt');
+      if (replyAt != null && replyAt.isAfter(now) && (next == null || replyAt.isBefore(next))) next = replyAt;
       final at = m.date('expiresAt');
       if (at == null) continue;
       if (!at.isAfter(now)) {
         _store.removeMessage(msgId(m));
+        _saveNow();
         continue;
       }
       if (next == null || at.isBefore(next)) next = at;
@@ -470,18 +522,16 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (next == null) return;
     final wait = next.difference(now);
     _expirySweep = Timer(wait.isNegative ? Duration.zero : wait + const Duration(milliseconds: 200), () {
-      if (!mounted) return;
+      if (!_ownsStore) return;
       final kept = withoutExpiredMessages(ref.read(activeConversationProvider).messages);
-      if (kept.length != ref.read(activeConversationProvider).messages.length) {
-        _store.setMessages(kept);
-        _saveDebounced();
-      }
+      _store.setMessages(kept);
+      _saveNow();
       _scheduleExpirySweep();
     });
   }
 
   void _onJoined(Object? raw) {
-    if (raw is! Map) return;
+    if (!_ownsStore || raw is! Map || raw.str('id') != _cid) return;
     final p = raw.v('partner');
     final type = raw.v('type');
     final isGroup = type == 1 || type == 'Group' || raw.v('groupName') != null;
@@ -495,12 +545,15 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           }
         : ref.read(activeConversationProvider).partner;
     if (isGroup) partner = {'id': _cid, 'name': raw.s('groupName') ?? 'مجموعة', 'avatar': raw.s('groupImageUrl')};
-    final pending = ref.read(activeConversationProvider).messages.where((m) => m['tempId'] != null).toList();
     ref.read(conversationsListProvider.notifier).updateConversation(_cid, {'unreadCount': 0, 'UnreadCount': 0, 'partnerAvatar': partner?['avatar']});
-    final server = [for (final m in (raw.v('messages') as List? ?? const [])) if (m is Map) {...normalizeMsg(m), 'status': 'sent'}];
-    final ids = server.map((m) => m['id']).toSet();
-    final merged = withoutExpiredMessages([...server, ...pending.where((m) => !ids.contains(m['id']))])
-      ..sort((a, b) => (a.date('sentAt') ?? DateTime(0)).compareTo(b.date('sentAt') ?? DateTime(0)));
+    final server = [for (final m in (raw.v('messages') as List? ?? const [])) if (m is Map && belongsToConversation(m, _cid)) {...normalizeMsg(m), 'status': 'sent'}];
+    for (final message in server) {
+      if (message.str('senderId') == _accountId) unawaited(MessageOutbox.acknowledge(_accountId, message));
+    }
+    // Join can complete after HTTP or a live arrival. Never replace newer state.
+    final merged = mergeConversationSnapshot(baseline: const [],
+      current: ref.read(activeConversationProvider).messages, server: server,
+      hasMore: raw.b('hasMore'), removedIds: _refresh.removedIds, additive: true);
     final isSupport = ref.read(activeConversationProvider).isSupport ||
         partner?.s('uniqueCode') == 'NX-SUPPORT' ||
         (partner?.s('name') == 'دعم');
@@ -531,10 +584,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   void _onOlderMessages(Object? raw) {
-    if (raw is! Map) return;
-    if (raw.str('conversationId') != _cid && raw.str('ConversationId') != _cid) {
-      // tolerate missing id
-    }
+    if (!_accepts(raw) || raw is! Map) return;
     final server = [for (final m in (raw.v('messages') as List? ?? const [])) if (m is Map) {...normalizeMsg(m), 'status': 'sent'}];
     final hasMore = raw.b('hasMore') || raw.v('HasMore') == true;
     _store.prependMessages(server);
@@ -579,7 +629,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     String? beforeId;
     for (final m in msgs) {
       final id = m.s('id');
-      if (m['tempId'] == null && id != null && id.isNotEmpty) {
+      if (id != null && id.isNotEmpty) {
         beforeId = id;
         break;
       }
@@ -620,35 +670,21 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _scrollToBottom(force: true);
   }
 
-  Future<void> _flushOutbox() async {
-    if (_flushingOutbox || !ref.read(networkProvider)) return;
-    _flushingOutbox = true;
-    try {
-      final items = ref
-          .read(activeConversationProvider)
-          .messages
-          .where((m) => (m['status'] == 'pending' || m['status'] == 'failed') && (m.s('type') ?? 'text') == 'text' && m['tempId'] != null)
-          .toList();
-      for (final msg in items) {
-        final tempId = '${msg['tempId']}';
-        _store.updateByTempId(tempId, {'status': 'pending'});
-        try {
-          await _hubSendMessage(msg.str('content'), 'text', msg.s('replyToMessageId') ?? '');
-          _markSendResult(tempId, ok: true);
-        } catch (_) {
-          _markSendResult(tempId, ok: false);
-        }
-      }
-      _persistOutbox();
-    } finally {
-      _flushingOutbox = false;
-    }
+  Future<void> _flushOutbox() => MessageOutbox.flush(_accountId);
+
+  void _onConversationRemoved(Object? payload) {
+    if (!_accepts(payload)) return;
+    ref.read(conversationsListProvider.notifier).removeConversation(_cid);
+    unawaited(ConversationCache.forget(_accountId, _cid));
+    unawaited(MessageOutbox.forgetConversation(_accountId, _cid));
+    _store.clear();
+    if (mounted) context.go('/conversations');
   }
 
   Future<void> _recoverAfterOnline() async {
-    if (!mounted) return;
+    if (!_ownsStore) return;
     try {
-      await Hubs.conversation.forceReconnect();
+      await Hubs.conversation.resume();
       await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 20));
       await Hubs.conversation.invoke('JoinConversation', [_cid]);
       await _flushOutbox();
@@ -679,6 +715,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   @override
   void dispose() {
+    _saveNow();
+    _refresh.dispose();
     unawaited(SecureScreen.release());
     WidgetsBinding.instance.removeObserver(this);
     for (final d in _disposers) {
@@ -694,6 +732,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _outgoingRing?.cancel();
     _recordTimer?.cancel();
     if (_callingOut) {
+      final callId = _outgoingCallId;
       _callingOut = false;
       // Don't cancel if Accept already opened the LiveKit screen for this call.
       if (videoScreenMounts(_cid) == 0) {
@@ -702,7 +741,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         }
         Hubs.conversation
             .ensureConnected()
-            .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid]))
+            .then((_) => Hubs.conversation.invoke('DeclineVideoCallV2', [_cid, false, 'cancelled', callId ?? '']))
             .catchError((_) => null);
       }
     }
@@ -752,10 +791,11 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   /// Mark failed only when the server never echoed an id (invoke error must not clobber a saved msg).
   void _markSendResult(String tempId, {required bool ok}) {
+    if (!_ownsStore) return;
     final m = ref.read(activeConversationProvider).messages.where((x) => x['tempId'] == tempId).firstOrNull;
     if (m == null) return;
     final hasServerId = (m.s('id') ?? '').isNotEmpty;
-    if (ok || hasServerId) {
+    if (hasServerId) {
       if (m['status'] != 'sent') _store.updateByTempId(tempId, {'status': 'sent'});
     } else {
       _store.updateByTempId(tempId, {'status': 'failed'});
@@ -763,12 +803,19 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _persistOutbox();
   }
 
-  Future<void> _hubSendMessage(String content, String type, String replyId, {bool viewOnce = false}) async {
-    await Hubs.conversation.ensureConnected(timeout: const Duration(seconds: 25));
-    await Hubs.conversation.invokeReliable('SendMessage', [_cid, content, type, replyId, viewOnce]);
+  Future<void> _hubSendMessage(String content, String type, String replyId, {required String clientId, bool viewOnce = false}) async {
+    if (!_ownsStore) throw StateError('Account changed');
+    final result = await Hubs.conversation.invokeReliable('SendMessageWithClientId', conversationSendArguments(_cid, content, type, replyId, viewOnce, clientId));
+    if (result is! Map || result.str('id').isEmpty || !belongsToConversation(result, _cid) || result.str('clientMessageId') != clientId) {
+      throw StateError('Missing durable message acknowledgment');
+    }
+    final message = {...normalizeMsg(result), 'status': 'sent'};
+    await MessageOutbox.acknowledge(_accountId, message);
+    _onReceive(result);
   }
 
   Future<void> _send() async {
+    if (!_ownsStore) return;
     final text = _text.text.trim();
     if (text.isEmpty) return;
     final online = ref.read(networkProvider);
@@ -780,10 +827,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _typingTimer!.cancel();
       _typingTimer = null;
     }
-    final tempId = 'temp-${DateTime.now().microsecondsSinceEpoch}';
+    final tempId = newClientMessageId();
     final replyId = '${reply?['id'] ?? ''}';
     _store.addMessage({
       'tempId': tempId,
+      'clientMessageId': tempId,
+      'conversationId': _cid,
       'senderId': _me,
       'content': text,
       'type': 'text',
@@ -806,7 +855,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           await Hubs.conversation.invoke('StopTyping', [_cid]);
         } catch (_) {}
       }
-      await _hubSendMessage(text, 'text', replyId);
+      await _hubSendMessage(text, 'text', replyId, clientId: tempId);
       _markSendResult(tempId, ok: true);
     } catch (_) {
       _markSendResult(tempId, ok: false);
@@ -817,9 +866,11 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (!_requireOnline(send: true)) return;
     final reply = _replyingTo;
     if (reply != null && mounted) setState(() => _replyingTo = null);
-    final tempId = 'temp-${DateTime.now().microsecondsSinceEpoch}';
+    final tempId = newClientMessageId();
     _store.addMessage({
       'tempId': tempId,
+      'clientMessageId': tempId,
+      'conversationId': _cid,
       'senderId': _me,
       'content': content,
       'type': type,
@@ -834,7 +885,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     });
     _scrollToBottom(force: true);
     try {
-      await _hubSendMessage(content, type, '${reply?['id'] ?? ''}', viewOnce: viewOnce);
+      await _hubSendMessage(content, type, '${reply?['id'] ?? ''}', clientId: tempId, viewOnce: viewOnce);
       _markSendResult(tempId, ok: true);
     } catch (_) {
       _markSendResult(tempId, ok: false);
@@ -874,7 +925,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (mode == null || !mounted) return;
     setState(() => _uploadingImage = true);
     try {
-      final url = await uploadFile('/media/upload', f.path);
+      final url = await uploadFile('/media/upload', f.path, viewOnce: mode);
       await _sendUploaded(url, 'image', viewOnce: mode);
     } catch (e) {
       if (mounted) showToast(context, Api.errorMessage(e, t('conversationChat.imageUploadFailed')), error: true);
@@ -891,7 +942,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (mode == null || !mounted) return;
     setState(() => _uploadingVideo = true);
     try {
-      final url = await uploadFile('/media/upload-chat-video', f.path, timeout: const Duration(seconds: 120));
+      final url = await uploadFile('/media/upload-chat-video', f.path, viewOnce: mode, timeout: const Duration(seconds: 120));
       await _sendUploaded(url, 'video', viewOnce: mode);
     } catch (e) {
       if (mounted) showToast(context, Api.errorMessage(e, t('conversationChat.videoUploadFailed')), error: true);
@@ -965,10 +1016,12 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     }
     final reply = _replyingTo;
     if (reply != null && mounted) setState(() => _replyingTo = null);
-    final tempId = 'temp-${DateTime.now().microsecondsSinceEpoch}';
+    final tempId = newClientMessageId();
     _pendingAudio[tempId] = path;
     _store.addMessage({
       'tempId': tempId,
+      'clientMessageId': tempId,
+      'conversationId': _cid,
       'senderId': _me,
       'content': path,
       'type': 'audio',
@@ -992,7 +1045,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       for (var attempt = 0; attempt < 2 && !sent; attempt++) {
         try {
           final pending = ref.read(activeConversationProvider).messages.where((x) => x['tempId'] == tempId).firstOrNull;
-          await _hubSendMessage(url, 'audio', '${pending?['replyToMessageId'] ?? ''}');
+          await _hubSendMessage(url, 'audio', '${pending?['replyToMessageId'] ?? ''}', clientId: tempId);
           sent = true;
           _markSendResult(tempId, ok: true);
         } catch (_) {
@@ -1011,7 +1064,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     if (msg['status'] != 'failed') return;
     if (!_requireOnline(send: true)) return;
     final oldTemp = '${msg['tempId']}';
-    final newTemp = 'temp-${DateTime.now().microsecondsSinceEpoch}';
+    final newTemp = clientMessageId(msg);
     _store.updateByTempId(oldTemp, {'tempId': newTemp, 'status': 'pending'});
     final localAudio = _pendingAudio.remove(oldTemp);
     if (localAudio != null) {
@@ -1030,6 +1083,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         msg.str('content'),
         msg.s('type') ?? 'text',
         msg.s('replyToMessageId') ?? '',
+        clientId: newTemp,
         viewOnce: msg.b('isViewOnce'),
       );
       _markSendResult(newTemp, ok: true);
@@ -1077,7 +1131,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   }
 
   void _share(Json msg) {
-    if (msg.b('isViewOnce')) return;
+    if (msg.b('isViewOnce') || msg.b('deletedForEveryone') || msg.b('restricted') || messageIsExpired(msg)) return;
     final type = msg.s('type') ?? 'text';
     final sf = parseShortFilmMessage(type, msg.str('content'));
     final story = parseStoryShareMessage(type, msg.str('content'));
@@ -1097,6 +1151,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
           backgroundColor: story.backgroundColor,
         ),
       };
+    } else if (type == 'story_reply') {
+      final text = copyableMessageText(msg);
+      if (text == null) return;
+      share = {'type': 'text', 'content': text};
     } else {
       share = {'type': type, 'content': msg.str('content')};
     }
@@ -1189,9 +1247,18 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     };
     final viewOnce = msg.b('isViewOnce');
     final isOfficial = ref.read(activeConversationProvider).isOfficial;
+    final copyText = copyableMessageText(msg);
+    if (msg.b('deletedForEveryone') || msg.b('restricted') || messageIsExpired(msg)) return;
     showAppSheet<void>(
       context,
       builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
+        if (copyText != null)
+          MessageCopyAction(
+            message: msg,
+            onClose: () => Navigator.pop(ctx),
+            onCopied: () { if (mounted) showToast(context, t('conversationChat.copied')); },
+            onFailure: () { if (mounted) showToast(context, t('common.error'), error: true); },
+          ),
         if (!isOfficial)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1331,7 +1398,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     final active = ref.read(activeCallProvider);
     if (active.sessionId == _cid) {
       ref.read(activeCallProvider.notifier).expand();
-      openVideoRoute(GoRouter.of(context), _cid, {'voiceOnly': active.voiceOnly || voiceOnly, 'fromConversation': true});
+      openVideoRoute(GoRouter.of(context), _cid, {'voiceOnly': active.voiceOnly || voiceOnly, 'fromConversation': true, 'callId': active.callId});
       return;
     }
     if (active.sessionId != null) {
@@ -1345,9 +1412,11 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _callDeclined = false;
       _callBusy = false;
     });
+    _outgoingCallId = newCallId();
     final partner = ref.read(activeConversationProvider).partner;
     ref.read(activeCallProvider.notifier).syncMeta(
           sessionId: _cid,
+          callId: _outgoingCallId,
           voiceOnly: voiceOnly,
           isConversation: true,
           partnerName: partner?.s('name') ?? '',
@@ -1360,7 +1429,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _cancelOutgoing(noAnswer: true);
     });
     try {
-      await Hubs.conversation.invoke('RequestVideoCall', [_cid, voiceOnly]);
+      await Hubs.conversation.invoke('RequestVideoCallV2', [_cid, voiceOnly, _outgoingCallId ?? '']);
     } catch (_) {
       _stopOutgoingRingUi();
       if (ref.read(activeCallProvider).sessionId == _cid) ref.read(activeCallProvider.notifier).clear();
@@ -1375,13 +1444,14 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   void _cancelOutgoing({bool noAnswer = false}) {
     if (!_callingOut) return;
+    final callId = _outgoingCallId;
     _stopOutgoingRingUi();
     setState(() => _callingOut = false);
     if (ref.read(activeCallProvider).sessionId == _cid) ref.read(activeCallProvider.notifier).clear();
     final outcome = noAnswer ? 'missed' : 'cancelled';
     Hubs.conversation
         .ensureConnected()
-        .then((_) => Hubs.conversation.invoke('DeclineVideoCall', [_cid, false, outcome]))
+        .then((_) => Hubs.conversation.invoke('DeclineVideoCallV2', [_cid, false, outcome, callId ?? '']))
         .catchError((_) => null);
   }
 
@@ -1604,6 +1674,15 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
               ]),
             ),
           ActiveCallBar(embeddedFor: _cid),
+          if (_refreshing) const LinearProgressIndicator(minHeight: 2),
+          if (_refreshError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(children: [
+                Expanded(child: Text(t('conversationChat.refreshFailed'), style: TextStyle(color: c.textMuted))),
+                TextButton(onPressed: () => unawaited(_refresh.refresh()), child: Text(t('common.retry'))),
+              ]),
+            ),
           Expanded(
             child: ColoredBox(
               color: c.bgPrimary,

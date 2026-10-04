@@ -4,14 +4,19 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../core/storage/prefs.dart';
+
 /// Local PIN vault for WhatsApp-style hidden chats.
 /// PIN never leaves the device; server only stores [IsHidden] per conversation.
 class HiddenChatsVault {
   HiddenChatsVault._();
   static final instance = HiddenChatsVault._();
 
-  static const _hashKey = 'nexchat_hidden_pin_hash';
-  static const _saltKey = 'nexchat_hidden_pin_salt';
+  String get _account {
+    try { return '${(jsonDecode(Prefs.instance.getString(Keys.user) ?? '{}') as Map)['id'] ?? ''}'; } catch (_) { return ''; }
+  }
+  String get _hashKey => 'nexchat_hidden_pin_hash_$_account';
+  String get _saltKey => 'nexchat_hidden_pin_salt_$_account';
   static const minPinLength = 4;
   static const maxPinLength = 12;
 
@@ -22,23 +27,30 @@ class HiddenChatsVault {
   Future<bool> setPin(String pin) async {
     final cleaned = pin.trim();
     if (cleaned.length < minPinLength || cleaned.length > maxPinLength) return false;
+    if (_account.isEmpty) return false;
+    final hashKey = _hashKey, saltKey = _saltKey;
     final salt = _randomSalt();
     final hash = _hash(cleaned, salt);
-    await _secure.write(key: _saltKey, value: salt);
-    await _secure.write(key: _hashKey, value: hash);
+    await _secure.write(key: saltKey, value: salt);
+    await _secure.write(key: hashKey, value: hash);
     return true;
   }
 
   Future<bool> verify(String pin) async {
-    final hash = await _secure.read(key: _hashKey);
-    final salt = await _secure.read(key: _saltKey);
+    final account = _account;
+    final hashKey = _hashKey, saltKey = _saltKey;
+    if (account.isEmpty) return false;
+    final hash = await _secure.read(key: hashKey);
+    final salt = await _secure.read(key: saltKey);
+    if (_account != account) return false;
     if (hash == null || salt == null || hash.isEmpty || salt.isEmpty) return false;
     return _hash(pin.trim(), salt) == hash;
   }
 
   Future<void> clearPin() async {
-    await _secure.delete(key: _hashKey);
-    await _secure.delete(key: _saltKey);
+    final hashKey = _hashKey, saltKey = _saltKey;
+    await _secure.delete(key: hashKey);
+    await _secure.delete(key: saltKey);
   }
 
   String _randomSalt() {

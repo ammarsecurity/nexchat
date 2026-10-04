@@ -21,18 +21,23 @@ class Hub {
   Stream<void> get onReconnected => _reconnected.stream;
 
   HubConnection _build() {
+    final token = Prefs.instance.token;
+    _connectionToken = token;
     final conn = HubConnectionBuilder()
         .withUrl(
           '${Env.apiHost}$path',
-          options: HttpConnectionOptions(accessTokenFactory: () async => Prefs.instance.token ?? ''),
+          options: HttpConnectionOptions(accessTokenFactory: () async => token ?? ''),
         )
         .withAutomaticReconnect()
         .build();
     conn.onreconnected(({connectionId}) {
+      if (!identical(_conn, conn) || token != Prefs.instance.token) return;
       _restartAttempt = 0;
       _reconnected.add(null);
     });
-    conn.onclose(({error}) => _scheduleRestart());
+    conn.onclose(({error}) {
+      if (identical(_conn, conn) && token == Prefs.instance.token) _scheduleRestart();
+    });
     _bound.clear();
     for (final name in _handlers.keys) {
       _bind(conn, name);
@@ -45,6 +50,7 @@ class Hub {
   void _bind(HubConnection conn, String name) {
     if (!_bound.add(name)) return;
     conn.on(name, (args) {
+      if (!identical(_conn, conn) || _connectionToken != Prefs.instance.token) return;
       for (final h in List.of(_handlers[name] ?? const <HubHandler>[])) {
         h(args ?? const []);
       }
@@ -57,6 +63,10 @@ class Hub {
   bool _wanted = false;
   Timer? _restartTimer;
   int _restartAttempt = 0;
+  int _generation = 0;
+  Future<void>? _starting;
+  Future<void>? _reconnecting;
+  String? _connectionToken;
 
   Future<void> _disposeConn() async {
     _restartTimer?.cancel();
@@ -70,7 +80,9 @@ class Hub {
   }
 
   /// Tear down any half-dead socket and open a fresh one (needed after network loss).
-  Future<void> forceReconnect() async {
+  Future<void> forceReconnect() => _reconnecting ??= _forceReconnect().whenComplete(() => _reconnecting = null);
+
+  Future<void> _forceReconnect() async {
     if (!_wanted) return;
     _restartAttempt = 0;
     await _disposeConn();
@@ -99,29 +111,32 @@ class Hub {
     });
   }
 
-  Future<void> start() async {
+  Future<void> start() => _starting ??= _start().whenComplete(() => _starting = null);
+
+  Future<void> _start() async {
     _wanted = true;
-    if (!NetworkStatus.online.value) return;
-    if ((Prefs.instance.token ?? '').isEmpty) return;
+    if (!NetworkStatus.online.value || (Prefs.instance.token ?? '').isEmpty) return;
+    final generation = _generation;
+    if (_conn != null && _connectionToken != Prefs.instance.token) await _disposeConn();
+    if (generation != _generation || !_wanted) return;
     _conn ??= _build();
-    if (_conn!.state == HubConnectionState.Connected) {
+    final connection = _conn!;
+    if (connection.state == HubConnectionState.Connected) {
       _restartAttempt = 0;
       _restartTimer?.cancel();
       return;
     }
-    if (_conn!.state == HubConnectionState.Disconnected) {
-      try {
-        await _conn!.start();
-        _restartAttempt = 0;
-        _restartTimer?.cancel();
-      } catch (_) {
-        _scheduleRestart();
-        rethrow;
-      }
-      return;
+    // Let an in-flight start or automatic reconnect finish instead of tearing it down.
+    if (connection.state != HubConnectionState.Disconnected) return;
+    try {
+      await connection.start();
+      if (generation != _generation || !_wanted) { await connection.stop(); return; }
+      _restartAttempt = 0;
+      _restartTimer?.cancel();
+    } catch (_) {
+      _scheduleRestart();
+      rethrow;
     }
-    // Connecting / Reconnecting / Disconnecting — don't leave the socket stuck.
-    await forceReconnect();
   }
 
   /// App resumed / network back: reconnect now instead of waiting for the backoff timer.
@@ -163,6 +178,7 @@ class Hub {
   }
 
   Future<void> stop() async {
+    _generation++;
     _wanted = false;
     await _disposeConn();
   }
@@ -186,9 +202,13 @@ class Hub {
   /// SignalR args can't be null in this client; pass '' for optional strings (the server treats it as absent).
   Future<Object?> invoke(String method, [List<Object> args = const []]) {
     final done = Completer<Object?>();
+    final token = Prefs.instance.token;
+    final generation = _generation;
     _invokeChain = _invokeChain.catchError((_) {}).then((_) async {
       try {
+        if (token != Prefs.instance.token || generation != _generation) throw StateError('Account changed');
         await ensureConnected();
+        if (token != Prefs.instance.token || generation != _generation) throw StateError('Account changed');
         final result = await _conn!.invoke(method, args: args);
         done.complete(result);
       } catch (e, st) {
@@ -200,9 +220,15 @@ class Hub {
 
   /// Invoke with one reconnect+retry — used for critical sends.
   Future<Object?> invokeReliable(String method, [List<Object> args = const []]) async {
+    final token = Prefs.instance.token;
+    final generation = _generation;
     try {
       return await invoke(method, args);
     } catch (_) {
+      if (token != Prefs.instance.token || generation != _generation) rethrow;
+      // Only idempotent sends can be retried after an uncertain transport outcome.
+      if (method != 'SendMessageWithClientId') rethrow;
+      if (state == HubConnectionState.Connected) rethrow;
       await forceReconnect();
       await ensureConnected(timeout: const Duration(seconds: 20));
       return await invoke(method, args);

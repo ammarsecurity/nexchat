@@ -422,6 +422,8 @@ public class StoriesController(
         var receivePayload = new
         {
             msg.Id,
+            msg.ConversationId,
+            msg.ClientMessageId,
             msg.SenderId,
             Content = payload,
             msg.Type,

@@ -18,6 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
     public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
+    public DbSet<ViewOnceMediaSession> ViewOnceMediaSessions => Set<ViewOnceMediaSession>();
     public DbSet<ViewOnceReceipt> ViewOnceReceipts => Set<ViewOnceReceipt>();
     public DbSet<MessageReaction> MessageReactions => Set<MessageReaction>();
     public DbSet<UserMessageDeletion> UserMessageDeletions => Set<UserMessageDeletion>();
@@ -69,6 +70,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Message>(e =>
         {
             e.HasKey(x => x.Id);
+            // Keep the existing FK lookup index explicitly: the new idempotency
+            // composite index would otherwise remove it by EF convention.
+            e.HasIndex(x => x.SessionId);
             e.HasOne(x => x.Session)
                 .WithMany(s => s.Messages)
                 .HasForeignKey(x => x.SessionId)
@@ -77,7 +81,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany()
                 .HasForeignKey(x => x.SenderId)
                 .OnDelete(DeleteBehavior.Restrict);
-            e.Property(x => x.Content).HasMaxLength(2000);
+            e.Property(x => x.Content).HasMaxLength(5000);
+            e.Property(x => x.ClientMessageId).HasMaxLength(80).UseCollation("utf8mb4_bin");
+            e.HasIndex(x => new { x.SessionId, x.SenderId, x.ClientMessageId }).IsUnique();
         });
 
         modelBuilder.Entity<Report>(e =>
@@ -116,7 +122,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => new { x.UserId, x.OneSignalPlayerId }).IsUnique();
+            e.HasIndex(x => x.OneSignalPlayerId).IsUnique();
+            e.HasIndex(x => x.InstallationId).IsUnique();
+            e.HasIndex(x => x.VoipDeviceToken).IsUnique();
+            e.Property(x => x.InstallationId).HasMaxLength(36);
             e.Property(x => x.OneSignalPlayerId).HasMaxLength(64);
             e.Property(x => x.VoipDeviceToken).HasMaxLength(200);
             e.Property(x => x.Platform).HasMaxLength(20);
@@ -225,6 +234,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(x => x.SenderId)
                 .OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Content).HasColumnType("longtext");
+            e.Property(x => x.ClientMessageId).HasMaxLength(80).UseCollation("utf8mb4_bin");
+            e.HasIndex(x => new { x.ConversationId, x.SenderId, x.ClientMessageId }).IsUnique();
             e.Property(x => x.Type).HasMaxLength(20);
             e.HasIndex(x => new { x.ConversationId, x.SentAt });
             e.HasIndex(x => x.BroadcastId);
@@ -237,6 +248,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Type).HasMaxLength(20);
             e.Property(x => x.Caption).HasColumnType("longtext");
             e.HasIndex(x => x.SentAt);
+        });
+
+        modelBuilder.Entity<ViewOnceMediaSession>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Message).WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.MessageId, x.UserId });
+            e.HasIndex(x => x.ExpiresAt);
         });
 
         modelBuilder.Entity<ViewOnceReceipt>(e =>

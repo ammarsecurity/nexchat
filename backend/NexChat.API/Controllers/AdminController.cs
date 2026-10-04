@@ -121,7 +121,7 @@ public class AdminController(
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
 
             foreach (var sid in toClose)
-                await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", Guid.Empty);
+                await SessionDelivery.EndedAsync(db, hubContext.Clients, sid, Guid.Empty);
         }
 
         var msg = closeAll
@@ -237,7 +237,7 @@ public class AdminController(
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
 
             foreach (var sid in sessions)
-                await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", userId);
+                await SessionDelivery.EndedAsync(db, hubContext.Clients, sid, userId);
         }
 
         // 2. حذف كل ما يرتبط بالمستخدم (ترتيب يحترم Restrict FKs)
@@ -751,6 +751,8 @@ public class AdminController(
         var payload = new
         {
             msg.Id,
+            msg.ConversationId,
+            msg.ClientMessageId,
             msg.SenderId,
             Content = text,
             msg.Type,
@@ -1440,6 +1442,7 @@ public class AdminController(
                         await conversationHub.Clients.User(userId.ToString()).SendAsync("ReceiveMessage", new
                         {
                             id = captionMsg.Id,
+                            clientMessageId = captionMsg.ClientMessageId,
                             conversationId = conv.Id,
                             senderId = official.Id,
                             content = caption,
@@ -1477,6 +1480,7 @@ public class AdminController(
                     await conversationHub.Clients.User(userId.ToString()).SendAsync("ReceiveMessage", new
                     {
                         id = msg.Id,
+                        clientMessageId = msg.ClientMessageId,
                         conversationId = conv.Id,
                         senderId = official.Id,
                         content = body,
@@ -1629,7 +1633,7 @@ public class AdminController(
         foreach (var m in msgs.Where(x => !x.DeletedForEveryone))
         {
             var plain = messageCrypto.DecryptFromStorage(m.Content);
-            await conversationHub.Clients.Group(m.ConversationId.ToString()).SendAsync("MessageUpdated", new
+            await ConversationDelivery.SendAsync(db, conversationHub.Clients, m.ConversationId, "MessageUpdated", new
             {
                 id = m.Id,
                 conversationId = m.ConversationId,
@@ -1639,7 +1643,7 @@ public class AdminController(
             });
         }
         foreach (var m in msgs.Where(x => x.DeletedForEveryone))
-            await conversationHub.Clients.Group(m.ConversationId.ToString()).SendAsync("MessageDeletedForEveryone", m.Id);
+            await ConversationDelivery.DeletedAsync(db, conversationHub.Clients, m.ConversationId, m.Id);
 
         return Ok(new
         {
@@ -1670,7 +1674,7 @@ public class AdminController(
         await db.SaveChangesAsync();
 
         foreach (var m in msgs)
-            await conversationHub.Clients.Group(m.ConversationId.ToString()).SendAsync("MessageDeletedForEveryone", m.Id);
+            await ConversationDelivery.DeletedAsync(db, conversationHub.Clients, m.ConversationId, m.Id);
 
         return Ok(new { message = "تم حذف الرسالة من عند الجميع", deletedMessages = msgs.Count });
     }

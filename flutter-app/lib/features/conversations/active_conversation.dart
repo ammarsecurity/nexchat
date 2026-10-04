@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/json.dart';
+import '../auth/auth_controller.dart';
+import 'message_contract.dart';
 
 class ActiveConversation {
   const ActiveConversation({
@@ -59,7 +61,10 @@ bool isOfficialConversation(Json? x) {
 /// stores/conversation.js
 class ActiveConversationController extends Notifier<ActiveConversation> {
   @override
-  ActiveConversation build() => const ActiveConversation();
+  ActiveConversation build() {
+    ref.watch(authProvider.select((s) => s.user?.id));
+    return const ActiveConversation();
+  }
 
   void setConversation(
     String id,
@@ -115,7 +120,10 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
 
   void setTyping(bool v) => state = state.copyWith(partnerTyping: v);
 
-  void setPartnerLastReadAt(DateTime? at) => state = state.copyWith(partnerLastReadAt: at);
+  void setPartnerLastReadAt(DateTime? at) {
+    if (at == null || (state.partnerLastReadAt != null && !at.isAfter(state.partnerLastReadAt!))) return;
+    state = state.copyWith(partnerLastReadAt: at);
+  }
 
   void setMessagesRead(Iterable<String> ids) {
     final set = ids.toSet();
@@ -126,7 +134,7 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     final set = ids.toSet();
     if (set.isEmpty) return;
     state = state.copyWith(messages: [
-      for (final m in state.messages) set.contains(msgId(m)) ? {...m, 'expiresAt': expiresAt} : m,
+      for (final m in state.messages) {...m, if (set.contains(msgId(m))) 'expiresAt': expiresAt, if (set.contains(m.str('replyToMessageId'))) 'replyToExpiresAt': expiresAt},
     ]);
   }
 
@@ -138,17 +146,20 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     state = state.copyWith(messages: [for (final m in state.messages) msgId(m) == id ? {...m, ...updates} : m]);
   }
 
-  void removeMessage(String id) => state = state.copyWith(messages: state.messages.where((m) => msgId(m) != id).toList());
+  void removeMessage(String id) => removeMessages([id]);
 
   void removeMessages(Iterable<String> ids) {
     final set = ids.toSet();
     if (set.isEmpty) return;
-    state = state.copyWith(messages: state.messages.where((m) => !set.contains(msgId(m))).toList());
+    state = state.copyWith(messages: [for (final m in state.messages) if (!set.contains(msgId(m))) redactReply(m, set)]);
   }
 
   void removeByTempId(String tempId) => state = state.copyWith(messages: state.messages.where((m) => m['tempId'] != tempId).toList());
 
-  void setDeletedForEveryone(String id) => updateById(id, {'deletedForEveryone': true});
+  void setDeletedForEveryone(String id) {
+    updateById(id, {'deletedForEveryone': true, 'content': ''});
+    redactReplies([id]);
+  }
 
   void updateReactions(String id, List<dynamic> reactions) => updateById(id, {'reactions': reactions});
 
@@ -195,56 +206,27 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
   }
 
   bool updatePendingMessage(Json server) {
-    final type = server.s('type') ?? 'text';
-    final sender = server.str('senderId').toLowerCase();
-    final reply = server.s('replyToMessageId') ?? '';
-    final media = type == 'audio' || type == 'image' || type == 'video' || type == 'album';
-    bool isOptimistic(Json m) {
-      if (m['tempId'] == null) return false;
-      final status = m.s('status');
-      if (status != 'pending' && status != 'sent') return false;
-      final id = m.s('id');
-      return id == null || id.isEmpty;
-    }
-
-    var idx = -1;
-    for (var i = state.messages.length - 1; i >= 0; i--) {
-      final m = state.messages[i];
-      if (!isOptimistic(m)) continue;
-      if (m.str('senderId').toLowerCase() != sender) continue;
-      if ((m.s('type') ?? 'text') != type) continue;
-      if (media) {
-        if (m.b('isViewOnce') != server.b('isViewOnce')) continue;
-        final local = m.s('content') ?? '';
-        final remote = server.s('content') ?? '';
-        if (local.isNotEmpty && remote.isNotEmpty) {
-          if (local != remote) continue;
-        } else if ((m.s('replyToMessageId') ?? '') != reply) {
-          continue;
-        }
-      } else {
-        final local = m.s('content') ?? '';
-        final remote = server.s('content') ?? '';
-        if (local == remote) {
-          // ok
-        } else if ((m.s('replyToMessageId') ?? '') == reply) {
-          final peers = state.messages.where((x) =>
-              isOptimistic(x) &&
-              x.str('senderId').toLowerCase() == sender &&
-              (x.s('type') ?? 'text') == type);
-          if (peers.length > 1) continue;
-        } else {
-          continue;
-        }
-      }
-      idx = i;
-      break;
-    }
-    if (idx < 0) return false;
-    final list = List<Json>.of(state.messages);
-    list[idx] = {...server, 'status': 'sent', if (list[idx]['tempId'] != null) 'tempId': list[idx]['tempId']};
-    state = state.copyWith(messages: list);
+    if (!belongsToConversation(server, state.conversationId ?? '')) return false;
+    final id = msgId(server);
+    if (id.isEmpty) return false;
+    final clientId = clientMessageId(server);
+    final existing = state.messages.indexWhere((m) => msgId(m) == id);
+    final pending = clientId.isEmpty ? -1 : state.messages.indexWhere((m) =>
+      clientMessageId(m) == clientId && m.str('senderId').toLowerCase() == server.str('senderId').toLowerCase());
+    if (existing < 0 && pending < 0) return false;
+    final target = existing >= 0 ? existing : pending;
+    final previous = state.messages[target];
+    state = state.copyWith(messages: [
+      for (var i = 0; i < state.messages.length; i++)
+        if (i == target) {...server, 'status': 'sent', if (previous['tempId'] != null) 'tempId': previous['tempId']}
+        else if (i != pending) state.messages[i],
+    ]);
     return true;
+  }
+
+  void redactReplies(Iterable<String> ids) {
+    final unavailable = ids.toSet();
+    state = state.copyWith(messages: [for (final m in state.messages) redactReply(m, unavailable)]);
   }
 
   void patchPartnerAvatar(String userId, String? avatar, [String? uniqueCode]) {

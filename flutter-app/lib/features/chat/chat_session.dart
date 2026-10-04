@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/json.dart';
+import '../auth/auth_controller.dart';
+import '../conversations/message_contract.dart';
 
 /// stores/chat.js — the random / code-connect chat session.
 class ChatSession {
@@ -20,7 +22,7 @@ class ChatSession {
 
 class ChatSessionController extends Notifier<ChatSession> {
   @override
-  ChatSession build() => const ChatSession();
+  ChatSession build() { ref.watch(authProvider.select((s) => s.user?.id)); return const ChatSession(); }
 
   ChatSession get current => state;
 
@@ -45,22 +47,19 @@ class ChatSessionController extends Notifier<ChatSession> {
       );
 
   void updatePendingMessage(Json server) {
-    final type = server.s('type') ?? 'text';
-    final sender = server.str('senderId');
-    final media = type == 'audio' || type == 'image' || type == 'video' || type == 'album';
-    final list = [...state.messages];
-    var idx = list.indexWhere((m) {
-      if (m['status'] != 'pending' || (m['type'] ?? 'text') != type) return false;
-      if ('${m['senderId'] ?? ''}' != sender) return false;
-      if (media) return true;
-      return m['content'] == server.v('content');
-    });
-    if (idx < 0) {
-      idx = list.indexWhere((m) => m['status'] == 'pending' && (m['type'] ?? 'text') == type && '${m['senderId'] ?? ''}' == sender);
-    }
-    if (idx < 0) return;
-    list[idx] = {...server, 'status': 'sent'};
-    state = state.copyWith(messages: list);
+    if (server.str('sessionId') != state.sessionId || server.str('id').isEmpty) return;
+    final id = server.str('id');
+    final clientId = clientMessageId(server);
+    final existing = state.messages.indexWhere((m) => m.str('id') == id);
+    final pending = clientId.isEmpty ? -1 : state.messages.indexWhere((m) =>
+        clientMessageId(m) == clientId && m.str('senderId') == server.str('senderId'));
+    if (existing < 0 && pending < 0) { addMessage({...server, 'status': 'sent'}); return; }
+    final target = existing >= 0 ? existing : pending;
+    state = state.copyWith(messages: [
+      for (var i = 0; i < state.messages.length; i++)
+        if (i == target) {...server, 'status': 'sent', if (state.messages[i]['tempId'] != null) 'tempId': state.messages[i]['tempId']}
+        else if (i != pending) state.messages[i],
+    ]);
   }
 
   void clear() => state = const ChatSession();

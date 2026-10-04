@@ -36,7 +36,9 @@ class _ActiveCallBarState extends ConsumerState<ActiveCallBar> {
       _elapsed = DateTime.now().difference(a.startedAt!).inSeconds;
       _tick = Timer.periodic(const Duration(seconds: 1), (_) {
         final s = ref.read(activeCallProvider).startedAt;
-        if (s != null && mounted) setState(() => _elapsed = DateTime.now().difference(s).inSeconds);
+        if (s != null && mounted) {
+          setState(() => _elapsed = DateTime.now().difference(s).inSeconds);
+        }
       });
     } else if (!show && _tick != null) {
       _tick?.cancel();
@@ -48,14 +50,21 @@ class _ActiveCallBarState extends ConsumerState<ActiveCallBar> {
     final sid = a.sessionId;
     if (sid == null) return;
     ref.read(activeCallProvider.notifier).expand();
-    openVideoRoute(GoRouter.of(context), sid, {'voiceOnly': a.voiceOnly, 'fromConversation': a.isConversation});
+    openVideoRoute(GoRouter.of(context), sid, {
+      'voiceOnly': a.voiceOnly,
+      'fromConversation': a.isConversation,
+      'callId': a.callId,
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final a = ref.watch(activeCallProvider);
-    final show = a.showFloatingBar &&
-        (widget.embeddedFor == null || (a.sessionId == widget.embeddedFor && a.isConversation == widget.conversation));
+    final show =
+        a.showFloatingBar &&
+        (widget.embeddedFor == null ||
+            (a.sessionId == widget.embeddedFor &&
+                a.isConversation == widget.conversation));
     _syncTimer(a, show);
     if (!show) return const SizedBox.shrink();
     return Material(
@@ -66,54 +75,83 @@ class _ActiveCallBarState extends ConsumerState<ActiveCallBar> {
           height: 48,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
-              Icon(a.voiceOnly ? LucideIcons.phone : LucideIcons.video, size: 18, color: Colors.white),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  t('videoCall.tapToReturn'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-              ),
-              Text(
-                formatCallTime(_elapsed),
-                style: const TextStyle(
+            child: Row(
+              children: [
+                Icon(
+                  a.voiceOnly ? LucideIcons.phone : LucideIcons.video,
+                  size: 18,
                   color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  fontFeatures: [FontFeature.tabularFigures()],
                 ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () {
-                  final sid = a.sessionId;
-                  final secs = _elapsed;
-                  final isConv = a.isConversation;
-                  unawaited(LiveKitService.instance.leave());
-                  ref.read(activeCallProvider.notifier).clear();
-                  if (sid == null || sid.isEmpty) return;
-                  if (isConv) {
-                    unawaited(
-                      Hubs.conversation
-                          .ensureConnected()
-                          .then((_) => Hubs.conversation.invoke('EndVideoCall', [sid, secs]))
-                          .catchError((_) => null),
-                    );
-                  } else {
-                    unawaited(
-                      Hubs.chat
-                          .ensureConnected()
-                          .then((_) => Hubs.chat.invoke('EndVideoCall', [sid, secs]))
-                          .catchError((_) => null),
-                    );
-                  }
-                },
-                child: const Icon(LucideIcons.phoneOff, size: 18, color: Colors.white),
-              ),
-            ]),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    t('videoCall.tapToReturn'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  formatCallTime(_elapsed),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    final sid = a.sessionId;
+                    final secs = _elapsed;
+                    final isConv = a.isConversation;
+                    if (sid != null) {
+                      unawaited(
+                        LiveKitService.instance.leaveCall(sid, a.callId),
+                      );
+                    }
+                    ref.read(activeCallProvider.notifier).clear();
+                    if (sid == null || sid.isEmpty) return;
+                    if (isConv) {
+                      unawaited(
+                        Hubs.conversation
+                            .ensureConnected()
+                            .then(
+                              (_) => Hubs.conversation.invoke(
+                                'EndVideoCallV2',
+                                [sid, secs, a.callId ?? ''],
+                              ),
+                            )
+                            .catchError((_) => null),
+                      );
+                    } else {
+                      unawaited(
+                        Hubs.chat
+                            .ensureConnected()
+                            .then(
+                              (_) => Hubs.chat.invoke('EndVideoCallV2', [
+                                sid,
+                                secs,
+                                a.callId ?? '',
+                              ]),
+                            )
+                            .catchError((_) => null),
+                      );
+                    }
+                  },
+                  child: const Icon(
+                    LucideIcons.phoneOff,
+                    size: 18,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

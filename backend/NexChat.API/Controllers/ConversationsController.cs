@@ -270,6 +270,23 @@ public class ConversationsController(
         });
     }
 
+    /// <summary>Recent visible history, available before the live socket has joined.</summary>
+    [HttpGet("{id:guid}/messages")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<ActionResult<object>> GetMessages(Guid id)
+    {
+        if (User.Identity?.IsAuthenticated != true ||
+            !Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            return Unauthorized();
+        if (!await IsParticipant(id) ||
+            await db.UserConversationDeletions.AnyAsync(d => d.UserId == userId && d.ConversationId == id))
+            return NotFound();
+
+        var page = await ConversationMessageHistory.LoadAsync(db, messageCrypto, id, userId,
+            beforeSentAt: null, beforeId: null, take: 60);
+        return Ok(new { ConversationId = id, Messages = page.Messages, HasMore = page.HasMore });
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<object>> GetConversation(Guid id)
     {
@@ -605,8 +622,7 @@ public class ConversationsController(
 
         conv.DisappearMode = req.Mode;
         await db.SaveChangesAsync();
-        await conversationHub.Clients.Group(id.ToString())
-            .SendAsync("DisappearModeChanged", new { conversationId = id, disappearMode = conv.DisappearMode });
+        await ConversationDelivery.SendAsync(db, conversationHub.Clients, id, "DisappearModeChanged", new { conversationId = id, disappearMode = conv.DisappearMode });
         return Ok(new { disappearMode = conv.DisappearMode });
     }
 
@@ -614,9 +630,7 @@ public class ConversationsController(
     public async Task<IActionResult> MarkAsRead(Guid id)
     {
         if (!await IsParticipant(id)) return NotFound();
-        var state = await GetOrCreateState(id);
-        state.LastReadAt = DateTime.UtcNow;
-        state.UpdatedAt = DateTime.UtcNow;
+        var state = await ConversationDelivery.MarkReadAsync(db, id, CurrentUserId);
 
         var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id);
         if (conv != null)
@@ -624,19 +638,20 @@ public class ConversationsController(
             var partnerId = conv.Type == ConversationType.Private ? (conv.User1Id == CurrentUserId ? conv.User2Id : conv.User1Id) : null;
             if (partnerId.HasValue)
                 await db.ConversationMessages
-                    .Where(m => m.ConversationId == id && m.SenderId == partnerId.Value && !m.IsRead)
+                    .Where(m => m.ConversationId == id && m.SenderId == partnerId.Value && m.SentAt <= state.LastReadAt && !m.IsRead)
                     .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
             else if (conv.Type == ConversationType.Group)
                 await db.ConversationMessages
-                    .Where(m => m.ConversationId == id && m.SenderId != CurrentUserId && !m.IsRead)
+                    .Where(m => m.ConversationId == id && m.SenderId != CurrentUserId && m.SentAt <= state.LastReadAt && !m.IsRead)
                     .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
 
             var (expiring, expiresAt) = await DisappearingMessagesHelper.ApplyAfterReadExpiryAsync(db, id, CurrentUserId, conv.Type);
             await db.SaveChangesAsync();
+            await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ConversationRead", new { ConversationId = id, state.LastReadAt, UnreadCount = await ConversationDelivery.UnreadCountAsync(db, id, CurrentUserId) });
+            await ConversationDelivery.SendAsync(db, conversationHub.Clients, id, "PartnerReadUpTo", new { ConversationId = id, state.LastReadAt, ReaderId = CurrentUserId });
 
             if (expiring.Count > 0 && expiresAt.HasValue)
-                await conversationHub.Clients.Group(id.ToString())
-                    .SendAsync("MessagesExpiring", new { messageIds = expiring, expiresAt });
+                await ConversationDelivery.SendAsync(db, conversationHub.Clients, id, "MessagesExpiring", new { ConversationId = id, messageIds = expiring, expiresAt });
         }
         else
         {
@@ -658,37 +673,21 @@ public class ConversationsController(
         if (convIds.Count == 0) return Ok(new { updated = 0 });
 
         var now = DateTime.UtcNow;
-        var states = await db.UserConversationStates
-            .Where(s => s.UserId == CurrentUserId && convIds.Contains(s.ConversationId))
-            .ToListAsync();
-
-        var statesByConv = states.ToDictionary(s => s.ConversationId, s => s);
-        var added = 0;
+        var existingCount = await db.UserConversationStates.CountAsync(s => s.UserId == CurrentUserId && convIds.Contains(s.ConversationId));
+        var added = convIds.Count - existingCount;
         foreach (var convId in convIds)
         {
-            if (statesByConv.TryGetValue(convId, out var st))
-            {
-                st.LastReadAt = now;
-                st.UpdatedAt = now;
-            }
-            else
-            {
-                db.UserConversationStates.Add(new UserConversationState
-                {
-                    UserId = CurrentUserId,
-                    ConversationId = convId,
-                    LastReadAt = now,
-                    UpdatedAt = now
-                });
-                added += 1;
-            }
+            var state = await ConversationDelivery.MarkReadAsync(db, convId, CurrentUserId, now);
+            await db.ConversationMessages.Where(m => m.ConversationId == convId && m.SenderId != CurrentUserId && m.SentAt <= state.LastReadAt && !m.IsRead)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
+            var type = await db.Conversations.Where(c => c.Id == convId).Select(c => c.Type).SingleAsync();
+            var (expiring, expiresAt) = await DisappearingMessagesHelper.ApplyAfterReadExpiryAsync(db, convId, CurrentUserId, type);
+            if (expiring.Count > 0)
+                await ConversationDelivery.SendAsync(db, conversationHub.Clients, convId, "MessagesExpiring", new { ConversationId = convId, MessageIds = expiring, ExpiresAt = expiresAt });
+            await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ConversationRead", new { ConversationId = convId, state.LastReadAt, UnreadCount = await ConversationDelivery.UnreadCountAsync(db, convId, CurrentUserId) });
+            await ConversationDelivery.SendAsync(db, conversationHub.Clients, convId, "PartnerReadUpTo", new { ConversationId = convId, state.LastReadAt, ReaderId = CurrentUserId });
         }
 
-        await db.ConversationMessages
-            .Where(m => convIds.Contains(m.ConversationId) && m.SenderId != CurrentUserId && !m.IsRead)
-            .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsRead, true));
-
-        await db.SaveChangesAsync();
         return Ok(new { updated = convIds.Count, statesAdded = added });
     }
 
@@ -779,7 +778,13 @@ public class ConversationsController(
         if (myMember?.Role != "Admin" && memberUserId != CurrentUserId) return Forbid();
         var toRemove = await db.ConversationMembers.FirstOrDefaultAsync(m => m.ConversationId == id && m.UserId == memberUserId);
         if (toRemove == null) return NotFound();
-        if (myMember!.Role != "Admin" && memberUserId == CurrentUserId) { db.ConversationMembers.Remove(toRemove); await db.SaveChangesAsync(); return Ok(); }
+        if (myMember!.Role != "Admin" && memberUserId == CurrentUserId)
+        {
+            db.ConversationMembers.Remove(toRemove);
+            await db.SaveChangesAsync();
+            await ConversationDelivery.EjectAsync(conversationHub.Groups, conversationHub.Clients, id, memberUserId);
+            return Ok();
+        }
         if (toRemove.Role == "Admin")
         {
             var adminCount = await db.ConversationMembers.CountAsync(m => m.ConversationId == id && m.Role == "Admin");
@@ -787,6 +792,7 @@ public class ConversationsController(
         }
         db.ConversationMembers.Remove(toRemove);
         await db.SaveChangesAsync();
+        await ConversationDelivery.EjectAsync(conversationHub.Groups, conversationHub.Clients, id, memberUserId);
         return Ok();
     }
 
@@ -806,6 +812,7 @@ public class ConversationsController(
         }
         db.ConversationMembers.Remove(myMember);
         await db.SaveChangesAsync();
+        await ConversationDelivery.EjectAsync(conversationHub.Groups, conversationHub.Clients, id, CurrentUserId);
         return Ok();
     }
 

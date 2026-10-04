@@ -195,6 +195,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           initialPartner: e['partner'] is Map ? Map<String, dynamic>.from(e['partner'] as Map) : null,
           incomingVideoCall: q == '1' || q == 'true',
           autoAcceptCall: s.uri.queryParameters['autoAccept'] == '1',
+          callId: s.uri.queryParameters['callId'],
           supportChat: s.uri.queryParameters['support'] == '1',
         );
       }),
@@ -207,6 +208,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: s.name,
             child: VideoCallScreen(
               sessionId: s.pathParameters['sessionId']!,
+              callId: e['callId']?.toString() ?? s.uri.queryParameters['callId'],
               voiceOnly: e['voiceOnly'] == true || s.uri.queryParameters['voice'] == '1',
               fromConversation: e['fromConversation'] == true || s.uri.queryParameters['conv'] == '1',
             ),
@@ -233,7 +235,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       page('/conversations/create-group', (_) => const CreateGroupScreen()),
       page('/conversation/:conversationId/group-info', (s) => GroupInfoScreen(conversationId: s.pathParameters['conversationId']!)),
       page('/conversations/:conversationId/options', (s) => ConversationOptionsScreen(conversationId: s.pathParameters['conversationId']!)),
-      page('/conversation/:conversationId', (s) => ConversationChatScreen(conversationId: s.pathParameters['conversationId']!)),
+      page('/conversation/:conversationId', (s) => ConversationChatScreen(key: ValueKey(s.pathParameters['conversationId']), conversationId: s.pathParameters['conversationId']!)),
       page('/profile/:userId', (s) => UserProfileScreen(userId: s.pathParameters['userId']!, conversationId: (s.extra as Map?)?['conversationId'] as String?)),
       page('/share-message', (s) {
         final e = s.extra is Map ? s.extra as Map : const {};

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../app/router.dart';
 import '../core/feature_flags.dart';
+import '../features/conversations/conversation_refresh.dart';
 import 'push_service.dart';
 
 /// Hooks for notification types whose handling lives in feature modules (calls, matching).
@@ -40,6 +41,7 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
     return;
   }
   if ((type == 'conversation_message' || type == 'message') && d['conversationId'] != null) {
+    ref.read(conversationRefreshIntentProvider.notifier).request(d['conversationId']!);
     router.go('/conversation/${d['conversationId']}');
     return;
   }
@@ -75,6 +77,7 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
     return;
   }
   if (d['conversationId'] != null) {
+    ref.read(conversationRefreshIntentProvider.notifier).request(d['conversationId']!);
     router.go('/conversation/${d['conversationId']}');
     return;
   }

@@ -6,6 +6,8 @@ import android.content.Intent
 
 class IncomingCallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val callId = intent.getStringExtra(IncomingCallStore.EXTRA_CALL_ID)
+        if (!IncomingCallStore.acceptsRecipient(context, null) || !IncomingCallStore.matches(context, callId)) return
         val conversationId = intent.getStringExtra(IncomingCallStore.EXTRA_CONVERSATION_ID)
         val sessionId = intent.getStringExtra(IncomingCallStore.EXTRA_SESSION_ID)
         val voiceOnly = intent.getBooleanExtra(IncomingCallStore.EXTRA_VOICE_ONLY, false)
@@ -14,7 +16,7 @@ class IncomingCallReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             ACTION_ACCEPT -> {
-                IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_ACCEPT)
+                IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_ACCEPT, callId)
                 IncomingCallNotifier.cancel(context)
                 IncomingCallPlugin.notifyFlutterIfReady(context)
                 val launch = IncomingCallStore.putOn(
@@ -26,11 +28,12 @@ class IncomingCallReceiver : BroadcastReceiver() {
                     callerName,
                     callerAvatar,
                     IncomingCallStore.ACTION_ACCEPT,
+                    callId,
                 )
                 context.startActivity(launch)
             }
-            ACTION_DECLINE -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, "declined")
-            ACTION_DISMISS -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, "missed")
+            ACTION_DECLINE -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, "declined", callId)
+            ACTION_DISMISS -> timeoutDecline(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, "missed", callId)
         }
     }
 
@@ -49,6 +52,7 @@ class IncomingCallReceiver : BroadcastReceiver() {
                 pending["callerName"] as? String ?: "",
                 pending["callerAvatar"] as? String,
                 "missed",
+                pending["callId"] as? String,
             )
         }
 
@@ -60,10 +64,12 @@ class IncomingCallReceiver : BroadcastReceiver() {
             callerName: String,
             callerAvatar: String?,
             outcome: String = "missed",
+            callId: String? = null,
         ) {
-            IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE)
+            if (!IncomingCallStore.matches(context, callId)) return
+            IncomingCallStore.save(context, conversationId, sessionId, voiceOnly, callerName, callerAvatar, IncomingCallStore.ACTION_DECLINE, callId)
             IncomingCallNotifier.cancel(context)
-            CallDeclineHttp.declineAsync(context, conversationId, outcome)
+            CallDeclineHttp.declineAsync(context, conversationId, outcome, callId, sessionId)
             IncomingCallPlugin.notifyFlutterIfReady(context)
             // Do not clear: Flutter cold-start must still see the decline action.
         }

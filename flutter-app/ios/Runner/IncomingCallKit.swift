@@ -2,28 +2,39 @@ import CallKit
 import AVFoundation
 import Foundation
 
-/// CallKit + pending-call store for iOS (mirrors Android FSI / IncomingCallStore).
+/// Consumable events are separate from the active identity used by CallKit callbacks.
+final class IncomingCallEventStore {
+  private(set) var active: [String: Any]?
+  private var pending = false
+  func save(_ payload: [String: Any]) { active = payload; pending = true }
+  func setAction(_ action: String, pending: Bool = true) {
+    guard active != nil else { return }
+    active?["action"] = action
+    self.pending = pending
+  }
+  func consume() -> [String: Any]? {
+    guard pending else { return nil }
+    pending = false
+    return active
+  }
+  func matches(_ callId: String?) -> Bool {
+    guard let callId, !callId.isEmpty else { return false }
+    return active?["callId"] as? String == callId
+  }
+  func clear() { active = nil; pending = false }
+}
+
 final class IncomingCallKit: NSObject, CXProviderDelegate {
   static let shared = IncomingCallKit()
-
-  private let provider: CXProvider
   private let controller = CXCallController()
+  private let provider: CXProvider
+  private var ongoingCallId: String?
   private var activeUUID: UUID?
   private var ringTimeout: DispatchWorkItem?
   private weak var channel: FlutterMethodChannel?
-
+  private let store = IncomingCallEventStore()
   private(set) var flutterReady = false
   private var appForeground = false
-
-  private enum Pref {
-    static let suite = UserDefaults.standard
-    static let conversationId = "nexchat_incoming_conversation_id"
-    static let sessionId = "nexchat_incoming_session_id"
-    static let voiceOnly = "nexchat_incoming_voice_only"
-    static let callerName = "nexchat_incoming_caller_name"
-    static let callerAvatar = "nexchat_incoming_caller_avatar"
-    static let action = "nexchat_incoming_action"
-  }
 
   private override init() {
     let config = CXProviderConfiguration()
@@ -31,94 +42,81 @@ final class IncomingCallKit: NSObject, CXProviderDelegate {
     config.maximumCallsPerCallGroup = 1
     config.maximumCallGroups = 1
     config.supportedHandleTypes = [.generic]
-    if #available(iOS 14.0, *) {
-      config.includesCallsInRecents = false
-    }
+    config.includesCallsInRecents = false
     provider = CXProvider(configuration: config)
     super.init()
     provider.setDelegate(self, queue: nil)
   }
 
-  func attach(channel: FlutterMethodChannel) {
-    self.channel = channel
-  }
+  func attach(channel: FlutterMethodChannel) { self.channel = channel }
+  func markReady() { flutterReady = true; notifyFlutterIfReady() }
+  func setForeground(_ value: Bool) { appForeground = value }
 
-  func markReady() {
-    flutterReady = true
-    notifyFlutterIfReady()
-  }
-
-  func setForeground(_ value: Bool) {
-    appForeground = value
-  }
-
-  /// PushKit path: report CallKit first, then invoke completion (required by iOS).
-  func showIncomingFromVoip(
-    conversationId: String?,
-    sessionId: String?,
-    voiceOnly: Bool,
-    callerName: String,
-    callerAvatar: String?,
-    completion: @escaping () -> Void
-  ) {
-    save(
-      conversationId: conversationId,
-      sessionId: sessionId,
-      voiceOnly: voiceOnly,
-      callerName: callerName,
-      callerAvatar: callerAvatar,
-      action: "ring"
-    )
-    endActiveCallKit(report: false)
-
+  /// Satisfy PushKit's report requirement even for stale/legacy payloads, without caller PII.
+  func reportUnavailableVoip(completion: @escaping () -> Void) {
     let uuid = UUID()
-    activeUUID = uuid
     let update = CXCallUpdate()
-    update.remoteHandle = CXHandle(type: .generic, value: callerName.isEmpty ? "NexChat" : callerName)
-    update.localizedCallerName = callerName.isEmpty ? "NexChat" : callerName
-    update.hasVideo = !voiceOnly
-    update.supportsHolding = false
-    update.supportsGrouping = false
-    update.supportsUngrouping = false
-    update.supportsDTMF = false
-
-    provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
-      if let error {
-        NSLog("[CallKit] VoIP report failed: %@", error.localizedDescription)
-      } else {
-        self?.scheduleRingTimeout()
-      }
+    update.remoteHandle = CXHandle(type: .generic, value: "NexChat")
+    update.localizedCallerName = "NexChat"
+    provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] _ in
+      self?.provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
       completion()
-      self?.notifyFlutterIfReady()
     }
   }
 
-  func showIncoming(
-    conversationId: String?,
-    sessionId: String?,
-    voiceOnly: Bool,
-    callerName: String,
-    callerAvatar: String?
-  ) {
-    save(
-      conversationId: conversationId,
-      sessionId: sessionId,
-      voiceOnly: voiceOnly,
-      callerName: callerName,
-      callerAvatar: callerAvatar,
-      action: "ring"
-    )
+  func showIncomingFromVoip(callId: String, conversationId: String?, sessionId: String?,
+    voiceOnly: Bool, callerName: String, callerAvatar: String?, completion: @escaping () -> Void) {
+    if let ongoingCallId, ongoingCallId != callId {
+      reportUnavailableVoip(completion: completion)
+      return
+    }
+    if store.matches(callId), let uuid = activeUUID {
+      // Report each incoming PushKit delivery; don't replace the live call's identity/timer.
+      provider.reportNewIncomingCall(with: uuid, update: update(voiceOnly, callerName)) { _ in completion() }
+      return
+    }
+    // A second attempt must not end an already accepted call.
+    if activeUUID != nil && store.active?["action"] as? String == "accept" {
+      reportUnavailableVoip(completion: completion)
+      return
+    }
+    replace(callId: callId, conversationId: conversationId, sessionId: sessionId,
+            voiceOnly: voiceOnly, callerName: callerName, callerAvatar: callerAvatar)
+    reportCurrent(voiceOnly, callerName, completion: completion)
+  }
 
-    // If Flutter is already foreground + ready, the in-app overlay handles UI.
+  func showIncoming(callId: String?, conversationId: String?, sessionId: String?,
+    voiceOnly: Bool, callerName: String, callerAvatar: String?) {
+    guard let callId, UUID(uuidString: callId) != nil,
+          VoipPushManager.shared.authenticatedUser != nil else { return }
+    if let ongoingCallId, ongoingCallId != callId { return }
+    if store.matches(callId) { return }
+    if activeUUID != nil && store.active?["action"] as? String == "accept" { return }
+    replace(callId: callId, conversationId: conversationId, sessionId: sessionId,
+            voiceOnly: voiceOnly, callerName: callerName, callerAvatar: callerAvatar)
     if flutterReady && appForeground {
       notifyFlutterIfReady()
       return
     }
+    reportCurrent(voiceOnly, callerName, completion: {})
+  }
 
-    endActiveCallKit(report: false)
+  private func replace(callId: String, conversationId: String?, sessionId: String?,
+    voiceOnly: Bool, callerName: String, callerAvatar: String?) {
+    dismissIncoming()
+    store.save([
+      "callId": callId,
+      "recipientUserId": VoipPushManager.shared.authenticatedUser as Any? ?? NSNull(),
+      "conversationId": conversationId as Any? ?? NSNull(),
+      "sessionId": sessionId as Any? ?? NSNull(),
+      "voiceOnly": voiceOnly,
+      "callerName": callerName,
+      "callerAvatar": callerAvatar as Any? ?? NSNull(),
+      "action": "ring",
+    ])
+  }
 
-    let uuid = UUID()
-    activeUUID = uuid
+  private func update(_ voiceOnly: Bool, _ callerName: String) -> CXCallUpdate {
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .generic, value: callerName.isEmpty ? "NexChat" : callerName)
     update.localizedCallerName = callerName.isEmpty ? "NexChat" : callerName
@@ -127,177 +125,127 @@ final class IncomingCallKit: NSObject, CXProviderDelegate {
     update.supportsGrouping = false
     update.supportsUngrouping = false
     update.supportsDTMF = false
+    return update
+  }
 
-    provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
-      if let error {
-        NSLog("[CallKit] reportNewIncomingCall failed: %@", error.localizedDescription)
-        self?.notifyFlutterIfReady()
-        return
+  private func reportCurrent(_ voiceOnly: Bool, _ callerName: String, completion: @escaping () -> Void) {
+    let uuid = UUID()
+    activeUUID = uuid
+    provider.reportNewIncomingCall(with: uuid, update: update(voiceOnly, callerName)) { [weak self] error in
+      if let self, self.activeUUID == uuid {
+        if error == nil { self.scheduleRingTimeout(uuid) }
+        else { self.activeUUID = nil }
+        self.notifyFlutterIfReady()
       }
-      self?.scheduleRingTimeout()
+      completion()
     }
   }
 
-  func dismissIncoming(clearStore: Bool = true) {
+  func start(callId: String?) { ongoingCallId = callId }
+
+  @discardableResult
+  func stop(callId: String? = nil) -> Bool {
+    if let callId, let ongoingCallId, callId != ongoingCallId { return false }
+    ongoingCallId = nil
+    dismissIncoming(clearStore: true, callId: callId)
+    return true
+  }
+
+  func acceptIncoming(callId: String) {
+    guard store.matches(callId) else { return }
+    if store.active?["action"] as? String == "accept" { return }
     cancelRingTimeout()
-    endActiveCallKit(report: true)
-    if clearStore {
-      clear()
+    if let uuid = activeUUID {
+      controller.request(CXTransaction(action: CXAnswerCallAction(call: uuid))) { _ in }
+    } else {
+      store.setAction("accept", pending: false)
     }
   }
 
-  func consumePending() -> [String: Any]? {
-    let data = peek()
-    if data != nil { clear() }
-    return data
+  func dismissIncoming(clearStore: Bool = true, callId: String? = nil, reason: String? = nil) {
+    if let callId, !store.matches(callId) { return }
+    if reason == "answered" && store.active?["action"] as? String == "accept" { return }
+    cancelRingTimeout()
+    if let uuid = activeUUID {
+      activeUUID = nil // Ignore a late CXEndCallAction for this replaced call.
+      provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+    }
+    if reason != nil {
+      store.setAction("end")
+      notifyFlutterIfReady()
+    }
+    if clearStore { store.clear() }
   }
 
-  // MARK: - CXProviderDelegate
+  func consumePending() -> [String: Any]? { store.consume() }
 
   func providerDidReset(_ provider: CXProvider) {
     activeUUID = nil
     cancelRingTimeout()
+    store.clear()
   }
 
   func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+    guard action.callUUID == activeUUID else { action.fail(); return }
     cancelRingTimeout()
-    configureAudioSession()
+    let session = AVAudioSession.sharedInstance()
+    try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker])
     action.fulfill()
-    mutateAction("accept")
+    store.setAction("accept")
     notifyFlutterIfReady()
   }
 
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+    guard action.callUUID == activeUUID else { action.fulfill(); return }
+    activeUUID = nil
     cancelRingTimeout()
-    let uuid = action.callUUID
     action.fulfill()
-    if activeUUID == uuid {
-      activeUUID = nil
-    }
-    guard let current = peek() else { return }
-    let actionName = (current["action"] as? String) ?? "ring"
-    // Decline / miss if still ringing (not accepted into media yet).
-    if actionName == "ring" || actionName == "decline" {
-      mutateAction("decline")
-      CallDeclineHttpIOS.declineAsync(
-        conversationId: current["conversationId"] as? String,
-        outcome: "declined"
-      )
-      notifyFlutterIfReady()
+    guard let current = store.active else { return }
+    if current["action"] as? String == "ring" {
+      store.setAction("decline")
+      CallDeclineHttpIOS.declineAsync(conversationId: current["conversationId"] as? String,
+        callId: current["callId"] as? String, sessionId: current["sessionId"] as? String, outcome: "declined")
     } else {
-      clear()
+      store.setAction("end")
     }
+    notifyFlutterIfReady()
   }
 
-  func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-    // LiveKit / Flutter will take over the session once connected.
-  }
+  func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {}
 
-  // MARK: - Private
-
-  private func scheduleRingTimeout() {
+  private func scheduleRingTimeout(_ uuid: UUID) {
     cancelRingTimeout()
     let work = DispatchWorkItem { [weak self] in
-      guard let self else { return }
-      self.mutateAction("decline")
-      let cid = self.peek()?["conversationId"] as? String
-      CallDeclineHttpIOS.declineAsync(conversationId: cid, outcome: "missed")
-      self.endActiveCallKit(report: true)
+      guard let self, self.activeUUID == uuid, let current = self.store.active else { return }
+      self.store.setAction("decline")
+      CallDeclineHttpIOS.declineAsync(conversationId: current["conversationId"] as? String,
+        callId: current["callId"] as? String, sessionId: current["sessionId"] as? String, outcome: "missed")
+      self.dismissIncoming(clearStore: false)
       self.notifyFlutterIfReady()
     }
     ringTimeout = work
     DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: work)
   }
 
-  private func cancelRingTimeout() {
-    ringTimeout?.cancel()
-    ringTimeout = nil
-  }
-
-  private func endActiveCallKit(report: Bool) {
-    guard let uuid = activeUUID else { return }
-    activeUUID = nil
-    if report {
-      provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
-    }
-    let end = CXEndCallAction(call: uuid)
-    let tx = CXTransaction(action: end)
-    controller.request(tx) { _ in }
-  }
-
-  private func configureAudioSession() {
-    let session = AVAudioSession.sharedInstance()
-    try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker])
-    try? session.setActive(true)
-  }
-
+  private func cancelRingTimeout() { ringTimeout?.cancel(); ringTimeout = nil }
   private func notifyFlutterIfReady() {
-    guard flutterReady else { return }
-    guard let data = consumePending() else { return }
-    DispatchQueue.main.async { [weak self] in
-      self?.channel?.invokeMethod("incomingEvent", arguments: data)
-    }
-  }
-
-  private func save(
-    conversationId: String?,
-    sessionId: String?,
-    voiceOnly: Bool,
-    callerName: String,
-    callerAvatar: String?,
-    action: String
-  ) {
-    let d = Pref.suite
-    d.set(conversationId ?? "", forKey: Pref.conversationId)
-    d.set(sessionId ?? "", forKey: Pref.sessionId)
-    d.set(voiceOnly, forKey: Pref.voiceOnly)
-    d.set(callerName, forKey: Pref.callerName)
-    d.set(callerAvatar ?? "", forKey: Pref.callerAvatar)
-    d.set(action, forKey: Pref.action)
-  }
-
-  private func mutateAction(_ action: String) {
-    Pref.suite.set(action, forKey: Pref.action)
-  }
-
-  private func peek() -> [String: Any]? {
-    let d = Pref.suite
-    let conversationId = d.string(forKey: Pref.conversationId) ?? ""
-    let sessionId = d.string(forKey: Pref.sessionId) ?? ""
-    if conversationId.isEmpty && sessionId.isEmpty { return nil }
-    var map: [String: Any] = [
-      "conversationId": conversationId.isEmpty ? NSNull() : conversationId,
-      "sessionId": sessionId.isEmpty ? NSNull() : sessionId,
-      "voiceOnly": d.bool(forKey: Pref.voiceOnly),
-      "callerName": d.string(forKey: Pref.callerName) ?? "",
-      "action": d.string(forKey: Pref.action) ?? "ring",
-    ]
-    let avatar = d.string(forKey: Pref.callerAvatar) ?? ""
-    map["callerAvatar"] = avatar.isEmpty ? NSNull() : avatar
-    return map
-  }
-
-  private func clear() {
-    let d = Pref.suite
-    d.removeObject(forKey: Pref.conversationId)
-    d.removeObject(forKey: Pref.sessionId)
-    d.removeObject(forKey: Pref.voiceOnly)
-    d.removeObject(forKey: Pref.callerName)
-    d.removeObject(forKey: Pref.callerAvatar)
-    d.removeObject(forKey: Pref.action)
+    guard flutterReady, let data = store.consume() else { return }
+    // Provider and PushKit callbacks run on main; avoid delivering an old event later.
+    channel?.invokeMethod("incomingEvent", arguments: data)
   }
 }
 
 /// REST decline when Flutter engine is not ready (matches Android CallDeclineHttp).
 enum CallDeclineHttpIOS {
-  static func declineAsync(conversationId: String?, outcome: String) {
-    guard let conversationId, !conversationId.isEmpty else { return }
+  static func declineAsync(conversationId: String?, callId: String?, sessionId: String? = nil, outcome: String) {
+    guard let callId, !callId.isEmpty else { return }
+    guard conversationId?.isEmpty == false || sessionId?.isEmpty == false else { return }
     DispatchQueue.global(qos: .utility).async {
-      decline(conversationId: conversationId, outcome: outcome)
+      decline(conversationId: conversationId, callId: callId, sessionId: sessionId, outcome: outcome)
     }
   }
 
-  private static func decline(conversationId: String, outcome: String) {
+  private static func decline(conversationId: String?, callId: String, sessionId: String?, outcome: String) {
     let defaults = UserDefaults.standard
     // Flutter shared_preferences prefixes keys with "flutter."
     let token = (defaults.string(forKey: "flutter.nexchat_native_token") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -314,11 +262,13 @@ enum CallDeclineHttpIOS {
     req.setValue("application/json", forHTTPHeaderField: "Accept")
     req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     req.timeoutInterval = 12
-    let body: [String: Any] = [
-      "conversationId": conversationId,
+    var body: [String: Any] = [
+      "callId": callId,
       "busy": false,
       "outcome": outcome,
     ]
+    if let conversationId, !conversationId.isEmpty { body["conversationId"] = conversationId }
+    else if let sessionId { body["sessionId"] = sessionId }
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     let sem = DispatchSemaphore(value: 0)
     URLSession.shared.dataTask(with: req) { _, response, error in

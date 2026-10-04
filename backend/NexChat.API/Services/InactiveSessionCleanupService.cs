@@ -62,7 +62,7 @@ public class InactiveSessionCleanupService(IServiceScopeFactory scopeFactory) : 
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, DateTime.UtcNow));
 
             foreach (var sid in toClose)
-                await hubContext.Clients.Group(sid.ToString()).SendAsync("SessionEnded", Guid.Empty);
+                await SessionDelivery.EndedAsync(db, hubContext.Clients, sid, Guid.Empty);
         }
     }
 }

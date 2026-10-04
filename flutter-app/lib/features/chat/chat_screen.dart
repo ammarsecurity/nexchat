@@ -10,7 +10,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../app/router.dart';
 import '../../core/feature_flags.dart';
 import '../../core/format.dart';
-import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
@@ -27,6 +26,7 @@ import '../calls/call_state.dart';
 import '../calls/incoming_call_dialog.dart';
 import '../calls/video_call_screen.dart';
 import '../conversations/conversation_chat_screen.dart' show TypingBubble;
+import '../conversations/message_contract.dart';
 import '../matching/matching_controller.dart';
 import 'chat_session.dart';
 
@@ -48,12 +48,14 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.initialPartner,
     this.incomingVideoCall = false,
     this.autoAcceptCall = false,
+    this.callId,
     this.supportChat = false,
   });
   final String sessionId;
   final Json? initialPartner;
   final bool incomingVideoCall;
   final bool autoAcceptCall;
+  final String? callId;
   final bool supportChat;
 
   @override
@@ -94,6 +96,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _showShareModal = false;
   bool _shareCodeCopied = false;
   bool _incomingCall = false;
+  String? _callId;
   bool _callDeclined = false;
   bool _showVideoConfirm = false;
   bool _callingOut = false;
@@ -103,7 +106,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _uploadingImage = false;
 
   String get _sid => widget.sessionId;
-  String? get _myId => ref.read(authProvider).user?.id;
+  late final String? _accountId;
+  String? get _myId => _accountId;
+  bool get _sameAccount => mounted && ref.read(authProvider).user?.id == _accountId;
+  bool _acceptsSession(Map? payload) => _sameAccount && payload != null && payload.str('sessionId') == _sid;
   Json? get _partner => ref.read(chatSessionProvider).partner;
   bool get _isSupportChat => widget.supportChat || _partner?.s('name') == 'دعم';
   bool get _partnerIsFeatured => _partner?.b('isFeatured') ?? false;
@@ -117,7 +123,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   @override
   void initState() {
     super.initState();
+    _accountId = ref.read(authProvider).user?.id;
     (_router, _chat, _matching);
+    _callId = widget.callId;
     WidgetsBinding.instance.addObserver(this);
     unawaited(SecureScreen.acquire());
     _input.addListener(() {
@@ -168,6 +176,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Json _normalize(Json m) => {
         'id': m.v('id'),
+        'sessionId': m.v('sessionId'),
+        'clientMessageId': m.v('clientMessageId'),
         'senderId': m.v('senderId'),
         'content': m.v('content'),
         'type': m.s('type') ?? 'text',
@@ -195,16 +205,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _offs.addAll([
       h.on('ReceiveMessage', (a) {
         final msg = _first(a);
-        if (msg == null) return;
+        if (!_acceptsSession(msg) || msg == null) return;
         if (_myId != null && msg.str('senderId') == _myId) {
           _chat.updatePendingMessage(_normalize(msg));
         } else {
           _chat.addMessage({..._normalize(msg), 'status': 'sent'});
         }
       }),
-      h.on('UserTyping', (_) => _chat.setTyping(true)),
-      h.on('UserStoppedTyping', (_) => _chat.setTyping(false)),
-      h.on('SessionEnded', (_) {
+      h.on('UserTypingV2', (a) { if (_acceptsSession(_first(a))) _chat.setTyping(true); }),
+      h.on('UserStoppedTypingV2', (a) { if (_acceptsSession(_first(a))) _chat.setTyping(false); }),
+      h.on('SessionEndedV2', (a) {
+        if (!_acceptsSession(_first(a))) return;
         _timer?.cancel();
         if (!_isSupportChat) {
           _clearPartnerWait();
@@ -221,7 +232,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }),
       h.on('SessionJoined', (a) {
         final data = _first(a);
-        if (data == null) return;
+        if (!_sameAccount || data == null || data.str('id') != _sid) return;
         final p = data.v('partner') is Map ? Json.from(data.v('partner') as Map) : null;
         final msgs = asJsonList(data.v('messages'));
         if (p != null) {
@@ -250,32 +261,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           if (mounted) setState(() => _showReportSuccess = false);
         });
       }),
-      h.on('IncomingVideoCall', (_) {
+      h.on('IncomingVideoCall', (a) {
+        if (a.length < 3 || a[1] != _sid) return;
         if (!_isSupportChat && mounted) {
+          final callId = a[2]?.toString();
           final active = ref.read(activeCallProvider).sessionId;
           if (active != null && active != _sid) {
-            Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
+            Hubs.chat.invoke('DeclineVideoCallV2', [_sid, 'busy', callId ?? '']).catchError((_) => null);
             return;
           }
+          _callId = callId;
           setState(() => _incomingCall = true);
         }
       }),
-      h.on('VideoCallAccepted', (_) {
+      h.on('VideoCallAccepted', (a) {
+        if (a.length < 2 || a[0] != _sid || a[1] != _callId || !_callingOut) return;
         _outgoingRing?.cancel();
         if (mounted) setState(() => _callingOut = false);
         _leavingProgrammatically = true;
-        openVideoRoute(_router, _sid, {'initiator': true, 'voiceOnly': false});
+        openVideoRoute(_router, _sid, {'initiator': true, 'voiceOnly': a.length > 2 && a[2] == true, 'callId': _callId});
       }),
-      h.on('VideoCallDeclined', (_) {
-        if (!mounted) return;
+      h.on('VideoCallEnded', (a) {
+        if (a.length < 3 || a[1] != _sid || a[2] != _callId || !mounted) return;
         _outgoingRing?.cancel();
-        setState(() {
-          _callingOut = false;
-          _callDeclined = true;
-        });
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) setState(() => _callDeclined = false);
-        });
+        setState(() { _callingOut = false; _incomingCall = false; _callId = null; });
+      }),
+      h.on('VideoCallBusy', (a) {
+        if (a.length < 2 || a[0] != _sid || a[1] != _callId || !mounted) return;
+        _outgoingRing?.cancel();
+        final active = ref.read(activeCallProvider);
+        if (sameCall(active.sessionId, active.callId, _sid, _callId)) ref.read(activeCallProvider.notifier).clear();
+        setState(() { _callingOut = false; _callDeclined = true; });
       }),
     ]);
 
@@ -417,16 +433,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     return false;
   }
 
-  String _tempId() => 'temp-${DateTime.now().millisecondsSinceEpoch}-${UniqueKey().hashCode.toRadixString(36)}';
+  String _tempId() => newClientMessageId();
 
   Future<void> _sendRaw(String content, String type) async {
+    if (!_sameAccount) return;
     if (!_requireOnline(send: true)) return;
     final tempId = _tempId();
-    _chat.addMessage({'tempId': tempId, 'senderId': _myId, 'content': content, 'type': type, 'sentAt': DateTime.now(), 'status': 'pending'});
+    _chat.addMessage({'sessionId': _sid, 'clientMessageId': tempId, 'tempId': tempId, 'senderId': _myId, 'content': content, 'type': type, 'sentAt': DateTime.now(), 'status': 'pending'});
     try {
-      await Hubs.chat.invoke('SendMessage', [_sid, content, type]);
+      final acknowledgment = await Hubs.chat.invokeReliable('SendMessageWithClientId', [_sid, content, type, tempId]);
+      if (acknowledgment is! Map || !_acceptsSession(acknowledgment) || acknowledgment.str('id').isEmpty || acknowledgment.str('clientMessageId') != tempId) throw StateError('Missing durable message acknowledgment');
+      _chat.updatePendingMessage(_normalize(Json.from(acknowledgment)));
     } catch (_) {
-      _chat.updateMessage(tempId, {'status': 'failed'});
+      if (_sameAccount && !_chat.current.messages.any((m) => clientMessageId(m) == tempId && m.str('id').isNotEmpty)) _chat.updateMessage(tempId, {'status': 'failed'});
     }
   }
 
@@ -457,12 +476,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Future<void> _retry(Json msg) async {
     if (msg['status'] != 'failed') return;
     if (!_requireOnline(send: true)) return;
-    final tempId = _tempId();
+    final tempId = clientMessageId(msg);
     _chat.updateMessage('${msg['tempId']}', {'tempId': tempId, 'status': 'pending'});
     try {
-      await Hubs.chat.invoke('SendMessage', [_sid, msg.str('content'), msg.s('type') ?? 'text']);
+      final acknowledgment = await Hubs.chat.invokeReliable('SendMessageWithClientId', [_sid, msg.str('content'), msg.s('type') ?? 'text', tempId]);
+      if (acknowledgment is! Map || !_acceptsSession(acknowledgment) || acknowledgment.str('id').isEmpty || acknowledgment.str('clientMessageId') != tempId) throw StateError('Missing durable message acknowledgment');
+      _chat.updatePendingMessage(_normalize(Json.from(acknowledgment)));
     } catch (_) {
-      _chat.updateMessage(tempId, {'status': 'failed'});
+      if (_sameAccount && !_chat.current.messages.any((m) => clientMessageId(m) == tempId && m.str('id').isNotEmpty)) _chat.updateMessage(tempId, {'status': 'failed'});
     }
   }
 
@@ -568,7 +589,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (mounted) setState(() => _showVideoConfirm = false);
       if (active.sessionId == _sid) {
         ref.read(activeCallProvider.notifier).expand();
-        openVideoRoute(_router, _sid, {'initiator': true, 'voiceOnly': active.voiceOnly});
+        openVideoRoute(_router, _sid, {'initiator': true, 'voiceOnly': active.voiceOnly, 'callId': active.callId});
       } else {
         showToast(context, t('videoCall.alreadyInCall'), error: true);
       }
@@ -578,13 +599,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _showVideoConfirm = false;
       _callingOut = true;
     });
+    _callId = newCallId();
+    ref.read(activeCallProvider.notifier).syncMeta(sessionId: _sid, callId: _callId, voiceOnly: false, isConversation: false);
     _outgoingRing?.cancel();
     _outgoingRing = Timer(kIncomingCallRingTimeout, () {
       if (!mounted || !_callingOut) return;
       _cancelOutgoingCall();
     });
     try {
-      await Hubs.chat.invoke('RequestVideoCall', [_sid]);
+      await Hubs.chat.invoke('RequestVideoCallV2', [_sid, false, _callId ?? '']);
     } catch (_) {
       _outgoingRing?.cancel();
       if (mounted) setState(() => _callingOut = false);
@@ -593,6 +616,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _acceptCall() async {
     if (!_requireOnline()) return;
+    final callId = _callId;
+    if (callId == null) return;
     final active = ref.read(activeCallProvider);
     if (active.sessionId != null && active.sessionId != _sid) {
       _declineCall();
@@ -601,7 +626,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
     setState(() => _incomingCall = false);
     try {
-      await Hubs.chat.invoke('AcceptVideoCall', [_sid]);
+      final accepted = await Hubs.chat.invoke('AcceptVideoCallV2', [_sid, callId]);
+      if (accepted != true || _callId != callId) return;
     } catch (_) {
       if (mounted) {
         setState(() => _incomingCall = true);
@@ -611,18 +637,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
     if (!mounted) return;
     _leavingProgrammatically = true;
-    openVideoRoute(_router, _sid, {'initiator': false, 'voiceOnly': false});
+    ref.read(activeCallProvider.notifier).syncMeta(sessionId: _sid, callId: _callId, voiceOnly: false, isConversation: false);
+    openVideoRoute(_router, _sid, {'initiator': false, 'voiceOnly': false, 'callId': _callId});
   }
 
   void _declineCall() {
     setState(() => _incomingCall = false);
-    Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
+    Hubs.chat.invoke('DeclineVideoCallV2', [_sid, 'declined', _callId ?? '']).catchError((_) => null);
   }
 
   void _cancelOutgoingCall() {
     _outgoingRing?.cancel();
     setState(() => _callingOut = false);
-    Hubs.chat.invoke('DeclineVideoCall', [_sid]).catchError((_) => null);
+    final active = ref.read(activeCallProvider);
+    if (sameCall(active.sessionId, active.callId, _sid, _callId)) ref.read(activeCallProvider.notifier).clear();
+    Hubs.chat.invoke('DeclineVideoCallV2', [_sid, 'declined', _callId ?? '']).catchError((_) => null);
   }
 
   Future<void> _copyShareCode() async {

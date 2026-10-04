@@ -32,6 +32,8 @@ public class ApnsVoipService(IOptions<ApnsVoipOptions> options, IHttpClientFacto
 
     public async Task SendVoipAsync(string deviceTokenHex, Dictionary<string, string> data, CancellationToken ct = default)
     {
+        // PushKit is only for actual incoming calls, never silent cancellation.
+        if (!data.TryGetValue("type", out var type) || type != "video_call") return;
         if (!IsConfigured) return;
         if (string.IsNullOrWhiteSpace(deviceTokenHex)) return;
 
@@ -85,16 +87,17 @@ public class ApnsVoipService(IOptions<ApnsVoipOptions> options, IHttpClientFacto
 
         var o = options.Value;
         var keyText = File.ReadAllText(o.KeyPath!);
-        var ecdsa = ECDsa.Create();
+        using var ecdsa = ECDsa.Create();
         ecdsa.ImportFromPem(keyText);
         var credentials = new SigningCredentials(new ECDsaSecurityKey(ecdsa), SecurityAlgorithms.EcdsaSha256);
         var now = DateTime.UtcNow;
         var token = new JwtSecurityToken(
-            issuer: o.TeamId,
-            claims: null,
-            notBefore: now,
-            expires: now.AddMinutes(50),
-            signingCredentials: credentials);
+            new JwtHeader(credentials),
+            new JwtPayload
+            {
+                ["iss"] = o.TeamId,
+                ["iat"] = new DateTimeOffset(now).ToUnixTimeSeconds(),
+            });
         token.Header["kid"] = o.KeyId;
         _cachedJwt = new JwtSecurityTokenHandler().WriteToken(token);
         _jwtExpires = now.AddMinutes(40);

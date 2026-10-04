@@ -5,6 +5,8 @@ public class ConversationMessage
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ConversationId { get; set; }
     public Guid SenderId { get; set; }
+    /// <summary>Stable sender-generated retry key, scoped to this conversation/session.</summary>
+    public string? ClientMessageId { get; set; }
     public string Content { get; set; } = string.Empty;
     public string Type { get; set; } = "text"; // "text" | "image" | "audio" | "video" | "album" | "short_film" | "story_share" | "story_reply" | "call"
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
