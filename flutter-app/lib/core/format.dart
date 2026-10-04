@@ -76,6 +76,119 @@ String albumListPreviewLabel(String? content, String? previewText) {
   return t('conversationChat.albumMessage');
 }
 
+// ---- location / file share ----
+
+class LocationShare {
+  const LocationShare({required this.lat, required this.lng, this.name, this.address});
+  final double lat;
+  final double lng;
+  final String? name;
+  final String? address;
+
+  String get displayName {
+    final n = name?.trim();
+    if (n != null && n.isNotEmpty) return n;
+    final a = address?.trim();
+    if (a != null && a.isNotEmpty) return a;
+    return t('conversationChat.locationMessage');
+  }
+
+  String get mapsUrl => 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+
+  String get staticMapUrl =>
+      'https://staticmap.openstreetmap.de/staticmap.php?center=$lat,$lng&zoom=16&size=600x280&maptype=mapnik&markers=$lat,$lng,red-pushpin';
+}
+
+class FileShare {
+  const FileShare({required this.url, required this.name, this.size, this.contentType});
+  final String url;
+  final String name;
+  final int? size;
+  final String? contentType;
+
+  String get ext {
+    final i = name.lastIndexOf('.');
+    return i >= 0 ? name.substring(i + 1).toLowerCase() : '';
+  }
+}
+
+String buildLocationPayload({required double lat, required double lng, String? name, String? address}) {
+  final map = <String, dynamic>{'lat': lat, 'lng': lng};
+  if (name != null && name.trim().isNotEmpty) map['name'] = name.trim();
+  if (address != null && address.trim().isNotEmpty) map['address'] = address.trim();
+  return jsonEncode(map);
+}
+
+LocationShare? parseLocationMessage(String? type, String? content) {
+  if (type != null && type != 'location') return null;
+  final s = content?.trim() ?? '';
+  if (!s.startsWith('{')) return null;
+  try {
+    final data = jsonDecode(s);
+    if (data is! Map) return null;
+    final lat = double.tryParse('${data['lat'] ?? data['latitude'] ?? ''}');
+    final lng = double.tryParse('${data['lng'] ?? data['lon'] ?? data['longitude'] ?? ''}');
+    if (lat == null || lng == null) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return LocationShare(
+      lat: lat,
+      lng: lng,
+      name: '${data['name'] ?? data['Name'] ?? ''}'.trim().isEmpty ? null : '${data['name'] ?? data['Name']}'.trim(),
+      address: '${data['address'] ?? data['Address'] ?? ''}'.trim().isEmpty ? null : '${data['address'] ?? data['Address']}'.trim(),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+String buildFilePayload({required String url, required String name, int? size, String? contentType}) {
+  final map = <String, dynamic>{'url': url, 'name': name};
+  if (size != null && size > 0) map['size'] = size;
+  if (contentType != null && contentType.isNotEmpty) map['contentType'] = contentType;
+  return jsonEncode(map);
+}
+
+FileShare? parseFileMessage(String? type, String? content) {
+  if (type != null && type != 'file') return null;
+  final s = content?.trim() ?? '';
+  if (!s.startsWith('{')) return null;
+  try {
+    final data = jsonDecode(s);
+    if (data is! Map) return null;
+    final url = '${data['url'] ?? data['Url'] ?? ''}'.trim();
+    final name = '${data['name'] ?? data['Name'] ?? data['fileName'] ?? ''}'.trim();
+    if (url.isEmpty || name.isEmpty) return null;
+    final sizeRaw = data['size'] ?? data['Size'];
+    final size = sizeRaw is int ? sizeRaw : int.tryParse('$sizeRaw');
+    final ct = '${data['contentType'] ?? data['ContentType'] ?? ''}'.trim();
+    return FileShare(url: url, name: name, size: size, contentType: ct.isEmpty ? null : ct);
+  } catch (_) {
+    return null;
+  }
+}
+
+String formatFileSize(int? bytes) {
+  if (bytes == null || bytes <= 0) return '';
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(bytes < 10 * 1024 ? 1 : 0)} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB';
+}
+
+String locationListPreview(String? content) {
+  final loc = parseLocationMessage('location', content);
+  if (loc == null) return '📍 ${t('conversationChat.locationMessage')}';
+  final label = loc.displayName;
+  final out = '📍 $label';
+  return out.length > 50 ? '${out.substring(0, 50)}…' : out;
+}
+
+String fileListPreview(String? content) {
+  final file = parseFileMessage('file', content);
+  if (file == null) return '📎 ${t('conversationChat.fileMessage')}';
+  final out = '📎 ${file.name}';
+  return out.length > 50 ? '${out.substring(0, 50)}…' : out;
+}
+
 // ---- shortFilmShare.js ----
 final _videoRe = RegExp(r'\.(mp4|mov|webm)(\?|$)', caseSensitive: false);
 final _imageRe = RegExp(r'\.(jpg|jpeg|png|gif|webp)(\?|$)', caseSensitive: false);
@@ -126,6 +239,12 @@ String? _previewFromType(String? type, String? preview) {
     case 'call':
       if (preview != null && preview.isNotEmpty && !preview.trim().startsWith('{')) return preview;
       return formatCallMessagePreview(preview, mine: false);
+    case 'location':
+      if (preview != null && preview.isNotEmpty && !preview.trim().startsWith('{')) return preview;
+      return locationListPreview(preview);
+    case 'file':
+      if (preview != null && preview.isNotEmpty && !preview.trim().startsWith('{')) return preview;
+      return fileListPreview(preview);
   }
   return null;
 }
@@ -178,8 +297,7 @@ String formatConversationListPreview(String? preview, {String? type}) {
   if (_videoRe.hasMatch(lower) || (lower.contains('/uploads/') && lower.contains('.mp4'))) return t('conversationChat.videoMessage');
   if (_audioRe.hasMatch(lower)) return t('conversationChat.voiceMessage');
   if (_imageRe.hasMatch(lower) && type != 'album') return t('conversationChat.replyPreviewImage');
-  if (s.startsWith('🎬')) return s;
-  if (s.startsWith('◌')) return s;
+  if (s.startsWith('🎬') || s.startsWith('📍') || s.startsWith('📎') || s.startsWith('◌')) return s;
   if (!s.startsWith('{')) return preview;
   if (parseAlbumMessage(s) != null) return albumListPreviewLabel(s, s);
   try {

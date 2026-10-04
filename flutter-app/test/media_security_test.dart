@@ -56,6 +56,9 @@ void main() {
       ('upload-audio', 'voice.m4a', 'audio/mp4'),
       ('upload-chat-video', 'clip.mp4', 'video/mp4'),
       ('upload-chat-video', 'clip.mov', 'video/quicktime'),
+      ('upload-file', 'report.pdf', 'application/pdf'),
+      ('upload-file', 'notes.txt', 'text/plain'),
+      ('upload-file', 'archive.zip', 'application/zip'),
     ];
     for (final (endpoint, filename, mime) in cases) {
       final file = await File('${dir.path}/$filename').writeAsBytes([1, 2, 3]);
@@ -67,6 +70,7 @@ void main() {
     }
     expect(() => mediaContentType('upload', 'image.exe'), throwsArgumentError);
     expect(() => mediaContentType('upload-audio', 'voice.jpg'), throwsArgumentError);
+    expect(() => mediaContentType('upload-file', 'malware.exe'), throwsArgumentError);
   });
 
   test('API interceptor attaches credentials only to the exact API origin', () async {

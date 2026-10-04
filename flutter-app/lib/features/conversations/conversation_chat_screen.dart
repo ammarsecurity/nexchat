@@ -3,11 +3,15 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
@@ -45,11 +49,17 @@ String replyPreviewText(String? content, String? type) {
   if (type == 'album') return t('conversationChat.replyPreviewAlbum');
   if (type == 'audio') return t('conversationChat.voiceMessage');
   if (type == 'image') return t('conversationChat.replyPreviewImage');
+  if (type == 'location') return locationListPreview(content);
+  if (type == 'file') return fileListPreview(content);
   if (type == 'story_share') return parseStoryShareMessage('story_share', content ?? '')?.listPreview ?? t('share.storySharePreview');
   if (type == 'story_reply') return parseStoryReplyMessage('story_reply', content ?? '')?.listPreview ?? t('stories.storyReplyPreview');
   if (type == 'call') return formatCallMessagePreview(content, mine: false);
   if (content == null || content.isEmpty) return '';
   if (parseAlbumMessage(content) != null) return t('conversationChat.replyPreviewAlbum');
+  final loc = parseLocationMessage(null, content);
+  if (loc != null) return locationListPreview(content);
+  final file = parseFileMessage(null, content);
+  if (file != null) return fileListPreview(content);
   final lower = content.toLowerCase();
   if (RegExp(r'\.(webm|m4a|ogg|opus|mp3|wav)(\?|$)').hasMatch(lower)) return t('conversationChat.voiceMessage');
   if (RegExp(r'\.(mp4|mov)(\?|$)').hasMatch(lower)) return t('conversationChat.replyPreviewVideo');
@@ -85,7 +95,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   Object? _refreshError;
   late final ConversationRefreshController _refresh;
   late final String? _sessionToken;
-  bool _uploadingImage = false, _uploadingVideo = false, _uploadingAlbum = false, _uploadingVoice = false;
+  bool _uploadingImage = false, _uploadingVideo = false, _uploadingAlbum = false, _uploadingVoice = false, _uploadingFile = false, _sharingLocation = false;
   Json? _replyingTo;
   Map<String, Json> _groupSenders = {};
   String? _highlighted;
@@ -116,7 +126,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   late final String _accountId;
   String get _me => _accountId;
-  bool get _uploading => _uploadingImage || _uploadingVideo || _uploadingAlbum || _uploadingVoice;
+  bool get _uploading => _uploadingImage || _uploadingVideo || _uploadingAlbum || _uploadingVoice || _uploadingFile || _sharingLocation;
   bool get _ownsStore => mounted && identical(_storeOwner, this) && ref.read(authProvider).user?.id == _accountId && ref.read(authProvider).token == _sessionToken;
 
   @override
@@ -887,8 +897,19 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     try {
       await _hubSendMessage(content, type, '${reply?['id'] ?? ''}', clientId: tempId, viewOnce: viewOnce);
       _markSendResult(tempId, ok: true);
-    } catch (_) {
+    } catch (e) {
       _markSendResult(tempId, ok: false);
+      if (mounted) {
+        final msg = e.toString();
+        final unsupported = msg.contains('Unsupported message type');
+        showToast(
+          context,
+          unsupported
+              ? t('conversationChat.serverUpdateRequired')
+              : Api.errorMessage(e, t('common.error')),
+          error: true,
+        );
+      }
     }
   }
 
@@ -917,9 +938,18 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     );
   }
 
-  Future<void> _attachImage() async {
+  Future<void> _attachImage({bool fromCamera = false}) async {
     if (!_requireOnline(send: true)) return;
-    final f = await pickImage();
+    XFile? f;
+    if (fromCamera) {
+      if (!await ensureCameraPermission()) {
+        if (mounted) showToast(context, t('conversationChat.cameraPermissionDenied'), error: true);
+        return;
+      }
+      f = await pickImage(source: ImageSource.camera);
+    } else {
+      f = await pickImage();
+    }
     if (f == null) return;
     final mode = await _askViewOnceMode();
     if (mode == null || !mounted) return;
@@ -934,9 +964,18 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     }
   }
 
-  Future<void> _attachVideo() async {
+  Future<void> _attachVideo({bool fromCamera = false}) async {
     if (!_requireOnline(send: true)) return;
-    final f = await pickVideo();
+    XFile? f;
+    if (fromCamera) {
+      if (!await ensureCameraPermission(microphone: true)) {
+        if (mounted) showToast(context, t('conversationChat.cameraPermissionDenied'), error: true);
+        return;
+      }
+      f = await pickVideo(source: ImageSource.camera);
+    } else {
+      f = await pickVideo();
+    }
     if (f == null) return;
     final mode = await _askViewOnceMode();
     if (mode == null || !mounted) return;
@@ -970,6 +1009,70 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       if (mounted) showToast(context, Api.errorMessage(e, t('conversationChat.albumUploadFailed')), error: true);
     } finally {
       if (mounted) setState(() => _uploadingAlbum = false);
+    }
+  }
+
+  Future<void> _shareLocation() async {
+    if (!_requireOnline(send: true)) return;
+    // Let the attach sheet finish dismissing before permission / GPS (avoids ANR).
+    await Future<void>.delayed(const Duration(milliseconds: 320));
+    if (!mounted) return;
+    try {
+      await ensureLocationReady();
+      if (!mounted) return;
+      setState(() => _sharingLocation = true);
+      final pos = await getShareablePosition();
+      final payload = buildLocationPayload(
+        lat: pos.latitude,
+        lng: pos.longitude,
+        name: t('conversationChat.currentLocation'),
+      );
+      await _sendUploaded(payload, 'location');
+    } on StateError catch (e) {
+      if (!mounted) return;
+      final key = switch (e.message) {
+        'location_disabled' => 'conversationChat.locationDisabled',
+        'location_denied_forever' || 'location_denied' => 'conversationChat.locationPermissionDenied',
+        'location_timeout' => 'conversationChat.locationFailed',
+        'plugin_missing' => 'conversationChat.pluginRestartRequired',
+        _ => 'conversationChat.locationPermissionDenied',
+      };
+      showToast(context, t(key), error: true);
+    } catch (_) {
+      if (mounted) showToast(context, t('conversationChat.locationFailed'), error: true);
+    } finally {
+      if (mounted) setState(() => _sharingLocation = false);
+    }
+  }
+
+  Future<void> _attachDocument() async {
+    if (!_requireOnline(send: true)) return;
+    try {
+      final picked = await pickChatDocument();
+      if (picked == null || picked.path == null) return;
+      final pickedSize = await picked.length() ?? picked.lengthSync() ?? 0;
+      if (pickedSize > 25 * 1024 * 1024) {
+        if (mounted) showToast(context, t('conversationChat.fileTooLarge'), error: true);
+        return;
+      }
+      setState(() => _uploadingFile = true);
+      final uploaded = await uploadChatDocument(picked.path!, filename: picked.name);
+      await _sendUploaded(
+        buildFilePayload(url: uploaded.url, name: uploaded.name, size: uploaded.size ?? pickedSize, contentType: uploaded.contentType),
+        'file',
+      );
+    } on StateError catch (e) {
+      if (mounted) {
+        showToast(
+          context,
+          e.message == 'plugin_missing' ? t('conversationChat.pluginRestartRequired') : t('conversationChat.fileUploadFailed'),
+          error: true,
+        );
+      }
+    } catch (e) {
+      if (mounted) showToast(context, Api.errorMessage(e, t('conversationChat.fileUploadFailed')), error: true);
+    } finally {
+      if (mounted) setState(() => _uploadingFile = false);
     }
   }
 
@@ -1115,6 +1218,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       preview = s.length > 50 ? s.substring(0, 50) : s;
     } else if (type == 'image') {
       preview = msg.b('isViewOnce') ? t('conversationChat.viewOncePhoto') : t('conversationChat.replyPreviewImage');
+    } else if (type == 'location') {
+      preview = locationListPreview(msg.s('content'));
+    } else if (type == 'file') {
+      preview = fileListPreview(msg.s('content'));
     } else {
       preview = type == 'audio' ? '🎤' : '🖼';
     }
@@ -1243,6 +1350,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       'video' => t('conversationChat.downloadVideo'),
       'audio' => t('conversationChat.downloadAudio'),
       'album' => t('conversationChat.downloadAlbum'),
+      'file' => t('conversationChat.downloadFile'),
       _ => t('conversationChat.downloadImage'),
     };
     final viewOnce = msg.b('isViewOnce');
@@ -1498,25 +1606,40 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   void _openInputMenu() {
     showAppSheet<void>(
       context,
-      builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
-        SheetAction(icon: LucideIcons.image, label: t('conversationChat.attachImage'), onTap: () {
+      builder: (ctx) => _ChatAttachSheet(
+        onCapturePhoto: () {
+          Navigator.pop(ctx);
+          _attachImage(fromCamera: true);
+        },
+        onCaptureVideo: () {
+          Navigator.pop(ctx);
+          _attachVideo(fromCamera: true);
+        },
+        onAttachImage: () {
           Navigator.pop(ctx);
           _attachImage();
-        }),
-        SheetAction(icon: LucideIcons.images, label: t('conversationChat.attachAlbum'), onTap: () {
+        },
+        onAttachAlbum: () {
           Navigator.pop(ctx);
           _attachAlbum();
-        }),
-        SheetAction(icon: LucideIcons.video, label: t('conversationChat.attachVideo'), onTap: () {
+        },
+        onAttachVideo: () {
           Navigator.pop(ctx);
           _attachVideo();
-        }),
-        SheetAction(icon: LucideIcons.mic, label: t('conversationChat.voiceMessage'), onTap: () {
+        },
+        onVoice: () {
           Navigator.pop(ctx);
           _startRecording();
-        }),
-        const SizedBox(height: 8),
-      ]),
+        },
+        onLocation: () {
+          Navigator.pop(ctx);
+          _shareLocation();
+        },
+        onFile: () {
+          Navigator.pop(ctx);
+          _attachDocument();
+        },
+      ),
     );
   }
 
@@ -1801,12 +1924,16 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
               : _buildInput(context),
         ]),
         LoaderOverlay(
-          show: _loading || _uploadingVideo || _uploadingAlbum,
+          show: _loading || _uploadingVideo || _uploadingAlbum || _uploadingFile || _sharingLocation,
           text: _uploadingVideo
               ? t('conversationChat.uploadingVideo')
               : _uploadingAlbum
                   ? t('conversationChat.uploadingAlbum')
-                  : t('common.loading'),
+                  : _uploadingFile
+                      ? t('conversationChat.uploadingFile')
+                      : _sharingLocation
+                          ? t('conversationChat.sharingLocation')
+                          : t('common.loading'),
         ),
         if (_callingOut)
           _CallingOverlay(
@@ -2246,6 +2373,8 @@ class MessageItem extends StatelessWidget {
     final sf = parseShortFilmMessage(type, content);
     final storyShare = parseStoryShareMessage(type, content);
     final storyReply = parseStoryReplyMessage(type, content);
+    final location = parseLocationMessage(type, content);
+    final fileShare = parseFileMessage(type, content);
     final fg = mine ? Colors.white : c.msgTheirsColor;
     final reactions = (msg['reactions'] as List? ?? const []).whereType<Map>().toList();
     String? myReaction;
@@ -2255,7 +2384,15 @@ class MessageItem extends StatelessWidget {
     }
     myReaction ??= msg.s('myReaction');
 
-    final isMediaBubble = type == 'image' || album != null || type == 'video' || sf != null || storyShare != null || storyReply != null || viewOnce;
+    final isMediaBubble = type == 'image' ||
+        album != null ||
+        type == 'video' ||
+        sf != null ||
+        storyShare != null ||
+        storyReply != null ||
+        location != null ||
+        fileShare != null ||
+        viewOnce;
 
     Widget body;
     if (deleted) {
@@ -2306,6 +2443,10 @@ class MessageItem extends StatelessWidget {
       body = ShortFilmCard(title: sf.title, thumbnailUrl: sf.thumbnailUrl, mine: mine, onOpen: () => context.push('/short-films/watch?start=${sf.id}'));
     } else if (type == 'audio') {
       body = AudioBubble(url: content, mine: mine);
+    } else if (location != null) {
+      body = _LocationBubble(location: location, mine: mine, fg: fg);
+    } else if (fileShare != null) {
+      body = _FileBubble(file: fileShare, mine: mine, fg: fg);
     } else {
       body = LinkifiedText(content, style: TextStyle(color: fg, fontSize: 15, height: 1.5), linkColor: mine ? Colors.white : c.primary);
     }
@@ -2445,6 +2586,325 @@ class MessageItem extends StatelessWidget {
                 ]),
               ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAttachSheet extends StatelessWidget {
+  const _ChatAttachSheet({
+    required this.onCapturePhoto,
+    required this.onCaptureVideo,
+    required this.onAttachImage,
+    required this.onAttachAlbum,
+    required this.onAttachVideo,
+    required this.onVoice,
+    required this.onLocation,
+    required this.onFile,
+  });
+
+  final VoidCallback onCapturePhoto;
+  final VoidCallback onCaptureVideo;
+  final VoidCallback onAttachImage;
+  final VoidCallback onAttachAlbum;
+  final VoidCallback onAttachVideo;
+  final VoidCallback onVoice;
+  final VoidCallback onLocation;
+  final VoidCallback onFile;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final items = <_AttachTileData>[
+      _AttachTileData(LucideIcons.camera, t('conversationChat.capturePhotoShort'), const Color(0xFFE91E8C), onCapturePhoto),
+      _AttachTileData(LucideIcons.video, t('conversationChat.captureVideoShort'), const Color(0xFFFF5722), onCaptureVideo),
+      _AttachTileData(LucideIcons.image, t('conversationChat.attachImageShort'), const Color(0xFF9C27B0), onAttachImage),
+      _AttachTileData(LucideIcons.images, t('conversationChat.attachAlbumShort'), const Color(0xFF7C4DFF), onAttachAlbum),
+      _AttachTileData(LucideIcons.clapperboard, t('conversationChat.attachVideoShort'), const Color(0xFFFF9800), onAttachVideo),
+      _AttachTileData(LucideIcons.mic, t('conversationChat.voiceShort'), const Color(0xFFF44336), onVoice),
+      _AttachTileData(LucideIcons.mapPin, t('conversationChat.locationShort'), const Color(0xFF43A047), onLocation),
+      _AttachTileData(LucideIcons.fileText, t('conversationChat.fileShort'), const Color(0xFF5C6BC0), onFile),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            t('conversationChat.attachSheetTitle'),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: c.textPrimary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t('conversationChat.attachSheetSubtitle'),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: c.textMuted, height: 1.35),
+          ),
+          const SizedBox(height: 20),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.82,
+            ),
+            itemBuilder: (_, i) => _AttachTile(data: items[i]),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttachTileData {
+  const _AttachTileData(this.icon, this.label, this.color, this.onTap);
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+}
+
+class _AttachTile extends StatelessWidget {
+  const _AttachTile({required this.data});
+  final _AttachTileData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: data.onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color.lerp(data.color, Colors.white, 0.12)!,
+                    data.color,
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: data.color.withValues(alpha: 0.28),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Icon(data.icon, size: 24, color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              data.label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocationBubble extends StatelessWidget {
+  const _LocationBubble({required this.location, required this.mine, required this.fg});
+  final LocationShare location;
+  final bool mine;
+  final Color fg;
+
+  Future<void> _openMaps() async {
+    final uri = Uri.parse(location.mapsUrl);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final point = LatLng(location.lat, location.lng);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openMaps,
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          width: 248,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: SizedBox(
+                  height: 140,
+                  child: IgnorePointer(
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: point,
+                        initialZoom: 15.2,
+                        interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
+                        backgroundColor: mine ? const Color(0xFF1F5C4F) : const Color(0xFFE8EEF7),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'site.nexchat.nexchat',
+                          maxZoom: 19,
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: point,
+                              width: 44,
+                              height: 44,
+                              alignment: Alignment.bottomCenter,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(color: Colors.black.withValues(alpha: 0.28), blurRadius: 8, offset: const Offset(0, 2)),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.all(7),
+                                child: const Icon(LucideIcons.mapPin, size: 22, color: Color(0xFFE53935)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      location.displayName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w700, height: 1.25),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      t('conversationChat.openInMaps'),
+                      style: TextStyle(color: fg.withValues(alpha: 0.75), fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FileBubble extends StatelessWidget {
+  const _FileBubble({required this.file, required this.mine, required this.fg});
+  final FileShare file;
+  final bool mine;
+  final Color fg;
+
+  Color get _accent {
+    return switch (file.ext) {
+      'pdf' => const Color(0xFFE53935),
+      'doc' || 'docx' || 'rtf' || 'odt' => const Color(0xFF1E88E5),
+      'zip' || 'rar' || '7z' => const Color(0xFFF9A825),
+      'txt' => const Color(0xFF43A047),
+      _ => const Color(0xFF6C63FF),
+    };
+  }
+
+  IconData get _icon {
+    return switch (file.ext) {
+      'pdf' => LucideIcons.fileText,
+      'doc' || 'docx' || 'rtf' || 'odt' => LucideIcons.fileType,
+      'zip' || 'rar' || '7z' => LucideIcons.folderArchive,
+      'txt' => LucideIcons.file,
+      _ => LucideIcons.file,
+    };
+  }
+
+  Future<void> _open() async {
+    final absolute = Api.absoluteUrl(file.url) ?? file.url;
+    await launchUrl(Uri.parse(absolute), mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sizeLabel = formatFileSize(file.size);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _open,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 248,
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: _accent.withValues(alpha: mine ? 0.22 : 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Icon(_icon, size: 24, color: mine ? Colors.white : _accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w700, height: 1.25),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      [
+                        if (file.ext.isNotEmpty) file.ext.toUpperCase(),
+                        if (sizeLabel.isNotEmpty) sizeLabel,
+                      ].join(' · '),
+                      style: TextStyle(color: fg.withValues(alpha: 0.72), fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(LucideIcons.download, size: 18, color: fg.withValues(alpha: 0.75)),
+            ],
+          ),
         ),
       ),
     );

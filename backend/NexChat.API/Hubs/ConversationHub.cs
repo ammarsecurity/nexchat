@@ -232,7 +232,7 @@ public class ConversationHub(
     {
         if (string.IsNullOrWhiteSpace(content) || content.Length > 5000)
             throw new HubException("Message must contain between 1 and 5000 characters");
-        if (type is not ("text" or "image" or "audio" or "short_film" or "video" or "album" or "story_share"))
+        if (type is not ("text" or "image" or "audio" or "short_film" or "video" or "album" or "story_share" or "location" or "file"))
             throw new HubException("Unsupported message type");
         if (viewOnce && type is not ("image" or "video"))
             throw new HubException("View-once requires an image or video");

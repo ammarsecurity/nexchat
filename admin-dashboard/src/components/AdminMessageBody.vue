@@ -6,6 +6,8 @@ import {
   parseShortFilm,
   parseStoryShare,
   parseCall,
+  parseLocation,
+  parseFile,
   formatCallLabel,
   callIcon
 } from '../utils/messageContent'
@@ -54,6 +56,16 @@ const call = computed(() => {
   return null
 })
 
+const location = computed(() => {
+  if (normalizedType.value === 'location') return parseLocation(props.content)
+  return null
+})
+
+const fileMsg = computed(() => {
+  if (normalizedType.value === 'file') return parseFile(props.content)
+  return null
+})
+
 const callLabel = computed(() => (call.value ? formatCallLabel(props.content) : ''))
 const callMdi = computed(() => (call.value ? callIcon(props.content) : 'mdi-phone'))
 
@@ -68,6 +80,8 @@ const showText = computed(() => {
   if (shortFilm.value) return false
   if (storyShare.value) return false
   if (call.value) return false
+  if (location.value) return false
+  if (fileMsg.value) return false
   return true
 })
 </script>
@@ -160,6 +174,30 @@ const showText = computed(() => {
       <v-icon size="20" :color="call.status === 'ended' ? 'primary' : 'error'">{{ callMdi }}</v-icon>
       <span>{{ callLabel }}</span>
     </div>
+
+    <!-- Location -->
+    <a
+      v-else-if="location"
+      :href="location.mapsUrl"
+      target="_blank"
+      rel="noopener"
+      class="msg-call"
+    >
+      <v-icon size="20" color="primary">mdi-map-marker</v-icon>
+      <span>{{ location.name }}</span>
+    </a>
+
+    <!-- File -->
+    <a
+      v-else-if="fileMsg"
+      :href="fullMediaUrl(fileMsg.url)"
+      target="_blank"
+      rel="noopener"
+      class="msg-call"
+    >
+      <v-icon size="20" color="primary">mdi-file-document-outline</v-icon>
+      <span>{{ fileMsg.name }}</span>
+    </a>
 
     <!-- Plain text -->
     <div v-else-if="showText" class="msg-text">{{ content || '—' }}</div>

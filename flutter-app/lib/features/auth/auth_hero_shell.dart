@@ -14,18 +14,22 @@ class AuthHeroShell extends StatelessWidget {
     required this.heroAsset,
     required this.child,
     this.heroFraction = 0.34,
+    this.onBack,
   });
 
   final String heroAsset;
   final Widget child;
   /// Portion of screen height reserved for the photo before the wave.
   final double heroFraction;
+  /// Optional translucent back control over the hero (e.g. register → login).
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final pad = MediaQuery.paddingOf(context);
     final heroH = (size.height * heroFraction).clamp(160.0, 320.0);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
@@ -79,7 +83,48 @@ class AuthHeroShell extends StatelessWidget {
                 ),
               ),
             ),
+            if (onBack != null)
+              Positioned(
+                top: pad.top + 8,
+                left: rtl ? null : 16,
+                right: rtl ? 16 : null,
+                child: _AuthBackButton(onTap: onBack!, rtl: rtl),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthBackButton extends StatelessWidget {
+  const _AuthBackButton({required this.onTap, required this.rtl});
+  final VoidCallback onTap;
+  final bool rtl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Ink(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.22),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.45), width: 1),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 3)),
+            ],
+          ),
+          child: Icon(
+            rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+            size: 22,
+            color: Colors.white,
+          ),
         ),
       ),
     );

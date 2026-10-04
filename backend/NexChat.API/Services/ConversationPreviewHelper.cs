@@ -50,6 +50,8 @@ public static class ConversationPreviewHelper
         if (m.Type == "story_share") return BuildStorySharePreview(decrypt(m.Content ?? ""));
         if (m.Type == "story_reply") return BuildStoryReplyPreview(decrypt(m.Content ?? ""));
         if (m.Type == "call") return BuildCallPreview(decrypt(m.Content ?? ""));
+        if (m.Type == "location") return BuildLocationPreview(decrypt(m.Content ?? ""));
+        if (m.Type == "file") return BuildFilePreview(decrypt(m.Content ?? ""));
         var c = decrypt(m.Content ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
     }
@@ -70,8 +72,42 @@ public static class ConversationPreviewHelper
         if (type == "story_share") return BuildStorySharePreview(decrypt(encryptedContent ?? ""));
         if (type == "story_reply") return BuildStoryReplyPreview(decrypt(encryptedContent ?? ""));
         if (type == "call") return BuildCallPreview(decrypt(encryptedContent ?? ""));
+        if (type == "location") return BuildLocationPreview(decrypt(encryptedContent ?? ""));
+        if (type == "file") return BuildFilePreview(decrypt(encryptedContent ?? ""));
         var c = decrypt(encryptedContent ?? "");
         return c.Length > 50 ? c[..50] + "…" : c;
+    }
+
+    public static string BuildLocationPreview(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var name = doc.RootElement.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var preview = $"📍 {name.Trim()}";
+                return preview.Length > 50 ? preview[..50] + "…" : preview;
+            }
+        }
+        catch { /* invalid */ }
+        return "📍 موقع";
+    }
+
+    public static string BuildFilePreview(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var name = doc.RootElement.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var preview = $"📎 {name.Trim()}";
+                return preview.Length > 50 ? preview[..50] + "…" : preview;
+            }
+        }
+        catch { /* invalid */ }
+        return "📎 ملف";
     }
 
     public static string BuildStorySharePreview(string json)

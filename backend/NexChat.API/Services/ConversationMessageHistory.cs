@@ -157,6 +157,8 @@ public static class ConversationMessageHistory
         if (type == "story_share") return ConversationPreviewHelper.BuildStorySharePreview(content ?? "");
         if (type == "story_reply") return ConversationPreviewHelper.BuildStoryReplyPreview(content ?? "");
         if (type == "call") return ConversationPreviewHelper.BuildCallPreview(content ?? "");
+        if (type == "location") return ConversationPreviewHelper.BuildLocationPreview(content ?? "");
+        if (type == "file") return ConversationPreviewHelper.BuildFilePreview(content ?? "");
         if (string.IsNullOrEmpty(content)) return "";
         return content.Length > 80 ? content[..80] + "…" : content;
     }

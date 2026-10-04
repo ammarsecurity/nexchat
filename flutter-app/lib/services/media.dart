@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/format.dart';
@@ -11,12 +16,113 @@ import '../core/network/api_client.dart';
 
 final _picker = ImagePicker();
 
+const chatDocumentExtensions = ['pdf', 'txt', 'doc', 'docx', 'rtf', 'odt', 'zip', 'rar', '7z'];
+
 Future<XFile?> pickImage({ImageSource source = ImageSource.gallery}) =>
     _picker.pickImage(source: source, imageQuality: 85, maxWidth: 2048);
 
 Future<List<XFile>> pickImages({int limit = maxAlbumImages}) => _picker.pickMultiImage(imageQuality: 85, maxWidth: 2048, limit: limit);
 
 Future<XFile?> pickVideo({ImageSource source = ImageSource.gallery}) => _picker.pickVideo(source: source);
+
+Future<PlatformFile?> pickChatDocument() async {
+  try {
+    final f = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: chatDocumentExtensions,
+    );
+    if (f == null) return null;
+    if (f.path == null || f.path!.isEmpty) return null;
+    return f;
+  } on MissingPluginException {
+    // New native plugins require a full app restart (not hot reload).
+    throw StateError('plugin_missing');
+  }
+}
+
+/// Requests camera (+ mic for video). Returns false if the user denies.
+Future<bool> ensureCameraPermission({bool microphone = false}) async {
+  final cam = await Permission.camera.request();
+  if (!cam.isGranted) return false;
+  if (!microphone) return true;
+  final mic = await Permission.microphone.request();
+  return mic.isGranted;
+}
+
+/// Permission + services only (no GPS wait). Throws short reason codes for UI toasts.
+Future<void> ensureLocationReady() async {
+  try {
+    final serviceOn = await Geolocator.isLocationServiceEnabled();
+    if (!serviceOn) throw StateError('location_disabled');
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied) throw StateError('location_denied');
+    if (permission == LocationPermission.deniedForever) throw StateError('location_denied_forever');
+  } on MissingPluginException {
+    throw StateError('plugin_missing');
+  }
+}
+
+/// Resolves a shareable fix without hanging the UI (last-known → medium → low).
+Future<Position> getShareablePosition() async {
+  await ensureLocationReady();
+
+  try {
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) {
+      final age = DateTime.now().toUtc().difference(last.timestamp.toUtc());
+      if (age.inMinutes <= 10) return last;
+    }
+  } catch (_) {}
+
+  LocationSettings settingsFor(LocationAccuracy accuracy, Duration limit) {
+    if (Platform.isAndroid) {
+      return AndroidSettings(
+        accuracy: accuracy,
+        timeLimit: limit,
+        forceLocationManager: true,
+      );
+    }
+    return LocationSettings(accuracy: accuracy, timeLimit: limit);
+  }
+
+  try {
+    return await Geolocator.getCurrentPosition(
+      locationSettings: settingsFor(LocationAccuracy.medium, const Duration(seconds: 8)),
+    );
+  } on TimeoutException {
+    // fall through
+  } on MissingPluginException {
+    throw StateError('plugin_missing');
+  } catch (_) {
+    // fall through to coarser attempt
+  }
+
+  try {
+    return await Geolocator.getCurrentPosition(
+      locationSettings: settingsFor(LocationAccuracy.low, const Duration(seconds: 5)),
+    );
+  } on TimeoutException {
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) return last;
+    throw StateError('location_timeout');
+  } on MissingPluginException {
+    throw StateError('plugin_missing');
+  }
+}
+
+Future<XFile?> captureImage() async {
+  if (!await ensureCameraPermission()) return null;
+  return pickImage(source: ImageSource.camera);
+}
+
+Future<XFile?> captureVideo() async {
+  if (!await ensureCameraPermission(microphone: true)) return null;
+  return pickVideo(source: ImageSource.camera);
+}
 
 /// POST multipart to one of the `/media/upload*` endpoints, returns the stored url.
 Future<String> uploadFile(String endpoint, String path, {String? filename, bool viewOnce = false, Duration timeout = const Duration(seconds: 60)}) async {
@@ -33,14 +139,51 @@ Future<String> uploadFile(String endpoint, String path, {String? filename, bool 
   return url;
 }
 
+/// Document upload — returns url + original file metadata for the `file` message payload.
+Future<FileShare> uploadChatDocument(String path, {String? filename, Duration timeout = const Duration(seconds: 120)}) async {
+  final name = filename ?? path.split(Platform.pathSeparator).last;
+  final form = FormData.fromMap({'file': await mediaUploadPart('/media/upload-file', path, filename: name)});
+  final res = await Api.dio.post(
+    'media/upload-file',
+    data: form,
+    options: Options(sendTimeout: timeout, receiveTimeout: timeout),
+  );
+  final data = res.data;
+  if (data is! Map) throw Exception('Invalid upload response');
+  final url = '${data['url'] ?? ''}'.trim();
+  if (url.isEmpty) throw Exception('Invalid upload response');
+  final serverName = '${data['name'] ?? name}'.trim();
+  final sizeRaw = data['size'];
+  final size = sizeRaw is int ? sizeRaw : int.tryParse('$sizeRaw');
+  final ct = '${data['contentType'] ?? ''}'.trim();
+  return FileShare(url: url, name: serverName.isEmpty ? name : serverName, size: size, contentType: ct.isEmpty ? null : ct);
+}
+
 /// Explicit format mapping matches the API allowlists; unknown formats fail
 /// locally instead of silently sending application/octet-stream.
 DioMediaType mediaContentType(String endpoint, String filename) {
   final ext = filename.split('.').last.toLowerCase();
-  final kind = endpoint.contains('audio') ? 'audio' : endpoint.contains('video') ? 'video' : 'image';
+  final kind = endpoint.contains('upload-file')
+      ? 'document'
+      : endpoint.contains('audio')
+          ? 'audio'
+          : endpoint.contains('video')
+              ? 'video'
+              : 'image';
   final types = switch (kind) {
     'audio' => const {'m4a': 'audio/mp4', 'mp4': 'audio/mp4', 'webm': 'audio/webm', 'ogg': 'audio/ogg', 'opus': 'audio/ogg', 'mp3': 'audio/mpeg', 'wav': 'audio/wav'},
     'video' => const {'mp4': 'video/mp4', 'mov': 'video/quicktime', 'webm': 'video/webm'},
+    'document' => const {
+        'pdf': 'application/pdf',
+        'txt': 'text/plain',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'rtf': 'application/rtf',
+        'odt': 'application/vnd.oasis.opendocument.text',
+        'zip': 'application/zip',
+        'rar': 'application/vnd.rar',
+        '7z': 'application/x-7z-compressed',
+      },
     _ => const {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp'},
   };
   final type = types[ext];
@@ -49,7 +192,7 @@ DioMediaType mediaContentType(String endpoint, String filename) {
 }
 
 Future<MultipartFile> mediaUploadPart(String endpoint, String path, {String? filename}) {
-  final name = filename ?? path.split(Platform.pathSeparator).last;
+  final name = filename ?? path.replaceAll('\\', '/').split('/').last;
   return MultipartFile.fromFile(path, filename: name, contentType: mediaContentType(endpoint, name));
 }
 
@@ -87,7 +230,13 @@ String _ext(String url, String fallback) {
 
 /// utils/mediaDownload.js — fetch then hand off to the system share sheet (Save to Photos / Files).
 Future<void> downloadMediaUrl(String url, {String kind = 'image', String? filename}) async {
-  final fallback = kind == 'video' ? 'mp4' : kind == 'audio' ? 'webm' : 'jpg';
+  final fallback = kind == 'video'
+      ? 'mp4'
+      : kind == 'audio'
+          ? 'webm'
+          : kind == 'file'
+              ? 'bin'
+              : 'jpg';
   final name = filename ?? '${kind == 'image' ? 'photo' : kind}-${DateTime.now().millisecondsSinceEpoch}.${_ext(url, fallback)}';
   final file = await _download(url, name);
   await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
@@ -109,6 +258,10 @@ bool canDownloadMessage(Json msg) {
   final content = msg.str('content').trim();
   if (content.isEmpty) return false;
   if (type == 'album') return parseAlbumMessage(content)?.isNotEmpty ?? false;
+  if (type == 'file') {
+    final file = parseFileMessage(type, content);
+    return file != null && !_isLocalPath(file.url);
+  }
   if (type != 'image' && type != 'video' && type != 'audio') return false;
   return !_isLocalPath(content);
 }
@@ -125,6 +278,12 @@ Future<void> downloadMessageMedia(Json msg) async {
   if (type == 'album') {
     final urls = parseAlbumMessage(content);
     if (urls != null) await downloadAlbumImages(urls);
+    return;
+  }
+  if (type == 'file') {
+    final file = parseFileMessage(type, content);
+    if (file == null) return;
+    await downloadMediaUrl(file.url, kind: 'file', filename: file.name);
     return;
   }
   await downloadMediaUrl(content, kind: type);

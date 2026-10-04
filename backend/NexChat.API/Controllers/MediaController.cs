@@ -201,6 +201,68 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         return storage.UploadUrl(OwnerId, fileName, viewOnce, Request);
     }
 
+    private static readonly HashSet<string> AllowedDocExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".txt", ".doc", ".docx", ".rtf", ".odt", ".zip", ".rar", ".7z"
+    };
+
+    private static readonly HashSet<string> AllowedDocContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/pdf",
+        "text/plain",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/rtf",
+        "text/rtf",
+        "application/vnd.oasis.opendocument.text",
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-rar-compressed",
+        "application/vnd.rar",
+        "application/x-7z-compressed",
+        "application/octet-stream",
+    };
+
+    /// <summary>Chat document upload (pdf/txt/doc/docx/zip/rar/…).</summary>
+    [HttpPost("upload-file")]
+    public async Task<IActionResult> UploadFile(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided" });
+
+        if (file.Length > 25 * 1024 * 1024)
+            return BadRequest(new { message = "Max file size is 25MB" });
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (string.IsNullOrEmpty(ext) || !AllowedDocExtensions.Contains(ext))
+            return BadRequest(new { message = "Unsupported file type" });
+
+        var contentType = (file.ContentType ?? "").ToLowerInvariant();
+        if (!string.IsNullOrEmpty(contentType) &&
+            !AllowedDocContentTypes.Contains(contentType) &&
+            !contentType.StartsWith("text/") &&
+            !contentType.StartsWith("application/"))
+            return BadRequest(new { message = "Unsupported file type" });
+
+        await using var stream = await BufferUploadAsync(file);
+        var uploadsPath = storage.UploadDirectory(OwnerId, viewOnce: false);
+        var safeName = Path.GetFileName(file.FileName);
+        if (safeName.Length > 120) safeName = safeName[^120..];
+        var fileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploadsPath, fileName);
+        await using (var dest = new FileStream(filePath, FileMode.Create))
+            await stream.CopyToAsync(dest);
+
+        var url = storage.UploadUrl(OwnerId, fileName, viewOnce: false, Request);
+        return Ok(new
+        {
+            url,
+            name = safeName,
+            size = file.Length,
+            contentType = string.IsNullOrEmpty(contentType) ? "application/octet-stream" : contentType,
+        });
+    }
+
     [HttpPost("upload-audio")]
     public async Task<IActionResult> UploadAudio(IFormFile file)
     {

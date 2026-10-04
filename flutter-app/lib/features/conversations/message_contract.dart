@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../../core/format.dart';
 import '../../core/json.dart';
 
 /// Persist this identity with the optimistic row and reuse it for every retry.
@@ -79,6 +80,14 @@ String? copyableMessageText(Json message) {
   final type = message.s('type') ?? 'text';
   final content = message.s('content') ?? '';
   if (type == 'text') return content.trim().isEmpty ? null : content;
+  if (type == 'location') {
+    final loc = parseLocationMessage(type, content);
+    return loc?.mapsUrl;
+  }
+  if (type == 'file') {
+    final file = parseFileMessage(type, content);
+    return file?.name;
+  }
   if (type == 'story_share' || type == 'story_reply') {
     try {
       final payload = jsonDecode(content);

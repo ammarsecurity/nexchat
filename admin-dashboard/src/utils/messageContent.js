@@ -67,6 +67,30 @@ export function parseCall(content) {
   }
 }
 
+export function parseLocation(content) {
+  const data = parseJsonObject(content)
+  if (!data) return null
+  const lat = Number(data.lat ?? data.latitude)
+  const lng = Number(data.lng ?? data.lon ?? data.longitude)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return {
+    lat,
+    lng,
+    name: String(data.name ?? data.Name ?? '').trim() || 'موقع',
+    mapsUrl: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+  }
+}
+
+export function parseFile(content) {
+  const data = parseJsonObject(content)
+  if (!data) return null
+  const url = String(data.url ?? data.Url ?? '').trim()
+  const name = String(data.name ?? data.Name ?? data.fileName ?? '').trim()
+  if (!url || !name) return null
+  const size = Number(data.size ?? data.Size ?? 0) || 0
+  return { url, name, size }
+}
+
 function fmtDuration(sec) {
   const m = String(Math.floor(sec / 60)).padStart(2, '0')
   const s = String(sec % 60).padStart(2, '0')
