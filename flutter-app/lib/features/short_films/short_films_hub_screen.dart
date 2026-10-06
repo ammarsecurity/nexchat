@@ -162,7 +162,8 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
       );
     } else {
       final w = MediaQuery.sizeOf(context).width;
-      final rowCardW = (w * 0.32).clamp(108.0, 130.0);
+      final rowCardW = shortFilmRowCardWidth(w);
+      final gridCols = shortFilmGridColumns(w);
       final showContinue = _continue.isNotEmpty && !searching && st.selectedSectionId == null;
       final showReco = _recommended.isNotEmpty && !searching && st.selectedSectionId == null;
       final showLater = _watchLater.isNotEmpty && !searching && st.selectedSectionId == null;
@@ -273,7 +274,7 @@ class _ShortFilmsHubScreenState extends ConsumerState<ShortFilmsHubScreen> with 
               physics: const NeverScrollableScrollPhysics(),
               padding: EdgeInsets.zero,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
+                crossAxisCount: gridCols,
                 crossAxisSpacing: w <= 360 ? 4 : 8,
                 mainAxisSpacing: w <= 360 ? 4 : 8,
                 childAspectRatio: 9 / 14,

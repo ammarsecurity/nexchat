@@ -11,6 +11,7 @@ import '../../core/feature_flags.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/storage/prefs.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/layout.dart';
 import '../../shared/widgets.dart';
 
 /// views/SplashScreen.vue
@@ -48,6 +49,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
   Future<void> _goNext() async {
     final router = GoRouter.of(context);
+    // Desktop: skip onboarding entirely — go straight to session/login.
+    if (isDesktopPlatform) {
+      Prefs.instance.setString(Keys.onboardingSeen, '1');
+      await navigateDefaultForSession(router, ref);
+      return;
+    }
     if (Prefs.instance.getString(Keys.onboardingSeen) != null) {
       await navigateDefaultForSession(router, ref);
       return;

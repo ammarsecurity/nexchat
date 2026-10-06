@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../core/feature_flags.dart';
 import '../core/share_links.dart';
 import '../core/storage/prefs.dart';
+import '../core/theme/layout.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/auth/complete_profile_screen.dart';
 import '../features/auth/forgot_password_screen.dart';
@@ -99,6 +100,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     final auth = ref.read(authProvider);
     final path = state.uri.path;
     final meta = _metaFor(path);
+
+    // Desktop never shows the mobile onboarding carousel.
+    if (path == '/onboarding' && isDesktopPlatform) {
+      Prefs.instance.setString(Keys.onboardingSeen, '1');
+      return auth.isLoggedIn ? null : '/login';
+    }
 
     if (!meta.public && !auth.isLoggedIn) return '/login';
     if (auth.isLoggedIn && auth.needsProfileContactRedirect && path != '/complete-profile') return '/complete-profile';

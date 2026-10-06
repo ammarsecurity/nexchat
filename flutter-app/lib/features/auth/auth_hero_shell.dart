@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../core/i18n/i18n.dart';
+import '../../core/theme/layout.dart';
+
 /// Visual language shared with [OnboardingScreen]: hero photo + soft wave card.
 const kAuthBlue = Color(0xFF0084FF);
 const kAuthPurple = Color(0xFF8E54E9);
@@ -15,13 +18,256 @@ class AuthHeroShell extends StatelessWidget {
     required this.child,
     this.heroFraction = 0.34,
     this.onBack,
+    /// When true (e.g. register artwork), show the full image without edge crop.
+    this.heroContain = false,
   });
 
   final String heroAsset;
   final Widget child;
-  /// Portion of screen height reserved for the photo before the wave.
+  /// Portion of screen height reserved for the photo before the wave (mobile).
   final double heroFraction;
   /// Optional translucent back control over the hero (e.g. register → login).
+  final VoidCallback? onBack;
+  final bool heroContain;
+
+  @override
+  Widget build(BuildContext context) {
+    if (useDesktopAuthLayout(context)) {
+      return _DesktopAuthShell(
+        heroAsset: heroAsset,
+        onBack: onBack,
+        heroContain: heroContain,
+        child: child,
+      );
+    }
+    return _MobileAuthShell(
+      heroAsset: heroAsset,
+      heroFraction: heroFraction,
+      onBack: onBack,
+      child: child,
+    );
+  }
+}
+
+class _DesktopAuthShell extends StatelessWidget {
+  const _DesktopAuthShell({
+    required this.heroAsset,
+    required this.child,
+    required this.heroContain,
+    this.onBack,
+  });
+
+  final String heroAsset;
+  final Widget child;
+  final VoidCallback? onBack;
+  final bool heroContain;
+
+  @override
+  Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final compact = isCompactDesktopAuth(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final showHero = width >= 980;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Row(
+          textDirection: TextDirection.ltr,
+          children: [
+            if (showHero)
+              Expanded(
+                flex: compact ? 8 : 10,
+                child: _DesktopHeroPanel(heroAsset: heroAsset, contain: heroContain),
+              ),
+            Expanded(
+              flex: showHero ? (compact ? 13 : 14) : 1,
+              child: ColoredBox(
+                color: Colors.white,
+                child: SafeArea(
+                  child: _DesktopFormPane(
+                    onBack: onBack,
+                    rtl: rtl,
+                    wide: !compact && showHero,
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopHeroPanel extends StatelessWidget {
+  const _DesktopHeroPanel({required this.heroAsset, required this.contain});
+  final String heroAsset;
+  final bool contain;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xFF0B1220),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Full artwork when contain; cover for photo heroes (login).
+          Positioned.fill(
+            child: Image.asset(
+              heroAsset,
+              fit: contain ? BoxFit.contain : BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(contain ? 0x220A1931 : 0x330A1931),
+                  Color(contain ? 0x000A1931 : 0x140A1931),
+                  Color(contain ? 0x990A1931 : 0xB30A1931),
+                ],
+                stops: const [0, 0.5, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 36,
+            right: 36,
+            bottom: 40,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+                  ),
+                  child: const Text(
+                    'NexChat',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  t('splash.tagline'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  t('onboarding.slide1Desc'),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopFormPane extends StatelessWidget {
+  const _DesktopFormPane({
+    required this.child,
+    required this.rtl,
+    required this.wide,
+    this.onBack,
+  });
+
+  final Widget child;
+  final bool rtl;
+  final bool wide;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    // Wider form — fills the pane instead of a skinny phone column.
+    final maxForm = wide ? 720.0 : 600.0;
+    final hPad = wide ? 40.0 : 32.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (onBack != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(hPad - 8, 8, hPad - 8, 0),
+            child: Align(
+              alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onBack,
+                style: TextButton.styleFrom(
+                  foregroundColor: kAuthTitle,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                icon: Icon(
+                  rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+                  size: 18,
+                ),
+                label: Text(
+                  t('common.back'),
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: maxForm,
+                    minHeight: constraints.maxHeight,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(hPad, onBack != null ? 4 : 36, hPad, 28),
+                    child: child,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileAuthShell extends StatelessWidget {
+  const _MobileAuthShell({
+    required this.heroAsset,
+    required this.child,
+    required this.heroFraction,
+    this.onBack,
+  });
+
+  final String heroAsset;
+  final Widget child;
+  final double heroFraction;
   final VoidCallback? onBack;
 
   @override
@@ -246,27 +492,30 @@ class AuthHeroTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktop = useDesktopAuthLayout(context);
+    final align = desktop ? TextAlign.start : TextAlign.center;
     return Column(
+      crossAxisAlignment: desktop ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
         Text(
           title,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 26,
+          textAlign: align,
+          style: TextStyle(
+            fontSize: desktop ? 30 : 26,
             fontWeight: FontWeight.w800,
             color: kAuthTitle,
-            height: 1.3,
+            height: 1.25,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: desktop ? 8 : 8),
         Text(
           subtitle,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 14,
+          textAlign: align,
+          style: TextStyle(
+            fontSize: desktop ? 14.5 : 14,
             fontWeight: FontWeight.w500,
             color: kAuthBody,
-            height: 1.65,
+            height: 1.55,
           ),
         ),
       ],

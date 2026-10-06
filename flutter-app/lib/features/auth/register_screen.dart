@@ -7,6 +7,7 @@ import '../../app/router.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
 import '../../core/phone_validation.dart';
+import '../../core/theme/layout.dart';
 import '../../data/countries.dart';
 import '../../shared/country_picker.dart';
 import '../../shared/widgets.dart';
@@ -182,9 +183,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               : '/login?invite=${Uri.encodeQueryComponent(widget.invite!)}',
         );
 
+    final desktop = useDesktopAuthLayout(context);
+
+    Widget fieldLabel(String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: kAuthBody,
+            ),
+          ),
+        );
+
     final page = AuthHeroShell(
       heroAsset: 'assets/images/auth_register_hero.jpg',
       heroFraction: 0.22,
+      heroContain: true,
       onBack: goLogin,
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -192,20 +208,62 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AuthHeroTitle(title: t('register.title'), subtitle: t('register.subtitle')),
-            const SizedBox(height: 18),
+            SizedBox(height: desktop ? 28 : 18),
+
+            // —— Account ——
             sectionLabel(t('register.sectionAccount')),
-            const SizedBox(height: 10),
-            AuthField(controller: _name, hint: t('register.namePlaceholder'), maxLength: 50, onChanged: (_) => setState(() {})),
-            const SizedBox(height: 10),
-            AuthField(
-              controller: _password,
-              hint: t('register.passwordPlaceholder'),
-              password: true,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
+            if (desktop) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        fieldLabel(t('register.namePlaceholder')),
+                        AuthField(
+                          controller: _name,
+                          hint: t('register.namePlaceholder'),
+                          maxLength: 50,
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        fieldLabel(t('register.passwordPlaceholder')),
+                        AuthField(
+                          controller: _password,
+                          hint: '••••••••',
+                          password: true,
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              AuthField(controller: _name, hint: t('register.namePlaceholder'), maxLength: 50, onChanged: (_) => setState(() {})),
+              const SizedBox(height: 10),
+              AuthField(
+                controller: _password,
+                hint: t('register.passwordPlaceholder'),
+                password: true,
+                onChanged: (_) => setState(() {}),
+              ),
+            ],
+
+            SizedBox(height: desktop ? 22 : 14),
+
+            // —— Phone ——
             sectionLabel(t('register.sectionPhone'), LucideIcons.phone),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             PhoneAuthField(
               countryCode: _country,
               controller: _phone,
@@ -223,11 +281,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 color: phoneError.isNotEmpty ? const Color(0xFFE11D48) : kAuthBody,
               ),
             ),
-            const SizedBox(height: 16),
+
+            SizedBox(height: desktop ? 22 : 16),
+
+            // —— About: birth then gender (separate rows — cleaner on desktop) ——
             sectionLabel(t('register.sectionAbout'), LucideIcons.calendar),
             const SizedBox(height: 8),
             Text(t('register.birthDateHint'), style: const TextStyle(fontSize: 12, height: 1.45, color: kAuthBody)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(children: [
               Expanded(
                 flex: 10,
@@ -238,7 +299,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   onChanged: (v) => setState(() => _day = v),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 flex: 12,
                 child: DateSelect(
@@ -251,9 +312,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   }),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
-                flex: 12,
+                flex: 14,
                 child: DateSelect(
                   hint: t('register.year'),
                   value: _year,
@@ -265,59 +326,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
               ),
             ]),
-            const SizedBox(height: 14),
-            Text(t('register.gender'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kAuthBody)),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F4F8),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(children: [
-                for (final g in [
-                  ('male', t('register.male'), LucideIcons.user),
-                  ('female', t('register.female'), LucideIcons.users),
-                  ('other', t('register.other'), LucideIcons.circleUser),
-                ])
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _gender = g.$1),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: _gender == g.$1 ? Colors.white : Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: _gender == g.$1
-                                ? const [BoxShadow(color: Color(0x140A1931), blurRadius: 8, offset: Offset(0, 2))]
-                                : null,
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(g.$3, size: 20, color: _gender == g.$1 ? kAuthBlue : kAuthBody),
-                              const SizedBox(height: 6),
-                              Text(
-                                g.$2,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: _gender == g.$1 ? kAuthBlue : kAuthBody,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ]),
-            ),
+            SizedBox(height: desktop ? 16 : 14),
+            fieldLabel(t('register.gender')),
+            _GenderRow(gender: _gender, onChanged: (g) => setState(() => _gender = g)),
+
             if (_error.isNotEmpty) ...[const SizedBox(height: 16), AuthError(_error)],
-            const SizedBox(height: 14),
+            SizedBox(height: desktop ? 20 : 14),
             LegalAcceptRow(
               accepted: _accepted,
               onChanged: (v) => setState(() => _accepted = v),
@@ -328,7 +342,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               onPrivacy: () => context.push('/privacy'),
               onTerms: () => context.push('/terms'),
             ),
-            const SizedBox(height: 18),
+            SizedBox(height: desktop ? 22 : 18),
             AuthPillCta(
               label: submitLabel,
               loading: _loading,
@@ -368,6 +382,72 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         if (!didPop) goLogin();
       },
       child: Stack(fit: StackFit.expand, children: [page, LoaderOverlay(show: _loading, text: t('register.loading'))]),
+    );
+  }
+}
+
+class _GenderRow extends StatelessWidget {
+  const _GenderRow({
+    required this.gender,
+    required this.onChanged,
+    this.compact = false,
+  });
+
+  final String gender;
+  final ValueChanged<String> onChanged;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F8),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(children: [
+        for (final g in [
+          ('male', t('register.male'), LucideIcons.user),
+          ('female', t('register.female'), LucideIcons.users),
+          ('other', t('register.other'), LucideIcons.circleUser),
+        ])
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: GestureDetector(
+                onTap: () => onChanged(g.$1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: compact ? 56 : 72,
+                  decoration: BoxDecoration(
+                    color: gender == g.$1 ? Colors.white : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: gender == g.$1
+                        ? const [BoxShadow(color: Color(0x140A1931), blurRadius: 8, offset: Offset(0, 2))]
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(g.$3, size: compact ? 18 : 20, color: gender == g.$1 ? kAuthBlue : kAuthBody),
+                      SizedBox(height: compact ? 4 : 6),
+                      Text(
+                        g.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: compact ? 11 : 12,
+                          fontWeight: FontWeight.w700,
+                          color: gender == g.$1 ? kAuthBlue : kAuthBody,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }

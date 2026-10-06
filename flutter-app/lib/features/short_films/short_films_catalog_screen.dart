@@ -171,8 +171,8 @@ class _ShortFilmsCatalogScreenState extends ConsumerState<ShortFilmsCatalogScree
                         controller: _scroll,
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: EdgeInsets.fromLTRB(16, 12, 16, bottom),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: shortFilmGridColumns(MediaQuery.sizeOf(context).width),
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                           childAspectRatio: 9 / 14,

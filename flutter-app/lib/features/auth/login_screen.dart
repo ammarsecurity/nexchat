@@ -7,6 +7,7 @@ import '../../app/router.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
 import '../../core/phone_validation.dart';
+import '../../core/theme/layout.dart';
 import '../../data/countries.dart';
 import '../../shared/country_picker.dart';
 import '../../shared/widgets.dart';
@@ -101,6 +102,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     ref.watch(localeProvider);
+    final desktop = useDesktopAuthLayout(context);
+
+    final identifierField = _mode == 'name'
+        ? AuthField(
+            controller: _name,
+            hint: t('login.username'),
+            maxLength: 50,
+            autofillHints: const [AutofillHints.username],
+            onChanged: (_) => setState(() {}),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PhoneAuthField(
+                countryCode: _country,
+                controller: _phone,
+                hint: t('login.phonePlaceholder'),
+                error: _phoneError.isNotEmpty,
+                onCountryChanged: (x) => setState(() {
+                  _country = x.code;
+                  _error = '';
+                }),
+                onChanged: (_) => setState(() => _error = ''),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _phoneError.isNotEmpty ? _phoneError : t('login.phoneHint'),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  fontWeight: FontWeight.w500,
+                  color: _phoneError.isNotEmpty ? const Color(0xFFE11D48) : kAuthBody,
+                ),
+              ),
+            ],
+          );
+
+    final passwordField = AuthField(
+      controller: _password,
+      hint: t('login.password'),
+      password: true,
+      autofillHints: const [AutofillHints.password],
+      onChanged: (_) => setState(() {}),
+      onSubmitted: (_) => _submit(),
+    );
 
     final page = AuthHeroShell(
       heroAsset: 'assets/images/auth_login_hero.jpg',
@@ -112,7 +158,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AuthHeroTitle(title: t('login.title'), subtitle: t('login.subtitle')),
-              const SizedBox(height: 20),
+              SizedBox(height: desktop ? 28 : 20),
               _LoginModeTabs(
                 mode: _mode,
                 onChanged: (m) => setState(() {
@@ -120,52 +166,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   _error = '';
                 }),
               ),
-              const SizedBox(height: 16),
-              if (_mode == 'name')
-                AuthField(
-                  controller: _name,
-                  hint: t('login.username'),
-                  maxLength: 50,
-                  autofillHints: const [AutofillHints.username],
-                  onChanged: (_) => setState(() {}),
+              SizedBox(height: desktop ? 22 : 16),
+              if (desktop && _mode == 'name')
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: identifierField),
+                    const SizedBox(width: 14),
+                    Expanded(child: passwordField),
+                  ],
                 )
               else ...[
-                PhoneAuthField(
-                  countryCode: _country,
-                  controller: _phone,
-                  hint: t('login.phonePlaceholder'),
-                  error: _phoneError.isNotEmpty,
-                  onCountryChanged: (x) => setState(() {
-                    _country = x.code;
-                    _error = '';
-                  }),
-                  onChanged: (_) => setState(() => _error = ''),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _phoneError.isNotEmpty ? _phoneError : t('login.phoneHint'),
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    fontWeight: FontWeight.w500,
-                    color: _phoneError.isNotEmpty ? const Color(0xFFE11D48) : kAuthBody,
-                  ),
-                ),
+                identifierField,
+                SizedBox(height: desktop ? 14 : 12),
+                passwordField,
               ],
-              const SizedBox(height: 12),
-              AuthField(
-                controller: _password,
-                hint: t('login.password'),
-                password: true,
-                autofillHints: const [AutofillHints.password],
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _submit(),
-              ),
               Align(
                 alignment: AlignmentDirectional.centerEnd,
                 child: TextButton(
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -181,13 +201,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
               ),
               if (_error.isNotEmpty) ...[const SizedBox(height: 8), AuthError(_error)],
-              const SizedBox(height: 12),
+              SizedBox(height: desktop ? 16 : 12),
               AuthPillCta(
                 label: t('login.submit'),
                 loading: _loading,
                 onTap: _canSubmit && !_loading ? _submit : null,
               ),
-              const SizedBox(height: 18),
+              SizedBox(height: desktop ? 22 : 18),
               _NewUserRegisterCard(
                 onTap: () => context.go(
                   widget.invite == null || widget.invite!.isEmpty
@@ -195,7 +215,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : '/register?invite=${Uri.encodeQueryComponent(widget.invite!)}',
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               LegalLinks(
                 privacy: t('login.privacyPolicy'),
                 terms: t('login.termsOfService'),
