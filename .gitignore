@@ -40,6 +40,24 @@ _deploy_remote.sh
 host.txt
 landing/landing.zip
 
+# Local one-off ops scripts (server helpers — not product source)
+_assetlinks_mime.sh
+_check_*.sh
+_voip_*.sh
+_deploy_admin.sh
+_deploy_all.sh
+_deploy_backend_admin.sh
+_deploy_backend_admin_unix.sh
+_deploy_fix.sh
+_deploy_viewonce.sh
+_deploy_viewonce2.sh
+
+# Flutter local Windows build helpers (NuGet / WIL — regenerated as needed)
+flutter-app/tools/
+
+# Flutter Android Gradle reports / intermediates
+flutter-app/android/build/
+
 # Server archives & binaries — never push (GitHub size / ToS)
 *.tar
 *.tar.gz
