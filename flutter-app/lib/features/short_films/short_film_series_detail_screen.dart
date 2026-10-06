@@ -9,6 +9,8 @@ import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
+import 'short_film_cache.dart';
+import 'short_film_engagement.dart';
 import 'short_films_controller.dart';
 
 class ShortFilmSeriesDetailScreen extends ConsumerStatefulWidget {
@@ -24,6 +26,7 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
   FilmSeries? _series;
   bool _loading = true;
   bool _titleVisible = false;
+  bool _following = false;
 
   @override
   void initState() {
@@ -47,11 +50,31 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
   Future<void> _load() async {
     setState(() => _loading = true);
     final series = await ref.read(shortFilmsProvider.notifier).fetchSeriesDetail(widget.seriesId);
+    var following = false;
+    try {
+      following = (await ShortFilmEngagementApi.instance.followingSeriesIds()).contains(widget.seriesId);
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _series = series;
+      _following = following;
       _loading = false;
     });
+    // Warm first episodes so Play / episode tap starts faster.
+    final eps = series?.episodes;
+    if (eps != null && eps.isNotEmpty) {
+      ShortFilmCache.instance.prefetchFilms(eps.take(3), priority: CachePriority.high);
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    final next = !_following;
+    setState(() => _following = next);
+    try {
+      await ShortFilmEngagementApi.instance.setFollowSeries(widget.seriesId, next);
+    } catch (_) {
+      if (mounted) setState(() => _following = !next);
+    }
   }
 
   void _back() {
@@ -96,13 +119,16 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final series = _series;
     final title = series?.title ?? t('shortFilms.series');
+    final light = Theme.of(context).brightness == Brightness.light;
+    // Soft slate sheet — no pure white wash in light mode.
+    final sheetBg = light ? const Color(0xFFE6EBF3) : c.bgPrimary;
 
     return Scaffold(
-      backgroundColor: c.bgPrimary,
+      backgroundColor: light ? const Color(0xFF0B1220) : c.bgPrimary,
       body: Stack(
         children: [
           if (_loading)
-            const Center(child: CircularProgressIndicator())
+            Center(child: CircularProgressIndicator(color: c.primary))
           else if (series == null)
             Column(children: [
               SizedBox(height: pad.top + 60),
@@ -120,62 +146,111 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                   SliverToBoxAdapter(
                     child: _SeriesHero(
                       series: series,
+                      following: _following,
                       onPlay: series.episodes.isEmpty ? null : _playFirst,
+                      onFollow: _toggleFollow,
                     ),
                   ),
-                  if (series.description?.isNotEmpty ?? false)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                        child: Text(
-                          series.description!,
-                          style: TextStyle(color: c.textSecondary, fontSize: 14, height: 1.5),
-                        ),
-                      ),
-                    ),
                   SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 12),
-                      child: Row(
-                        children: [
-                          Text(
-                            t('shortFilms.episodes'),
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary),
-                          ),
-                          const Spacer(),
-                          Text(
-                            t('shortFilms.episodesCount').replaceAll('{n}', '${series.episodesCount}'),
-                            style: TextStyle(fontSize: 13, color: c.textMuted),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (series.episodes.isEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: EmptyState(icon: LucideIcons.film, text: t('shortFilms.emptySeries')),
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, pad.bottom + 28),
-                      sliver: SliverList.separated(
-                        itemCount: series.episodes.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) => _EpisodeRow(
-                          episode: series.episodes[i],
-                          index: i + 1,
-                          onTap: () => _openEpisode(series.episodes[i]),
+                    child: Transform.translate(
+                      offset: const Offset(0, -22),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: sheetBg,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+                          boxShadow: light
+                              ? const [
+                                  BoxShadow(color: Color(0x14000000), blurRadius: 24, offset: Offset(0, -6)),
+                                ]
+                              : null,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 10),
+                            Center(
+                              child: Container(
+                                width: 40,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: light ? const Color(0x330F172A) : c.border,
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                              ),
+                            ),
+                            if (series.description?.isNotEmpty ?? false)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+                                child: Text(
+                                  series.description!,
+                                  style: TextStyle(
+                                    color: light ? const Color(0xFF475569) : c.textSecondary,
+                                    fontSize: 14,
+                                    height: 1.55,
+                                  ),
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    t('shortFilms.episodes'),
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: light ? const Color(0xFF0F172A) : c.textPrimary,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: light ? const Color(0x1F0F172A) : c.primarySoft,
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Text(
+                                      t('shortFilms.episodesCount').replaceAll('{n}', '${series.episodesCount}'),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: light ? const Color(0xFF64748B) : c.textMuted,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (series.episodes.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 40),
+                                child: EmptyState(icon: LucideIcons.film, text: t('shortFilms.emptySeries')),
+                              )
+                            else
+                              Padding(
+                                padding: EdgeInsets.fromLTRB(16, 0, 16, pad.bottom + 36),
+                                child: Column(
+                                  children: [
+                                    for (var i = 0; i < series.episodes.length; i++) ...[
+                                      if (i > 0) const SizedBox(height: 10),
+                                      _EpisodeRow(
+                                        episode: series.episodes[i],
+                                        index: i + 1,
+                                        onTap: () => _openEpisode(series.episodes[i]),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
 
-          // Floating header — overlays the hero, no bulky title bar.
           Positioned(
             top: 0,
             left: 0,
@@ -184,8 +259,10 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
               duration: const Duration(milliseconds: 180),
               padding: EdgeInsets.fromLTRB(12, pad.top + 8, 12, 10),
               decoration: BoxDecoration(
-                color: _titleVisible ? c.bgPrimary.withValues(alpha: 0.92) : Colors.transparent,
-                border: _titleVisible ? Border(bottom: BorderSide(color: c.border.withValues(alpha: 0.6))) : null,
+                color: _titleVisible ? sheetBg.withValues(alpha: 0.96) : Colors.transparent,
+                border: _titleVisible
+                    ? Border(bottom: BorderSide(color: (light ? const Color(0x140F172A) : c.border)))
+                    : null,
               ),
               child: Row(
                 children: [
@@ -204,11 +281,24 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: light ? const Color(0xFF0F172A) : c.textPrimary,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
+                  if (series != null)
+                    GlassIconButton(
+                      icon: _following ? LucideIcons.bellRing : LucideIcons.bell,
+                      onTap: _toggleFollow,
+                      overlay: !_titleVisible,
+                    )
+                  else
+                    const SizedBox(width: 48),
+                  const SizedBox(width: 6),
                   if (series != null && series.episodes.isNotEmpty)
                     GlassIconButton(
                       icon: LucideIcons.share2,
@@ -228,9 +318,11 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
 }
 
 class _SeriesHero extends StatelessWidget {
-  const _SeriesHero({required this.series, this.onPlay});
+  const _SeriesHero({required this.series, this.onPlay, this.onFollow, this.following = false});
   final FilmSeries series;
   final VoidCallback? onPlay;
+  final VoidCallback? onFollow;
+  final bool following;
 
   @override
   Widget build(BuildContext context) {
@@ -239,12 +331,12 @@ class _SeriesHero extends StatelessWidget {
     final cover = series.coverUrl;
     final hasCover = cover != null && cover.isNotEmpty;
     final fallback = ColoredBox(
-      color: c.bgCard,
-      child: Center(child: Icon(LucideIcons.tv, size: 48, color: c.primary.withValues(alpha: 0.45))),
+      color: const Color(0xFF111827),
+      child: Center(child: Icon(LucideIcons.tv, size: 48, color: c.primary.withValues(alpha: 0.55))),
     );
 
     return SizedBox(
-      height: top + 340,
+      height: top + 360,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -258,25 +350,26 @@ class _SeriesHero extends StatelessWidget {
             )
           else
             fallback,
-          DecoratedBox(
+          // Keep the poster cinematic — never fade into pale light-mode blue.
+          const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.35),
-                  Colors.transparent,
-                  c.bgPrimary.withValues(alpha: 0.55),
-                  c.bgPrimary,
+                  Color(0x66000000),
+                  Color(0x00000000),
+                  Color(0x990B1220),
+                  Color(0xFF0B1220),
                 ],
-                stops: const [0, 0.28, 0.72, 1],
+                stops: [0, 0.32, 0.68, 1],
               ),
             ),
           ),
           Positioned(
             left: 16,
             right: 16,
-            bottom: 16,
+            bottom: 36,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -289,21 +382,53 @@ class _SeriesHero extends StatelessWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     height: 1.25,
+                    shadows: [Shadow(color: Color(0x66000000), blurRadius: 10)],
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   t('shortFilms.episodesCount').replaceAll('{n}', '${series.episodesCount}'),
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.78), fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-                if (onPlay != null) ...[
-                  const SizedBox(height: 14),
-                  GradientButton(
-                    label: t('shortFilms.watchFromStart'),
-                    icon: LucideIcons.play,
-                    height: 46,
-                    onPressed: onPlay,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
+                if (onPlay != null || onFollow != null) ...[
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    if (onPlay != null)
+                      Expanded(
+                        child: GradientButton(
+                          label: t('shortFilms.watchFromStart'),
+                          icon: LucideIcons.play,
+                          height: 46,
+                          onPressed: onPlay,
+                        ),
+                      ),
+                    if (onPlay != null && onFollow != null) const SizedBox(width: 10),
+                    if (onFollow != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onFollow,
+                          icon: Icon(
+                            following ? LucideIcons.bellRing : LucideIcons.bell,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            following ? t('shortFilms.followingSeries') : t('shortFilms.followSeries'),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+                            minimumSize: const Size(0, 46),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                        ),
+                      ),
+                  ]),
                 ],
               ],
             ),
@@ -323,52 +448,70 @@ class _EpisodeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final light = Theme.of(context).brightness == Brightness.light;
     final n = episode.episodeNumber ?? index;
     final label = t('shortFilms.episodeN').replaceAll('{n}', '$n');
     final duration = formatFilmDuration(episode.durationSeconds);
     final thumbUrl = episode.thumbnailUrl;
     final fallback = ColoredBox(
-      color: c.bgElevated,
-      child: Icon(LucideIcons.film, size: 22, color: c.primary.withValues(alpha: 0.45)),
+      color: light ? const Color(0xFFE8ECF2) : c.bgElevated,
+      child: Icon(LucideIcons.film, size: 22, color: c.primary.withValues(alpha: 0.55)),
     );
 
     return Material(
-      color: c.bgCard,
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      color: light ? const Color(0xFFEEF2F8) : c.bgCard,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: light ? const Color(0x1F0F172A) : c.border.withValues(alpha: 0.7),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.md),
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: c.primary.withValues(alpha: 0.14),
-                ),
-                child: Text(
-                  '$n',
-                  style: TextStyle(color: c.primary, fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-              ),
-              const SizedBox(width: 10),
               ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
-                  width: 64,
-                  height: 88,
-                  child: thumbUrl != null && thumbUrl.isNotEmpty
-                      ? CachedNetworkImage(
+                  width: 68,
+                  height: 92,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (thumbUrl != null && thumbUrl.isNotEmpty)
+                        CachedNetworkImage(
                           imageUrl: Api.absoluteUrl(thumbUrl)!,
                           fit: BoxFit.cover,
-                          memCacheWidth: 200,
+                          memCacheWidth: 220,
                           errorWidget: (_, _, _) => fallback,
                         )
-                      : fallback,
+                      else
+                        fallback,
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC0B1220),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$n',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -378,7 +521,11 @@ class _EpisodeRow extends StatelessWidget {
                   children: [
                     Text(
                       label,
-                      style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: light ? const Color(0xFF0F172A) : c.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     if (episode.title.isNotEmpty && episode.title != label) ...[
                       const SizedBox(height: 4),
@@ -386,31 +533,57 @@ class _EpisodeRow extends StatelessWidget {
                         episode.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: c.textSecondary, fontSize: 12, height: 1.35),
+                        style: TextStyle(
+                          color: light ? const Color(0xFF64748B) : c.textSecondary,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
                       ),
                     ],
                     if (duration.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(LucideIcons.clock, size: 13, color: c.textMuted),
+                          Icon(
+                            LucideIcons.clock,
+                            size: 13,
+                            color: light ? const Color(0xFF94A3B8) : c.textMuted,
+                          ),
                           const SizedBox(width: 4),
-                          Text(duration, style: TextStyle(color: c.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text(
+                            duration,
+                            style: TextStyle(
+                              color: light ? const Color(0xFF94A3B8) : c.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ],
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Container(
-                width: 36,
-                height: 36,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: c.primary.withValues(alpha: 0.14),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [c.primary, c.primaryHover],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: c.primary.withValues(alpha: light ? 0.28 : 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                child: Icon(LucideIcons.play, size: 16, color: c.primary),
+                child: const Icon(LucideIcons.play, size: 16, color: Colors.white),
               ),
             ],
           ),

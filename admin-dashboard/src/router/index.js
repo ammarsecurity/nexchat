@@ -34,6 +34,7 @@ const routes = [
       { path: 'notifications', component: () => import('../views/NotificationsView.vue') },
       { path: 'stories', component: () => import('../views/StoriesView.vue') },
       { path: 'short-films', component: () => import('../views/ShortFilmsView.vue') },
+      { path: 'short-film-comments', component: () => import('../views/ShortFilmCommentsView.vue') },
       { path: 'app-update', component: () => import('../views/AppUpdateView.vue') },
       { path: 'features', component: () => import('../views/AppFeaturesView.vue') },
       { path: 'privacy', component: () => import('../views/PrivacyPolicyView.vue') },

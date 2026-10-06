@@ -37,6 +37,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ShortFilm> ShortFilms => Set<ShortFilm>();
     public DbSet<ShortFilmSection> ShortFilmSections => Set<ShortFilmSection>();
     public DbSet<ShortFilmSeries> ShortFilmSeries => Set<ShortFilmSeries>();
+    public DbSet<ShortFilmLike> ShortFilmLikes => Set<ShortFilmLike>();
+    public DbSet<ShortFilmWatchLater> ShortFilmWatchLaters => Set<ShortFilmWatchLater>();
+    public DbSet<ShortFilmReaction> ShortFilmReactions => Set<ShortFilmReaction>();
+    public DbSet<ShortFilmSeriesFollow> ShortFilmSeriesFollows => Set<ShortFilmSeriesFollow>();
+    public DbSet<ShortFilmComment> ShortFilmComments => Set<ShortFilmComment>();
+    public DbSet<ShortFilmCommentReport> ShortFilmCommentReports => Set<ShortFilmCommentReport>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -487,6 +493,63 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SectionId, x.IsActive, x.SortOrder });
             e.HasIndex(x => new { x.SeriesId, x.EpisodeNumber }).IsUnique();
             e.HasIndex(x => new { x.SeriesId, x.IsActive, x.EpisodeNumber });
+            e.HasIndex(x => x.ScheduledPublishAt);
+        });
+
+        modelBuilder.Entity<ShortFilmLike>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.ShortFilm).WithMany().HasForeignKey(x => x.ShortFilmId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ShortFilmId, x.UserId }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<ShortFilmWatchLater>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.ShortFilm).WithMany().HasForeignKey(x => x.ShortFilmId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ShortFilmId, x.UserId }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<ShortFilmReaction>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Emoji).HasMaxLength(16);
+            e.HasOne(x => x.ShortFilm).WithMany().HasForeignKey(x => x.ShortFilmId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ShortFilmId, x.UserId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ShortFilmSeriesFollow>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Series).WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.SeriesId, x.UserId }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<ShortFilmComment>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Body).HasMaxLength(300);
+            e.HasOne(x => x.ShortFilm).WithMany().HasForeignKey(x => x.ShortFilmId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ShortFilmId, x.IsHidden, x.CreatedAt });
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<ShortFilmCommentReport>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Reason).HasMaxLength(200);
+            e.HasOne(x => x.Comment).WithMany(x => x.Reports).HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Reporter).WithMany().HasForeignKey(x => x.ReporterId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.CommentId, x.ReporterId }).IsUnique();
+            e.HasIndex(x => new { x.IsReviewed, x.CreatedAt });
         });
 
         modelBuilder.Entity<OtpChallenge>(e =>

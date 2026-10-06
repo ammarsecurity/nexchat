@@ -76,8 +76,11 @@ const form = ref({
   isFeatured: false,
   sectionId: null,
   seriesId: null,
-  episodeNumber: null
+  episodeNumber: null,
+  scheduledPublishAt: null
 })
+
+const engagementStats = ref(null)
 
 const sectionForm = ref({
   name: '',
@@ -97,9 +100,12 @@ const seriesForm = ref({
 })
 
 const stats = computed(() => ({
-  total: total.value,
-  active: films.value.filter(f => f.isActive).length,
-  featured: films.value.filter(f => f.isFeatured).length
+  total: engagementStats.value?.totalFilms ?? total.value,
+  active: engagementStats.value?.activeFilms ?? films.value.filter(f => f.isActive).length,
+  featured: engagementStats.value?.featuredFilms ?? films.value.filter(f => f.isFeatured).length,
+  likes: engagementStats.value?.totalLikes ?? 0,
+  follows: engagementStats.value?.totalFollows ?? 0,
+  watchLater: engagementStats.value?.totalWatchLater ?? 0
 }))
 
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
@@ -548,7 +554,8 @@ function openAdd() {
     isFeatured: false,
     sectionId: null,
     seriesId: seriesFilter.value || null,
-    episodeNumber: null
+    episodeNumber: null,
+    scheduledPublishAt: null
   }
   dialog.value = true
 }
@@ -566,9 +573,29 @@ function openEdit(film) {
     isFeatured: film.isFeatured,
     sectionId: film.sectionId || null,
     seriesId: film.seriesId || null,
-    episodeNumber: film.episodeNumber ?? null
+    episodeNumber: film.episodeNumber ?? null,
+    scheduledPublishAt: film.scheduledPublishAt ? String(film.scheduledPublishAt).slice(0, 16) : null
   }
   dialog.value = true
+}
+
+async function fetchEngagementStats() {
+  try {
+    const res = await api.get('/admin/short-films/stats')
+    engagementStats.value = res.data ?? null
+  } catch {
+    engagementStats.value = null
+  }
+}
+
+async function bumpSort(film, delta) {
+  const next = Math.max(0, (film.sortOrder ?? 0) + delta)
+  try {
+    await api.put('/admin/short-films/reorder', [{ id: film.id, sortOrder: next }])
+    await fetchFilms()
+  } catch (err) {
+    notify.error(err.response?.data?.message || 'تعذر إعادة الترتيب')
+  }
 }
 
 function openPreview(film) {
@@ -665,7 +692,11 @@ async function save() {
       setSectionId: true,
       seriesId: form.value.seriesId,
       setSeriesId: true,
-      episodeNumber: form.value.seriesId ? form.value.episodeNumber : null
+      episodeNumber: form.value.seriesId ? form.value.episodeNumber : null,
+      scheduledPublishAt: form.value.scheduledPublishAt
+        ? new Date(form.value.scheduledPublishAt).toISOString()
+        : null,
+      clearScheduledPublishAt: !form.value.scheduledPublishAt
     }
     if (editingId.value) {
       await api.put(`/admin/short-films/${editingId.value}`, body)
@@ -675,6 +706,7 @@ async function save() {
     dialog.value = false
     fetchFilms()
     fetchSeries()
+    fetchEngagementStats()
   } catch (err) {
     notify.error(err.response?.data?.message || 'حدث خطأ')
   } finally {
@@ -724,7 +756,7 @@ watch(seriesDeleteDialog, (open) => {
 })
 
 onMounted(async () => {
-  await Promise.all([fetchSections(), fetchSeries()])
+  await Promise.all([fetchSections(), fetchSeries(), fetchEngagementStats()])
   await fetchFilms()
 })
 </script>
@@ -755,25 +787,56 @@ onMounted(async () => {
     </div>
 
     <v-row class="mb-6" dense>
-      <v-col cols="4">
+      <v-col cols="6" sm="4" md="2">
         <v-card rounded="xl" elevation="0" class="stat-card pa-4">
           <div class="text-caption text-medium-emphasis">الإجمالي</div>
           <div class="text-h5 font-weight-bold">{{ stats.total }}</div>
         </v-card>
       </v-col>
-      <v-col cols="4">
+      <v-col cols="6" sm="4" md="2">
         <v-card rounded="xl" elevation="0" class="stat-card pa-4">
-          <div class="text-caption text-medium-emphasis">نشط (هذه الصفحة)</div>
+          <div class="text-caption text-medium-emphasis">نشط</div>
           <div class="text-h5 font-weight-bold text-success">{{ stats.active }}</div>
         </v-card>
       </v-col>
-      <v-col cols="4">
+      <v-col cols="6" sm="4" md="2">
         <v-card rounded="xl" elevation="0" class="stat-card pa-4">
-          <div class="text-caption text-medium-emphasis">مميز (هذه الصفحة)</div>
+          <div class="text-caption text-medium-emphasis">مميز</div>
           <div class="text-h5 font-weight-bold text-primary">{{ stats.featured }}</div>
         </v-card>
       </v-col>
+      <v-col cols="6" sm="4" md="2">
+        <v-card rounded="xl" elevation="0" class="stat-card pa-4">
+          <div class="text-caption text-medium-emphasis">إعجابات</div>
+          <div class="text-h5 font-weight-bold">{{ stats.likes }}</div>
+        </v-card>
+      </v-col>
+      <v-col cols="6" sm="4" md="2">
+        <v-card rounded="xl" elevation="0" class="stat-card pa-4">
+          <div class="text-caption text-medium-emphasis">لاحقاً</div>
+          <div class="text-h5 font-weight-bold">{{ stats.watchLater }}</div>
+        </v-card>
+      </v-col>
+      <v-col cols="6" sm="4" md="2">
+        <v-card rounded="xl" elevation="0" class="stat-card pa-4">
+          <div class="text-caption text-medium-emphasis">متابعو المسلسلات</div>
+          <div class="text-h5 font-weight-bold">{{ stats.follows }}</div>
+        </v-card>
+      </v-col>
     </v-row>
+    <v-card v-if="engagementStats?.topByViews?.length" rounded="xl" elevation="0" class="pa-4 mb-4">
+      <div class="text-subtitle-2 font-weight-bold mb-2">الأكثر مشاهدة</div>
+      <div class="d-flex flex-wrap gap-2">
+        <v-chip
+          v-for="row in engagementStats.topByViews"
+          :key="row.id"
+          size="small"
+          variant="tonal"
+        >
+          {{ row.title }} · {{ row.count }}
+        </v-chip>
+      </div>
+    </v-card>
 
     <v-card rounded="xl" elevation="0" class="pa-4 mb-4">
       <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-4">
@@ -983,12 +1046,31 @@ onMounted(async () => {
               <v-chip size="x-small" variant="tonal">{{ formatDuration(film.durationSeconds) }}</v-chip>
             </div>
             <div class="text-subtitle-2 font-weight-bold text-truncate">{{ film.title }}</div>
-            <div class="text-caption text-medium-emphasis">{{ formatDate(film.createdAt) }} · {{ film.viewCount }} مشاهدة</div>
+            <div class="text-caption text-medium-emphasis">
+              {{ formatDate(film.createdAt) }} · {{ film.viewCount }} مشاهدة · ترتيب {{ film.sortOrder }}
+              <span v-if="film.scheduledPublishAt"> · مجدول {{ formatIraqDateTime(film.scheduledPublishAt) }}</span>
+            </div>
           </v-card-text>
           <v-card-actions class="pt-0 px-4 pb-4">
             <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-eye" rounded="lg" @click="openPreview(film)">معاينة</v-btn>
             <v-spacer />
             <div class="action-btns">
+              <v-btn
+                icon="mdi-arrow-up"
+                size="small"
+                variant="tonal"
+                title="ترتيب أعلى"
+                :disabled="deletingFilm || formBusy"
+                @click="bumpSort(film, -1)"
+              />
+              <v-btn
+                icon="mdi-arrow-down"
+                size="small"
+                variant="tonal"
+                title="ترتيب أدنى"
+                :disabled="deletingFilm || formBusy"
+                @click="bumpSort(film, 1)"
+              />
               <v-btn
                 icon="mdi-pencil"
                 size="small"
@@ -1271,6 +1353,18 @@ onMounted(async () => {
           />
           <v-switch v-model="form.isActive" label="نشط" color="primary" hide-details class="mb-1" />
           <v-switch v-model="form.isFeatured" label="مميز (يظهر في الشريط الأفقي)" color="primary" hide-details class="mb-3" />
+          <v-text-field
+            v-model="form.scheduledPublishAt"
+            type="datetime-local"
+            label="جدولة النشر (UTC محلي للمتصفح)"
+            variant="outlined"
+            rounded="lg"
+            density="compact"
+            clearable
+            hint="إن وُجد تاريخ مستقبلي يبقى مخفياً عن التطبيق حتى يحين الموعد"
+            persistent-hint
+            class="mb-3"
+          />
           <v-select
             v-model="form.seriesId"
             :items="[{ title: 'بدون مسلسل (فيلم مستقل)', value: null }, ...seriesList.map(s => ({ title: s.title, value: s.id }))]"

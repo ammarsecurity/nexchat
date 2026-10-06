@@ -76,6 +76,19 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
     router.go('/conversations');
     return;
   }
+  if (type == 'short_film_episode' || type == 'short_film') {
+    final filmId = d['filmId'];
+    final seriesId = d['seriesId'];
+    if (filmId != null && filmId.isNotEmpty) {
+      final q = seriesId != null && seriesId.isNotEmpty
+          ? '/short-films/watch?start=$filmId&series=$seriesId'
+          : '/short-films/watch?start=$filmId';
+      router.push(q);
+      return;
+    }
+    router.go('/short-films');
+    return;
+  }
   if (d['conversationId'] != null) {
     ref.read(conversationRefreshIntentProvider.notifier).request(d['conversationId']!);
     router.go('/conversation/${d['conversationId']}');

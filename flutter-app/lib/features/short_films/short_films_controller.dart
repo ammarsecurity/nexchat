@@ -353,7 +353,10 @@ class ShortFilmsController extends Notifier<ShortFilmsState> {
       final total = m.v('total') == null ? list.length : m.i('total');
       final hasMore = m.v('hasMore') != null ? m.b('hasMore') : state.page * _pageSize < total;
       state = state.copyWith(list: list, total: total, hasMore: hasMore, page: state.page + 1, loaded: true);
-      if (reset && !searching) ShortFilmCache.instance.prefetchFilms(state.featured, priority: CachePriority.high);
+      // Prefetch a few featured titles only — avoid saturating the queue with full catalog downloads.
+      if (reset && !searching) {
+        ShortFilmCache.instance.prefetchFilms(state.featured.take(3), priority: CachePriority.normal);
+      }
     } catch (_) {
       if (reset && !state.loaded) {
         state = state.copyWith(list: const [], featured: const [], series: const [], total: 0, hasMore: false);

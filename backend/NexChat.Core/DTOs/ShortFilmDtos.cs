@@ -84,9 +84,11 @@ public record AdminShortFilmDto(
     bool IsActive,
     bool IsFeatured,
     int ViewCount,
+    DateTime? ScheduledPublishAt,
     Guid? CreatedByAdminId,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    int LikeCount = 0);
 
 public record AdminShortFilmSeriesDto(
     Guid Id,
@@ -147,7 +149,8 @@ public record CreateShortFilmDto(
     int? EpisodeNumber,
     int SortOrder,
     bool IsActive,
-    bool IsFeatured);
+    bool IsFeatured,
+    DateTime? ScheduledPublishAt = null);
 
 public record UpdateShortFilmDto(
     string? Title,
@@ -162,7 +165,57 @@ public record UpdateShortFilmDto(
     int? EpisodeNumber,
     int? SortOrder,
     bool? IsActive,
-    bool? IsFeatured);
+    bool? IsFeatured,
+    DateTime? ScheduledPublishAt = null,
+    bool? ClearScheduledPublishAt = null);
+
+public record ShortFilmReorderItemDto(Guid Id, int SortOrder);
+
+public record ShortFilmStatsDto(
+    int TotalFilms,
+    int ActiveFilms,
+    int FeaturedFilms,
+    int TotalSeries,
+    int TotalLikes,
+    int TotalWatchLater,
+    int TotalFollows,
+    IReadOnlyList<ShortFilmStatsTopDto> TopByViews,
+    IReadOnlyList<ShortFilmStatsTopDto> TopByLikes);
+
+public record ShortFilmStatsTopDto(Guid Id, string Title, int Count);
+
+public record ShortFilmCommentDto(
+    Guid Id,
+    Guid ShortFilmId,
+    Guid UserId,
+    string UserName,
+    string? UserAvatar,
+    string Body,
+    bool IsMine,
+    DateTime CreatedAt);
+
+public record ShortFilmCommentsPageDto(
+    IReadOnlyList<ShortFilmCommentDto> Items,
+    int Total,
+    int Page,
+    int PageSize,
+    bool HasMore);
+
+public record CreateShortFilmCommentDto(string Body);
+
+public record ReportShortFilmCommentDto(string? Reason);
+
+public record AdminShortFilmCommentDto(
+    Guid Id,
+    Guid ShortFilmId,
+    string FilmTitle,
+    Guid UserId,
+    string UserName,
+    string? UserAvatar,
+    string Body,
+    bool IsHidden,
+    int ReportCount,
+    DateTime CreatedAt);
 
 public record StockVideoProvidersDto(IReadOnlyList<string> Providers);
 

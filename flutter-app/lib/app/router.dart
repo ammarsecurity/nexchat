@@ -32,6 +32,7 @@ import '../features/profile/user_profile_screen.dart';
 import '../features/settings/blocked_screen.dart';
 import '../features/settings/legal_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/short_films/short_film_library_screen.dart';
 import '../features/short_films/short_film_series_detail_screen.dart';
 import '../features/short_films/short_films_catalog_screen.dart';
 import '../features/short_films/short_films_feed_screen.dart';
@@ -231,6 +232,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       page('/short-films/catalog', (s) => ShortFilmsCatalogScreen(
             kind: s.uri.queryParameters['kind'] == 'series' ? 'series' : 'films',
           )),
+      page('/short-films/library', (s) {
+        final tab = s.uri.queryParameters['tab'];
+        final initial = switch (tab) {
+          'downloads' => LibraryTab.downloads,
+          'likes' || 'liked' => LibraryTab.likes,
+          _ => LibraryTab.watchLater,
+        };
+        return ShortFilmLibraryScreen(initialTab: initial);
+      }),
+      page('/short-films/downloads', (_) => const ShortFilmLibraryScreen(initialTab: LibraryTab.downloads)),
       page('/short-films/series/:id', (s) => ShortFilmSeriesDetailScreen(seriesId: s.pathParameters['id']!)),
       page('/conversations/create-group', (_) => const CreateGroupScreen()),
       page('/conversation/:conversationId/group-info', (s) => GroupInfoScreen(conversationId: s.pathParameters['conversationId']!)),

@@ -265,8 +265,25 @@ class StoryEditorState extends State<StoryEditor> {
 
   String _newId() => '${DateTime.now().microsecondsSinceEpoch}-${_idSeq++}';
 
+  static const _maxTextLayers = 8;
+
+  Offset _nextTextSlot() {
+    // Stagger new layers so they don't stack on the same spot.
+    final n = _texts.length;
+    final y = (34 + (n % 5) * 10).clamp(18, 78).toDouble();
+    final x = (50 + ((n % 2 == 0) ? -6 : 6)).clamp(20, 80).toDouble();
+    return Offset(x, y);
+  }
+
   void _addText({Offset? at}) {
-    final layer = _TextLayer(_newId(), '', x: at?.dx ?? 50, y: at?.dy ?? 42);
+    if (_texts.length >= _maxTextLayers) {
+      // Prefer focusing the last layer instead of silently failing.
+      final last = _texts.lastOrNull;
+      if (last != null) _selectText(last);
+      return;
+    }
+    final slot = at ?? _nextTextSlot();
+    final layer = _TextLayer(_newId(), '', x: slot.dx, y: slot.dy);
     setState(() {
       _texts.add(layer);
       _selectedText = layer.id;
@@ -277,19 +294,34 @@ class StoryEditorState extends State<StoryEditor> {
     _textFocus.requestFocus();
   }
 
+  void _removeText(_TextLayer l) {
+    final idx = _texts.indexWhere((x) => x.id == l.id);
+    setState(() {
+      _texts.removeWhere((x) => x.id == l.id);
+      if (_selectedText == l.id) {
+        if (_texts.isEmpty) {
+          _selectedText = null;
+          _textInput.clear();
+          _textFocus.unfocus();
+        } else {
+          final next = _texts[(idx - 1).clamp(0, _texts.length - 1)];
+          _selectedText = next.id;
+          _textInput.text = next.text;
+        }
+      }
+    });
+  }
+
   void _onTextTool() {
+    setState(() => _tool = 'text');
     final current = _selText;
-    if (_tool == 'text' && current != null && current.text.trim().isNotEmpty) {
-      _addText();
+    if (current != null) {
+      _selectText(current);
       return;
     }
     final empty = _texts.where((l) => l.text.trim().isEmpty).lastOrNull;
     if (empty != null) {
       _selectText(empty);
-      return;
-    }
-    if (current != null) {
-      _selectText(current);
       return;
     }
     final last = _texts.lastOrNull;
@@ -487,83 +519,82 @@ class StoryEditorState extends State<StoryEditor> {
     }
     final kb = MediaQuery.viewInsetsOf(context).bottom;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
-    // عند فتح الكيبورد نضيّق لوحة الأدوات؛ الستيج يبقى بحجمه عبر Stack
-    final toolsMax = kb > 0
-        ? math.min(240.0, MediaQuery.sizeOf(context).height * 0.32)
-        : math.min(300.0, MediaQuery.sizeOf(context).height * 0.36);
+    final keyboardOpen = kb > 0;
 
-    final toolsPanel = Material(
-      color: c.bgCard,
-      elevation: 8,
-      shadowColor: const Color(0x14000000),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: toolsMax),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                _toolTabs(c),
-                ..._options(c),
-                if (widget.textOnly) _bgCard(c),
-              ]),
-            ),
-          ),
-          if (widget.footer != null) widget.footer!,
-        ],
-      ),
-    );
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final footerReserve = widget.footer != null ? 64.0 : 0.0;
-      final reserve = kb > 0
-          ? math.min(toolsMax + footerReserve + 8, constraints.maxHeight * 0.48)
-          : math.min(toolsMax + footerReserve + 8, constraints.maxHeight * 0.42);
-      return Stack(
-        fit: StackFit.expand,
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: kb > 0 ? kb + reserve : reserve,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: 9 / 16,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 28, offset: Offset(0, 10))],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Listener(
-                      onPointerDown: (_) => _setStagePointers(_stagePointers + 1),
-                      onPointerUp: (_) => _setStagePointers(_stagePointers - 1),
-                      onPointerCancel: (_) => _setStagePointers(_stagePointers - 1),
-                      child: ClipRRect(borderRadius: BorderRadius.circular(22), child: _stage()),
-                    ),
-                  ),
+    final stage = Padding(
+      padding: EdgeInsets.fromLTRB(16, keyboardOpen ? 0 : 4, 16, keyboardOpen ? 6 : 8),
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: 9 / 16,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(keyboardOpen ? 16 : 22),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(keyboardOpen ? 0x26000000 : 0x40000000),
+                  blurRadius: keyboardOpen ? 12 : 28,
+                  offset: Offset(0, keyboardOpen ? 4 : 10),
                 ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Listener(
+              onPointerDown: (_) => _setStagePointers(_stagePointers + 1),
+              onPointerUp: (_) => _setStagePointers(_stagePointers - 1),
+              onPointerCancel: (_) => _setStagePointers(_stagePointers - 1),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(keyboardOpen ? 16 : 22),
+                child: _stage(),
               ),
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: kb,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: kb > 0 ? 0 : safeBottom),
-              child: toolsPanel,
+        ),
+      ),
+    );
+
+    // Column layout: preview flexes into remaining space; tools size to content.
+    // Avoids the old Stack "reserve" mismatch that left a big white gap above the keyboard.
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboardOpen ? kb : safeBottom),
+      child: Column(
+        children: [
+          Expanded(
+            flex: keyboardOpen ? 2 : 5,
+            child: stage,
+          ),
+          Material(
+            color: c.bgCard,
+            elevation: keyboardOpen ? 4 : 8,
+            shadowColor: const Color(0x14000000),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: keyboardOpen
+                        ? math.min(220.0, MediaQuery.sizeOf(context).height * 0.30)
+                        : math.min(280.0, MediaQuery.sizeOf(context).height * 0.36),
+                  ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _toolTabs(c),
+                        ..._options(c),
+                        if (widget.textOnly && !keyboardOpen) _bgCard(c),
+                      ],
+                    ),
+                  ),
+                ),
+                if (widget.footer != null) widget.footer!,
+              ],
             ),
           ),
         ],
-      );
-    });
+      ),
+    );
   }
 
   void _onEmptyTap(TapUpDetails d) {
@@ -726,10 +757,7 @@ class StoryEditorState extends State<StoryEditor> {
                 }),
         child: _layerChrome(
           selected: selected,
-          onDelete: () => setState(() {
-            _texts.remove(l);
-            _selectedText = null;
-          }),
+          onDelete: () => _removeText(l),
           onScaleHandleStart: () {
             handleStart = l.scale;
             handleDy = 0;
@@ -915,43 +943,129 @@ class StoryEditorState extends State<StoryEditor> {
         ]),
       );
 
-  List<Widget> _options(AppColors c) {
-    final sel = _selText;
-    if (_tool == 'text' && sel != null) {
-      return [
-        _card(c, [
-          _label(c, t('stories.textEdit')),
-          TextField(
-            controller: _textInput,
-            focusNode: _textFocus,
-            maxLines: 3,
-            minLines: 1,
-            textAlign: TextAlign.center,
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.done,
-            onChanged: (v) => setState(() => sel.text = v),
-            onSubmitted: (_) => _textFocus.unfocus(),
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary, height: 1.35),
-            decoration: InputDecoration(
-              hintText: t('stories.defaultText'),
-              hintStyle: TextStyle(color: c.textMuted, fontWeight: FontWeight.w600),
-              filled: true,
-              fillColor: c.bgCard,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.primary, width: 1.5)),
+  Widget _textLayersBar(AppColors c) {
+    final canAdd = _texts.length < _maxTextLayers;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _label(c, t('stories.textsLabel'))),
+            Material(
+              color: canAdd ? c.primarySoft : c.bgCard,
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: canAdd ? () => _addText() : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_rounded, size: 16, color: canAdd ? c.primary : c.textMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        t('stories.addText'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: canAdd ? c.primary : c.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_texts.isNotEmpty)
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _texts.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final layer = _texts[i];
+                final active = layer.id == _selectedText;
+                final preview = layer.text.trim().isEmpty
+                    ? t('stories.textLayerN').replaceAll('{n}', '${i + 1}')
+                    : (layer.text.trim().length > 12 ? '${layer.text.trim().substring(0, 12)}…' : layer.text.trim());
+                return GestureDetector(
+                  onTap: () => _selectText(layer),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: active ? c.primary : c.bgCard,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: active ? c.primary : c.border),
+                    ),
+                    child: Text(
+                      preview,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: active ? Colors.white : c.textSecondary,
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          const SizedBox(height: 12),
-          _sublabel(c, t('stories.textColor')),
-          _swatches(c, sel.color, (col) => setState(() => sel.color = col)),
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Text(t('stories.textMoveHint'), style: TextStyle(fontSize: 10, color: c.textMuted, height: 1.45)),
-          ),
-          _range(c, t('stories.textSize'), sel.scale, _minScale, _maxScale, (v) => setState(() => sel.scale = v)),
+      ],
+    );
+  }
+
+  List<Widget> _options(AppColors c) {
+    final sel = _selText;
+    if (_tool == 'text') {
+      final kbOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+      return [
+        _card(c, [
+          _textLayersBar(c),
+          if (sel == null) ...[
+            const SizedBox(height: 8),
+            Text(t('stories.addTextHint'), style: TextStyle(fontSize: 12, color: c.textMuted, height: 1.4)),
+          ] else ...[
+            const SizedBox(height: 12),
+            _sublabel(c, t('stories.textEdit')),
+            TextField(
+              controller: _textInput,
+              focusNode: _textFocus,
+              maxLines: kbOpen ? 2 : 3,
+              minLines: 1,
+              textAlign: TextAlign.center,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              onChanged: (v) => setState(() => sel.text = v),
+              onSubmitted: (_) => _textFocus.unfocus(),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary, height: 1.35),
+              decoration: InputDecoration(
+                hintText: t('stories.defaultText'),
+                hintStyle: TextStyle(color: c.textMuted, fontWeight: FontWeight.w600),
+                filled: true,
+                fillColor: c.bgCard,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.primary, width: 1.5)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _sublabel(c, t('stories.textColor')),
+            _swatches(c, sel.color, (col) => setState(() => sel.color = col)),
+            if (!kbOpen) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(t('stories.textMoveHint'), style: TextStyle(fontSize: 10, color: c.textMuted, height: 1.45)),
+              ),
+              _range(c, t('stories.textSize'), sel.scale, _minScale, _maxScale, (v) => setState(() => sel.scale = v)),
+            ],
+          ],
         ]),
       ];
     }

@@ -217,6 +217,8 @@ class GlassIconButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.color,
+    this.backgroundColor,
+    this.borderColor,
     this.badgeDot = false,
     this.overlay = false,
     this.size = 44,
@@ -224,6 +226,8 @@ class GlassIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
   final Color? color;
+  final Color? backgroundColor;
+  final Color? borderColor;
   final bool badgeDot;
   final bool overlay;
   final double size;
@@ -242,9 +246,9 @@ class GlassIconButton extends StatelessWidget {
           width: size,
           height: size,
           decoration: BoxDecoration(
-            color: overlay ? const Color(0x590F172A) : c.bgCard,
+            color: overlay ? const Color(0x590F172A) : (backgroundColor ?? c.bgCard),
             borderRadius: radius,
-            border: overlay ? null : Border.all(color: c.border),
+            border: overlay ? null : Border.all(color: borderColor ?? c.border),
             boxShadow: overlay
                 ? null
                 : [BoxShadow(color: c.shadow, blurRadius: 10, offset: const Offset(0, 3))],
@@ -520,12 +524,23 @@ class ModernListRow extends StatelessWidget {
 
 /// `.modern-search-bar`
 class SearchField extends StatelessWidget {
-  const SearchField({super.key, required this.controller, required this.hint, this.onChanged, this.trailing, this.autofocus = false});
+  const SearchField({
+    super.key,
+    required this.controller,
+    required this.hint,
+    this.onChanged,
+    this.trailing,
+    this.autofocus = false,
+    this.fillColor,
+    this.borderColor,
+  });
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
   final Widget? trailing;
   final bool autofocus;
+  final Color? fillColor;
+  final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
@@ -534,9 +549,9 @@ class SearchField extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsetsDirectional.only(start: 16, end: 8),
       decoration: BoxDecoration(
-        color: c.bgCard,
+        color: fillColor ?? c.bgCard,
         borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(color: c.border),
+        border: Border.all(color: borderColor ?? c.border),
         boxShadow: [BoxShadow(color: c.shadow, blurRadius: 6)],
       ),
       child: Row(children: [

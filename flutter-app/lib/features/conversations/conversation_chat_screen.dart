@@ -1592,6 +1592,24 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     }
   }
 
+  void _openHeaderMenu() {
+    showAppSheet<void>(
+      context,
+      builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
+        SheetAction(
+          icon: LucideIcons.trash2,
+          label: t('conversationChat.deleteConversation'),
+          danger: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            _deleteConversation();
+          },
+        ),
+        const SizedBox(height: 8),
+      ]),
+    );
+  }
+
   void _openPartner() {
     final s = ref.read(activeConversationProvider);
     if (s.isSupport || s.isOfficial) return;
@@ -1771,7 +1789,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
                 const SizedBox(width: 6),
               ],
               if (!locked)
-                _HeaderAction(icon: LucideIcons.trash2, onTap: _deleteConversation, danger: true),
+                _HeaderAction(icon: LucideIcons.ellipsisVertical, onTap: _openHeaderMenu),
             ]),
           ),
           if (_disappearMode != 0)

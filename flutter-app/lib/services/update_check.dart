@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -38,6 +39,9 @@ bool _validUrl(String? url) => url != null && url.trim() != '#' && RegExp(r'^htt
 /// Mirrors mobile-app/src/services/updateCheck.js (SiteContent `app_update`).
 Future<UpdateInfo?> fetchUpdateInfo() async {
   try {
+    // Emulator / local debug runs must not be blocked by production minVersion.
+    if (kDebugMode) return null;
+
     final current = (await PackageInfo.fromPlatform()).version;
     final content = await fetchSiteContent('app_update');
     if (content == null || '$content'.isEmpty) return null;

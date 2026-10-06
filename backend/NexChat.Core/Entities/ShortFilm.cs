@@ -18,6 +18,8 @@ public class ShortFilm
     public bool IsActive { get; set; } = true;
     public bool IsFeatured { get; set; }
     public int ViewCount { get; set; }
+    /// <summary>When set in the future, film stays hidden from public feeds until that UTC time.</summary>
+    public DateTime? ScheduledPublishAt { get; set; }
     public Guid? CreatedByAdminId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

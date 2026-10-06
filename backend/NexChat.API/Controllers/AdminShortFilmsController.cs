@@ -18,7 +18,8 @@ public class AdminShortFilmsController(
     IWebHostEnvironment env,
     IConfiguration config,
     StockVideoCatalogService stockCatalog,
-    StockVideoImportService stockImport) : ControllerBase
+    StockVideoImportService stockImport,
+    NotificationOutboxService notificationOutbox) : ControllerBase
 {
     private static readonly string[] AllowedImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     private static readonly string[] AllowedVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
@@ -30,6 +31,54 @@ public class AdminShortFilmsController(
             var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
             return Guid.TryParse(id, out var g) ? g : null;
         }
+    }
+
+    [HttpGet("stats")]
+    public async Task<ActionResult<ShortFilmStatsDto>> GetStats()
+    {
+        var totalFilms = await db.ShortFilms.CountAsync();
+        var activeFilms = await db.ShortFilms.CountAsync(f => f.IsActive);
+        var featuredFilms = await db.ShortFilms.CountAsync(f => f.IsActive && f.IsFeatured);
+        var totalSeries = await db.ShortFilmSeries.CountAsync(s => s.IsActive);
+        var totalLikes = await db.ShortFilmLikes.CountAsync();
+        var totalWatchLater = await db.ShortFilmWatchLaters.CountAsync();
+        var totalFollows = await db.ShortFilmSeriesFollows.CountAsync();
+
+        var topViews = await db.ShortFilms.AsNoTracking()
+            .OrderByDescending(f => f.ViewCount)
+            .Take(8)
+            .Select(f => new ShortFilmStatsTopDto(f.Id, f.Title, f.ViewCount))
+            .ToListAsync();
+
+        var topLikes = await db.ShortFilmLikes.AsNoTracking()
+            .GroupBy(x => new { x.ShortFilmId, x.ShortFilm.Title })
+            .Select(g => new ShortFilmStatsTopDto(g.Key.ShortFilmId, g.Key.Title, g.Count()))
+            .OrderByDescending(x => x.Count)
+            .Take(8)
+            .ToListAsync();
+
+        return Ok(new ShortFilmStatsDto(
+            totalFilms, activeFilms, featuredFilms, totalSeries,
+            totalLikes, totalWatchLater, totalFollows, topViews, topLikes));
+    }
+
+    [HttpPut("reorder")]
+    public async Task<IActionResult> ReorderFilms([FromBody] List<ShortFilmReorderItemDto> items)
+    {
+        if (items == null || items.Count == 0) return BadRequest(new { message = "Empty reorder list" });
+        var ids = items.Select(i => i.Id).ToList();
+        var films = await db.ShortFilms.Where(f => ids.Contains(f.Id)).ToListAsync();
+        var map = items.ToDictionary(i => i.Id, i => i.SortOrder);
+        foreach (var film in films)
+        {
+            if (map.TryGetValue(film.Id, out var order))
+            {
+                film.SortOrder = order;
+                film.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpGet]
@@ -113,6 +162,7 @@ public class AdminShortFilmsController(
             SortOrder = dto.SortOrder,
             IsActive = dto.IsActive,
             IsFeatured = dto.IsFeatured,
+            ScheduledPublishAt = dto.ScheduledPublishAt,
             CreatedByAdminId = AdminUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -122,6 +172,9 @@ public class AdminShortFilmsController(
         await db.SaveChangesAsync();
         await db.Entry(film).Reference(f => f.Section).LoadAsync();
         await db.Entry(film).Reference(f => f.Series).LoadAsync();
+        if (film.IsActive && film.SeriesId.HasValue &&
+            (film.ScheduledPublishAt == null || film.ScheduledPublishAt <= DateTime.UtcNow))
+            await NotifySeriesFollowersAsync(film);
         return Ok(MapAdmin(film));
     }
 
@@ -185,10 +238,55 @@ public class AdminShortFilmsController(
             film.IsActive = dto.IsActive.Value;
         if (dto.IsFeatured.HasValue)
             film.IsFeatured = dto.IsFeatured.Value;
+        if (dto.ClearScheduledPublishAt == true)
+            film.ScheduledPublishAt = null;
+        else if (dto.ScheduledPublishAt.HasValue)
+            film.ScheduledPublishAt = dto.ScheduledPublishAt;
 
         film.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return Ok(MapAdmin(film));
+    }
+
+    private async Task NotifySeriesFollowersAsync(ShortFilm film)
+    {
+        try
+        {
+            if (!film.SeriesId.HasValue) return;
+            var seriesTitle = film.Series?.Title
+                ?? await db.ShortFilmSeries.AsNoTracking()
+                    .Where(s => s.Id == film.SeriesId)
+                    .Select(s => s.Title)
+                    .FirstOrDefaultAsync()
+                ?? "مسلسل";
+            var followerIds = await db.ShortFilmSeriesFollows.AsNoTracking()
+                .Where(x => x.SeriesId == film.SeriesId)
+                .Select(x => x.UserId)
+                .Distinct()
+                .Take(2000)
+                .ToListAsync();
+            var ep = film.EpisodeNumber?.ToString() ?? "";
+            var title = $"حلقة جديدة · {seriesTitle}";
+            var body = string.IsNullOrEmpty(ep) ? film.Title : $"الحلقة {ep}: {film.Title}";
+            foreach (var uid in followerIds)
+            {
+                await notificationOutbox.EnqueueAsync(
+                    uid,
+                    "short_film_episode",
+                    title,
+                    body,
+                    new Dictionary<string, string>
+                    {
+                        ["filmId"] = film.Id.ToString(),
+                        ["seriesId"] = film.SeriesId.Value.ToString(),
+                        ["episodeNumber"] = ep,
+                    });
+            }
+        }
+        catch
+        {
+            // best-effort
+        }
     }
 
     [HttpDelete("{id:guid}")]
@@ -291,6 +389,9 @@ public class AdminShortFilmsController(
                 dto.IsActive,
                 dto.IsFeatured,
                 AdminUserId);
+            if (film.IsActive && film.SeriesId.HasValue &&
+                (film.ScheduledPublishAt == null || film.ScheduledPublishAt <= DateTime.UtcNow))
+                await NotifySeriesFollowersAsync(film);
             return Ok(MapAdmin(film));
         }
         catch (InvalidOperationException ex)
@@ -327,7 +428,7 @@ public class AdminShortFilmsController(
         return Ok(new { url });
     }
 
-    private static AdminShortFilmDto MapAdmin(ShortFilm f) =>
+    private static AdminShortFilmDto MapAdmin(ShortFilm f, int likeCount = 0) =>
         new(
             f.Id,
             f.Title,
@@ -344,7 +445,9 @@ public class AdminShortFilmsController(
             f.IsActive,
             f.IsFeatured,
             f.ViewCount,
+            f.ScheduledPublishAt,
             f.CreatedByAdminId,
             f.CreatedAt,
-            f.UpdatedAt);
+            f.UpdatedAt,
+            likeCount);
 }

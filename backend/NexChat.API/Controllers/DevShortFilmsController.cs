@@ -200,6 +200,7 @@ public class DevShortFilmsController(
             film.IsActive,
             film.IsFeatured,
             film.ViewCount,
+            film.ScheduledPublishAt,
             film.CreatedByAdminId,
             film.CreatedAt,
             film.UpdatedAt);

@@ -737,6 +737,9 @@ namespace NexChat.Infrastructure.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("ScheduledPublishAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("StockExternalId")
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)");
@@ -769,6 +772,8 @@ namespace NexChat.Infrastructure.Migrations
 
                     b.HasIndex("CreatedByAdminId");
 
+                    b.HasIndex("ScheduledPublishAt");
+
                     b.HasIndex("IsActive", "SortOrder");
 
                     b.HasIndex("IsFeatured", "IsActive");
@@ -783,6 +788,109 @@ namespace NexChat.Infrastructure.Migrations
                     b.HasIndex("SeriesId", "IsActive", "EpisodeNumber");
 
                     b.ToTable("ShortFilms");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmSeriesFollow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("SeriesId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SeriesId", "UserId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("ShortFilmSeriesFollows");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmWatchLater", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("ShortFilmId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShortFilmId", "UserId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("ShortFilmWatchLaters");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmLike", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("ShortFilmId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShortFilmId", "UserId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("ShortFilmLikes");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmReaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Emoji")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<Guid>("ShortFilmId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShortFilmId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("ShortFilmReactions");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.ShortFilmSection", b =>
@@ -1525,6 +1633,44 @@ namespace NexChat.Infrastructure.Migrations
                     b.Navigation("Series");
                 });
 
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmLike", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.ShortFilm", "ShortFilm")
+                        .WithMany()
+                        .HasForeignKey("ShortFilmId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NexChat.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ShortFilm");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmReaction", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.ShortFilm", "ShortFilm")
+                        .WithMany()
+                        .HasForeignKey("ShortFilmId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NexChat.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ShortFilm");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("NexChat.Core.Entities.ShortFilmSeries", b =>
                 {
                     b.HasOne("NexChat.Core.Entities.ShortFilmSection", "Section")
@@ -1533,6 +1679,44 @@ namespace NexChat.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Section");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmSeriesFollow", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.ShortFilmSeries", "Series")
+                        .WithMany()
+                        .HasForeignKey("SeriesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NexChat.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Series");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("NexChat.Core.Entities.ShortFilmWatchLater", b =>
+                {
+                    b.HasOne("NexChat.Core.Entities.ShortFilm", "ShortFilm")
+                        .WithMany()
+                        .HasForeignKey("ShortFilmId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NexChat.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ShortFilm");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("NexChat.Core.Entities.StoryLike", b =>

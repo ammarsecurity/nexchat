@@ -14,6 +14,12 @@ namespace NexChat.API.Controllers;
 [EnableRateLimiting("api")]
 public class ShortFilmsController(AppDbContext db) : ControllerBase
 {
+    private static IQueryable<ShortFilm> Published(IQueryable<ShortFilm> q)
+    {
+        var now = DateTime.UtcNow;
+        return q.Where(f => f.IsActive && (f.ScheduledPublishAt == null || f.ScheduledPublishAt <= now));
+    }
+
     [HttpGet]
     public async Task<ActionResult<ShortFilmsPageDto>> GetPage(
         [FromQuery] int page = 1,
@@ -27,7 +33,7 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
-        var query = db.ShortFilms.AsNoTracking().Where(f => f.IsActive);
+        var query = Published(db.ShortFilms.AsNoTracking());
         if (sectionId.HasValue)
             query = query.Where(f => f.SectionId == sectionId);
         if (seriesId.HasValue)
@@ -67,8 +73,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<IEnumerable<ShortFilmDto>>> GetFeatured(
         [FromQuery] Guid? sectionId = null)
     {
-        var query = db.ShortFilms.AsNoTracking()
-            .Where(f => f.IsActive && f.IsFeatured);
+        var query = Published(db.ShortFilms.AsNoTracking())
+            .Where(f => f.IsFeatured);
         if (sectionId.HasValue)
             query = query.Where(f => f.SectionId == sectionId);
 
@@ -104,8 +110,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
             .ThenByDescending(s => s.CreatedAt)
             .ToListAsync();
 
-        var counts = await db.ShortFilms.AsNoTracking()
-            .Where(f => f.IsActive && f.SeriesId != null)
+        var counts = await Published(db.ShortFilms.AsNoTracking())
+            .Where(f => f.SeriesId != null)
             .GroupBy(f => f.SeriesId)
             .Select(g => new { SeriesId = g.Key, Count = g.Count() })
             .ToListAsync();
@@ -132,8 +138,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(s => s.Id == id && s.IsActive);
         if (series == null) return NotFound();
 
-        var episodes = await db.ShortFilms.AsNoTracking()
-            .Where(f => f.IsActive && f.SeriesId == id)
+        var episodes = await Published(db.ShortFilms.AsNoTracking())
+            .Where(f => f.SeriesId == id)
             .Include(f => f.Section)
             .Include(f => f.Series)
             .OrderBy(f => f.EpisodeNumber ?? int.MaxValue)
@@ -165,8 +171,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
             .OrderBy(s => s.SortOrder)
             .ThenBy(s => s.Name)
             .ToListAsync();
-        var counts = await db.ShortFilms.AsNoTracking()
-            .Where(f => f.IsActive && f.SectionId != null)
+        var counts = await Published(db.ShortFilms.AsNoTracking())
+            .Where(f => f.SectionId != null)
             .GroupBy(f => f.SectionId)
             .Select(g => new { SectionId = g.Key, Count = g.Count() })
             .ToListAsync();
@@ -194,8 +200,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
         var sectionRows = new List<ShortFilmSectionBrowseDto>();
         foreach (var section in sections)
         {
-            var films = await db.ShortFilms.AsNoTracking()
-                .Where(f => f.IsActive && f.SectionId == section.Id && !f.IsFeatured)
+            var films = await Published(db.ShortFilms.AsNoTracking())
+                .Where(f => f.SectionId == section.Id && !f.IsFeatured)
                 .Include(f => f.Section)
                 .Include(f => f.Series)
                 .OrderBy(f => f.SortOrder)
@@ -212,8 +218,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
                 films.Select(f => Map(f, episodeCounts)).ToList()));
         }
 
-        var uncategorized = await db.ShortFilms.AsNoTracking()
-            .Where(f => f.IsActive && f.SectionId == null && !f.IsFeatured)
+        var uncategorized = await Published(db.ShortFilms.AsNoTracking())
+            .Where(f => f.SectionId == null && !f.IsFeatured)
             .Include(f => f.Section)
             .Include(f => f.Series)
             .OrderBy(f => f.SortOrder)
@@ -233,8 +239,10 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
         var film = await db.ShortFilms.AsNoTracking()
             .Include(f => f.Section)
             .Include(f => f.Series)
-            .FirstOrDefaultAsync(f => f.Id == id && f.IsActive);
-        if (film == null) return NotFound();
+            .FirstOrDefaultAsync(f => f.Id == id);
+        if (film == null || !film.IsActive ||
+            (film.ScheduledPublishAt != null && film.ScheduledPublishAt > DateTime.UtcNow))
+            return NotFound();
         var episodeCounts = await LoadEpisodeCountsAsync([film]);
         return Ok(Map(film, episodeCounts));
     }
@@ -242,7 +250,7 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
     [HttpPost("{id:guid}/view")]
     public async Task<ActionResult<object>> RecordView(Guid id)
     {
-        var film = await db.ShortFilms.FirstOrDefaultAsync(f => f.Id == id && f.IsActive);
+        var film = await Published(db.ShortFilms).FirstOrDefaultAsync(f => f.Id == id);
         if (film == null) return NotFound();
 
         film.ViewCount++;
@@ -255,8 +263,8 @@ public class ShortFilmsController(AppDbContext db) : ControllerBase
         var seriesIds = films.Where(f => f.SeriesId.HasValue).Select(f => f.SeriesId!.Value).Distinct().ToList();
         if (seriesIds.Count == 0) return new Dictionary<Guid, int>();
 
-        var counts = await db.ShortFilms.AsNoTracking()
-            .Where(f => f.IsActive && f.SeriesId != null && seriesIds.Contains(f.SeriesId.Value))
+        var counts = await Published(db.ShortFilms.AsNoTracking())
+            .Where(f => f.SeriesId != null && seriesIds.Contains(f.SeriesId.Value))
             .GroupBy(f => f.SeriesId)
             .Select(g => new { SeriesId = g.Key, Count = g.Count() })
             .ToListAsync();

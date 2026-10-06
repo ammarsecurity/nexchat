@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/network/api_client.dart';
+import 'short_film_downloads.dart';
 import 'short_films_controller.dart';
 
 const maxCacheBytes = 300 * 1024 * 1024;
@@ -27,7 +28,11 @@ class ShortFilmCache {
   final Map<String, String> _state = {};
   final List<_Job> _queue = [];
   final Map<String, int> _inUse = {};
+  final _cachedCtrl = StreamController<String>.broadcast();
   int _active = 0;
+
+  /// Fires with film id when a full-file cache download finishes.
+  Stream<String> get onCached => _cachedCtrl.stream;
 
   void markInUse(String id) => _inUse[id] = (_inUse[id] ?? 0) + 1;
 
@@ -59,13 +64,16 @@ class ShortFilmCache {
     return f;
   }
 
-  /// Local file when cached, else the network url (and queue a download).
+  /// Offline download → LRU cache → network url.
+  /// Does **not** enqueue a full download for [film] (avoids racing the streamer).
+  /// Neighbors are queued via [prefetchAround].
   Future<Uri?> resolveVideoPlayback(ShortFilm film) async {
     final url = Api.absoluteUrl(film.videoUrl);
     if (url == null) return null;
+    final offline = await ShortFilmDownloads.instance.fileFor(film.id);
+    if (offline != null) return Uri.file(offline.path);
     final cached = await cachedVideo(film.id);
     if (cached != null) return Uri.file(cached.path);
-    enqueue(film, CachePriority.high);
     return Uri.parse(url);
   }
 
@@ -75,10 +83,14 @@ class ShortFilmCache {
     }
   }
 
+  /// Prefetch upcoming films only (skip current — it's already streaming).
   void prefetchAround(List<ShortFilm> films, int index) {
     if (films.isEmpty) return;
     final i = index.clamp(0, films.length - 1);
-    prefetchFilms([for (var o = 0; o <= prefetchAhead; o++) if (i + o < films.length) films[i + o]], priority: CachePriority.high);
+    prefetchFilms(
+      [for (var o = 1; o <= prefetchAhead; o++) if (i + o < films.length) films[i + o]],
+      priority: CachePriority.high,
+    );
   }
 
   void enqueue(ShortFilm film, CachePriority priority) {
@@ -110,6 +122,7 @@ class ShortFilmCache {
     final target = await _fileFor(film.id);
     if (target.existsSync()) {
       _state[film.id] = 'done';
+      if (!_cachedCtrl.isClosed) _cachedCtrl.add(film.id);
       return;
     }
     _state[film.id] = 'downloading';
@@ -125,6 +138,7 @@ class ShortFilmCache {
       }
       tmp.renameSync(target.path);
       _state[film.id] = 'done';
+      if (!_cachedCtrl.isClosed) _cachedCtrl.add(film.id);
     } catch (_) {
       try {
         if (tmp.existsSync()) tmp.deleteSync();
