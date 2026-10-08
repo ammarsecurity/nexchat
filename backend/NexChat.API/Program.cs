@@ -113,6 +113,17 @@ builder.Services.AddSingleton<IConversationMessageCrypto>(sp =>
         ?? Environment.GetEnvironmentVariable("NEXCHAT_MESSAGE_ENCRYPTION_KEY");
     return new ConversationMessageCrypto(key, logger);
 });
+builder.Services.AddSingleton<IMediaFileCrypto>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<MediaFileCrypto>>();
+    // Same key as message content by default; optional MediaContent:EncryptionKey override.
+    var key = config["MediaContent:EncryptionKey"]
+        ?? config["MessageContent:EncryptionKey"]
+        ?? Environment.GetEnvironmentVariable("NEXCHAT_MEDIA_ENCRYPTION_KEY")
+        ?? Environment.GetEnvironmentVariable("NEXCHAT_MESSAGE_ENCRYPTION_KEY");
+    return new MediaFileCrypto(key, logger);
+});
 builder.Services.AddSingleton<IProfanityMasker, ProfanityMasker>();
 builder.Services.Configure<StockVideoOptions>(builder.Configuration.GetSection(StockVideoOptions.SectionName));
 builder.Services.AddHttpClient<StockVideoCatalogService>(c =>
@@ -332,6 +343,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("NexChatPolicy");
+// Decrypt chat media at rest before static fallback (legacy plaintext still served).
+app.UseEncryptedUploads();
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>

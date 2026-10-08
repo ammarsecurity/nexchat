@@ -2402,6 +2402,7 @@ class MessageItem extends StatelessWidget {
     }
     myReaction ??= msg.s('myReaction');
 
+    final loneUrl = type == 'text' ? extractLoneChatUrl(content) : null;
     final isMediaBubble = type == 'image' ||
         album != null ||
         type == 'video' ||
@@ -2410,7 +2411,8 @@ class MessageItem extends StatelessWidget {
         storyReply != null ||
         location != null ||
         fileShare != null ||
-        viewOnce;
+        viewOnce ||
+        loneUrl != null;
 
     Widget body;
     if (deleted) {
@@ -2465,8 +2467,26 @@ class MessageItem extends StatelessWidget {
       body = _LocationBubble(location: location, mine: mine, fg: fg);
     } else if (fileShare != null) {
       body = _FileBubble(file: fileShare, mine: mine, fg: fg);
+    } else if (loneUrl != null) {
+      body = ChatLinkPreview(url: loneUrl, mine: mine, fg: fg);
     } else {
-      body = LinkifiedText(content, style: TextStyle(color: fg, fontSize: 15, height: 1.5), linkColor: mine ? Colors.white : c.primary);
+      final urls = extractChatUrls(content);
+      final text = LinkifiedText(
+        content,
+        style: TextStyle(color: fg, fontSize: 15, height: 1.5),
+        linkColor: mine ? Colors.white : c.primary,
+      );
+      body = urls.isEmpty
+          ? text
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                text,
+                const SizedBox(height: 8),
+                ChatLinkPreview(url: urls.first, mine: mine, fg: fg),
+              ],
+            );
     }
 
     final hasReply = (msg.s('replyToContent') ?? msg.s('replyToSenderName')) != null;

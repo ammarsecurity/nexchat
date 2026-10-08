@@ -396,39 +396,73 @@ class _SeriesHero extends StatelessWidget {
                 ),
                 if (onPlay != null || onFollow != null) ...[
                   const SizedBox(height: 14),
-                  Row(children: [
-                    if (onPlay != null)
-                      Expanded(
-                        child: GradientButton(
-                          label: t('shortFilms.watchFromStart'),
-                          icon: LucideIcons.play,
-                          height: 46,
-                          onPressed: onPlay,
-                        ),
-                      ),
-                    if (onPlay != null && onFollow != null) const SizedBox(width: 10),
-                    if (onFollow != null)
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onFollow,
-                          icon: Icon(
-                            following ? LucideIcons.bellRing : LucideIcons.bell,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                          label: Text(
-                            following ? t('shortFilms.followingSeries') : t('shortFilms.followSeries'),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.08),
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
-                            minimumSize: const Size(0, 46),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                        ),
-                      ),
-                  ]),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final stack = constraints.maxWidth < 380;
+                      final play = onPlay == null
+                          ? null
+                          : GradientButton(
+                              label: t('shortFilms.watchFromStart'),
+                              icon: LucideIcons.play,
+                              height: 46,
+                              onPressed: onPlay,
+                            );
+                      final follow = onFollow == null
+                          ? null
+                          : OutlinedButton(
+                              onPressed: onFollow,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+                                minimumSize: const Size(0, 46),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    following ? LucideIcons.bellRing : LucideIcons.bell,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      following
+                                          ? t('shortFilms.followingSeries')
+                                          : t('shortFilms.followSeries'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                      if (stack) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (play != null) play,
+                            if (play != null && follow != null) const SizedBox(height: 10),
+                            if (follow != null) follow,
+                          ],
+                        );
+                      }
+
+                      return Row(children: [
+                        if (play != null) Expanded(child: play),
+                        if (play != null && follow != null) const SizedBox(width: 10),
+                        if (follow != null) Expanded(child: follow),
+                      ]);
+                    },
+                  ),
                 ],
               ],
             ),

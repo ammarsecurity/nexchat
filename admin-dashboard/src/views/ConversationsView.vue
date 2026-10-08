@@ -454,6 +454,7 @@ async function confirmDeleteMsgs() {
                 <span>{{ msg.senderName }}</span>
               </div>
               <AdminMessageBody
+                :message-id="msg.id"
                 :type="msg.type"
                 :content="msg.content"
                 :is-view-once="!!msg.isViewOnce"

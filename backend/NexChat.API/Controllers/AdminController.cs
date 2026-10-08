@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using NexChat.API.Hubs;
 using NexChat.API.Services;
@@ -29,7 +30,9 @@ public class AdminController(
     EvolutionWhatsAppService evolution,
     IWebHostEnvironment env,
     IConfiguration config,
-    IConversationMessageCrypto messageCrypto) : ControllerBase
+    IConversationMessageCrypto messageCrypto,
+    IMediaFileCrypto mediaCrypto,
+    MediaStorageService mediaStorage) : ControllerBase
 {
     private static readonly string[] AllowedStoryMediaTypes =
         [StoryMediaType.Image, StoryMediaType.Video, StoryMediaType.Text];
@@ -899,6 +902,48 @@ public class AdminController(
             .ToListAsync();
 
         return Ok(new PagedResult<AdminConversationDto>(conversations, total, page, pageSize));
+    }
+
+    /// <summary>
+    /// Decrypt and stream chat media for admin preview (public uploads + view-once private files).
+    /// </summary>
+    [HttpGet("media/message/{messageId:guid}")]
+    public async Task<IActionResult> GetMessageMedia(Guid messageId)
+    {
+        var msg = await db.ConversationMessages.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == messageId);
+        if (msg == null) return NotFound(new { message = "الرسالة غير موجودة" });
+
+        var content = messageCrypto.DecryptFromStorage(msg.Content ?? "");
+        if (string.IsNullOrWhiteSpace(content))
+            return NotFound(new { message = "لا يوجد ملف مرتبط" });
+
+        string? path = null;
+        if (mediaStorage.TryPrivatePath(content, out var privatePath))
+            path = privatePath;
+        else if (mediaStorage.IsPublicUpload(content, Request))
+        {
+            var fileName = Uri.TryCreate(content, UriKind.Absolute, out var uri)
+                ? Path.GetFileName(uri.AbsolutePath)
+                : Path.GetFileName(content);
+            path = Path.Combine(mediaStorage.PublicRoot, fileName);
+        }
+        else if (content.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+        {
+            var fileName = Path.GetFileName(content);
+            var candidate = Path.Combine(mediaStorage.PublicRoot, fileName);
+            if (System.IO.File.Exists(candidate)) path = candidate;
+        }
+
+        if (path == null || !System.IO.File.Exists(path))
+            return NotFound(new { message = "الملف غير موجود على القرص" });
+
+        if (!new FileExtensionContentTypeProvider().TryGetContentType(path, out var type))
+            type = "application/octet-stream";
+
+        Response.Headers.CacheControl = "private, no-store";
+        var bytes = await mediaCrypto.ReadAllDecryptedAsync(path);
+        return File(bytes, type, enableRangeProcessing: true);
     }
 
     [HttpGet("conversations/{id}/messages")]

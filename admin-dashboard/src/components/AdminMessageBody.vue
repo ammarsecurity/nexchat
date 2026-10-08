@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import api from '../services/api'
 import { fullMediaUrl } from '../utils/media'
 import {
   parseAlbumUrls,
@@ -16,7 +17,8 @@ const props = defineProps({
   type: { type: String, default: 'text' },
   content: { type: String, default: '' },
   isViewOnce: { type: Boolean, default: false },
-  viewOnceOpenCount: { type: Number, default: 0 }
+  viewOnceOpenCount: { type: Number, default: 0 },
+  messageId: { type: String, default: '' }
 })
 
 const normalizedType = computed(() => (props.type || 'text').toLowerCase())
@@ -27,7 +29,51 @@ const viewOnceLabel = computed(() => {
   return 'مشاهدة مرة واحدة'
 })
 
+const isPrivateMedia = computed(() =>
+  typeof props.content === 'string' && props.content.startsWith('/api/media/private/')
+)
+
 const mediaSrc = computed(() => fullMediaUrl(props.content))
+
+/** Authenticated blob URL for view-once / private files (admin JWT). */
+const adminBlobUrl = ref('')
+const adminBlobLoading = ref(false)
+const adminBlobError = ref(false)
+
+async function loadAdminMediaBlob() {
+  if (adminBlobUrl.value) {
+    URL.revokeObjectURL(adminBlobUrl.value)
+    adminBlobUrl.value = ''
+  }
+  adminBlobError.value = false
+  if (!props.messageId) return
+  const needsAdminFetch =
+    props.isViewOnce ||
+    isPrivateMedia.value
+  if (!needsAdminFetch) return
+
+  adminBlobLoading.value = true
+  try {
+    const res = await api.get(`/admin/media/message/${props.messageId}`, { responseType: 'blob' })
+    adminBlobUrl.value = URL.createObjectURL(res.data)
+  } catch {
+    adminBlobError.value = true
+  } finally {
+    adminBlobLoading.value = false
+  }
+}
+
+watch(
+  () => [props.messageId, props.isViewOnce, props.content],
+  () => { loadAdminMediaBlob() },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  if (adminBlobUrl.value) URL.revokeObjectURL(adminBlobUrl.value)
+})
+
+const resolvedMediaSrc = computed(() => adminBlobUrl.value || mediaSrc.value)
 
 const albumUrls = computed(() => {
   if (normalizedType.value !== 'album') return null
@@ -69,12 +115,11 @@ const fileMsg = computed(() => {
 const callLabel = computed(() => (call.value ? formatCallLabel(props.content) : ''))
 const callMdi = computed(() => (call.value ? callIcon(props.content) : 'mdi-phone'))
 
-const showImage = computed(() => !props.isViewOnce && normalizedType.value === 'image' && props.content)
-const showVideo = computed(() => !props.isViewOnce && normalizedType.value === 'video' && props.content)
+const showImage = computed(() => normalizedType.value === 'image' && props.content)
+const showVideo = computed(() => normalizedType.value === 'video' && props.content)
 const showAudio = computed(() => normalizedType.value === 'audio' && props.content)
-const showViewOnceOnly = computed(() => props.isViewOnce && (normalizedType.value === 'image' || normalizedType.value === 'video'))
+const showViewOnceBadge = computed(() => props.isViewOnce && (normalizedType.value === 'image' || normalizedType.value === 'video'))
 const showText = computed(() => {
-  if (showViewOnceOnly.value) return false
   if (showImage.value || showVideo.value || showAudio.value) return false
   if (albumUrls.value) return false
   if (shortFilm.value) return false
@@ -91,26 +136,33 @@ const showText = computed(() => {
     <div v-if="viewOnceLabel" class="msg-view-once-badge">
       <v-icon size="16" color="primary">mdi-eye</v-icon>
       <span>{{ viewOnceLabel }}</span>
-      <span v-if="showViewOnceOnly" class="msg-view-once-type">
+      <span v-if="showViewOnceBadge" class="msg-view-once-type">
         · {{ normalizedType === 'video' ? 'فيديو' : 'صورة' }}
       </span>
     </div>
 
-    <!-- Image -->
+    <div v-if="adminBlobLoading" class="msg-media-loading text-caption text-medium-emphasis">
+      جاري تحميل الوسائط…
+    </div>
+    <div v-else-if="adminBlobError && (isViewOnce || isPrivateMedia)" class="msg-media-loading text-caption text-error">
+      تعذر تحميل الملف
+    </div>
+
+    <!-- Image (including view-once for admins) -->
     <a
-      v-if="showImage"
-      :href="mediaSrc"
+      v-if="showImage && resolvedMediaSrc"
+      :href="resolvedMediaSrc"
       target="_blank"
       rel="noopener"
       class="msg-media-link"
     >
-      <img :src="mediaSrc" alt="صورة" class="msg-thumb" loading="lazy" />
+      <img :src="resolvedMediaSrc" alt="صورة" class="msg-thumb" loading="lazy" />
     </a>
 
     <!-- Video -->
-    <div v-else-if="showVideo" class="msg-video-wrap">
-      <video :src="mediaSrc" controls preload="metadata" class="msg-video" />
-      <a :href="mediaSrc" target="_blank" rel="noopener" class="msg-open-link">
+    <div v-else-if="showVideo && resolvedMediaSrc" class="msg-video-wrap">
+      <video :src="resolvedMediaSrc" controls preload="metadata" class="msg-video" />
+      <a :href="resolvedMediaSrc" target="_blank" rel="noopener" class="msg-open-link">
         <v-icon size="16">mdi-open-in-new</v-icon>
         فتح الفيديو
       </a>
@@ -122,7 +174,7 @@ const showText = computed(() => {
         <v-icon size="18" color="primary">mdi-microphone</v-icon>
         <span>رسالة صوتية</span>
       </div>
-      <audio :src="mediaSrc" controls preload="metadata" class="msg-audio" />
+      <audio :src="resolvedMediaSrc" controls preload="metadata" class="msg-audio" />
     </div>
 
     <!-- Album -->

@@ -17,9 +17,12 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    // tiktok_events_sdk skips kotlin-android on AGP 9+, so its .kt classes never compile.
+    // tiktok_events_sdk skips kotlin-android on AGP 9+ (expects built-in Kotlin).
+    // This app keeps android.builtInKotlin=false because flutter_webrtc / livekit_client
+    // still apply KGP — so force KGP onto tiktok or its .kt classes never compile.
+    val projectName = name
     pluginManager.withPlugin("com.android.library") {
-        if (name == "tiktok_events_sdk" &&
+        if (projectName == "tiktok_events_sdk" &&
             !pluginManager.hasPlugin("org.jetbrains.kotlin.android") &&
             !pluginManager.hasPlugin("kotlin-android")) {
             pluginManager.apply("org.jetbrains.kotlin.android")

@@ -834,6 +834,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }
       final mine = m.str('senderId') == (me ?? '') && me != null;
       final content = m.str('content');
+      final fg = mine ? Colors.white : c.msgTheirsColor;
+      final loneUrl = type != 'image' ? extractLoneChatUrl(content) : null;
+      final urls = type != 'image' ? extractChatUrls(content) : const <String>[];
+      final Widget textBody;
+      if (loneUrl != null) {
+        textBody = ChatLinkPreview(url: loneUrl, mine: mine, fg: fg);
+      } else {
+        final text = LinkifiedText(
+          content,
+          style: TextStyle(fontSize: 15, height: 1.5, color: fg),
+          linkColor: mine ? Colors.white : c.primary,
+        );
+        textBody = urls.isEmpty
+            ? text
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  text,
+                  const SizedBox(height: 8),
+                  ChatLinkPreview(url: urls.first, mine: mine, fg: fg),
+                ],
+              );
+      }
       final bubble = type == 'image'
           ? GestureDetector(
               onTap: () => showImageViewer(context, [content]),
@@ -846,7 +870,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               ),
             )
           : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: EdgeInsets.symmetric(horizontal: loneUrl != null ? 6 : 14, vertical: loneUrl != null ? 6 : 10),
               decoration: BoxDecoration(
                 color: mine ? null : c.msgTheirsBg,
                 gradient: mine ? AppColors.msgMineGradient : null,
@@ -857,11 +881,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   bottomEnd: Radius.circular(mine ? 4 : 16),
                 ),
               ),
-              child: LinkifiedText(
-                content,
-                style: TextStyle(fontSize: 15, height: 1.5, color: mine ? Colors.white : c.msgTheirsColor),
-                linkColor: mine ? Colors.white : c.primary,
-              ),
+              child: textBody,
             );
       final status = m['status'];
       final at = _dt(m['sentAt']);

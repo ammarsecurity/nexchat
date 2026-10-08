@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using NexChat.API.Services;
+using NexChat.Infrastructure.Services;
 
 namespace NexChat.API.Controllers;
 
@@ -11,7 +12,12 @@ namespace NexChat.API.Controllers;
 [Route("api/media")]
 [Authorize]
 [EnableRateLimiting("api")]
-public class MediaController(IWebHostEnvironment env, IConfiguration config, MediaStorageService storage, ViewOnceMediaService viewOnceMedia) : ControllerBase
+public class MediaController(
+    IWebHostEnvironment env,
+    IConfiguration config,
+    MediaStorageService storage,
+    ViewOnceMediaService viewOnceMedia,
+    IMediaFileCrypto mediaCrypto) : ControllerBase
 {
     private Guid OwnerId => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
 
@@ -26,8 +32,9 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         var path = await viewOnceMedia.ResolveAsync(sessionId, OwnerId);
         if (path == null) return NotFound();
         if (!new FileExtensionContentTypeProvider().TryGetContentType(path, out var type)) return NotFound();
-        // Multiple authenticated ranges within one bounded session are required by video players.
-        return PhysicalFile(path, type, enableRangeProcessing: true);
+        var bytes = await mediaCrypto.ReadAllDecryptedAsync(path);
+        // Range processing over in-memory plaintext (encrypted on disk).
+        return File(bytes, type, enableRangeProcessing: true);
     }
 
     [HttpDelete("view-once/{sessionId:guid}")]
@@ -91,11 +98,11 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         {
             fileName = $"{Guid.NewGuid()}{optimized.Extension}";
             var filePath = Path.Combine(uploadsPath, fileName);
-            await System.IO.File.WriteAllBytesAsync(filePath, optimized.Bytes);
+            await mediaCrypto.WriteAllEncryptedAsync(filePath, optimized.Bytes);
             if (!viewOnce && optimized.ThumbBytes is { Length: > 0 })
             {
                 var thumbName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
-                await System.IO.File.WriteAllBytesAsync(Path.Combine(uploadsPath, thumbName), optimized.ThumbBytes);
+                await mediaCrypto.WriteAllEncryptedAsync(Path.Combine(uploadsPath, thumbName), optimized.ThumbBytes);
                 var baseUrlThumb = config["Media:BaseUrl"];
                 thumbUrl = !string.IsNullOrEmpty(baseUrlThumb)
                     ? $"{baseUrlThumb.TrimEnd('/')}/uploads/{thumbName}"
@@ -106,9 +113,8 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         {
             fileName = $"{Guid.NewGuid()}{ext}";
             var filePath = Path.Combine(uploadsPath, fileName);
-            await using var dest = new FileStream(filePath, FileMode.Create);
             stream.Position = 0;
-            await stream.CopyToAsync(dest);
+            await mediaCrypto.WriteStreamEncryptedAsync(filePath, stream);
         }
 
         var url = storage.UploadUrl(OwnerId, fileName, viewOnce, Request);
@@ -195,8 +201,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         var filePath = Path.Combine(uploadsPath, fileName);
 
         if (stream.CanSeek) stream.Position = 0;
-        await using (var dest = new FileStream(filePath, FileMode.Create))
-            await stream.CopyToAsync(dest);
+        await mediaCrypto.WriteStreamEncryptedAsync(filePath, stream);
 
         return storage.UploadUrl(OwnerId, fileName, viewOnce, Request);
     }
@@ -250,8 +255,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         if (safeName.Length > 120) safeName = safeName[^120..];
         var fileName = $"{Guid.NewGuid()}{ext}";
         var filePath = Path.Combine(uploadsPath, fileName);
-        await using (var dest = new FileStream(filePath, FileMode.Create))
-            await stream.CopyToAsync(dest);
+        await mediaCrypto.WriteStreamEncryptedAsync(filePath, stream);
 
         var url = storage.UploadUrl(OwnerId, fileName, viewOnce: false, Request);
         return Ok(new
@@ -286,10 +290,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
         var filePath = Path.Combine(uploadsPath, fileName);
 
         await using (var src = file.OpenReadStream())
-        await using (var dest = new FileStream(filePath, FileMode.Create))
-        {
-            await src.CopyToAsync(dest);
-        }
+            await mediaCrypto.WriteStreamEncryptedAsync(filePath, src);
 
         var baseUrl = config["Media:BaseUrl"];
         var url = !string.IsNullOrEmpty(baseUrl)
@@ -319,6 +320,7 @@ public class MediaController(IWebHostEnvironment env, IConfiguration config, Med
             _ => "image/jpeg"
         };
         Response.Headers.CacheControl = "public,max-age=604800,immutable";
-        return PhysicalFile(filePath, contentType, enableRangeProcessing: true);
+        var bytes = await mediaCrypto.ReadAllDecryptedAsync(filePath);
+        return File(bytes, contentType, enableRangeProcessing: true);
     }
 }

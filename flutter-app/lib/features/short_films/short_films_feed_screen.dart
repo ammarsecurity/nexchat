@@ -824,7 +824,7 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
           Positioned.fill(
             child: CachedNetworkImage(
               imageUrl: Api.absoluteUrl(film.thumbnailUrl)!,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
               memCacheWidth: 720,
               fadeInDuration: Duration.zero,
               fadeOutDuration: Duration.zero,
@@ -850,7 +850,8 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
         if (v != null && v.value.isInitialized)
           Positioned.fill(
             child: FittedBox(
-              fit: BoxFit.cover,
+              // contain: full frame visible (no zoom/crop). cover fills the phone and crops.
+              fit: BoxFit.contain,
               clipBehavior: Clip.hardEdge,
               child: SizedBox(
                 width: v.value.size.width,

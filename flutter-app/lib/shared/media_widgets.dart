@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -23,11 +24,19 @@ import 'widgets.dart';
 const bubbleImageCacheWidth = 800;
 
 ImageProvider mediaImage(String url, {int? cacheWidth}) {
+  // Never touch dart:io Platform on web — Platform.isIOS throws and paints a gray ErrorWidget
+  // that fills the chat list (release builds).
+  final isLocalFile = !kIsWeb &&
+      (url.startsWith('/data') ||
+          url.startsWith('file:') ||
+          (defaultTargetPlatform == TargetPlatform.iOS && url.startsWith('/var')));
+
   final ImageProvider provider;
-  if (url.startsWith('/data') || url.startsWith('file:') || (Platform.isIOS && url.startsWith('/var'))) {
+  if (isLocalFile) {
     provider = FileImage(File(url.replaceFirst('file://', '')));
   } else {
-    provider = CachedNetworkImageProvider(Api.absoluteUrl(url)!);
+    final absolute = Api.absoluteUrl(url);
+    provider = CachedNetworkImageProvider(absolute ?? url);
   }
   return ResizeImage.resizeIfNeeded(cacheWidth, null, provider);
 }
@@ -83,6 +92,140 @@ class _ViewOnceImageState extends State<ViewOnceImage> {
           : const CircularProgressIndicator(color: Colors.white);
 }
 
+final _chatUrlRe = RegExp(r'(https?://[^\s<>]+)|(www\.[^\s<>]+)', caseSensitive: false);
+
+String _normalizeChatUrl(String raw) {
+  var u = raw.trim();
+  while (u.isNotEmpty && '.,);]}>\'\"'.contains(u[u.length - 1])) {
+    u = u.substring(0, u.length - 1);
+  }
+  if (u.startsWith('www.')) u = 'https://$u';
+  return u;
+}
+
+/// All http(s)/www URLs in [text], normalized.
+List<String> extractChatUrls(String text) {
+  final out = <String>[];
+  for (final m in _chatUrlRe.allMatches(text)) {
+    final href = _normalizeChatUrl(m.group(0)!);
+    if (href.isNotEmpty && !out.contains(href)) out.add(href);
+  }
+  return out;
+}
+
+/// If [text] is only a single URL (optional surrounding whitespace), return it.
+String? extractLoneChatUrl(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return null;
+  final urls = extractChatUrls(trimmed);
+  if (urls.length != 1) return null;
+  final only = _normalizeChatUrl(trimmed);
+  return only == urls.first ? urls.first : null;
+}
+
+/// Compact WhatsApp-style link card (domain + path + favicon) — avoids ugly raw URL wraps.
+class ChatLinkPreview extends StatelessWidget {
+  const ChatLinkPreview({super.key, required this.url, required this.mine, required this.fg});
+  final String url;
+  final bool mine;
+  final Color fg;
+
+  Future<void> _open() async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = Uri.tryParse(url);
+    final host = (uri?.host.isNotEmpty == true ? uri!.host : url)
+        .replaceFirst(RegExp(r'^www\.', caseSensitive: false), '');
+    final path = () {
+      if (uri == null) return url;
+      final p = uri.path;
+      final q = uri.hasQuery ? '?${uri.query}' : '';
+      final combined = '$p$q';
+      if (combined.isEmpty || combined == '/') return url;
+      return combined;
+    }();
+    final favicon = host.isEmpty
+        ? null
+        : 'https://www.google.com/s2/favicons?domain=${Uri.encodeComponent(host)}&sz=64';
+    final accent = mine ? Colors.white : const Color(0xFF6C63FF);
+    final panel = mine ? Colors.white.withValues(alpha: 0.16) : const Color(0x146C63FF);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _open,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          width: 248,
+          decoration: BoxDecoration(
+            color: panel,
+            borderRadius: BorderRadius.circular(12),
+            border: BorderDirectional(start: BorderSide(color: accent.withValues(alpha: 0.85), width: 3)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: ColoredBox(
+                      color: mine ? Colors.white.withValues(alpha: 0.18) : Colors.white,
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: favicon == null
+                            ? Icon(LucideIcons.link, size: 20, color: accent)
+                            : CachedNetworkImage(
+                                imageUrl: favicon,
+                                fit: BoxFit.contain,
+                                memCacheWidth: 64,
+                                errorWidget: (_, _, _) => Icon(LucideIcons.link, size: 20, color: accent),
+                                placeholder: (_, _) => Icon(LucideIcons.link, size: 18, color: accent.withValues(alpha: 0.5)),
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          host,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w800, height: 1.2),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          path,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: fg.withValues(alpha: 0.78), fontSize: 12, height: 1.25),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(LucideIcons.externalLink, size: 16, color: fg.withValues(alpha: 0.75)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// linkifyText() — URLs become tappable spans.
 class LinkifiedText extends StatefulWidget {
   const LinkifiedText(this.text, {super.key, required this.style, required this.linkColor});
@@ -96,7 +239,6 @@ class LinkifiedText extends StatefulWidget {
 
 class _LinkifiedTextState extends State<LinkifiedText> {
   final _recognizers = <TapGestureRecognizer>[];
-  static final _re = RegExp(r'(https?://[^\s<>]+)|(www\.[^\s<>]+)', caseSensitive: false);
 
   @override
   void dispose() {
@@ -114,16 +256,23 @@ class _LinkifiedTextState extends State<LinkifiedText> {
     _recognizers.clear();
     final spans = <InlineSpan>[];
     var last = 0;
-    for (final m in _re.allMatches(widget.text)) {
+    for (final m in _chatUrlRe.allMatches(widget.text)) {
       if (m.start > last) spans.add(TextSpan(text: widget.text.substring(last, m.start)));
       final match = m.group(0)!;
-      final href = match.startsWith('http') ? match : 'https://$match';
+      final href = _normalizeChatUrl(match);
       final rec = TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
       _recognizers.add(rec);
+      // Prefer a readable host label when the raw URL is long.
+      final label = () {
+        final uri = Uri.tryParse(href);
+        if (uri == null || match.length < 42) return match;
+        final host = uri.host.replaceFirst(RegExp(r'^www\.', caseSensitive: false), '');
+        return host.isEmpty ? match : host;
+      }();
       spans.add(TextSpan(
-        text: match,
+        text: label,
         recognizer: rec,
-        style: TextStyle(color: widget.linkColor, decoration: TextDecoration.underline),
+        style: TextStyle(color: widget.linkColor, decoration: TextDecoration.underline, fontWeight: FontWeight.w600),
       ));
       last = m.end;
     }
@@ -172,7 +321,7 @@ class _AudioBubbleState extends State<AudioBubble> {
   Future<void> _setSource() async {
     try {
       final u = widget.url;
-      if (u.startsWith('/') && !u.startsWith('/uploads') && File(u).existsSync()) {
+      if (!kIsWeb && u.startsWith('/') && !u.startsWith('/uploads') && File(u).existsSync()) {
         await _player.setSourceDeviceFile(u);
       } else {
         await _player.setSourceUrl(Api.absoluteUrl(u)!);
@@ -406,7 +555,7 @@ class _ChatVideoState extends State<ChatVideo> {
   void initState() {
     super.initState();
     final u = widget.url;
-    _ctrl = (u.startsWith('/') && !u.startsWith('/uploads'))
+    _ctrl = (!kIsWeb && u.startsWith('/') && !u.startsWith('/uploads'))
         ? VideoPlayerController.file(File(u))
         : VideoPlayerController.networkUrl(Uri.parse(Api.absoluteUrl(u)!));
     _ctrl!.initialize().then((_) {
