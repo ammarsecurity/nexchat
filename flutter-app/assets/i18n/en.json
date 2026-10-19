@@ -636,6 +636,7 @@
     "share": "Share",
     "shareMessage": "🎬 {title}\n{link}",
     "showMore": "Show more",
+    "showLess": "Show less",
     "pause": "Pause",
     "play": "Play",
     "watchFromStart": "Watch from start",
@@ -675,7 +676,15 @@
     "followingSeries": "Following",
     "becauseYouWatched": "Because you watched",
     "recommended": "For you",
-    "doubleTapHint": "Double-tap to skip ±10 seconds"
+    "doubleTapHint": "Double-tap to skip ±10 seconds",
+    "ranking": "Live ranking",
+    "popular": "Popular",
+    "hot": "HOT",
+    "exclusive": "Exclusive",
+    "playNow": "Play now",
+    "allEpisodes": "All episodes",
+    "selectEpisode": "Select episode",
+    "browseFilms": "Browse films"
   },
   "groups": {
     "createTitle": "Create group",

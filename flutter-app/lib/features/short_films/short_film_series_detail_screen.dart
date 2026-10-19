@@ -7,11 +7,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/format.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
-import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
 import 'short_film_cache.dart';
 import 'short_film_engagement.dart';
 import 'short_films_controller.dart';
+import 'short_films_theme.dart';
 
 class ShortFilmSeriesDetailScreen extends ConsumerStatefulWidget {
   const ShortFilmSeriesDetailScreen({super.key, required this.seriesId});
@@ -27,6 +27,7 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
   bool _loading = true;
   bool _titleVisible = false;
   bool _following = false;
+  bool _descExpanded = false;
 
   @override
   void initState() {
@@ -60,7 +61,6 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
       _following = following;
       _loading = false;
     });
-    // Warm first episodes so Play / episode tap starts faster.
     final eps = series?.episodes;
     if (eps != null && eps.isNotEmpty) {
       ShortFilmCache.instance.prefetchFilms(eps.take(3), priority: CachePriority.high);
@@ -114,29 +114,26 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final pad = MediaQuery.paddingOf(context);
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final series = _series;
     final title = series?.title ?? t('shortFilms.series');
-    final light = Theme.of(context).brightness == Brightness.light;
-    // Soft slate sheet — no pure white wash in light mode.
-    final sheetBg = light ? const Color(0xFFE6EBF3) : c.bgPrimary;
 
     return Scaffold(
-      backgroundColor: light ? const Color(0xFF0B1220) : c.bgPrimary,
+      backgroundColor: DramaWave.bg,
       body: Stack(
         children: [
           if (_loading)
-            Center(child: CircularProgressIndicator(color: c.primary))
+            const Center(child: CircularProgressIndicator(color: DramaWave.gold))
           else if (series == null)
             Column(children: [
               SizedBox(height: pad.top + 60),
-              Expanded(child: EmptyState(icon: LucideIcons.tv, text: t('shortFilms.emptySeries'))),
+              Expanded(child: DramaWaveEmpty(icon: LucideIcons.tv, text: t('shortFilms.emptySeries'))),
             ])
           else
             RefreshIndicator(
-              color: c.primary,
+              color: DramaWave.gold,
+              backgroundColor: DramaWave.elevated,
               onRefresh: _load,
               edgeOffset: pad.top + 48,
               child: CustomScrollView(
@@ -153,16 +150,11 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                   ),
                   SliverToBoxAdapter(
                     child: Transform.translate(
-                      offset: const Offset(0, -22),
+                      offset: const Offset(0, -28),
                       child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: sheetBg,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-                          boxShadow: light
-                              ? const [
-                                  BoxShadow(color: Color(0x14000000), blurRadius: 24, offset: Offset(0, -6)),
-                                ]
-                              : null,
+                        decoration: const BoxDecoration(
+                          color: DramaWave.bg,
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -170,10 +162,10 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                             const SizedBox(height: 10),
                             Center(
                               child: Container(
-                                width: 40,
+                                width: 36,
                                 height: 4,
                                 decoration: BoxDecoration(
-                                  color: light ? const Color(0x330F172A) : c.border,
+                                  color: DramaWave.hairline,
                                   borderRadius: BorderRadius.circular(99),
                                 ),
                               ),
@@ -181,41 +173,58 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                             if (series.description?.isNotEmpty ?? false)
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-                                child: Text(
-                                  series.description!,
-                                  style: TextStyle(
-                                    color: light ? const Color(0xFF475569) : c.textSecondary,
-                                    fontSize: 14,
-                                    height: 1.55,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      series.description!,
+                                      maxLines: _descExpanded ? 40 : 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: DramaWave.body(size: 14, color: DramaWave.soft),
+                                    ),
+                                    if ((series.description?.length ?? 0) > 90)
+                                      GestureDetector(
+                                        onTap: () => setState(() => _descExpanded = !_descExpanded),
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(top: 6),
+                                          child: Text(
+                                            _descExpanded ? t('shortFilms.showLess') : t('shortFilms.showMore'),
+                                            style: const TextStyle(
+                                              color: DramaWave.gold,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
+                              padding: const EdgeInsets.fromLTRB(18, 22, 18, 14),
                               child: Row(
                                 children: [
-                                  Text(
-                                    t('shortFilms.episodes'),
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: light ? const Color(0xFF0F172A) : c.textPrimary,
+                                  Container(
+                                    width: 3,
+                                    height: 16,
+                                    margin: const EdgeInsetsDirectional.only(end: 8),
+                                    decoration: BoxDecoration(
+                                      color: DramaWave.gold,
+                                      borderRadius: BorderRadius.circular(99),
                                     ),
                                   ),
+                                  Text(t('shortFilms.episodes'), style: DramaWave.title(size: 16)),
                                   const Spacer(),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: light ? const Color(0x1F0F172A) : c.primarySoft,
+                                      color: DramaWave.elevated,
                                       borderRadius: BorderRadius.circular(99),
+                                      border: Border.all(color: DramaWave.hairline),
                                     ),
                                     child: Text(
                                       t('shortFilms.episodesCount').replaceAll('{n}', '${series.episodesCount}'),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: light ? const Color(0xFF64748B) : c.textMuted,
-                                      ),
+                                      style: DramaWave.body(size: 12, color: DramaWave.soft),
                                     ),
                                   ),
                                 ],
@@ -224,22 +233,14 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                             if (series.episodes.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 40),
-                                child: EmptyState(icon: LucideIcons.film, text: t('shortFilms.emptySeries')),
+                                child: DramaWaveEmpty(icon: LucideIcons.film, text: t('shortFilms.emptySeries')),
                               )
                             else
                               Padding(
                                 padding: EdgeInsets.fromLTRB(16, 0, 16, pad.bottom + 36),
-                                child: Column(
-                                  children: [
-                                    for (var i = 0; i < series.episodes.length; i++) ...[
-                                      if (i > 0) const SizedBox(height: 10),
-                                      _EpisodeRow(
-                                        episode: series.episodes[i],
-                                        index: i + 1,
-                                        onTap: () => _openEpisode(series.episodes[i]),
-                                      ),
-                                    ],
-                                  ],
+                                child: _EpisodeNumberGrid(
+                                  episodes: series.episodes,
+                                  onTap: _openEpisode,
                                 ),
                               ),
                           ],
@@ -250,7 +251,6 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                 ],
               ),
             ),
-
           Positioned(
             top: 0,
             left: 0,
@@ -259,10 +259,8 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
               duration: const Duration(milliseconds: 180),
               padding: EdgeInsets.fromLTRB(12, pad.top + 8, 12, 10),
               decoration: BoxDecoration(
-                color: _titleVisible ? sheetBg.withValues(alpha: 0.96) : Colors.transparent,
-                border: _titleVisible
-                    ? Border(bottom: BorderSide(color: (light ? const Color(0x140F172A) : c.border)))
-                    : null,
+                color: _titleVisible ? DramaWave.bg.withValues(alpha: 0.96) : Colors.transparent,
+                border: _titleVisible ? const Border(bottom: BorderSide(color: DramaWave.hairline)) : null,
               ),
               child: Row(
                 children: [
@@ -270,6 +268,9 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                     icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
                     onTap: _back,
                     overlay: !_titleVisible,
+                    backgroundColor: _titleVisible ? DramaWave.elevated : null,
+                    borderColor: _titleVisible ? DramaWave.hairline : null,
+                    color: DramaWave.ink,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -281,11 +282,7 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: light ? const Color(0xFF0F172A) : c.textPrimary,
-                        ),
+                        style: DramaWave.title(size: 16),
                       ),
                     ),
                   ),
@@ -295,6 +292,9 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                       icon: _following ? LucideIcons.bellRing : LucideIcons.bell,
                       onTap: _toggleFollow,
                       overlay: !_titleVisible,
+                      backgroundColor: _titleVisible ? DramaWave.elevated : null,
+                      borderColor: _titleVisible ? DramaWave.hairline : null,
+                      color: _following ? DramaWave.gold : DramaWave.ink,
                     )
                   else
                     const SizedBox(width: 48),
@@ -304,6 +304,9 @@ class _ShortFilmSeriesDetailScreenState extends ConsumerState<ShortFilmSeriesDet
                       icon: LucideIcons.share2,
                       onTap: _shareSeries,
                       overlay: !_titleVisible,
+                      backgroundColor: _titleVisible ? DramaWave.elevated : null,
+                      borderColor: _titleVisible ? DramaWave.hairline : null,
+                      color: DramaWave.ink,
                     )
                   else
                     const SizedBox(width: 48),
@@ -326,17 +329,16 @@ class _SeriesHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final top = MediaQuery.paddingOf(context).top;
     final cover = series.coverUrl;
     final hasCover = cover != null && cover.isNotEmpty;
     final fallback = ColoredBox(
-      color: const Color(0xFF111827),
-      child: Center(child: Icon(LucideIcons.tv, size: 48, color: c.primary.withValues(alpha: 0.55))),
+      color: DramaWave.elevated,
+      child: Center(child: Icon(LucideIcons.tv, size: 48, color: DramaWave.gold.withValues(alpha: 0.55))),
     );
 
     return SizedBox(
-      height: top + 360,
+      height: top + 380,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -350,70 +352,56 @@ class _SeriesHero extends StatelessWidget {
             )
           else
             fallback,
-          // Keep the poster cinematic — never fade into pale light-mode blue.
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0x66000000),
-                  Color(0x00000000),
-                  Color(0x990B1220),
-                  Color(0xFF0B1220),
-                ],
-                stops: [0, 0.32, 0.68, 1],
-              ),
-            ),
-          ),
+          const DecoratedBox(decoration: BoxDecoration(gradient: DramaWave.heroGradient)),
           Positioned(
             left: 16,
             right: 16,
-            bottom: 36,
+            bottom: 44,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [DramaWave.gold, DramaWave.goldDeep]),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    t('shortFilms.exclusive'),
+                    style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(
                   series.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    height: 1.25,
-                    shadows: [Shadow(color: Color(0x66000000), blurRadius: 10)],
-                  ),
+                  style: DramaWave.title(size: 24),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   t('shortFilms.episodesCount').replaceAll('{n}', '${series.episodesCount}'),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.78),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: DramaWave.body(size: 13, color: DramaWave.soft),
                 ),
                 if (onPlay != null || onFollow != null) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final stack = constraints.maxWidth < 380;
                       final play = onPlay == null
                           ? null
-                          : GradientButton(
+                          : _GoldButton(
                               label: t('shortFilms.watchFromStart'),
                               icon: LucideIcons.play,
-                              height: 46,
-                              onPressed: onPlay,
+                              onPressed: onPlay!,
                             );
                       final follow = onFollow == null
                           ? null
                           : OutlinedButton(
                               onPressed: onFollow,
                               style: OutlinedButton.styleFrom(
-                                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+                                backgroundColor: Colors.white.withValues(alpha: 0.06),
+                                side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
                                 minimumSize: const Size(0, 46),
                                 padding: const EdgeInsets.symmetric(horizontal: 12),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -425,7 +413,7 @@ class _SeriesHero extends StatelessWidget {
                                   Icon(
                                     following ? LucideIcons.bellRing : LucideIcons.bell,
                                     size: 18,
-                                    color: Colors.white,
+                                    color: following ? DramaWave.gold : Colors.white,
                                   ),
                                   const SizedBox(width: 8),
                                   Flexible(
@@ -435,8 +423,8 @@ class _SeriesHero extends StatelessWidget {
                                           : t('shortFilms.followSeries'),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: following ? DramaWave.gold : Colors.white,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -473,153 +461,116 @@ class _SeriesHero extends StatelessWidget {
   }
 }
 
-class _EpisodeRow extends StatelessWidget {
-  const _EpisodeRow({required this.episode, required this.index, required this.onTap});
-  final ShortFilm episode;
-  final int index;
+class _GoldButton extends StatelessWidget {
+  const _GoldButton({required this.label, required this.icon, required this.onPressed});
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 46,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [DramaWave.gold, DramaWave.goldDeep]),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: DramaWave.gold.withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: Colors.black),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w800, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// DramaWave signature: numbered episode cells in a wrap grid.
+class _EpisodeNumberGrid extends StatelessWidget {
+  const _EpisodeNumberGrid({required this.episodes, required this.onTap});
+  final List<ShortFilm> episodes;
+  final ValueChanged<ShortFilm> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, box) {
+      const gap = 10.0;
+      final cols = box.maxWidth >= 520
+          ? 7
+          : box.maxWidth >= 400
+              ? 6
+              : 5;
+      final cell = (box.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          for (var i = 0; i < episodes.length; i++)
+            SizedBox(
+              width: cell,
+              height: cell,
+              child: _EpisodeCell(
+                number: episodes[i].episodeNumber ?? (i + 1),
+                highlight: i == 0,
+                onTap: () => onTap(episodes[i]),
+              ),
+            ),
+        ],
+      );
+    });
+  }
+}
+
+class _EpisodeCell extends StatelessWidget {
+  const _EpisodeCell({required this.number, required this.onTap, this.highlight = false});
+  final int number;
+  final bool highlight;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
-    final n = episode.episodeNumber ?? index;
-    final label = t('shortFilms.episodeN').replaceAll('{n}', '$n');
-    final duration = formatFilmDuration(episode.durationSeconds);
-    final thumbUrl = episode.thumbnailUrl;
-    final fallback = ColoredBox(
-      color: light ? const Color(0xFFE8ECF2) : c.bgElevated,
-      child: Icon(LucideIcons.film, size: 22, color: c.primary.withValues(alpha: 0.55)),
-    );
-
     return Material(
-      color: light ? const Color(0xFFEEF2F8) : c.bgCard,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: light ? const Color(0x1F0F172A) : c.border.withValues(alpha: 0.7),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: 68,
-                  height: 92,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (thumbUrl != null && thumbUrl.isNotEmpty)
-                        CachedNetworkImage(
-                          imageUrl: Api.absoluteUrl(thumbUrl)!,
-                          fit: BoxFit.cover,
-                          memCacheWidth: 220,
-                          errorWidget: (_, _, _) => fallback,
-                        )
-                      else
-                        fallback,
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xCC0B1220),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$n',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: highlight ? DramaWave.goldSoft : DramaWave.elevated,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: highlight ? DramaWave.gold : DramaWave.hairline,
+              width: highlight ? 1.5 : 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: TextStyle(
+                color: highlight ? DramaWave.gold : DramaWave.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: light ? const Color(0xFF0F172A) : c.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (episode.title.isNotEmpty && episode.title != label) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        episode.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: light ? const Color(0xFF64748B) : c.textSecondary,
-                          fontSize: 12,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                    if (duration.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            LucideIcons.clock,
-                            size: 13,
-                            color: light ? const Color(0xFF94A3B8) : c.textMuted,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            duration,
-                            style: TextStyle(
-                              color: light ? const Color(0xFF94A3B8) : c.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [c.primary, c.primaryHover],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: c.primary.withValues(alpha: light ? 0.28 : 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Icon(LucideIcons.play, size: 16, color: Colors.white),
-              ),
-            ],
+            ),
           ),
         ),
       ),

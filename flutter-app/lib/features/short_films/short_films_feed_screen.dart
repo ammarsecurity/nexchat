@@ -18,6 +18,7 @@ import 'short_film_downloads.dart';
 import 'short_film_engagement.dart';
 import 'short_film_progress.dart';
 import 'short_films_controller.dart';
+import 'short_films_theme.dart';
 
 /// views/ShortFilmsFeedView.vue — vertical snap feed; only the current ±1 players are alive.
 class ShortFilmsFeedScreen extends ConsumerStatefulWidget {
@@ -472,25 +473,41 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
     final cur = _engagement[film.id] ?? const FilmEngagement();
     final chosen = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xFF1A1A22),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      backgroundColor: DramaWave.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text(t('shortFilms.reactions'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(color: DramaWave.hairline, borderRadius: BorderRadius.circular(99)),
+            ),
+            Text(t('shortFilms.reactions'), style: DramaWave.title(size: 16)),
+            const SizedBox(height: 14),
             Wrap(
               spacing: 10,
               children: [
                 for (final e in _reactions)
                   GestureDetector(
                     onTap: () => Navigator.pop(ctx, e),
-                    child: Text(e, style: TextStyle(fontSize: 28, color: cur.reaction == e ? Colors.white : null)),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: cur.reaction == e ? DramaWave.goldSoft : DramaWave.elevated,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: cur.reaction == e ? DramaWave.gold : DramaWave.hairline,
+                        ),
+                      ),
+                      child: Text(e, style: const TextStyle(fontSize: 26)),
+                    ),
                   ),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, ''),
-                  child: Text(t('shortFilms.cancelAutoNext'), style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+                  child: Text(t('shortFilms.cancelAutoNext'), style: DramaWave.body(color: DramaWave.soft)),
                 ),
               ],
             ),
@@ -521,6 +538,44 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
     });
   }
 
+  bool _filmInSeries(ShortFilm? f) =>
+      f != null && ((f.seriesId != null && f.seriesId!.isNotEmpty) || f.isEpisode || _seriesMode);
+
+  Future<void> _openAllEpisodes() async {
+    final cur = _current;
+    if (cur == null || !_filmInSeries(cur)) return;
+
+    var episodes = _seriesMode && _films.length > 1 ? List<ShortFilm>.from(_films) : const <ShortFilm>[];
+    if (episodes.length <= 1) {
+      final sid = cur.seriesId ?? widget.seriesId;
+      if (sid == null || sid.isEmpty) return;
+      final detail = await ref.read(shortFilmsProvider.notifier).fetchSeriesDetail(sid);
+      if (!mounted) return;
+      episodes = detail?.episodes ?? const [];
+      if (episodes.isEmpty) return;
+      setState(() {
+        _seriesMode = true;
+        _films = episodes;
+        final i = _films.indexWhere((f) => f.id == cur.id);
+        if (i >= 0) _index = i;
+      });
+    }
+
+    final currentId = _current?.id ?? cur.id;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: DramaWave.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => _EpisodesPickerSheet(
+        episodes: episodes,
+        currentId: currentId,
+      ),
+    );
+    if (!mounted || chosen == null || chosen.isEmpty) return;
+    await _jumpToFilm(chosen);
+  }
+
   Future<void> _toggleDownload(ShortFilm film) async {
     final id = film.id;
     if (ShortFilmDownloads.instance.isBusy(id)) return;
@@ -547,24 +602,60 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
     required VoidCallback onTap,
     bool active = false,
     Color? color,
+    bool accent = false,
   }) {
+    final bg = accent
+        ? const LinearGradient(colors: [DramaWave.gold, DramaWave.goldDeep])
+        : null;
     return GestureDetector(
       onTap: onTap,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
-            color: active ? const Color(0xEB6C63FF) : const Color(0x66000000),
             shape: BoxShape.circle,
+            gradient: bg,
+            color: bg == null
+                ? (active ? DramaWave.goldSoft : const Color(0x99000000))
+                : null,
+            border: Border.all(
+              color: accent
+                  ? Colors.transparent
+                  : (active ? DramaWave.gold.withValues(alpha: 0.55) : Colors.white24),
+            ),
+            boxShadow: accent
+                ? [
+                    BoxShadow(
+                      color: DramaWave.gold.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : const [
+                    BoxShadow(color: Color(0x66000000), blurRadius: 8, offset: Offset(0, 2)),
+                  ],
           ),
-          child: Icon(icon, size: 18, color: color ?? Colors.white),
+          child: Icon(
+            icon,
+            size: 18,
+            color: accent
+                ? Colors.black
+                : (color ?? (active ? DramaWave.gold : Colors.white)),
+          ),
         ),
-        const SizedBox(height: 4),
-        Text(label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, shadows: _shadow)),
+        const SizedBox(height: 5),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: active && !accent ? DramaWave.gold : Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            shadows: _shadow,
+          ),
+        ),
       ]),
     );
   }
@@ -658,22 +749,24 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
       _films = [for (final f in _films) byId[f.id] ?? f];
     }
     Widget roundBtn(IconData icon, VoidCallback onTap, {double size = 22}) => Material(
-          color: const Color(0x73000000),
-          shape: const CircleBorder(),
+          color: const Color(0x990A0809),
+          shape: const CircleBorder(
+            side: BorderSide(color: DramaWave.hairline),
+          ),
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
-            child: SizedBox(width: 44, height: 44, child: Icon(icon, size: size, color: Colors.white)),
+            child: SizedBox(width: 42, height: 42, child: Icon(icon, size: size, color: Colors.white)),
           ),
         );
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: DramaWave.bg,
       body: Stack(children: [
         if (!_ready)
-          const Center(child: CircularProgressIndicator(color: Colors.white54))
+          const Center(child: CircularProgressIndicator(color: DramaWave.gold))
         else if (_films.isEmpty)
-          Center(child: Text(t('shortFilms.empty'), style: TextStyle(color: Colors.white.withValues(alpha: 0.7))))
+          Center(child: Text(t('shortFilms.empty'), style: DramaWave.body(color: DramaWave.soft)))
         else
           NotificationListener<ScrollNotification>(
             onNotification: (n) {
@@ -738,9 +831,16 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
                 right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: const Color(0x73000000), borderRadius: BorderRadius.circular(20)),
-                    child: Text('${_speed}x', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xCC0A0809),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: DramaWave.gold.withValues(alpha: 0.45)),
+                    ),
+                    child: Text(
+                      '${_speed}x',
+                      style: const TextStyle(color: DramaWave.gold, fontSize: 12, fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ),
               ),
@@ -752,9 +852,13 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
             child: Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(color: const Color(0x99000000), borderRadius: BorderRadius.circular(24)),
+                decoration: BoxDecoration(
+                  color: const Color(0xCC0A0809),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: DramaWave.hairline),
+                ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(_skipFlash == 'back' ? LucideIcons.rotateCcw : LucideIcons.rotateCw, color: Colors.white, size: 18),
+                  Icon(_skipFlash == 'back' ? LucideIcons.rotateCcw : LucideIcons.rotateCw, color: DramaWave.gold, size: 18),
                   const SizedBox(width: 8),
                   Text(_skipFlash == 'back' ? '-10' : '+10', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
                 ]),
@@ -767,9 +871,13 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
             right: 24,
             bottom: pad.bottom + 28,
             child: Material(
-              color: const Color(0xE6111111),
+              color: DramaWave.elevated,
               borderRadius: BorderRadius.circular(16),
-              child: Padding(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: DramaWave.hairline),
+                ),
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                 child: Row(children: [
                   Expanded(
@@ -783,7 +891,10 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
                       _cancelAutoNext();
                       _go(1);
                     },
-                    child: Text(t('shortFilms.nextEpisode'), style: const TextStyle(color: Color(0xFF60A5FA), fontWeight: FontWeight.w800)),
+                    child: Text(
+                      t('shortFilms.nextEpisode'),
+                      style: const TextStyle(color: DramaWave.gold, fontWeight: FontWeight.w800),
+                    ),
                   ),
                   TextButton(
                     onPressed: _cancelAutoNext,
@@ -818,14 +929,14 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
             }
           : null,
       child: Stack(fit: StackFit.expand, children: [
-        const ColoredBox(color: Color(0xFF111111)),
+        const ColoredBox(color: DramaWave.bg),
         // Poster under the player — perceived start feels instant; no black flash on swipe.
         if (film.thumbnailUrl != null && film.thumbnailUrl!.isNotEmpty)
           Positioned.fill(
             child: CachedNetworkImage(
               imageUrl: Api.absoluteUrl(film.thumbnailUrl)!,
-              fit: BoxFit.contain,
-              memCacheWidth: 720,
+              fit: BoxFit.cover,
+              memCacheWidth: 1080,
               fadeInDuration: Duration.zero,
               fadeOutDuration: Duration.zero,
               errorWidget: (_, _, _) => const SizedBox.shrink(),
@@ -843,14 +954,14 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
                   _players.remove(film.id)?.dispose();
                   unawaited(_ensurePlayer(film));
                 },
-                child: Text(t('noConnection.retry'), style: const TextStyle(color: Colors.white)),
+                child: Text(t('noConnection.retry'), style: const TextStyle(color: DramaWave.gold)),
               ),
             ]),
           ),
         if (v != null && v.value.isInitialized)
           Positioned.fill(
             child: FittedBox(
-              // contain: full frame visible (no zoom/crop). cover fills the phone and crops.
+              // contain: show the full video frame (no zoom/crop). Poster above uses cover.
               fit: BoxFit.contain,
               clipBehavior: Clip.hardEdge,
               child: SizedBox(
@@ -861,10 +972,21 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
             ),
           ),
         if (_userPaused && isCurrent)
-          const IgnorePointer(
+          IgnorePointer(
             child: ColoredBox(
-              color: Color(0x2E000000),
-              child: Center(child: Icon(LucideIcons.play, size: 56, color: Color(0xEBFFFFFF))),
+              color: const Color(0x33000000),
+              child: Center(
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.45),
+                    border: Border.all(color: DramaWave.gold.withValues(alpha: 0.7)),
+                  ),
+                  child: const Icon(LucideIcons.play, size: 32, color: DramaWave.gold),
+                ),
+              ),
             ),
           ),
         const IgnorePointer(
@@ -873,8 +995,14 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
               gradient: LinearGradient(
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
-                colors: [Color(0xE0000000), Color(0x59000000), Color(0x00000000), Color(0x00000000), Color(0x59000000)],
-                stops: [0, 0.28, 0.48, 0.82, 1],
+                colors: [
+                  Color(0xF00A0809),
+                  Color(0x990A0809),
+                  Color(0x00000000),
+                  Color(0x00000000),
+                  Color(0x660A0809),
+                ],
+                stops: [0, 0.26, 0.48, 0.8, 1],
               ),
             ),
           ),
@@ -888,13 +1016,13 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
             offset: 8,
             child: Builder(builder: (_) {
               final eng = _engagement[film.id] ?? const FilmEngagement();
-              final gap = SizedBox(height: narrow ? 12 : 14);
+              final gap = SizedBox(height: narrow ? 11 : 13);
               return Column(mainAxisSize: MainAxisSize.min, children: [
                 _railAction(
-                  icon: eng.liked ? LucideIcons.heart : LucideIcons.heart,
+                  icon: LucideIcons.heart,
                   label: eng.likeCount > 0 ? '${eng.likeCount}' : t('shortFilms.like'),
                   active: eng.liked,
-                  color: eng.liked ? const Color(0xFFFF5A7A) : Colors.white,
+                  color: eng.liked ? DramaWave.hot : Colors.white,
                   onTap: () => unawaited(_toggleLike(film)),
                 ),
                 gap,
@@ -931,7 +1059,7 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
                 _railAction(
                   icon: LucideIcons.share2,
                   label: t('shortFilms.share'),
-                  active: true,
+                  accent: true,
                   onTap: () {
                     final returnPath = film.seriesId != null && film.seriesId!.isNotEmpty
                         ? '/short-films/watch?start=${film.id}&series=${film.seriesId}'
@@ -950,9 +1078,18 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
                   },
                 ),
                 gap,
-                const Icon(LucideIcons.eye, size: 18, color: Colors.white, shadows: _shadow),
+                const Icon(LucideIcons.eye, size: 16, color: DramaWave.soft, shadows: _shadow),
                 const SizedBox(height: 4),
-                Text('${film.viewCount}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700, height: 1, shadows: _shadow)),
+                Text(
+                  '${film.viewCount}',
+                  style: const TextStyle(
+                    color: DramaWave.soft,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                    shadows: _shadow,
+                  ),
+                ),
               ]);
             }),
           ),
@@ -985,31 +1122,127 @@ class _ShortFilmsFeedScreenState extends ConsumerState<ShortFilmsFeedScreen> wit
                       ),
                       const SizedBox(height: 10),
                     ],
-                    Text(film.isEpisode ? film.displaySubtitle : film.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.white, fontSize: narrow ? 15 : 16, fontWeight: FontWeight.w700, height: 1.3, shadows: _shadowStrong)),
+                    if (_filmInSeries(film)) ...[
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(colors: [DramaWave.gold, DramaWave.goldDeep]),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              t('shortFilms.episodeN').replaceAll('{n}', '${film.episodeNumber ?? (_index + 1)}'),
+                              style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          if (_seriesMode && _films.length > 1) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '${_index + 1}/${_films.length}',
+                              style: const TextStyle(
+                                color: DramaWave.soft,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                shadows: _shadow,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: isCurrent ? _openAllEpisodes : null,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Ink(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xCC0A0809),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: DramaWave.gold.withValues(alpha: 0.45)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(LucideIcons.listVideo, size: 16, color: DramaWave.gold),
+                                const SizedBox(width: 8),
+                                Text(
+                                  t('shortFilms.allEpisodes'),
+                                  style: const TextStyle(
+                                    color: DramaWave.gold,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Directionality.of(context) == TextDirection.rtl
+                                      ? LucideIcons.chevronLeft
+                                      : LucideIcons.chevronRight,
+                                  size: 16,
+                                  color: DramaWave.gold,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Text(
+                      film.isEpisode ? film.displaySubtitle : film.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: narrow ? 15 : 16,
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                        shadows: _shadowStrong,
+                      ),
+                    ),
                     if (film.isEpisode && film.title != film.displaySubtitle) ...[
                       const SizedBox(height: 2),
-                      Text(film.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: narrow ? 12 : 13, shadows: _shadow)),
+                      Text(
+                        film.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: narrow ? 12 : 13,
+                          shadows: _shadow,
+                        ),
+                      ),
                     ],
                     if (film.description?.isNotEmpty ?? false) ...[
                       const SizedBox(height: 4),
                       GestureDetector(
                         onTap: isCurrent ? () => setState(() => _descExpanded = !_descExpanded) : null,
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(film.description!,
-                              maxLines: _descExpanded && isCurrent ? null : 2,
-                              overflow: _descExpanded && isCurrent ? null : TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.92), fontSize: narrow ? 12 : 13, height: 1.45, shadows: _shadow)),
+                          Text(
+                            film.description!,
+                            maxLines: _descExpanded && isCurrent ? null : 2,
+                            overflow: _descExpanded && isCurrent ? null : TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: narrow ? 12 : 13,
+                              height: 1.45,
+                              shadows: _shadow,
+                            ),
+                          ),
                           if (!_descExpanded || !isCurrent)
                             Padding(
                               padding: const EdgeInsets.only(top: 4),
-                              child: Text(t('shortFilms.showMore'),
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12, fontWeight: FontWeight.w700)),
+                              child: Text(
+                                t('shortFilms.showMore'),
+                                style: const TextStyle(
+                                  color: DramaWave.gold,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
                         ]),
                       ),
@@ -1134,10 +1367,10 @@ class _FilmSeekBarState extends State<_FilmSeekBar> {
               trackHeight: 3.5,
               thumbShape: RoundSliderThumbShape(enabledThumbRadius: _dragging ? 7 : 5.5),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: Colors.white,
+              activeTrackColor: DramaWave.gold,
               inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.white,
-              overlayColor: Colors.white24,
+              thumbColor: DramaWave.gold,
+              overlayColor: DramaWave.goldSoft,
               trackShape: const RoundedRectSliderTrackShape(),
             ),
               child: Slider(
@@ -1220,12 +1453,143 @@ class _NavBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: const Color(0x59000000),
-        shape: const CircleBorder(),
+        color: const Color(0x990A0809),
+        shape: const CircleBorder(side: BorderSide(color: DramaWave.hairline)),
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
-          child: SizedBox(width: 36, height: 36, child: Icon(icon, size: 20, color: Colors.white.withValues(alpha: 0.55))),
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Icon(icon, size: 20, color: DramaWave.gold.withValues(alpha: 0.85)),
+          ),
         ),
       );
+}
+
+/// DramaWave-style episode number picker for the player.
+class _EpisodesPickerSheet extends StatelessWidget {
+  const _EpisodesPickerSheet({required this.episodes, this.currentId});
+  final List<ShortFilm> episodes;
+  final String? currentId;
+
+  @override
+  Widget build(BuildContext context) {
+    final pad = MediaQuery.paddingOf(context);
+    final maxH = MediaQuery.sizeOf(context).height * 0.62;
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 10, 16, 12 + pad.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: DramaWave.hairline,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 16,
+                    margin: const EdgeInsetsDirectional.only(end: 8),
+                    decoration: BoxDecoration(
+                      color: DramaWave.gold,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(t('shortFilms.selectEpisode'), style: DramaWave.title(size: 16)),
+                  ),
+                  Text(
+                    t('shortFilms.episodesCount').replaceAll('{n}', '${episodes.length}'),
+                    style: DramaWave.body(size: 12, color: DramaWave.soft),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: LayoutBuilder(builder: (context, box) {
+                    const gap = 10.0;
+                    final cols = box.maxWidth >= 520
+                        ? 7
+                        : box.maxWidth >= 400
+                            ? 6
+                            : 5;
+                    final cell = (box.maxWidth - gap * (cols - 1)) / cols;
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: gap,
+                      children: [
+                        for (var i = 0; i < episodes.length; i++)
+                          SizedBox(
+                            width: cell,
+                            height: cell,
+                            child: _EpisodePickCell(
+                              number: episodes[i].episodeNumber ?? (i + 1),
+                              selected: episodes[i].id == currentId,
+                              onTap: () => Navigator.pop(context, episodes[i].id),
+                            ),
+                          ),
+                      ],
+                    );
+                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EpisodePickCell extends StatelessWidget {
+  const _EpisodePickCell({required this.number, required this.selected, required this.onTap});
+  final int number;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: selected ? DramaWave.goldSoft : DramaWave.elevated,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? DramaWave.gold : DramaWave.hairline,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: TextStyle(
+                color: selected ? DramaWave.gold : DramaWave.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

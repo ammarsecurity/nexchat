@@ -66,6 +66,9 @@ class ActiveConversationController extends Notifier<ActiveConversation> {
     return const ActiveConversation();
   }
 
+  /// Safe to read from a State that already holds this notifier (e.g. dispose).
+  ActiveConversation get current => state;
+
   void setConversation(
     String id,
     Json? partner, {

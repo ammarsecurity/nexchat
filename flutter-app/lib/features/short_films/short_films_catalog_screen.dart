@@ -1,16 +1,13 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/i18n/i18n.dart';
-import '../../core/network/api_client.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/layout.dart';
-import '../../shared/widgets.dart';
 import 'short_films_controller.dart';
 import 'short_films_hub_screen.dart';
+import 'short_films_theme.dart';
 
 /// Full-grid catalog for series or standalone films (opened via «عرض الكل»).
 class ShortFilmsCatalogScreen extends ConsumerStatefulWidget {
@@ -72,7 +69,6 @@ class _ShortFilmsCatalogScreenState extends ConsumerState<ShortFilmsCatalogScree
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final st = ref.watch(shortFilmsProvider);
     final title = _isSeries ? t('shortFilms.series') : t('shortFilms.allFilms');
     final series = st.visibleSeries;
@@ -80,89 +76,130 @@ class _ShortFilmsCatalogScreenState extends ConsumerState<ShortFilmsCatalogScree
     final bottom = tabScrollPadding(context, extra: 16);
     final empty = _isSeries ? series.isEmpty : films.isEmpty;
     final loading = st.loading && !st.loaded;
+    final pad = MediaQuery.paddingOf(context);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final w = MediaQuery.sizeOf(context).width;
 
-    // Keep search field in sync if cleared from store elsewhere.
     if (_search.text != st.searchQuery && st.searchQuery.isEmpty && _search.text.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _search.clear();
       });
     }
 
-    return ModernPage(
-      title: title,
-      backTo: '/short-films',
-      scroll: false,
-      padding: EdgeInsets.zero,
+    return Scaffold(
+      backgroundColor: DramaWave.bg,
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: SearchField(
-            controller: _search,
-            hint: t('shortFilms.searchPlaceholder'),
-            onChanged: _store.setSearch,
-            trailing: st.searchQuery.isEmpty
-                ? null
-                : IconButton(
-                    visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.fromLTRB(8, pad.top + 4, 8, 0),
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/short-films');
+                  }
+                },
+                icon: Icon(
+                  rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+                  size: 22,
+                  color: DramaWave.ink,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: DramaWave.title(size: 17),
+                ),
+              ),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsetsDirectional.only(start: 14, end: 6),
+            decoration: BoxDecoration(
+              color: DramaWave.elevated,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(LucideIcons.search, size: 18, color: DramaWave.muted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _search,
+                    onChanged: _store.setSearch,
+                    style: const TextStyle(color: DramaWave.ink, fontSize: 14, fontWeight: FontWeight.w600),
+                    cursorColor: DramaWave.gold,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      hintText: t('shortFilms.searchPlaceholder'),
+                      hintStyle: const TextStyle(color: DramaWave.muted, fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ),
+                if (st.searchQuery.isNotEmpty)
+                  IconButton(
                     onPressed: () {
                       _search.clear();
                       _store.clearSearch();
                     },
-                    icon: Icon(LucideIcons.x, size: 18, color: c.textMuted),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    icon: const Icon(LucideIcons.x, size: 16, color: DramaWave.muted),
                   ),
-          ),
-        ),
-        if (st.sections.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.only(top: 4, bottom: 10),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.border))),
-            child: SizedBox(
-              height: 74,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                children: [
-                  ShortFilmSectionRing(
-                    label: t('shortFilms.allSections'),
-                    active: st.selectedSectionId == null,
-                    onTap: () => _store.setSection(null),
-                    bg: c.bgCard,
-                    child: Icon(LucideIcons.layoutGrid, size: 20, color: st.selectedSectionId == null ? c.primary : c.textSecondary),
-                  ),
-                  for (final s in st.sections)
-                    ShortFilmSectionRing(
-                      label: s.name,
-                      active: st.selectedSectionId == s.id,
-                      onTap: () => _store.setSection(s.id),
-                      child: s.imageUrl != null
-                          ? CachedNetworkImage(
-                              imageUrl: Api.absoluteUrl(s.imageUrl)!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                              memCacheWidth: 144,
-                            )
-                          : Text(
-                              s.name.trim().isEmpty ? '?' : s.name.trim().characters.first.toUpperCase(),
-                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: c.primary),
-                            ),
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
+        ),
+        if (st.sections.isNotEmpty) ...[
+          SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                ShortFilmGenreChip(
+                  label: t('shortFilms.allSections'),
+                  active: st.selectedSectionId == null,
+                  onTap: () => _store.setSection(null),
+                ),
+                for (final s in st.sections)
+                  ShortFilmGenreChip(
+                    label: s.name,
+                    active: st.selectedSectionId == s.id,
+                    onTap: () => _store.setSection(s.id),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         Expanded(
           child: loading
-              ? Center(child: Text(t('common.loading'), style: TextStyle(color: c.textMuted)))
+              ? Center(child: Text(t('common.loading'), style: DramaWave.body()))
               : empty
-                  ? EmptyState(
+                  ? DramaWaveEmpty(
                       icon: _isSeries ? LucideIcons.tv : LucideIcons.film,
                       text: st.isSearching || st.selectedSectionId != null
                           ? t('shortFilms.empty')
                           : (_isSeries ? t('shortFilms.emptySeriesList') : t('shortFilms.empty')),
                     )
                   : RefreshIndicator(
-                      color: c.primary,
+                      color: DramaWave.gold,
+                      backgroundColor: DramaWave.elevated,
                       onRefresh: () async {
                         await _store.fetchAll(force: true);
                         if (_isSeries) await _store.fetchSeriesList();
@@ -172,15 +209,17 @@ class _ShortFilmsCatalogScreenState extends ConsumerState<ShortFilmsCatalogScree
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: EdgeInsets.fromLTRB(16, 12, 16, bottom),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: shortFilmGridColumns(MediaQuery.sizeOf(context).width),
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
+                          crossAxisCount: shortFilmGridColumns(w),
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
                           childAspectRatio: 9 / 14,
                         ),
                         itemCount: _isSeries ? series.length : films.length + (st.loadingMore ? 1 : 0),
                         itemBuilder: (_, i) {
                           if (!_isSeries && i >= films.length) {
-                            return Center(child: Icon(LucideIcons.refreshCw, size: 20, color: c.textMuted));
+                            return const Center(
+                              child: Icon(LucideIcons.refreshCw, size: 20, color: DramaWave.muted),
+                            );
                           }
                           if (_isSeries) {
                             final s = series[i];

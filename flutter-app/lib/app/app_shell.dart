@@ -8,6 +8,7 @@ import '../core/feature_flags.dart';
 import '../core/i18n/i18n.dart';
 import '../core/theme/app_colors.dart';
 import '../features/conversations/conversations_list_controller.dart';
+import '../features/short_films/short_films_theme.dart';
 import 'router.dart';
 
 class _Tab {
@@ -57,50 +58,78 @@ class _AppShellState extends ConsumerState<AppShell> {
       _Tab('/settings', t('nav.profile'), 'profile', pending),
     ];
     final showBar = isTabRoot(widget.location, flags);
+    final discoverStyle = widget.location == '/short-films' || widget.location.startsWith('/short-films/');
 
     return Scaffold(
       extendBody: true,
       body: widget.child,
-      bottomNavigationBar: showBar ? _TabBar(tabs: tabs, location: widget.location) : null,
+      bottomNavigationBar: showBar
+          ? _TabBar(tabs: tabs, location: widget.location, discoverStyle: discoverStyle)
+          : null,
     );
   }
 }
 
 class _TabBar extends StatelessWidget {
-  const _TabBar({required this.tabs, required this.location});
+  const _TabBar({required this.tabs, required this.location, this.discoverStyle = false});
   final List<_Tab> tabs;
   final String location;
+  final bool discoverStyle;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final bottom = MediaQuery.paddingOf(context).bottom;
     // Chrome height must stay near kTabBarContentHeight in layout.dart.
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       padding: EdgeInsets.fromLTRB(16, 6, 16, 6 + bottom),
       decoration: BoxDecoration(
-        color: c.bgCard,
+        color: discoverStyle ? DramaWave.surface : c.bgCard,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-        boxShadow: [BoxShadow(color: c.shadow, blurRadius: 24, offset: const Offset(0, -4))],
+        border: discoverStyle ? const Border(top: BorderSide(color: DramaWave.hairline)) : null,
+        boxShadow: [
+          BoxShadow(
+            color: discoverStyle ? const Color(0x66000000) : c.shadow,
+            blurRadius: 24,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         crossAxisAlignment: CrossAxisAlignment.end,
-        children: [for (final tab in tabs) Expanded(child: _TabItem(tab: tab, active: location == tab.to))],
+        children: [
+          for (final tab in tabs)
+            Expanded(
+              child: _TabItem(
+                tab: tab,
+                active: location == tab.to || (tab.to == '/short-films' && location.startsWith('/short-films')),
+                discoverStyle: discoverStyle,
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
 class _TabItem extends StatelessWidget {
-  const _TabItem({required this.tab, required this.active});
+  const _TabItem({required this.tab, required this.active, this.discoverStyle = false});
   final _Tab tab;
   final bool active;
+  final bool discoverStyle;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final color = active ? c.primary : c.textMuted;
+    final color = discoverStyle
+        ? (active ? DramaWave.gold : DramaWave.muted)
+        : (active ? c.primary : c.textMuted);
+    final well = discoverStyle
+        ? (active ? DramaWave.goldSoft : Colors.transparent)
+        : (active ? c.primarySoft : Colors.transparent);
     final IconData iconData = switch (tab.icon) {
       'home' => LucideIcons.rocket,
       'chat' => LucideIcons.messageCircle,
@@ -124,7 +153,7 @@ class _TabItem extends StatelessWidget {
               duration: const Duration(milliseconds: 150),
               width: 38,
               height: 38,
-              decoration: BoxDecoration(color: active ? c.primarySoft : Colors.transparent, shape: BoxShape.circle),
+              decoration: BoxDecoration(color: well, shape: BoxShape.circle),
               child: Stack(
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
@@ -140,13 +169,24 @@ class _TabItem extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 5),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: c.primary,
+                          color: discoverStyle ? DramaWave.gold : c.primary,
                           borderRadius: BorderRadius.circular(999),
-                          boxShadow: const [BoxShadow(color: Color(0x593B82F6), blurRadius: 6, offset: Offset(0, 2))],
+                          boxShadow: [
+                            BoxShadow(
+                              color: discoverStyle ? const Color(0x59E8B923) : const Color(0x593B82F6),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
                         child: Text(
                           tab.badge > 99 ? '99+' : '${tab.badge}',
-                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700, height: 1),
+                          style: TextStyle(
+                            color: discoverStyle ? Colors.black : Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                          ),
                         ),
                       ),
                     ),

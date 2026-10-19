@@ -123,11 +123,17 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
   final _pendingAudio = <String, String>{};
 
   late final ActiveConversationController _store;
+  late final ActiveCallController _activeCall;
 
   late final String _accountId;
   String get _me => _accountId;
   bool get _uploading => _uploadingImage || _uploadingVideo || _uploadingAlbum || _uploadingVoice || _uploadingFile || _sharingLocation;
-  bool get _ownsStore => mounted && identical(_storeOwner, this) && ref.read(authProvider).user?.id == _accountId && ref.read(authProvider).token == _sessionToken;
+  /// Never touch [ref] when !mounted — Riverpod forbids WidgetRef after unmount/dispose.
+  bool get _ownsStore =>
+      mounted &&
+      identical(_storeOwner, this) &&
+      ref.read(authProvider).user?.id == _accountId &&
+      ref.read(authProvider).token == _sessionToken;
 
   @override
   void initState() {
@@ -135,6 +141,7 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
     _accountId = ref.read(authProvider).user?.id ?? '';
     _sessionToken = ref.read(authProvider).token;
     _store = ref.read(activeConversationProvider.notifier);
+    _activeCall = ref.read(activeCallProvider.notifier);
     _storeOwner = this;
     _joinCounts.update(_cid, (n) => n + 1, ifAbsent: () => 1);
     WidgetsBinding.instance.addObserver(this);
@@ -181,10 +188,10 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   void _saveNow() {
     if (!_ownsStore) return;
-    final active = ref.read(activeConversationProvider);
+    final active = _store.current;
     if (active.conversationId != _cid) return;
     unawaited(ConversationCache.save(_accountId, _cid, active.messages));
-    _persistOutbox();
+    _persistOutboxFrom(active);
   }
 
   void _saveDebounced() {
@@ -194,13 +201,25 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   void _persistOutbox() {
     if (!_ownsStore) return;
-    final active = ref.read(activeConversationProvider);
+    _persistOutboxFrom(_store.current);
+  }
+
+  void _persistOutboxFrom(ActiveConversation active) {
     if (active.conversationId != _cid) return;
     for (final message in active.messages) {
       if ((message['status'] == 'pending' || message['status'] == 'failed') && (message.s('type') ?? 'text') == 'text') {
         unawaited(MessageOutbox.enqueue(_accountId, {...message, 'conversationId': _cid}));
       }
     }
+  }
+
+  /// Persist without [ref] — used from [dispose].
+  void _saveOnDispose() {
+    if (!identical(_storeOwner, this)) return;
+    final active = _store.current;
+    if (active.conversationId != _cid) return;
+    unawaited(ConversationCache.save(_accountId, _cid, active.messages));
+    _persistOutboxFrom(active);
   }
 
   bool _accepts(Object? payload) => _ownsStore && payload is Map && belongsToConversation(payload, _cid);
@@ -725,7 +744,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
 
   @override
   void dispose() {
-    _saveNow();
+    // Do not use [ref] here — WidgetRef is invalid while finalizing the tree.
+    _saveOnDispose();
     _refresh.dispose();
     unawaited(SecureScreen.release());
     WidgetsBinding.instance.removeObserver(this);
@@ -746,8 +766,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
       _callingOut = false;
       // Don't cancel if Accept already opened the LiveKit screen for this call.
       if (videoScreenMounts(_cid) == 0) {
-        if (ref.read(activeCallProvider).sessionId == _cid) {
-          ref.read(activeCallProvider.notifier).clear();
+        if (_activeCall.current.sessionId == _cid) {
+          _activeCall.clear();
         }
         Hubs.conversation
             .ensureConnected()
@@ -771,7 +791,8 @@ class _ConversationChatScreenState extends ConsumerState<ConversationChatScreen>
         Hubs.conversation.invoke('LeaveConversation', [_cid]).catchError((_) => null);
       }
     }
-    if (_ownsStore) {
+    final owns = identical(_storeOwner, this);
+    if (owns) {
       _storeOwner = null;
       final store = _store;
       Future.microtask(() {

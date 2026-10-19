@@ -636,6 +636,7 @@
     "share": "مشاركة",
     "shareMessage": "🎬 {title}\n{link}",
     "showMore": "عرض المزيد",
+    "showLess": "عرض أقل",
     "pause": "إيقاف",
     "play": "تشغيل",
     "watchFromStart": "مشاهدة من البداية",
@@ -675,7 +676,15 @@
     "followingSeries": "تتابع المسلسل",
     "becauseYouWatched": "لأنك شاهدت",
     "recommended": "مقترحات لك",
-    "doubleTapHint": "نقر مزدوج للتقديم أو التراجع 10 ثوانٍ"
+    "doubleTapHint": "نقر مزدوج للتقديم أو التراجع 10 ثوانٍ",
+    "ranking": "الترتيب المباشر",
+    "popular": "الأكثر شعبية",
+    "hot": "رائج",
+    "exclusive": "حصري",
+    "playNow": "شاهد الآن",
+    "allEpisodes": "عرض كل الحلقات",
+    "selectEpisode": "اختر الحلقة",
+    "browseFilms": "تصفّح الأفلام"
   },
   "groups": {
     "createTitle": "إنشاء مجموعة",

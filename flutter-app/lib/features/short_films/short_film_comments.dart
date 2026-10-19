@@ -4,8 +4,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/network/api_client.dart';
-import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
+import 'short_films_theme.dart';
 
 class FilmComment {
   const FilmComment({
@@ -71,7 +71,7 @@ Future<int?> openShortFilmCommentsSheet(BuildContext context, {required String f
     context: context,
     isScrollControlled: true,
     useRootNavigator: true,
-    backgroundColor: context.colors.bgCard,
+    backgroundColor: DramaWave.surface,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
     builder: (_) => _CommentsSheet(filmId: filmId, initialCount: initialCount),
   );
@@ -209,11 +209,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   void _openMenu(FilmComment c) {
-    showAppSheet<void>(
+    showDramaWaveSheet<void>(
       context,
       builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
         if (c.isMine)
-          SheetAction(
+          DramaWaveSheetAction(
             icon: LucideIcons.trash2,
             label: t('shortFilms.deleteComment'),
             danger: true,
@@ -223,7 +223,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             },
           )
         else
-          SheetAction(
+          DramaWaveSheetAction(
             icon: LucideIcons.flag,
             label: t('shortFilms.reportComment'),
             danger: true,
@@ -239,179 +239,212 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
     final height = MediaQuery.sizeOf(context).height * 0.72;
 
     return SizedBox(
       height: height,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottom),
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: c.textMuted.withValues(alpha: 0.35), borderRadius: BorderRadius.circular(99)),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: Row(
-                children: [
-                  Text(
-                    t('shortFilms.comments'),
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: c.textPrimary),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: c.primarySoft,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(
-                      '$_total',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: c.primary),
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context, _total),
-                    icon: Icon(LucideIcons.x, size: 20, color: c.textMuted),
-                  ),
-                ],
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: DramaWave.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottom),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: DramaWave.hairline,
+                  borderRadius: BorderRadius.circular(99),
+                ),
               ),
-            ),
-            Divider(height: 1, color: c.border),
-            Expanded(
-              child: _loading
-                  ? Center(child: CircularProgressIndicator(color: c.primary))
-                  : _items.isEmpty
-                      ? EmptyState(icon: LucideIcons.messageCircle, text: t('shortFilms.emptyComments'))
-                      : ListView.separated(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                          itemCount: _items.length + (_loadingMore ? 1 : 0),
-                          separatorBuilder: (_, _) => const SizedBox(height: 12),
-                          itemBuilder: (_, i) {
-                            if (i >= _items.length) {
-                              return const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                              );
-                            }
-                            final row = _items[i];
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                UserAvatar(url: row.userAvatar, name: row.userName, size: 36),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Row(
+                  children: [
+                    Text(t('shortFilms.comments'), style: DramaWave.title(size: 17)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: DramaWave.goldSoft,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: DramaWave.gold.withValues(alpha: 0.4)),
+                      ),
+                      child: Text(
+                        '$_total',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: DramaWave.gold),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context, _total),
+                      icon: const Icon(LucideIcons.x, size: 20, color: DramaWave.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: DramaWave.hairline),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator(color: DramaWave.gold))
+                    : _items.isEmpty
+                        ? _EmptyComments()
+                        : ListView.separated(
+                            controller: _scroll,
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                            itemCount: _items.length + (_loadingMore ? 1 : 0),
+                            separatorBuilder: (_, _) => const SizedBox(height: 12),
+                            itemBuilder: (_, i) {
+                              if (i >= _items.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: Center(
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: DramaWave.gold),
+                                  ),
+                                );
+                              }
+                              final row = _items[i];
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: DramaWave.elevated,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: DramaWave.hairline),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    UserAvatar(url: row.userAvatar, name: row.userName, size: 36),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Expanded(
-                                            child: Text(
-                                              row.userName,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w800,
-                                                color: c.textPrimary,
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  row.userName,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: DramaWave.title(size: 13),
+                                                ),
                                               ),
-                                            ),
+                                              InkWell(
+                                                onTap: () => _openMenu(row),
+                                                borderRadius: BorderRadius.circular(8),
+                                                child: const Padding(
+                                                  padding: EdgeInsets.all(4),
+                                                  child: Icon(LucideIcons.ellipsis, size: 16, color: DramaWave.muted),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          InkWell(
-                                            onTap: () => _openMenu(row),
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(4),
-                                              child: Icon(LucideIcons.ellipsis, size: 16, color: c.textMuted),
-                                            ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            row.body,
+                                            style: DramaWave.body(size: 14, color: DramaWave.soft),
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        row.body,
-                                        style: TextStyle(fontSize: 14, height: 1.4, color: c.textSecondary),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            );
-                          },
-                        ),
-            ),
-            Container(
-              padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + MediaQuery.paddingOf(context).bottom),
-              decoration: BoxDecoration(
-                color: c.bgCard,
-                border: Border(top: BorderSide(color: c.border)),
+                              );
+                            },
+                          ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _text,
-                      minLines: 1,
-                      maxLines: 3,
-                      maxLength: 300,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
-                      style: TextStyle(color: c.textPrimary, fontSize: 15),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        hintText: t('shortFilms.commentPlaceholder'),
-                        hintStyle: TextStyle(color: c.textMuted),
-                        filled: true,
-                        fillColor: c.bgElevated,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide(color: c.border),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide(color: c.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide(color: c.primary),
+              Container(
+                padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + MediaQuery.paddingOf(context).bottom),
+                decoration: const BoxDecoration(
+                  color: DramaWave.surface,
+                  border: Border(top: BorderSide(color: DramaWave.hairline)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _text,
+                        minLines: 1,
+                        maxLines: 3,
+                        maxLength: 300,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                        style: const TextStyle(color: DramaWave.ink, fontSize: 15),
+                        cursorColor: DramaWave.gold,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: t('shortFilms.commentPlaceholder'),
+                          hintStyle: const TextStyle(color: DramaWave.muted),
+                          filled: true,
+                          fillColor: DramaWave.elevated,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(color: DramaWave.hairline),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(color: DramaWave.hairline),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(color: DramaWave.gold),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Material(
-                    color: c.primary,
-                    borderRadius: BorderRadius.circular(16),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: _sending ? null : _send,
-                      child: SizedBox(
-                        width: 46,
-                        height: 46,
-                        child: _sending
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(LucideIcons.send, size: 18, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: _sending ? null : _send,
+                        child: Ink(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: [DramaWave.gold, DramaWave.goldDeep]),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: DramaWave.gold.withValues(alpha: 0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: _sending
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                )
+                              : const Icon(LucideIcons.send, size: 18, color: Colors.black),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _EmptyComments extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return DramaWaveEmpty(
+      icon: LucideIcons.messageCircle,
+      text: t('shortFilms.emptyComments'),
     );
   }
 }

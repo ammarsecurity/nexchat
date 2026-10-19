@@ -6,10 +6,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
-import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
 import 'short_film_downloads.dart';
 import 'short_films_controller.dart';
+import 'short_films_theme.dart';
 
 class ShortFilmDownloadsScreen extends ConsumerStatefulWidget {
   const ShortFilmDownloadsScreen({super.key});
@@ -69,10 +69,10 @@ class _ShortFilmDownloadsScreenState extends ConsumerState<ShortFilmDownloadsScr
   }
 
   void _openMenu(ShortFilm f) {
-    showAppSheet<void>(
+    showDramaWaveSheet<void>(
       context,
       builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
-        SheetAction(
+        DramaWaveSheetAction(
           icon: LucideIcons.play,
           label: t('shortFilms.play'),
           onTap: () {
@@ -80,7 +80,7 @@ class _ShortFilmDownloadsScreenState extends ConsumerState<ShortFilmDownloadsScr
             _open(f);
           },
         ),
-        SheetAction(
+        DramaWaveSheetAction(
           icon: LucideIcons.trash2,
           label: t('shortFilms.removeDownload'),
           danger: true,
@@ -110,176 +110,191 @@ class _ShortFilmDownloadsScreenState extends ConsumerState<ShortFilmDownloadsScr
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final pad = MediaQuery.paddingOf(context);
-    final light = Theme.of(context).brightness == Brightness.light;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
 
-    return ModernPage(
-      title: t('shortFilms.downloads'),
-      backTo: '/short-films',
-      scroll: false,
-      padding: EdgeInsets.zero,
-      body: ColoredBox(
-        color: light ? const Color(0xFFF7F8FA) : c.bgPrimary,
-        child: _loading
-          ? Center(child: CircularProgressIndicator(color: c.primary))
-          : _films.isEmpty
-              ? EmptyState(icon: LucideIcons.download, text: t('shortFilms.emptyDownloads'))
-              : RefreshIndicator(
-                  color: c.primary,
-                  onRefresh: _reload,
-                  child: ListView.separated(
-                    padding: EdgeInsets.fromLTRB(16, 14, 16, pad.bottom + 28),
-                    itemCount: _films.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) {
-                      final f = _films[i];
-                      final title = _looksLikeId(f.title)
-                          ? t('shortFilms.downloadedFilm')
-                          : (f.isEpisode ? f.displaySubtitle : f.title);
-                      final subtitle = f.isEpisode && !_looksLikeId(f.title) && f.title != f.displaySubtitle
-                          ? f.title
-                          : null;
-                      final thumb = f.thumbnailUrl;
-                      final fallback = ColoredBox(
-                        color: light ? const Color(0xFFE8ECF2) : c.bgElevated,
-                        child: Icon(LucideIcons.film, size: 22, color: c.primary.withValues(alpha: 0.55)),
-                      );
-
-                      return Material(
-                        color: light ? Colors.white : c.bgCard,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          side: BorderSide(
-                            color: light ? const Color(0x140F172A) : c.border.withValues(alpha: 0.7),
-                          ),
+    return Scaffold(
+      backgroundColor: DramaWave.bg,
+      body: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(8, pad.top + 4, 8, 8),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/short-films');
+                    }
+                  },
+                  icon: Icon(
+                    rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+                    size: 22,
+                    color: DramaWave.ink,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    t('shortFilms.downloads'),
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: DramaWave.title(size: 17),
+                  ),
+                ),
+                const SizedBox(width: 48),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: DramaWave.gold))
+                : _films.isEmpty
+                    ? RefreshIndicator(
+                        color: DramaWave.gold,
+                        backgroundColor: DramaWave.elevated,
+                        onRefresh: _reload,
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            SizedBox(height: MediaQuery.sizeOf(context).height * 0.14),
+                            DramaWaveEmpty(
+                              icon: LucideIcons.download,
+                              text: t('shortFilms.emptyDownloads'),
+                              actionLabel: t('shortFilms.browseFilms'),
+                              onAction: () => context.go('/short-films'),
+                            ),
+                          ],
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () => _open(f),
-                          onLongPress: () => _openMenu(f),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Row(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: SizedBox(
-                                    width: 72,
-                                    height: 96,
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        if (thumb != null && thumb.isNotEmpty)
-                                          CachedNetworkImage(
-                                            imageUrl: Api.absoluteUrl(thumb)!,
-                                            fit: BoxFit.cover,
-                                            memCacheWidth: 240,
-                                            errorWidget: (_, _, _) => fallback,
-                                          )
-                                        else
-                                          fallback,
-                                        const DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            gradient: LinearGradient(
-                                              begin: Alignment.topCenter,
-                                              end: Alignment.bottomCenter,
-                                              colors: [Color(0x00000000), Color(0x66000000)],
-                                            ),
-                                          ),
-                                        ),
-                                        const Align(
-                                          alignment: Alignment.bottomCenter,
-                                          child: Padding(
-                                            padding: EdgeInsets.only(bottom: 8),
-                                            child: Icon(LucideIcons.play, size: 18, color: Colors.white),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                      )
+                    : RefreshIndicator(
+                        color: DramaWave.gold,
+                        backgroundColor: DramaWave.elevated,
+                        onRefresh: _reload,
+                        child: ListView.separated(
+                          padding: EdgeInsets.fromLTRB(16, 8, 16, pad.bottom + 28),
+                          itemCount: _films.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) {
+                            final f = _films[i];
+                            final title = _looksLikeId(f.title)
+                                ? t('shortFilms.downloadedFilm')
+                                : (f.isEpisode ? f.displaySubtitle : f.title);
+                            final subtitle = f.isEpisode && !_looksLikeId(f.title) && f.title != f.displaySubtitle
+                                ? f.title
+                                : null;
+                            final thumb = f.thumbnailUrl;
+                            final fallback = ColoredBox(
+                              color: DramaWave.elevated,
+                              child: Icon(LucideIcons.film, size: 22, color: DramaWave.gold.withValues(alpha: 0.55)),
+                            );
+
+                            return Material(
+                              color: DramaWave.surface,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: const BorderSide(color: DramaWave.hairline),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: () => _open(f),
+                                onLongPress: () => _openMenu(f),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Row(
                                     children: [
-                                      Text(
-                                        title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: light ? const Color(0xFF0F172A) : c.textPrimary,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          height: 1.3,
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: SizedBox(
+                                          width: 64,
+                                          height: 88,
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              if (thumb != null && thumb.isNotEmpty)
+                                                CachedNetworkImage(
+                                                  imageUrl: Api.absoluteUrl(thumb)!,
+                                                  fit: BoxFit.cover,
+                                                  memCacheWidth: 240,
+                                                  errorWidget: (_, _, _) => fallback,
+                                                )
+                                              else
+                                                fallback,
+                                              const DecoratedBox(
+                                                decoration: BoxDecoration(gradient: DramaWave.cardFade),
+                                              ),
+                                              const Align(
+                                                alignment: Alignment.bottomCenter,
+                                                child: Padding(
+                                                  padding: EdgeInsets.only(bottom: 8),
+                                                  child: Icon(LucideIcons.play, size: 16, color: DramaWave.gold),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                      if (subtitle != null) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          subtitle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: light ? const Color(0xFF64748B) : c.textSecondary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 10),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: c.success.withValues(alpha: light ? 0.12 : 0.18),
-                                          borderRadius: BorderRadius.circular(99),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Icon(LucideIcons.check, size: 13, color: c.success),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              t('shortFilms.downloaded'),
-                                              style: TextStyle(
-                                                color: c.success,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
+                                            Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: DramaWave.title(size: 15)),
+                                            if (subtitle != null) ...[
+                                              const SizedBox(height: 4),
+                                              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: DramaWave.body(size: 12)),
+                                            ],
+                                            const SizedBox(height: 10),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: DramaWave.goldSoft,
+                                                borderRadius: BorderRadius.circular(99),
+                                                border: Border.all(color: DramaWave.gold.withValues(alpha: 0.35)),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(LucideIcons.check, size: 13, color: DramaWave.gold),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    t('shortFilms.downloaded'),
+                                                    style: const TextStyle(
+                                                      color: DramaWave.gold,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ],
                                         ),
                                       ),
+                                      Material(
+                                        color: DramaWave.elevated,
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(12),
+                                          onTap: () => _openMenu(f),
+                                          child: const SizedBox(
+                                            width: 40,
+                                            height: 40,
+                                            child: Icon(LucideIcons.ellipsisVertical, size: 18, color: DramaWave.muted),
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                Material(
-                                  color: light ? const Color(0x0F0F172A) : c.bgElevated,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(12),
-                                    onTap: () => _openMenu(f),
-                                    child: SizedBox(
-                                      width: 40,
-                                      height: 40,
-                                      child: Icon(
-                                        LucideIcons.ellipsisVertical,
-                                        size: 18,
-                                        color: light ? const Color(0xFF64748B) : c.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
-                ),
+                      ),
+          ),
+        ],
       ),
     );
   }

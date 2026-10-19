@@ -6,11 +6,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/i18n/i18n.dart';
 import '../../core/network/api_client.dart';
-import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
 import 'short_film_downloads.dart';
 import 'short_film_engagement.dart';
 import 'short_films_controller.dart';
+import 'short_films_theme.dart';
 
 enum LibraryTab { watchLater, downloads, likes }
 
@@ -101,10 +101,10 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
   }
 
   void _menuFor(LibraryTab tab, ShortFilm f) {
-    showAppSheet<void>(
+    showDramaWaveSheet<void>(
       context,
       builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
-        SheetAction(
+        DramaWaveSheetAction(
           icon: LucideIcons.play,
           label: t('shortFilms.play'),
           onTap: () {
@@ -112,7 +112,7 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
             _open(f);
           },
         ),
-        SheetAction(
+        DramaWaveSheetAction(
           icon: LucideIcons.trash2,
           label: switch (tab) {
             LibraryTab.watchLater => t('shortFilms.removeWatchLater'),
@@ -139,48 +139,40 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
-    final sheet = light ? const Color(0xFFE6EBF3) : c.bgPrimary;
-    final glassBg = light ? const Color(0xFFEEF2F8) : null;
-    final glassBorder = light ? const Color(0x1F0F172A) : null;
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final pad = MediaQuery.paddingOf(context);
 
     return Scaffold(
-      backgroundColor: sheet,
+      backgroundColor: DramaWave.bg,
       body: Column(
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(16, pad.top + 10, 16, 8),
+            padding: EdgeInsets.fromLTRB(8, pad.top + 4, 8, 0),
             child: Row(
               children: [
-                GlassIconButton(
-                  icon: rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
-                  backgroundColor: glassBg,
-                  borderColor: glassBorder,
-                  onTap: () {
+                IconButton(
+                  onPressed: () {
                     if (context.canPop()) {
                       context.pop();
                     } else {
                       context.go('/short-films');
                     }
                   },
+                  icon: Icon(
+                    rtl ? LucideIcons.chevronRight : LucideIcons.chevronLeft,
+                    size: 22,
+                    color: DramaWave.ink,
+                  ),
                 ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     t('shortFilms.myLibrary'),
                     textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: light ? const Color(0xFF0F172A) : c.textPrimary,
-                    ),
+                    style: DramaWave.title(size: 17),
                   ),
                 ),
-                const SizedBox(width: 54),
+                const SizedBox(width: 48),
               ],
             ),
           ),
@@ -197,7 +189,7 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
           ),
           Expanded(
             child: _loading
-                ? Center(child: CircularProgressIndicator(color: c.primary))
+                ? const Center(child: CircularProgressIndicator(color: DramaWave.gold))
                 : TabBarView(
                     controller: _tabs,
                     children: [
@@ -208,6 +200,7 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
                         onOpen: _open,
                         onMenu: (f) => _menuFor(LibraryTab.watchLater, f),
                         onRefresh: _reload,
+                        onBrowse: () => context.go('/short-films'),
                       ),
                       _FilmList(
                         films: _downloads,
@@ -217,6 +210,7 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
                         onMenu: (f) => _menuFor(LibraryTab.downloads, f),
                         onRefresh: _reload,
                         offlineBadge: true,
+                        onBrowse: () => context.go('/short-films'),
                       ),
                       _FilmList(
                         films: _likes,
@@ -225,6 +219,7 @@ class _ShortFilmLibraryScreenState extends ConsumerState<ShortFilmLibraryScreen>
                         onOpen: _open,
                         onMenu: (f) => _menuFor(LibraryTab.likes, f),
                         onRefresh: _reload,
+                        onBrowse: () => context.go('/short-films'),
                       ),
                     ],
                   ),
@@ -277,25 +272,18 @@ class _LibrarySegmentedTabsState extends State<_LibrarySegmentedTabs> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
     final n = widget.labels.length;
     const gap = 4.0;
     final index = widget.controller.index.clamp(0, n - 1);
     final anim = (widget.controller.animation?.value ?? index.toDouble()).clamp(0.0, (n - 1).toDouble());
-    final track = light ? const Color(0x140F172A) : c.bgElevated;
-    final pill = light ? Colors.white : c.bgCard;
-    final ink = light ? const Color(0xFF0F172A) : c.textPrimary;
-    final muted = light ? const Color(0xFF64748B) : c.textMuted;
-    final hairline = light ? const Color(0x1F0F172A) : c.border;
 
     return Container(
       height: 48,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: track,
+        color: DramaWave.elevated,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: hairline),
+        border: Border.all(color: DramaWave.hairline),
       ),
       child: LayoutBuilder(builder: (context, box) {
         final tabW = (box.maxWidth - gap * (n - 1)) / n;
@@ -308,15 +296,9 @@ class _LibrarySegmentedTabsState extends State<_LibrarySegmentedTabs> {
               bottom: 0,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: pill,
+                  color: DramaWave.goldSoft,
                   borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: light ? const Color(0x14000000) : c.shadow,
-                      blurRadius: light ? 8 : 6,
-                      offset: light ? const Offset(0, 2) : Offset.zero,
-                    ),
-                  ],
+                  border: Border.all(color: DramaWave.gold.withValues(alpha: 0.45)),
                 ),
               ),
             ),
@@ -340,7 +322,7 @@ class _LibrarySegmentedTabsState extends State<_LibrarySegmentedTabs> {
                             fontSize: 12,
                             height: 1.2,
                             fontWeight: index == i ? FontWeight.w800 : FontWeight.w600,
-                            color: index == i ? ink : muted,
+                            color: index == i ? DramaWave.gold : DramaWave.muted,
                           ),
                         ),
                       ),
@@ -365,6 +347,7 @@ class _FilmList extends StatelessWidget {
     required this.onMenu,
     required this.onRefresh,
     this.offlineBadge = false,
+    this.onBrowse,
   });
 
   final List<ShortFilm> films;
@@ -374,28 +357,34 @@ class _FilmList extends StatelessWidget {
   final void Function(ShortFilm) onMenu;
   final Future<void> Function() onRefresh;
   final bool offlineBadge;
+  final VoidCallback? onBrowse;
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
     final pad = MediaQuery.paddingOf(context);
     if (films.isEmpty) {
       return RefreshIndicator(
-        color: c.primary,
+        color: DramaWave.gold,
+        backgroundColor: DramaWave.elevated,
         onRefresh: onRefresh,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            SizedBox(height: MediaQuery.sizeOf(context).height * 0.18),
-            EmptyState(icon: emptyIcon, text: emptyText),
+            SizedBox(height: MediaQuery.sizeOf(context).height * 0.14),
+            DramaWaveEmpty(
+              icon: emptyIcon,
+              text: emptyText,
+              actionLabel: onBrowse == null ? null : t('shortFilms.browseFilms'),
+              onAction: onBrowse,
+            ),
           ],
         ),
       );
     }
 
     return RefreshIndicator(
-      color: c.primary,
+      color: DramaWave.gold,
+      backgroundColor: DramaWave.elevated,
       onRefresh: onRefresh,
       child: ListView.separated(
         padding: EdgeInsets.fromLTRB(16, 4, 16, pad.bottom + 24),
@@ -406,14 +395,14 @@ class _FilmList extends StatelessWidget {
           final title = f.isEpisode ? f.displaySubtitle : f.title;
           final thumb = f.thumbnailUrl;
           final fallback = ColoredBox(
-            color: light ? const Color(0xFFDDE3EE) : c.bgElevated,
-            child: Icon(LucideIcons.film, size: 22, color: c.primary.withValues(alpha: 0.55)),
+            color: DramaWave.elevated,
+            child: Icon(LucideIcons.film, size: 22, color: DramaWave.gold.withValues(alpha: 0.55)),
           );
           return Material(
-            color: light ? const Color(0xFFEEF2F8) : c.bgCard,
+            color: DramaWave.surface,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: light ? const Color(0x1F0F172A) : c.border),
+              side: const BorderSide(color: DramaWave.hairline),
             ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
@@ -447,11 +436,7 @@ class _FilmList extends StatelessWidget {
                             title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: light ? const Color(0xFF0F172A) : c.textPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
+                            style: DramaWave.title(size: 15),
                           ),
                           if (f.isEpisode && f.title != f.displaySubtitle) ...[
                             const SizedBox(height: 4),
@@ -459,21 +444,22 @@ class _FilmList extends StatelessWidget {
                               f.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: light ? const Color(0xFF64748B) : c.textSecondary,
-                                fontSize: 12,
-                              ),
+                              style: DramaWave.body(size: 12),
                             ),
                           ],
                           if (offlineBadge) ...[
                             const SizedBox(height: 8),
                             Row(
                               children: [
-                                Icon(LucideIcons.check, size: 13, color: c.success),
+                                Icon(LucideIcons.check, size: 13, color: DramaWave.gold),
                                 const SizedBox(width: 4),
                                 Text(
                                   t('shortFilms.downloaded'),
-                                  style: TextStyle(color: c.success, fontSize: 11, fontWeight: FontWeight.w700),
+                                  style: const TextStyle(
+                                    color: DramaWave.gold,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ],
                             ),
@@ -482,18 +468,18 @@ class _FilmList extends StatelessWidget {
                       ),
                     ),
                     Material(
-                      color: light ? const Color(0x140F172A) : c.bgElevated,
+                      color: DramaWave.elevated,
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
                         onTap: () => onMenu(f),
-                        child: SizedBox(
+                        child: const SizedBox(
                           width: 40,
                           height: 40,
                           child: Icon(
                             LucideIcons.ellipsisVertical,
                             size: 18,
-                            color: light ? const Color(0xFF64748B) : c.textSecondary,
+                            color: DramaWave.muted,
                           ),
                         ),
                       ),
