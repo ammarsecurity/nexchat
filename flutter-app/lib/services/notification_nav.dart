@@ -32,6 +32,16 @@ Future<void> navigateFromNotification(WidgetRef ref, Map<String, dynamic> input)
     router.go('/home');
     return;
   }
+  if (type == 'discover_match') {
+    final convId = d['conversationId'];
+    if (convId != null && convId.isNotEmpty) {
+      ref.read(conversationRefreshIntentProvider.notifier).request(convId);
+      router.go('/conversation/$convId');
+      return;
+    }
+    router.go('/home');
+    return;
+  }
   if (type == 'story_published' && d['userId'] != null) {
     final slide = d['slideId'];
     final path = slide != null && slide.isNotEmpty

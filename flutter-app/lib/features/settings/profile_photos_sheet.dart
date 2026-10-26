@@ -14,13 +14,15 @@ import '../auth/auth_controller.dart';
 const kMaxProfilePhotos = 4;
 
 /// Discover / profile: upload-only gallery (1–4 real photos). No emoji presets.
-Future<bool> showProfilePhotosSheet(BuildContext context) async {
-  final ok = await showAppSheet<bool>(context, builder: (_) => const _ProfilePhotosSheet());
+/// Pass [accent] (e.g. Discover red) for CTAs / badges when opened from تعارف.
+Future<bool> showProfilePhotosSheet(BuildContext context, {Color? accent}) async {
+  final ok = await showAppSheet<bool>(context, builder: (_) => _ProfilePhotosSheet(accent: accent));
   return ok == true;
 }
 
 class _ProfilePhotosSheet extends ConsumerStatefulWidget {
-  const _ProfilePhotosSheet();
+  const _ProfilePhotosSheet({this.accent});
+  final Color? accent;
 
   @override
   ConsumerState<_ProfilePhotosSheet> createState() => _ProfilePhotosSheetState();
@@ -117,6 +119,26 @@ class _ProfilePhotosSheetState extends ConsumerState<_ProfilePhotosSheet> {
     setState(() => _photos.removeAt(i));
   }
 
+  /// Replace photo at [i] (tap existing tile) — becomes new avatar if index 0.
+  Future<void> _replaceAt(int i) async {
+    if (_busy || i < 0 || i >= _photos.length) return;
+    final files = await pickImages(limit: 1);
+    if (files.isEmpty || !mounted) return;
+    setState(() => _uploadingSlots.add(i));
+    try {
+      final url = await uploadFile('/media/upload', files.first.path, filename: files.first.name);
+      if (!mounted) return;
+      setState(() {
+        _photos[i] = url;
+        _uploadingSlots.remove(i);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _uploadingSlots.remove(i));
+      showToast(context, t('common.error'), error: true);
+    }
+  }
+
   Future<void> _save() async {
     if (_photos.isEmpty) {
       showToast(context, t('discover.photosNeedOne'), error: true);
@@ -125,7 +147,12 @@ class _ProfilePhotosSheetState extends ConsumerState<_ProfilePhotosSheet> {
     setState(() => _saving = true);
     try {
       final res = await Api.put('/user/profile-photos', {'photos': _photos});
-      final avatar = res is Map ? (res['avatar'] ?? res['Avatar']) as String? : _photos.first;
+      String? avatar;
+      if (res is Map) {
+        final raw = res['avatar'] ?? res['Avatar'];
+        if (raw != null) avatar = '$raw';
+      }
+      avatar ??= _photos.first;
       await ref.read(authProvider.notifier).setAvatarLocal(avatar);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -138,6 +165,8 @@ class _ProfilePhotosSheetState extends ConsumerState<_ProfilePhotosSheet> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final accent = widget.accent ?? c.primary;
+    final accentSoft = widget.accent != null ? accent.withValues(alpha: 0.2) : c.primarySoft;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Column(
@@ -152,7 +181,10 @@ class _ProfilePhotosSheetState extends ConsumerState<_ProfilePhotosSheet> {
           Text(t('discover.photosHint'), style: TextStyle(fontSize: 13, color: c.textMuted, height: 1.35)),
           const SizedBox(height: 14),
           if (_loading)
-            const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator(color: accent)),
+            )
           else
             GridView.builder(
               shrinkWrap: true,
@@ -165,14 +197,26 @@ class _ProfilePhotosSheetState extends ConsumerState<_ProfilePhotosSheet> {
                 childAspectRatio: 0.85,
               ),
               itemBuilder: (_, i) {
-                if (i < _photos.length) return _PhotoTile(url: _photos[i], primary: i == 0, onRemove: _busy ? null : () => _removeAt(i));
-                if (_uploadingSlots.contains(i)) return const _UploadSlotLoader();
+                if (_uploadingSlots.contains(i) && i < _photos.length) {
+                  return _UploadSlotLoader(accent: accent, accentSoft: accentSoft);
+                }
+                if (i < _photos.length) {
+                  return _PhotoTile(
+                    url: _photos[i],
+                    primary: i == 0,
+                    accent: accent,
+                    onRemove: _busy ? null : () => _removeAt(i),
+                    onTap: _busy ? null : () => _replaceAt(i),
+                  );
+                }
+                if (_uploadingSlots.contains(i)) return _UploadSlotLoader(accent: accent, accentSoft: accentSoft);
                 return _AddTile(enabled: !_busy, onTap: _addPhotos);
               },
             ),
           const SizedBox(height: 16),
           PillButton(
             label: t('discover.photosSave'),
+            color: accent,
             loading: _saving,
             onPressed: _loading || _busy ? null : _save,
           ),
@@ -185,21 +229,33 @@ class _ProfilePhotosSheetState extends ConsumerState<_ProfilePhotosSheet> {
 }
 
 class _PhotoTile extends StatelessWidget {
-  const _PhotoTile({required this.url, required this.primary, this.onRemove});
+  const _PhotoTile({
+    required this.url,
+    required this.primary,
+    required this.accent,
+    this.onRemove,
+    this.onTap,
+  });
   final String url;
   final bool primary;
+  final Color accent;
   final VoidCallback? onRemove;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final abs = Api.absoluteUrl(url)!;
     return Stack(
       fit: StackFit.expand,
       children: [
-        ClipRRect(
+        Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(16),
-          child: CachedNetworkImage(imageUrl: abs, fit: BoxFit.cover),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: CachedNetworkImage(imageUrl: abs, fit: BoxFit.cover, width: double.infinity, height: double.infinity),
+          ),
         ),
         if (onRemove != null)
           Positioned(
@@ -224,7 +280,7 @@ class _PhotoTile extends StatelessWidget {
             right: 8,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(8)),
               child: Text(t('discover.photosPrimary'), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
             ),
           ),
@@ -272,7 +328,9 @@ class _AddTile extends StatelessWidget {
 
 /// Compact, branded loader inside the add slot (not a full-screen overlay).
 class _UploadSlotLoader extends StatelessWidget {
-  const _UploadSlotLoader();
+  const _UploadSlotLoader({required this.accent, required this.accentSoft});
+  final Color accent;
+  final Color accentSoft;
 
   @override
   Widget build(BuildContext context) {
@@ -280,13 +338,13 @@ class _UploadSlotLoader extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.primary.withValues(alpha: 0.55), width: 1.5),
+        border: Border.all(color: accent.withValues(alpha: 0.55), width: 1.5),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            c.primary.withValues(alpha: 0.12),
-            c.primarySoft.withValues(alpha: 0.35),
+            accent.withValues(alpha: 0.12),
+            accentSoft.withValues(alpha: 0.35),
             c.bgElevated,
           ],
         ),
@@ -299,15 +357,15 @@ class _UploadSlotLoader extends StatelessWidget {
             height: 36,
             child: CircularProgressIndicator(
               strokeWidth: 2.8,
-              color: c.primary,
-              backgroundColor: c.primary.withValues(alpha: 0.15),
+              color: accent,
+              backgroundColor: accent.withValues(alpha: 0.15),
             ),
           ),
           const SizedBox(height: 12),
           Text(
             t('settings.uploadingImage'),
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.primary, height: 1.25),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent, height: 1.25),
           ),
         ],
       ),

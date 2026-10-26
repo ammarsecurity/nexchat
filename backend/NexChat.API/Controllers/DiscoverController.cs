@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NexChat.API.Hubs;
+using NexChat.API.Services;
 using NexChat.Core;
 using NexChat.Core.Entities;
 using NexChat.Infrastructure.Data;
@@ -19,7 +20,8 @@ namespace NexChat.API.Controllers;
 public class DiscoverController(
     AppDbContext db,
     IHubContext<ConversationHub> conversationHub,
-    SiteContentFeatureService features) : ControllerBase
+    SiteContentFeatureService features,
+    NotificationOutboxService notificationOutbox) : ControllerBase
 {
     private const int FeedLimit = 20;
 
@@ -58,6 +60,15 @@ public class DiscoverController(
         var today = TodayIraq();
         var adultCutoff = AdultBirthCutoff();
 
+        var preferGender = (me.DiscoverPreferGender ?? "all").Trim().ToLowerInvariant();
+        if (preferGender is not ("male" or "female")) preferGender = "all";
+        var ageMin = Math.Clamp(me.DiscoverAgeMin <= 0 ? 18 : me.DiscoverAgeMin, 18, 60);
+        var ageMax = Math.Clamp(me.DiscoverAgeMax <= 0 ? 60 : me.DiscoverAgeMax, 18, 60);
+        if (ageMin > ageMax) (ageMin, ageMax) = (ageMax, ageMin);
+        // BirthDate windows for age range (Iraq calendar day).
+        var youngestBirth = today.AddYears(-ageMin);       // age >= ageMin → BirthDate <= youngestBirth
+        var oldestBirthExclusive = today.AddYears(-(ageMax + 1)); // age <= ageMax → BirthDate > oldestBirthExclusive
+
         // Subqueries avoid huge NOT IN parameter lists for heavy swipers.
         var query = db.Users.AsNoTracking()
             .Where(u =>
@@ -68,6 +79,9 @@ public class DiscoverController(
                 (u.Avatar.StartsWith("http://") || u.Avatar.StartsWith("https://") || u.Avatar.StartsWith("/")) &&
                 u.BirthDate != null &&
                 u.BirthDate <= adultCutoff &&
+                u.BirthDate <= youngestBirth &&
+                u.BirthDate > oldestBirthExclusive &&
+                (preferGender == "all" || u.Gender == preferGender) &&
                 !db.UserBlocks.Any(b =>
                     (b.BlockerId == meId && b.BlockedUserId == u.Id) ||
                     (b.BlockerId == u.Id && b.BlockedUserId == meId)) &&
@@ -83,7 +97,12 @@ public class DiscoverController(
             .ToListAsync();
 
         var cards = candidates.Select(u => ToCard(u, today)).ToList();
-        return Ok(new { items = cards, canSwipe = true });
+        return Ok(new
+        {
+            items = cards,
+            canSwipe = true,
+            prefs = new { preferGender, ageMin, ageMax }
+        });
     }
 
     [HttpGet("eligibility")]
@@ -294,12 +313,62 @@ public class DiscoverController(
         await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
         await conversationHub.Clients.User(target.Id.ToString()).SendAsync("ConversationListUpdated", listUpdate);
 
+        // Push the *other* user (swiper already gets MatchCreated dialog on this device).
+        await notificationOutbox.EnqueueAsync(
+            target.Id,
+            "discover_match",
+            "تم التطابق!",
+            $"تطابق جديد مع {me.Name} — ابدأ المحادثة",
+            new Dictionary<string, string>
+            {
+                ["conversationId"] = conv.Id.ToString(),
+                ["matchId"] = match.Id.ToString(),
+                ["partnerId"] = me.Id.ToString(),
+                ["partnerName"] = me.Name
+            });
+
         return Ok(new
         {
             matched = true,
             conversationId = conv.Id,
             matchId = match.Id,
             partner = partnerCard
+        });
+    }
+
+    /// <summary>تراجع عن آخر سوايپ إن لم ينتج تطابقاً.</summary>
+    [HttpPost("undo")]
+    public async Task<ActionResult<object>> UndoLastSwipe()
+    {
+        if (await RequireDiscoverEnabledAsync() is { } disabled) return disabled;
+
+        var me = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+        if (me == null) return Unauthorized();
+        var gate = ProfileGate(me);
+        if (gate != null) return BadRequest(gate);
+
+        var last = await db.UserSwipes
+            .Where(s => s.FromUserId == CurrentUserId)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (last == null)
+            return BadRequest(new { message = "لا يوجد سوايپ للتراجع عنه", code = "NOTHING_TO_UNDO" });
+
+        var (userA, userB) = CanonicalPair(CurrentUserId, last.ToUserId);
+        var matched = await db.UserMatches.AsNoTracking()
+            .AnyAsync(m => m.UserAId == userA && m.UserBId == userB);
+        if (matched)
+            return BadRequest(new { message = "لا يمكن التراجع بعد حدوث تطابق", code = "ALREADY_MATCHED" });
+
+        var target = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == last.ToUserId);
+        db.UserSwipes.Remove(last);
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            undone = true,
+            direction = last.Direction,
+            card = target == null ? null : ToCard(target, TodayIraq())
         });
     }
 
@@ -346,35 +415,41 @@ public class DiscoverController(
         if (await RequireDiscoverEnabledAsync() is { } disabled) return disabled;
 
         var today = TodayIraq();
+        var meId = CurrentUserId;
         var rows = await db.UserMatches.AsNoTracking()
-            .Where(m => m.UserAId == CurrentUserId || m.UserBId == CurrentUserId)
+            .Where(m => m.UserAId == meId || m.UserBId == meId)
             .OrderByDescending(m => m.CreatedAt)
             .Take(100)
             .ToListAsync();
 
         var partnerIds = rows
-            .Select(m => m.UserAId == CurrentUserId ? m.UserBId : m.UserAId)
+            .Select(m => m.UserAId == meId ? m.UserBId : m.UserAId)
+            .Distinct()
             .ToList();
         var partners = await db.Users.AsNoTracking()
-            .Where(u => partnerIds.Contains(u.Id))
+            .Where(u => partnerIds.Contains(u.Id) && !u.IsBanned)
             .ToDictionaryAsync(u => u.Id);
+        var blockedIds = await db.UserBlocks.AsNoTracking()
+            .Where(b =>
+                (b.BlockerId == meId && partnerIds.Contains(b.BlockedUserId)) ||
+                (b.BlockedUserId == meId && partnerIds.Contains(b.BlockerId)))
+            .Select(b => b.BlockerId == meId ? b.BlockedUserId : b.BlockerId)
+            .ToListAsync();
+        var blocked = blockedIds.ToHashSet();
 
         var items = rows
-            .Where(m =>
-            {
-                var pid = m.UserAId == CurrentUserId ? m.UserBId : m.UserAId;
-                return partners.ContainsKey(pid);
-            })
             .Select(m =>
             {
-                var pid = m.UserAId == CurrentUserId ? m.UserBId : m.UserAId;
-                return new
-                {
-                    matchId = m.Id,
-                    conversationId = m.ConversationId,
-                    createdAt = m.CreatedAt,
-                    partner = ToCard(partners[pid], today)
-                };
+                var pid = m.UserAId == meId ? m.UserBId : m.UserAId;
+                return (m, pid);
+            })
+            .Where(x => partners.ContainsKey(x.pid) && !blocked.Contains(x.pid))
+            .Select(x => new
+            {
+                matchId = x.m.Id,
+                conversationId = x.m.ConversationId,
+                createdAt = x.m.CreatedAt,
+                partner = ToCard(partners[x.pid], today)
             })
             .ToList();
 
@@ -468,7 +543,8 @@ public class DiscoverController(
             photos,
             age,
             country = u.Country,
-            isFeatured = u.IsFeatured
+            isFeatured = u.IsFeatured,
+            bio = u.Bio
         };
     }
 }

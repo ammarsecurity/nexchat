@@ -15,7 +15,9 @@ import '../../shared/widgets.dart';
 import '../settings/birth_date_sheet.dart';
 import '../settings/profile_photos_sheet.dart';
 import 'discover_controller.dart';
+import 'discover_filters_sheet.dart';
 import 'discover_match_dialog.dart';
+import 'discover_matches_sheet.dart';
 import 'discover_theme.dart';
 
 /// Tinder-style Discover: card stack, like/pass, mutual match dialog.
@@ -82,7 +84,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
   Future<void> _setBirthDate() async {
     if (!mounted) return;
-    final saved = await showBirthDateSheet(context);
+    final saved = await showBirthDateSheet(context, accent: DiscoverTheme.red);
     if (saved == null || !mounted) return;
     // Hide birth-date CTA immediately, then sync with server.
     ref.read(discoverProvider.notifier).markBirthDateComplete();
@@ -171,7 +173,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           eligibility: state.eligibility,
           bottomPad: bottomPad,
           onAddPhotos: () async {
-            final saved = await showProfilePhotosSheet(context);
+            final saved = await showProfilePhotosSheet(context, accent: DiscoverTheme.red);
             if (saved) await ref.read(discoverProvider.notifier).refresh();
           },
           onAddBirthDate: _setBirthDate,
@@ -187,20 +189,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-                child: Text(
-                  t('discover.title'),
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: DiscoverTheme.ink, height: 1.2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Text(t('discover.policy'), style: TextStyle(fontSize: 12, height: 1.35, color: DiscoverTheme.redDeep.withValues(alpha: 0.65))),
-              ),
+              const _DiscoverHeader(),
               Expanded(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
+                  padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPad),
                   child: _body(context, state),
                 ),
               ),
@@ -217,24 +209,39 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
     if (state.error.isNotEmpty && state.deck.isEmpty) {
       return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(t('common.error'), style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.7))),
-          const SizedBox(height: 12),
-          SoftButton(label: t('common.retry'), color: DiscoverTheme.red, onPressed: () => ref.read(discoverProvider.notifier).refresh()),
-        ]),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(t('common.error'), style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.7))),
+            const SizedBox(height: 16),
+            _DiscoverRetryButton(onPressed: () => ref.read(discoverProvider.notifier).refresh()),
+          ]),
+        ),
       );
     }
     if (state.deck.isEmpty) {
       return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(LucideIcons.heartHandshake, size: 48, color: DiscoverTheme.red.withValues(alpha: 0.85)),
-          const SizedBox(height: 12),
-          Text(t('discover.empty'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: DiscoverTheme.ink)),
-          const SizedBox(height: 8),
-          Text(t('discover.emptyHint'), textAlign: TextAlign.center, style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.55))),
-          const SizedBox(height: 16),
-          SoftButton(label: t('common.retry'), color: DiscoverTheme.red, onPressed: () => ref.read(discoverProvider.notifier).refresh()),
-        ]),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: DiscoverTheme.ctaGradient,
+                boxShadow: DiscoverTheme.likeShadow,
+              ),
+              child: const Icon(LucideIcons.heartHandshake, size: 40, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            Text(t('discover.empty'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: DiscoverTheme.ink, height: 1.3)),
+            const SizedBox(height: 8),
+            Text(t('discover.emptyHint'), textAlign: TextAlign.center, style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.55), fontSize: 14, height: 1.4)),
+            const SizedBox(height: 22),
+            _DiscoverRetryButton(onPressed: () => ref.read(discoverProvider.notifier).refresh()),
+          ]),
+        ),
       );
     }
 
@@ -249,8 +256,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             children: [
               if (behind != null)
                 Transform.scale(
-                  scale: 0.96,
-                  child: Opacity(opacity: 0.85, child: _CardFace(card: behind)),
+                  scale: 0.94,
+                  child: Opacity(
+                    opacity: 0.72,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 18),
+                      child: _CardFace(card: behind),
+                    ),
+                  ),
                 ),
               GestureDetector(
                 onPanUpdate: _busy
@@ -272,16 +285,16 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         onBlock: () => _blockCard(top),
                       ),
                       Positioned(
-                        top: 28,
-                        left: 24,
+                        top: 36,
+                        left: 28,
                         child: Opacity(
                           opacity: (-_drag.dx / 120).clamp(0.0, 1.0),
-                          child: _Stamp(label: t('discover.pass'), color: const Color(0xFF64748B)),
+                          child: _Stamp(label: t('discover.pass'), color: DiscoverTheme.slate),
                         ),
                       ),
                       Positioned(
-                        top: 28,
-                        right: 24,
+                        top: 36,
+                        right: 28,
                         child: Opacity(
                           opacity: (_drag.dx / 120).clamp(0.0, 1.0),
                           child: _Stamp(label: t('discover.like'), color: DiscoverTheme.red),
@@ -294,28 +307,202 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _RoundAction(
-              color: const Color(0xFF64748B),
+              variant: _ActionVariant.pass,
               icon: LucideIcons.x,
               onTap: _busy ? null : () => _act(like: false),
             ),
-            const SizedBox(width: 28),
+            const SizedBox(width: 22),
+            _UndoAction(
+              enabled: !_busy && state.canUndo,
+              onTap: _busy || !state.canUndo
+                  ? null
+                  : () async {
+                      setState(() => _busy = true);
+                      try {
+                        await ref.read(discoverProvider.notifier).undo();
+                      } catch (_) {
+                        if (mounted) showToast(context, t('common.error'), error: true);
+                      } finally {
+                        if (mounted) setState(() => _busy = false);
+                      }
+                    },
+            ),
+            const SizedBox(width: 22),
             _RoundAction(
-              color: DiscoverTheme.red,
+              variant: _ActionVariant.like,
               icon: LucideIcons.heart,
-              large: true,
               onTap: _busy ? null : () => _act(like: true),
             ),
           ],
         ),
+        const SizedBox(height: 4),
       ],
     );
   }
 
+}
+
+class _DiscoverRetryButton extends StatelessWidget {
+  const _DiscoverRetryButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 280),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: DiscoverTheme.ctaGradient,
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: DiscoverTheme.likeShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onPressed();
+            },
+            child: SizedBox(
+              height: 52,
+              width: double.infinity,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(LucideIcons.refreshCw, size: 18, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Text(
+                    t('common.retry'),
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({required this.icon, required this.onTap, this.filled = false});
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: DiscoverTheme.redSoft,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, size: 20, color: DiscoverTheme.red, fill: filled ? 1 : 0),
+        ),
+      ),
+    );
+  }
+}
+
+class _UndoAction extends StatelessWidget {
+  const _UndoAction({required this.enabled, this.onTap});
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.35,
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 0,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: enabled ? () {
+            HapticFeedback.selectionClick();
+            onTap?.call();
+          } : null,
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+              boxShadow: const [BoxShadow(color: Color(0x140F172A), blurRadius: 12, offset: Offset(0, 6))],
+            ),
+            child: const Icon(LucideIcons.rotateCcw, size: 22, color: Color(0xFFF59E0B)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoverHeader extends StatelessWidget {
+  const _DiscoverHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  t('discover.title'),
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: DiscoverTheme.ink,
+                    height: 1.15,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+              ),
+              _HeaderIconButton(
+                icon: LucideIcons.slidersHorizontal,
+                onTap: () => showDiscoverFiltersSheet(context),
+              ),
+              const SizedBox(width: 8),
+              _HeaderIconButton(
+                icon: LucideIcons.heart,
+                filled: true,
+                onTap: () => showDiscoverMatchesSheet(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            t('discover.policyShort'),
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+              color: DiscoverTheme.redDeep.withValues(alpha: 0.58),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Full-bleed Discover onboarding gate — photo background + glass CTAs.
@@ -498,45 +685,71 @@ class _Stamp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Transform.rotate(
-      angle: label == t('discover.like') ? -0.2 : 0.2,
+      angle: label == t('discover.like') ? -0.22 : 0.22,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          border: Border.all(color: color, width: 3),
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.white.withValues(alpha: 0.92),
+          border: Border.all(color: color, width: 3.5),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4))],
         ),
-        child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: 1.2)),
+        child: Text(
+          label.toUpperCase(),
+          style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: 1.4),
+        ),
       ),
     );
   }
 }
 
+enum _ActionVariant { like, pass }
+
 class _RoundAction extends StatelessWidget {
-  const _RoundAction({required this.color, required this.icon, this.onTap, this.large = false});
-  final Color color;
+  const _RoundAction({required this.variant, required this.icon, this.onTap});
+  final _ActionVariant variant;
   final IconData icon;
   final VoidCallback? onTap;
-  final bool large;
 
   @override
   Widget build(BuildContext context) {
-    final size = large ? 72.0 : 58.0;
-    return Material(
-      color: color.withValues(alpha: 0.12),
-      shape: const CircleBorder(),
-      elevation: 0,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap == null
-            ? null
-            : () {
-                HapticFeedback.selectionClick();
-                onTap!();
-              },
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Icon(icon, size: large ? 32 : 26, color: color),
+    final isLike = variant == _ActionVariant.like;
+    final size = isLike ? 76.0 : 62.0;
+    final iconSize = isLike ? 34.0 : 28.0;
+
+    final child = SizedBox(
+      width: size,
+      height: size,
+      child: Icon(
+        icon,
+        size: iconSize,
+        color: isLike ? Colors.white : DiscoverTheme.slate,
+        fill: isLike ? 1.0 : 0.0,
+      ),
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: isLike ? DiscoverTheme.ctaGradient : null,
+        color: isLike ? null : Colors.white,
+        boxShadow: isLike
+            ? DiscoverTheme.likeShadow
+            : const [BoxShadow(color: Color(0x1A0F172A), blurRadius: 16, offset: Offset(0, 8))],
+        border: isLike ? null : Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap == null
+              ? null
+              : () {
+                  HapticFeedback.selectionClick();
+                  onTap!();
+                },
+          child: child,
         ),
       ),
     );
@@ -595,6 +808,7 @@ class _CardFaceState extends State<_CardFace> {
     final age = card.i('age');
     final gender = card.str('gender');
     final country = card.s('country');
+    final bio = (card.s('bio') ?? '').trim();
     final photos = _photoUrls(card);
 
     final genderLabel = switch (gender) {
@@ -603,70 +817,168 @@ class _CardFaceState extends State<_CardFace> {
       _ => '',
     };
 
-    return Material(
-      elevation: 8,
-      shadowColor: c.shadow,
-      borderRadius: BorderRadius.circular(28),
-      clipBehavior: Clip.antiAlias,
-      child: AspectRatio(
-        aspectRatio: 0.72,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (photos.isEmpty)
-              _fallback(name)
-            else
-              PageView.builder(
-                controller: _page,
-                itemCount: photos.length,
-                onPageChanged: (i) => setState(() => _photoIndex = i),
-                itemBuilder: (_, i) => CachedNetworkImage(
-                  imageUrl: photos[i],
-                  fit: BoxFit.cover,
-                  errorWidget: (_, _, _) => _fallback(name),
+    final meta = [
+      if (genderLabel.isNotEmpty) genderLabel,
+      if (country != null && country.isNotEmpty) country,
+    ];
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(DiscoverTheme.cardRadius),
+        boxShadow: DiscoverTheme.cardShadow,
+      ),
+      child: Material(
+        color: c.bgElevated,
+        borderRadius: BorderRadius.circular(DiscoverTheme.cardRadius),
+        clipBehavior: Clip.antiAlias,
+        child: AspectRatio(
+          aspectRatio: 0.70,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (photos.isEmpty)
+                _fallback(name)
+              else
+                PageView.builder(
+                  controller: _page,
+                  itemCount: photos.length,
+                  onPageChanged: (i) => setState(() => _photoIndex = i),
+                  itemBuilder: (_, i) => CachedNetworkImage(
+                    imageUrl: photos[i],
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) => _fallback(name),
+                  ),
                 ),
-              ),
-            // Tap zones to flip photos without conflicting with horizontal swipe of the card.
-            if (photos.length > 1) ...[
-              Positioned.fill(
-                child: Row(children: [
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        if (_photoIndex > 0) {
-                          _page.previousPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
-                        }
-                      },
+              // Tap zones to flip photos without conflicting with horizontal swipe of the card.
+              if (photos.length > 1) ...[
+                Positioned.fill(
+                  child: Row(children: [
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          if (_photoIndex > 0) {
+                            _page.previousPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        if (_photoIndex < photos.length - 1) {
-                          _page.nextPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
-                        }
-                      },
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          if (_photoIndex < photos.length - 1) {
+                            _page.nextPage(duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                ]),
-              ),
-              Positioned(
-                top: 12,
-                left: 16,
-                right: 16,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < photos.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 4),
-                      Expanded(
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: i == _photoIndex ? Colors.white : Colors.white38,
-                            borderRadius: BorderRadius.circular(99),
+                  ]),
+                ),
+                Positioned(
+                  top: 14,
+                  left: 14,
+                  right: 58,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < photos.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 5),
+                        Expanded(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            height: 3.5,
+                            decoration: BoxDecoration(
+                              color: i == _photoIndex ? Colors.white : Colors.white.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(99),
+                              boxShadow: i == _photoIndex
+                                  ? const [BoxShadow(color: Color(0x66000000), blurRadius: 4)]
+                                  : null,
+                            ),
                           ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+              const DecoratedBox(decoration: BoxDecoration(gradient: DiscoverTheme.cardScrim)),
+              if (widget.onReport != null || widget.onBlock != null)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.38),
+                    shape: const CircleBorder(),
+                    child: PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(LucideIcons.ellipsisVertical, color: Colors.white, size: 20),
+                      onSelected: (v) {
+                        if (v == 'report') widget.onReport?.call();
+                        if (v == 'block') widget.onBlock?.call();
+                      },
+                      itemBuilder: (_) => [
+                        if (widget.onReport != null) PopupMenuItem(value: 'report', child: Text(t('randomChat.report'))),
+                        if (widget.onBlock != null) PopupMenuItem(value: 'block', child: Text(t('randomChat.block'))),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 22,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      age > 0 ? '$name, $age' : name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final m in meta)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+                              ),
+                              child: Text(
+                                m,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                    if (bio.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        bio,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          fontSize: 13.5,
+                          height: 1.35,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -674,58 +986,7 @@ class _CardFaceState extends State<_CardFace> {
                 ),
               ),
             ],
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0x33000000), Color(0x00000000), Color(0xCC0B1220)],
-                  stops: [0, 0.45, 1],
-                ),
-              ),
-            ),
-            if (widget.onReport != null || widget.onBlock != null)
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Material(
-                  color: Colors.black45,
-                  shape: const CircleBorder(),
-                  child: PopupMenuButton<String>(
-                    icon: const Icon(LucideIcons.ellipsisVertical, color: Colors.white, size: 20),
-                    onSelected: (v) {
-                      if (v == 'report') widget.onReport?.call();
-                      if (v == 'block') widget.onBlock?.call();
-                    },
-                    itemBuilder: (_) => [
-                      if (widget.onReport != null) PopupMenuItem(value: 'report', child: Text(t('randomChat.report'))),
-                      if (widget.onBlock != null) PopupMenuItem(value: 'block', child: Text(t('randomChat.block'))),
-                    ],
-                  ),
-                ),
-              ),
-            Positioned(
-              left: 18,
-              right: 18,
-              bottom: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    age > 0 ? '$name, $age' : name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    [if (genderLabel.isNotEmpty) genderLabel, if (country != null && country.isNotEmpty) country].join(' · '),
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 14, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

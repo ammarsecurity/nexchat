@@ -5,6 +5,7 @@ import '../../core/i18n/i18n.dart';
 import '../../core/json.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets.dart';
+import 'discover_theme.dart';
 
 /// Dedupes MatchCreated (HTTP + hub) within a short window.
 final _recentMatchKeys = <String>{};
@@ -50,6 +51,7 @@ Future<void> showDiscoverMatchDialog(BuildContext context, Json data) async {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('discover.keepSwiping'))),
           FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: DiscoverTheme.red),
             onPressed: () {
               Navigator.pop(ctx);
               if (convId.isNotEmpty) context.push('/conversation/$convId');

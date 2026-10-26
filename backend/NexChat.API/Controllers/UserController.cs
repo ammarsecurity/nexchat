@@ -39,7 +39,11 @@ public class UserController(
             user.Id, user.Name, user.Gender,
             user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured, user.BirthDate,
             user.Country, user.PhoneNumber, user.ShowOnlineStatusToOthers, user.CoverImageUrl,
-            ProfilePhotos.Resolve(user.ProfilePhotosJson, user.Avatar, user.CoverImageUrl)
+            ProfilePhotos.Resolve(user.ProfilePhotosJson, user.Avatar, user.CoverImageUrl),
+            user.Bio,
+            string.IsNullOrWhiteSpace(user.DiscoverPreferGender) ? "all" : user.DiscoverPreferGender,
+            user.DiscoverAgeMin,
+            user.DiscoverAgeMax
         ));
     }
 
@@ -61,8 +65,46 @@ public class UserController(
         return Ok(new PublicProfileDto(
             user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, visibleOnline,
             user.PhoneNumber, user.Country, isContact, user.CoverImageUrl,
-            ProfilePhotos.Resolve(user.ProfilePhotosJson, user.Avatar, user.CoverImageUrl)
+            ProfilePhotos.Resolve(user.ProfilePhotosJson, user.Avatar, user.CoverImageUrl),
+            user.Bio
         ));
+    }
+
+    [HttpPut("bio")]
+    public async Task<IActionResult> UpdateBio([FromBody] UpdateBioRequest req)
+    {
+        var bio = string.IsNullOrWhiteSpace(req.Bio) ? null : req.Bio.Trim();
+        if (bio != null && bio.Length > 160)
+            return BadRequest(new { message = "النبذة يجب ألا تتجاوز 160 حرفاً" });
+
+        await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.Bio, bio));
+        return Ok(new { bio });
+    }
+
+    [HttpPut("discover-prefs")]
+    public async Task<IActionResult> UpdateDiscoverPrefs([FromBody] UpdateDiscoverPrefsRequest req)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+        if (user == null) return Unauthorized();
+
+        var gender = (req.PreferGender ?? user.DiscoverPreferGender ?? "all").Trim().ToLowerInvariant();
+        if (gender is not ("all" or "male" or "female"))
+            return BadRequest(new { message = "فلتر الجنس غير صالح" });
+
+        var min = req.AgeMin ?? user.DiscoverAgeMin;
+        var max = req.AgeMax ?? user.DiscoverAgeMax;
+        // Keep in sync with Flutter Discover filter slider (18–60).
+        min = Math.Clamp(min, 18, 60);
+        max = Math.Clamp(max, 18, 60);
+        if (min > max) (min, max) = (max, min);
+
+        user.DiscoverPreferGender = gender;
+        user.DiscoverAgeMin = min;
+        user.DiscoverAgeMax = max;
+        await db.SaveChangesAsync();
+        return Ok(new { preferGender = gender, ageMin = min, ageMax = max });
     }
 
     [HttpPut("privacy")]

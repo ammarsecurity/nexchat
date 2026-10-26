@@ -21,6 +21,14 @@ public class User
     public string? CoverImageUrl { get; set; } = null;
     /// <summary>JSON array of up to 4 profile photo URLs (Discover gallery). Avatar mirrors photos[0].</summary>
     public string? ProfilePhotosJson { get; set; } = null;
+    /// <summary>نبذة قصيرة للتعارف (حد أقصى ~160 حرف).</summary>
+    public string? Bio { get; set; } = null;
+    /// <summary>فلتر جنس التعارف: all | male | female</summary>
+    public string DiscoverPreferGender { get; set; } = "all";
+    /// <summary>أقل عمر يظهر في فيد التعارف (18–99).</summary>
+    public int DiscoverAgeMin { get; set; } = 18;
+    /// <summary>أعلى عمر يظهر في فيد التعارف (18–99).</summary>
+    public int DiscoverAgeMax { get; set; } = 60;
     /// <summary>كود الدولة ISO 2 (مثل IQ, SA)</summary>
     public string? Country { get; set; } = null;
     /// <summary>رقم الهاتف مع مفتاح الدولة (مثل 9647712345678)</summary>

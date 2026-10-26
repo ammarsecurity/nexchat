@@ -49,6 +49,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   String _typeLabel(Object? type) => switch (type) {
         'video_call' => t('notifications.typeVideoCall'),
         'code_connected' => t('notifications.typeCode'),
+        'discover_match' => t('notifications.typeDiscoverMatch'),
         'conversation_message' || 'message' => t('notifications.typeMessage'),
         'story_published' || 'story_like' || 'story_liked' => t('notifications.typeStory'),
         'message_request' => t('notifications.typeMessageRequest'),
@@ -59,6 +60,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   _NotifStyle _styleFor(Object? type) {
     switch (type) {
+      case 'discover_match':
+        return const _NotifStyle(
+          accent: Color(0xFFE11D48),
+          soft: Color(0xFFFFE4E6),
+          typeIcon: LucideIcons.heart,
+          badgeIcon: LucideIcons.heart,
+          badgeBg: Color(0xFFE11D48),
+        );
       case 'message_request':
       case 'friend_request':
       case 'contact_request':

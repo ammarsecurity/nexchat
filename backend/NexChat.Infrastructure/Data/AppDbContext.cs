@@ -61,6 +61,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.UniqueCode).HasMaxLength(10);
             e.Property(x => x.Gender).HasMaxLength(10);
             e.Property(x => x.ProfilePhotosJson).HasMaxLength(2500);
+            e.Property(x => x.Bio).HasMaxLength(160);
+            e.Property(x => x.DiscoverPreferGender).HasMaxLength(10);
         });
 
         modelBuilder.Entity<ChatSession>(e =>

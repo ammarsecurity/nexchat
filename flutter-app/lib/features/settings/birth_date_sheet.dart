@@ -8,12 +8,14 @@ import '../../shared/widgets.dart';
 import '../auth/auth_widgets.dart';
 
 /// Day / month / year selects (same UX as register & settings).
-Future<String?> showBirthDateSheet(BuildContext context, {String? initial}) =>
-    showAppSheet<String>(context, builder: (_) => BirthDateSheet(initial: initial));
+/// Pass [accent] (e.g. Discover red) so the save CTA matches the host screen.
+Future<String?> showBirthDateSheet(BuildContext context, {String? initial, Color? accent}) =>
+    showAppSheet<String>(context, builder: (_) => BirthDateSheet(initial: initial, accent: accent));
 
 class BirthDateSheet extends StatefulWidget {
-  const BirthDateSheet({super.key, this.initial});
+  const BirthDateSheet({super.key, this.initial, this.accent});
   final String? initial;
+  final Color? accent;
 
   @override
   State<BirthDateSheet> createState() => _BirthDateSheetState();
@@ -143,6 +145,7 @@ class _BirthDateSheetState extends State<BirthDateSheet> {
         const SizedBox(height: 12),
         PillButton(
           label: _saving ? t('common.loading') : t('settings.saveBirthDate'),
+          color: widget.accent,
           onPressed: _saving || _dateStr == null ? null : _save,
         ),
       ]),

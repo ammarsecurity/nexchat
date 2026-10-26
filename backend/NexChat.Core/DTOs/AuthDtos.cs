@@ -38,7 +38,19 @@ public record UserProfileDto(
     string? PhoneNumber = null,
     bool ShowOnlineStatusToOthers = true,
     string? CoverImageUrl = null,
-    IReadOnlyList<string>? ProfilePhotos = null
+    IReadOnlyList<string>? ProfilePhotos = null,
+    string? Bio = null,
+    string DiscoverPreferGender = "all",
+    int DiscoverAgeMin = 18,
+    int DiscoverAgeMax = 60
+);
+
+public record UpdateBioRequest(string? Bio);
+
+public record UpdateDiscoverPrefsRequest(
+    string? PreferGender = null,
+    int? AgeMin = null,
+    int? AgeMax = null
 );
 
 public record UpdateAvatarRequest(string? Avatar);
@@ -64,7 +76,8 @@ public record PublicProfileDto(
     string? Country = null,
     bool IsContact = false,
     string? CoverImageUrl = null,
-    IReadOnlyList<string>? ProfilePhotos = null
+    IReadOnlyList<string>? ProfilePhotos = null,
+    string? Bio = null
 );
 
 public record UpdateCoverRequest(string? CoverImageUrl);

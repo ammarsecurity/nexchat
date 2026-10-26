@@ -25,7 +25,9 @@ import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_widgets.dart';
 import 'avatar_picker_sheet.dart';
+import 'bio_sheet.dart';
 import 'birth_date_sheet.dart';
+import 'profile_photos_sheet.dart';
 
 const _violet = Color(0xFF6C63FF);
 
@@ -237,6 +239,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (saved != null && mounted) setState(() => _profile = {...?_profile, 'birthDate': saved});
   }
 
+  Future<void> _openBio() async {
+    final saved = await showBioSheet(context, initial: _profile?.s('bio'));
+    if (saved != null && mounted) setState(() => _profile = {...?_profile, 'bio': saved});
+  }
+
   Future<void> _openUpdateUrl() async {
     final url = ref.read(appUpdateProvider)?.downloadUrl;
     if (url == null) return;
@@ -351,7 +358,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Row(children: [
                   GestureDetector(
-                    onTap: () => showAvatarPicker(context),
+                    onTap: () async {
+                      final saved = await showProfilePhotosSheet(context);
+                      if (saved && mounted) await _loadProfile();
+                    },
                     child: SizedBox(
                       width: 56,
                       height: 56,
@@ -370,7 +380,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   border: Border.all(
                                       color: (light ? const Color(0xFFFF7300) : const Color(0xFFFFD700)).withValues(alpha: 0.6), width: 2))
                               : null,
-                          child: UserAvatar(url: auth.avatar, name: user?.name ?? '', size: 52),
+                          child: UserAvatar(
+                            url: () {
+                              final a = auth.avatar;
+                              if (a != null && (a.startsWith('http') || a.startsWith('/'))) return a;
+                              final raw = _profile?['profilePhotos'] ?? _profile?['ProfilePhotos'];
+                              if (raw is List) {
+                                for (final e in raw) {
+                                  final s = '$e'.trim();
+                                  if (s.startsWith('http') || s.startsWith('/')) return s;
+                                }
+                              }
+                              return a;
+                            }(),
+                            name: user?.name ?? '',
+                            size: 52,
+                          ),
                         ),
                         if (user?.isFeatured == true)
                           Positioned(
@@ -444,6 +469,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: t('settings.birthDate'),
             value: _formattedBirthDate ?? t('settings.birthDateNotSet'),
             onTap: _openBirthDate,
+            trailing: [_arrow(c, 18)],
+          ),
+          _gap,
+          _InfoCard(
+            icon: LucideIcons.quote,
+            title: t('settings.bio'),
+            value: () {
+              final b = (_profile?.s('bio') ?? '').trim();
+              if (b.isEmpty) return t('settings.bioNotSet');
+              return b.length > 48 ? '${b.substring(0, 48)}…' : b;
+            }(),
+            onTap: _openBio,
             trailing: [_arrow(c, 18)],
           ),
           _gap,
