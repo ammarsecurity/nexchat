@@ -33,4 +33,7 @@ public class SiteContentFeatureService(AppDbContext db, IMemoryCache cache)
 
     public Task<bool> IsCodeConnectEnabledAsync(CancellationToken ct = default) =>
         IsEnabledAsync("code_connect_features_enabled", ct);
+
+    public Task<bool> IsDiscoverSwipeEnabledAsync(CancellationToken ct = default) =>
+        IsEnabledAsync("discover_swipe_enabled", ct);
 }

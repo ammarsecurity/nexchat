@@ -8,6 +8,7 @@ import '../core/feature_flags.dart';
 import '../core/i18n/i18n.dart';
 import '../core/theme/app_colors.dart';
 import '../features/conversations/conversations_list_controller.dart';
+import '../features/discover/discover_theme.dart';
 import '../features/short_films/short_films_theme.dart';
 import 'router.dart';
 
@@ -54,27 +55,30 @@ class _AppShellState extends ConsumerState<AppShell> {
     final tabs = [
       _Tab('/conversations', t('nav.conversations'), 'chat', unread),
       if (flags.shortFilms) _Tab('/short-films', t('nav.discover'), 'films', 0),
-      if (!flags.messagingOnly) _Tab('/home', t('nav.connect'), 'home', 0),
+      if (flags.discoverSwipe || flags.randomChat || flags.codeConnect)
+        _Tab('/home', flags.discoverSwipe ? t('nav.people') : t('nav.connect'), 'home', 0),
       _Tab('/settings', t('nav.profile'), 'profile', pending),
     ];
     final showBar = isTabRoot(widget.location, flags);
-    final discoverStyle = widget.location == '/short-films' || widget.location.startsWith('/short-films/');
+    final filmsStyle = widget.location == '/short-films' || widget.location.startsWith('/short-films/');
+    final peopleStyle = widget.location == '/home';
 
     return Scaffold(
       extendBody: true,
       body: widget.child,
       bottomNavigationBar: showBar
-          ? _TabBar(tabs: tabs, location: widget.location, discoverStyle: discoverStyle)
+          ? _TabBar(tabs: tabs, location: widget.location, filmsStyle: filmsStyle, peopleStyle: peopleStyle)
           : null,
     );
   }
 }
 
 class _TabBar extends StatelessWidget {
-  const _TabBar({required this.tabs, required this.location, this.discoverStyle = false});
+  const _TabBar({required this.tabs, required this.location, this.filmsStyle = false, this.peopleStyle = false});
   final List<_Tab> tabs;
   final String location;
-  final bool discoverStyle;
+  final bool filmsStyle;
+  final bool peopleStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -86,12 +90,24 @@ class _TabBar extends StatelessWidget {
       curve: Curves.easeOutCubic,
       padding: EdgeInsets.fromLTRB(16, 6, 16, 6 + bottom),
       decoration: BoxDecoration(
-        color: discoverStyle ? DramaWave.surface : c.bgCard,
+        color: filmsStyle
+            ? DramaWave.surface
+            : peopleStyle
+                ? const Color(0xFFFFF1F2)
+                : c.bgCard,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-        border: discoverStyle ? const Border(top: BorderSide(color: DramaWave.hairline)) : null,
+        border: filmsStyle
+            ? const Border(top: BorderSide(color: DramaWave.hairline))
+            : peopleStyle
+                ? const Border(top: BorderSide(color: Color(0x33E11D48)))
+                : null,
         boxShadow: [
           BoxShadow(
-            color: discoverStyle ? const Color(0x66000000) : c.shadow,
+            color: filmsStyle
+                ? const Color(0x66000000)
+                : peopleStyle
+                    ? const Color(0x33E11D48)
+                    : c.shadow,
             blurRadius: 24,
             offset: const Offset(0, -4),
           ),
@@ -106,7 +122,8 @@ class _TabBar extends StatelessWidget {
               child: _TabItem(
                 tab: tab,
                 active: location == tab.to || (tab.to == '/short-films' && location.startsWith('/short-films')),
-                discoverStyle: discoverStyle,
+                filmsStyle: filmsStyle,
+                peopleStyle: peopleStyle,
               ),
             ),
         ],
@@ -116,22 +133,29 @@ class _TabBar extends StatelessWidget {
 }
 
 class _TabItem extends StatelessWidget {
-  const _TabItem({required this.tab, required this.active, this.discoverStyle = false});
+  const _TabItem({required this.tab, required this.active, this.filmsStyle = false, this.peopleStyle = false});
   final _Tab tab;
   final bool active;
-  final bool discoverStyle;
+  final bool filmsStyle;
+  final bool peopleStyle;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final color = discoverStyle
-        ? (active ? DramaWave.gold : DramaWave.muted)
-        : (active ? c.primary : c.textMuted);
-    final well = discoverStyle
-        ? (active ? DramaWave.goldSoft : Colors.transparent)
-        : (active ? c.primarySoft : Colors.transparent);
+    final Color color;
+    final Color well;
+    if (filmsStyle) {
+      color = active ? DramaWave.gold : DramaWave.muted;
+      well = active ? DramaWave.goldSoft : Colors.transparent;
+    } else if (peopleStyle) {
+      color = active ? DiscoverTheme.red : c.textMuted;
+      well = active ? DiscoverTheme.redSoft : Colors.transparent;
+    } else {
+      color = active ? c.primary : c.textMuted;
+      well = active ? c.primarySoft : Colors.transparent;
+    }
     final IconData iconData = switch (tab.icon) {
-      'home' => LucideIcons.rocket,
+      'home' => LucideIcons.heart,
       'chat' => LucideIcons.messageCircle,
       'films' => LucideIcons.clapperboard,
       _ => LucideIcons.user,
@@ -169,11 +193,19 @@ class _TabItem extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 5),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: discoverStyle ? DramaWave.gold : c.primary,
+                          color: filmsStyle
+                              ? DramaWave.gold
+                              : peopleStyle
+                                  ? DiscoverTheme.red
+                                  : c.primary,
                           borderRadius: BorderRadius.circular(999),
                           boxShadow: [
                             BoxShadow(
-                              color: discoverStyle ? const Color(0x59E8B923) : const Color(0x593B82F6),
+                              color: filmsStyle
+                                  ? const Color(0x59E8B923)
+                                  : peopleStyle
+                                      ? const Color(0x59E11D48)
+                                      : const Color(0x593B82F6),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
@@ -182,7 +214,7 @@ class _TabItem extends StatelessWidget {
                         child: Text(
                           tab.badge > 99 ? '99+' : '${tab.badge}',
                           style: TextStyle(
-                            color: discoverStyle ? Colors.black : Colors.white,
+                            color: filmsStyle ? Colors.black : Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             height: 1,

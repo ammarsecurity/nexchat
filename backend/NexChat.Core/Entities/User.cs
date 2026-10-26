@@ -19,6 +19,8 @@ public class User
     public string? Avatar { get; set; } = null;
     /// <summary>صورة غلاف الملف الشخصي.</summary>
     public string? CoverImageUrl { get; set; } = null;
+    /// <summary>JSON array of up to 4 profile photo URLs (Discover gallery). Avatar mirrors photos[0].</summary>
+    public string? ProfilePhotosJson { get; set; } = null;
     /// <summary>كود الدولة ISO 2 (مثل IQ, SA)</summary>
     public string? Country { get; set; } = null;
     /// <summary>رقم الهاتف مع مفتاح الدولة (مثل 9647712345678)</summary>

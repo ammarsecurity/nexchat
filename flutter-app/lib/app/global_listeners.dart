@@ -22,6 +22,8 @@ import '../features/conversations/conversations_list_controller.dart';
 import '../features/conversations/conversation_cache.dart';
 import '../features/conversations/message_contract.dart';
 import '../features/conversations/message_outbox.dart';
+import '../features/discover/discover_controller.dart';
+import '../features/discover/discover_match_dialog.dart';
 import '../features/matching/matching_controller.dart';
 import '../features/matching/matching_dialogs.dart';
 import '../features/notifications/notifications_controller.dart';
@@ -271,6 +273,13 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
         unawaited(MessageOutbox.forgetConversation(account, cid));
       }));
     }
+    _disposers.add(h.on('MatchCreated', (a) {
+      if (a.isEmpty || a.first is! Map) return;
+      final data = Map<String, dynamic>.from(a.first as Map);
+      final nav = rootNavigatorKey.currentContext;
+      if (nav == null || !nav.mounted) return;
+      unawaited(showDiscoverMatchDialog(nav, data));
+    }));
     _disposers.add(h.on('ConversationListUpdated', (a) {
       final payload = a.isEmpty ? null : a.first;
       if (payload is! Map) return;
@@ -418,6 +427,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       if (ref.read(authProvider).isLoggedIn) return;
       ref.invalidate(storiesProvider);
       ref.invalidate(shortFilmsProvider);
+      ref.invalidate(discoverProvider);
       ref.read(incomingConvCallProvider.notifier).clear();
       unawaited(CallNative.dismissIncoming());
       ref.read(chatSessionProvider.notifier).clear();

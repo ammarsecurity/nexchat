@@ -38,7 +38,8 @@ public class UserController(
         return Ok(new UserProfileDto(
             user.Id, user.Name, user.Gender,
             user.UniqueCode, user.IsOnline, user.Avatar, user.CreatedAt, user.IsFeatured, user.BirthDate,
-            user.Country, user.PhoneNumber, user.ShowOnlineStatusToOthers, user.CoverImageUrl
+            user.Country, user.PhoneNumber, user.ShowOnlineStatusToOthers, user.CoverImageUrl,
+            ProfilePhotos.Resolve(user.ProfilePhotosJson, user.Avatar, user.CoverImageUrl)
         ));
     }
 
@@ -59,7 +60,8 @@ public class UserController(
         var visibleOnline = UserOnlineVisibility.VisibleToOthers(user);
         return Ok(new PublicProfileDto(
             user.Id, user.Name, user.Gender, user.UniqueCode, user.Avatar, user.IsFeatured, visibleOnline,
-            user.PhoneNumber, user.Country, isContact, user.CoverImageUrl
+            user.PhoneNumber, user.Country, isContact, user.CoverImageUrl,
+            ProfilePhotos.Resolve(user.ProfilePhotosJson, user.Avatar, user.CoverImageUrl)
         ));
     }
 
@@ -129,19 +131,30 @@ public class UserController(
     [HttpPut("avatar")]
     public async Task<IActionResult> UpdateAvatar([FromBody] UpdateAvatarRequest req)
     {
+        // Discover / App Store: only real photo URLs (no emoji presets).
+        if (!string.IsNullOrWhiteSpace(req.Avatar) && !ProfilePhotos.IsPhotoUrl(req.Avatar))
+            return BadRequest(new { message = "يجب رفع صورة حقيقية", code = "PHOTO_REQUIRED" });
+
         var avatar = req.Avatar?.Length > 500 ? req.Avatar[..500] : req.Avatar;
 
-        await db.Users
-            .Where(u => u.Id == CurrentUserId)
-            .ExecuteUpdateAsync(s => s.SetProperty(u => u.Avatar, avatar));
+        var userRow = await db.Users.FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+        if (userRow == null) return NotFound();
 
-        var user = await db.Users.AsNoTracking()
-            .Select(u => new { u.Id, u.UniqueCode })
-            .FirstOrDefaultAsync(u => u.Id == CurrentUserId);
-        if (user == null) return Ok();
+        userRow.Avatar = avatar;
+        if (ProfilePhotos.IsPhotoUrl(avatar))
+        {
+            var photos = ProfilePhotos.Resolve(userRow.ProfilePhotosJson, null).ToList();
+            if (photos.Count == 0 || photos[0] != avatar)
+            {
+                photos = photos.Where(p => p != avatar).Prepend(avatar!).Take(ProfilePhotos.MaxCount).ToList();
+                var (json, _) = ProfilePhotos.Normalize(photos);
+                userRow.ProfilePhotosJson = json;
+            }
+        }
+        await db.SaveChangesAsync();
 
         var recipients = await GetAvatarNotifyRecipientIdsAsync(CurrentUserId);
-        var payload = new { userId = CurrentUserId, avatar, uniqueCode = user.UniqueCode };
+        var payload = new { userId = CurrentUserId, avatar, uniqueCode = userRow.UniqueCode };
         foreach (var rid in recipients)
         {
             var ridStr = rid.ToString();
@@ -151,6 +164,34 @@ public class UserController(
         }
 
         return Ok();
+    }
+
+    [HttpPut("profile-photos")]
+    public async Task<ActionResult<object>> UpdateProfilePhotos([FromBody] UpdateProfilePhotosRequest req)
+    {
+        var (json, avatar) = ProfilePhotos.Normalize(req.Photos);
+        if (avatar == null)
+            return BadRequest(new { message = "ارفع صورة واحدة على الأقل", code = "PHOTO_REQUIRED" });
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+        if (user == null) return NotFound();
+
+        user.ProfilePhotosJson = json;
+        user.Avatar = avatar.Length > 500 ? avatar[..500] : avatar;
+        await db.SaveChangesAsync();
+
+        var photos = ProfilePhotos.Parse(json);
+        var recipients = await GetAvatarNotifyRecipientIdsAsync(CurrentUserId);
+        var payload = new { userId = CurrentUserId, avatar = user.Avatar, uniqueCode = user.UniqueCode };
+        foreach (var rid in recipients)
+        {
+            var ridStr = rid.ToString();
+            await conversationHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
+            await matchingHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
+            await chatHub.Clients.User(ridStr).SendAsync("UserAvatarUpdated", payload);
+        }
+
+        return Ok(new { photos, avatar = user.Avatar });
     }
 
     [HttpPut("cover")]

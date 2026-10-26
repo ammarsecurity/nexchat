@@ -198,16 +198,24 @@ class AuthController extends Notifier<AuthState> {
     final account = state.user?.id;
     final token = state.token;
     if (account == null || token == null) return;
+    await setAvatarLocal(value);
+    if (!_isCurrent(generation, account)) return;
+    try {
+      await Api.dio.put('user/avatar', data: {'avatar': value}, options: _pinnedAuth(token));
+    } catch (_) {}
+  }
+
+  /// Update cached avatar after `/user/profile-photos` (already persisted server-side).
+  Future<void> setAvatarLocal(String? value) async {
+    final generation = _authGeneration;
+    final account = state.user?.id;
+    if (account == null) return;
     await _writeAuth(() async {
       if (!_isCurrent(generation, account)) return;
       await Prefs.instance.setString(Keys.avatar, value);
       if (!_isCurrent(generation, account)) return;
       state = value == null ? state.copyWith(clearAvatar: true) : state.copyWith(avatar: value);
     });
-    if (!_isCurrent(generation, account)) return;
-    try {
-      await Api.dio.put('user/avatar', data: {'avatar': value}, options: _pinnedAuth(token));
-    } catch (_) {}
   }
 
   void updateUser(AppUser user) {

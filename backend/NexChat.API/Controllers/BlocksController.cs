@@ -58,6 +58,38 @@ public class BlocksController(AppDbContext db) : ControllerBase
                 (c.UserId == userId && c.ContactUserId == CurrentUserId))
             .ExecuteDeleteAsync();
 
+        // Discover: drop mutual match so blocked users cannot reopen chat via match list.
+        await db.UserMatches
+            .Where(m =>
+                (m.UserAId == CurrentUserId && m.UserBId == userId) ||
+                (m.UserAId == userId && m.UserBId == CurrentUserId))
+            .ExecuteDeleteAsync();
+
+        // Hide leftover private thread from both inboxes (send already blocked by hub).
+        var u1 = CurrentUserId;
+        var u2 = userId;
+        if (u1.CompareTo(u2) > 0) (u1, u2) = (u2, u1);
+        var convId = await db.Conversations.AsNoTracking()
+            .Where(c => c.Type == ConversationType.Private && c.User1Id == u1 && c.User2Id == u2)
+            .Select(c => (Guid?)c.Id)
+            .FirstOrDefaultAsync();
+        if (convId != null)
+        {
+            foreach (var uid in new[] { CurrentUserId, userId })
+            {
+                var existsDel = await db.UserConversationDeletions
+                    .AnyAsync(d => d.UserId == uid && d.ConversationId == convId);
+                if (!existsDel)
+                {
+                    db.UserConversationDeletions.Add(new UserConversationDeletion
+                    {
+                        UserId = uid,
+                        ConversationId = convId.Value
+                    });
+                }
+            }
+        }
+
         db.UserBlocks.Add(new UserBlock
         {
             BlockerId = CurrentUserId,

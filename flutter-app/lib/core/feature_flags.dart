@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'network/api_client.dart';
@@ -13,23 +14,29 @@ class FeatureFlags {
   const FeatureFlags({
     required this.randomChat,
     required this.codeConnect,
+    required this.discoverSwipe,
     required this.stories,
     required this.shortFilms,
   });
 
   final bool randomChat;
   final bool codeConnect;
+  /// Tinder-style Discover (mutual match before chat).
+  final bool discoverSwipe;
   final bool stories;
   final bool shortFilms;
 
-  bool get messagingOnly => !randomChat && !codeConnect;
-  bool get connectHub => randomChat || codeConnect;
+  bool get messagingOnly => !randomChat && !codeConnect && !discoverSwipe;
+  /// MatchingHub: random, code, or discover MatchCreated events.
+  bool get connectHub => randomChat || codeConnect || discoverSwipe;
   String get defaultRoute => messagingOnly ? '/conversations' : '/home';
 
   /// Fail-closed: discover / connect / random stay hidden until admin enables them.
+  /// Discover defaults on after first successful fetch (emptyMeansEnabled).
   static const hiddenUntilLoaded = FeatureFlags(
     randomChat: false,
     codeConnect: false,
+    discoverSwipe: false,
     stories: false,
     shortFilms: false,
   );
@@ -37,6 +44,7 @@ class FeatureFlags {
   Map<String, bool> toJson() => {
         'randomChat': randomChat,
         'codeConnect': codeConnect,
+        'discoverSwipe': discoverSwipe,
         'stories': stories,
         'shortFilms': shortFilms,
       };
@@ -44,6 +52,7 @@ class FeatureFlags {
   factory FeatureFlags.fromJson(Map<String, dynamic> j) => FeatureFlags(
         randomChat: j['randomChat'] == true,
         codeConnect: j['codeConnect'] == true,
+        discoverSwipe: j['discoverSwipe'] == true,
         stories: j['stories'] == true,
         shortFilms: j['shortFilms'] == true,
       );
@@ -53,14 +62,15 @@ class FeatureFlags {
       other is FeatureFlags &&
       other.randomChat == randomChat &&
       other.codeConnect == codeConnect &&
+      other.discoverSwipe == discoverSwipe &&
       other.stories == stories &&
       other.shortFilms == shortFilms;
 
   @override
-  int get hashCode => Object.hash(randomChat, codeConnect, stories, shortFilms);
+  int get hashCode => Object.hash(randomChat, codeConnect, discoverSwipe, stories, shortFilms);
 }
 
-const _flagsCacheKey = 'nexchat_feature_flags_v2';
+const _flagsCacheKey = 'nexchat_feature_flags_v3';
 
 /// Admin-gated flags: empty/missing → off. Stories has no admin toggle → empty means on.
 bool _parseEnabled(Object? content, {required bool emptyMeansEnabled}) {
@@ -104,6 +114,11 @@ Future<Object?> fetchSiteContent(String key) async {
   }
 }
 
+/// App Store: never expose Omegle-style random chat or code-connect on iOS;
+/// keep Discover available as the mutual-match surface.
+bool get _isIosAppStoreSurface =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
 class FeatureFlagsNotifier extends AsyncNotifier<FeatureFlags> {
   Timer? _retry;
   int _retryAttempt = 0;
@@ -115,16 +130,29 @@ class FeatureFlagsNotifier extends AsyncNotifier<FeatureFlags> {
     final r = await Future.wait([
       _fetchFlag('random_chat_enabled', emptyMeansEnabled: false),
       _fetchFlag('code_connect_features_enabled', emptyMeansEnabled: false),
+      _fetchFlag('discover_swipe_enabled', emptyMeansEnabled: true),
       _fetchFlag('stories_enabled', emptyMeansEnabled: true),
       _fetchFlag('short_films_enabled', emptyMeansEnabled: false),
     ]);
 
+    var randomChat = r[0].ok ? r[0].value : cached.randomChat;
+    var codeConnect = r[1].ok ? r[1].value : cached.codeConnect;
+    // Fail-closed when offline with no prior admin snapshot (except iOS App Store force-on below).
+    var discoverSwipe = r[2].ok
+        ? r[2].value
+        : (cached == FeatureFlags.hiddenUntilLoaded ? false : cached.discoverSwipe);
+    if (_isIosAppStoreSurface) {
+      randomChat = false;
+      codeConnect = false;
+      discoverSwipe = true;
+    }
+
     final next = FeatureFlags(
-      randomChat: r[0].ok ? r[0].value : cached.randomChat,
-      codeConnect: r[1].ok ? r[1].value : cached.codeConnect,
-      // No cache yet + offline → still show stories (product default).
-      stories: r[2].ok ? r[2].value : (cached == FeatureFlags.hiddenUntilLoaded ? true : cached.stories),
-      shortFilms: r[3].ok ? r[3].value : cached.shortFilms,
+      randomChat: randomChat,
+      codeConnect: codeConnect,
+      discoverSwipe: discoverSwipe,
+      stories: r[3].ok ? r[3].value : (cached == FeatureFlags.hiddenUntilLoaded ? true : cached.stories),
+      shortFilms: r[4].ok ? r[4].value : cached.shortFilms,
     );
 
     _retry?.cancel();

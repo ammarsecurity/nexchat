@@ -588,21 +588,32 @@ Future<T?> showAppSheet<T>(BuildContext context, {required WidgetBuilder builder
     useRootNavigator: true,
     backgroundColor: context.colors.bgCard,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
-    builder: (ctx) => SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            margin: const EdgeInsets.only(top: 10, bottom: 8),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(color: ctx.colors.textMuted.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)),
+    builder: (ctx) {
+      final maxH = MediaQuery.sizeOf(ctx).height * 0.9;
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxH),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: ctx.colors.textMuted.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)),
+                  ),
+                  builder(ctx),
+                ],
+              ),
+            ),
           ),
-          Flexible(child: builder(ctx)),
-        ]),
-      ),
-    ),
+        ),
+      );
+    },
   );
 }
 

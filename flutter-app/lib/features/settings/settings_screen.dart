@@ -25,6 +25,7 @@ import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_widgets.dart';
 import 'avatar_picker_sheet.dart';
+import 'birth_date_sheet.dart';
 
 const _violet = Color(0xFF6C63FF);
 
@@ -232,7 +233,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _openBirthDate() async {
-    final saved = await showAppSheet<String>(context, builder: (_) => _BirthDateSheet(initial: _profile?.s('birthDate')));
+    final saved = await showBirthDateSheet(context, initial: _profile?.s('birthDate'));
     if (saved != null && mounted) setState(() => _profile = {...?_profile, 'birthDate': saved});
   }
 
@@ -1046,128 +1047,5 @@ class _DeletePasswordDialogState extends ConsumerState<_DeletePasswordDialog> {
         busy: _deleting,
       ),
     ]);
-  }
-}
-
-class _BirthDateSheet extends StatefulWidget {
-  const _BirthDateSheet({this.initial});
-  final String? initial;
-
-  @override
-  State<_BirthDateSheet> createState() => _BirthDateSheetState();
-}
-
-class _BirthDateSheetState extends State<_BirthDateSheet> {
-  int? _d, _m, _y;
-  bool _saving = false;
-  String _error = '';
-
-  @override
-  void initState() {
-    super.initState();
-    final b = widget.initial?.split('T').first;
-    if (b != null && b.isNotEmpty) {
-      final p = b.split('-').map(int.tryParse).toList();
-      if (p.length >= 3) {
-        _y = p[0];
-        _m = p[1];
-        _d = p[2];
-      }
-    }
-  }
-
-  int get _daysInMonth {
-    final m = _m, y = _y;
-    if (m == null) return 31;
-    final leap = y != null && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
-    return [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
-  }
-
-  String? get _dateStr {
-    if (_d == null || _m == null || _y == null) return null;
-    return '$_y-${'$_m'.padLeft(2, '0')}-${'$_d'.padLeft(2, '0')}';
-  }
-
-  void _clampDay() {
-    if (_d != null && _d! > _daysInMonth) _d = _daysInMonth;
-  }
-
-  Future<void> _save() async {
-    final s = _dateStr;
-    if (s == null) return;
-    setState(() {
-      _saving = true;
-      _error = '';
-    });
-    try {
-      await Api.put('/user/birth-date', {'birthDate': s});
-      if (mounted) Navigator.pop(context, s);
-    } catch (e) {
-      if (mounted) setState(() => _error = Api.errorMessage(e, t('common.error')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final year = DateTime.now().year;
-    final years = [for (var y = year - 18; y >= year - 120; y--) y];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(child: Text(t('settings.editBirthDate'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600))),
-          GlassIconButton(icon: LucideIcons.x, onTap: () => Navigator.pop(context)),
-        ]),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(
-            flex: 2,
-            child: DateSelect(
-              hint: t('register.day'),
-              value: _d,
-              items: [for (var i = 1; i <= _daysInMonth; i++) i],
-              onChanged: (v) => setState(() => _d = v),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 3,
-            child: DateSelect(
-              hint: t('register.month'),
-              value: _m,
-              items: [for (var i = 1; i <= 12; i++) i],
-              onChanged: (v) => setState(() {
-                _m = v;
-                _clampDay();
-              }),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 2,
-            child: DateSelect(
-              hint: t('register.year'),
-              value: _y,
-              items: years,
-              onChanged: (v) => setState(() {
-                _y = v;
-                _clampDay();
-              }),
-            ),
-          ),
-        ]),
-        const SizedBox(height: 12),
-        Text(t('register.birthDateHint'), style: TextStyle(fontSize: 12, color: c.textMuted)),
-        if (_error.isNotEmpty) ...[const SizedBox(height: 12), AuthError(_error)],
-        const SizedBox(height: 12),
-        PillButton(
-          label: _saving ? t('common.loading') : t('settings.saveBirthDate'),
-          onPressed: _saving || _dateStr == null ? null : _save,
-        ),
-      ]),
-    );
   }
 }

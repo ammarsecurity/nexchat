@@ -37,10 +37,13 @@ public record UserProfileDto(
     string? Country = null,
     string? PhoneNumber = null,
     bool ShowOnlineStatusToOthers = true,
-    string? CoverImageUrl = null
+    string? CoverImageUrl = null,
+    IReadOnlyList<string>? ProfilePhotos = null
 );
 
 public record UpdateAvatarRequest(string? Avatar);
+
+public record UpdateProfilePhotosRequest(IReadOnlyList<string>? Photos);
 
 public record UpdateBirthDateRequest(string BirthDate);
 
@@ -60,7 +63,8 @@ public record PublicProfileDto(
     string? PhoneNumber = null,
     string? Country = null,
     bool IsContact = false,
-    string? CoverImageUrl = null
+    string? CoverImageUrl = null,
+    IReadOnlyList<string>? ProfilePhotos = null
 );
 
 public record UpdateCoverRequest(string? CoverImageUrl);

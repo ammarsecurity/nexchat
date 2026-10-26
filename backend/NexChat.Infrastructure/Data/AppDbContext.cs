@@ -44,6 +44,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ShortFilmComment> ShortFilmComments => Set<ShortFilmComment>();
     public DbSet<ShortFilmCommentReport> ShortFilmCommentReports => Set<ShortFilmCommentReport>();
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
+    public DbSet<UserSwipe> UserSwipes => Set<UserSwipe>();
+    public DbSet<UserMatch> UserMatches => Set<UserMatch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +60,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Name).HasMaxLength(50);
             e.Property(x => x.UniqueCode).HasMaxLength(10);
             e.Property(x => x.Gender).HasMaxLength(10);
+            e.Property(x => x.ProfilePhotosJson).HasMaxLength(2500);
         });
 
         modelBuilder.Entity<ChatSession>(e =>
@@ -560,6 +563,42 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.CodeHash).HasMaxLength(64);
             e.Property(x => x.PendingCountry).HasMaxLength(2);
             e.HasIndex(x => new { x.PhoneNumber, x.Purpose, x.Consumed, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<UserSwipe>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Direction).HasMaxLength(10);
+            e.HasOne(x => x.FromUser)
+                .WithMany()
+                .HasForeignKey(x => x.FromUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ToUser)
+                .WithMany()
+                .HasForeignKey(x => x.ToUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.FromUserId, x.ToUserId }).IsUnique();
+            e.HasIndex(x => new { x.ToUserId, x.Direction, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<UserMatch>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.UserA)
+                .WithMany()
+                .HasForeignKey(x => x.UserAId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.UserB)
+                .WithMany()
+                .HasForeignKey(x => x.UserBId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Conversation)
+                .WithMany()
+                .HasForeignKey(x => x.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.UserAId, x.UserBId }).IsUnique();
+            e.HasIndex(x => x.ConversationId);
+            e.HasIndex(x => x.CreatedAt);
         });
     }
 }
