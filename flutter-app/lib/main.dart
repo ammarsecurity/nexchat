@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,7 +19,8 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   await Prefs.init();
   await I18n.load();
-  await PushService.instance.bootstrap();
-  await TikTokAnalyticsService.instance.bootstrap();
+  // Paint first frame ASAP — OneSignal/TikTok must not block UI on emulators.
   runApp(const ProviderScope(child: NexChatApp()));
+  unawaited(PushService.instance.bootstrap());
+  unawaited(TikTokAnalyticsService.instance.bootstrap());
 }

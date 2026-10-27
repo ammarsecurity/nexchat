@@ -4,6 +4,8 @@ let codeConnectInflight = null
 let codeConnectResolved = null
 let randomChatInflight = null
 let randomChatResolved = null
+let discoverSwipeInflight = null
+let discoverSwipeResolved = null
 let storiesInflight = null
 let storiesResolved = null
 let shortFilmsInflight = null
@@ -68,22 +70,48 @@ export async function getRandomChatEnabled(api) {
   return randomChatInflight
 }
 
-/** Random or code-connect needs the matching hub. */
-export async function getConnectHubEnabled(api) {
-  const [random, code] = await Promise.all([
-    getRandomChatEnabled(api),
-    getCodeConnectFeaturesEnabled(api)
-  ])
-  return random || code
+/**
+ * Tinder-style Discover (تعارف). Empty SiteContent → enabled (matches Flutter / migration seed).
+ * @param {import('axios').AxiosInstance} api
+ * @returns {Promise<boolean>}
+ */
+export async function getDiscoverSwipeEnabled(api) {
+  if (discoverSwipeResolved !== null) return discoverSwipeResolved
+  if (!discoverSwipeInflight) {
+    discoverSwipeInflight = fetchSiteContentFlag(api, 'discover_swipe_enabled', { emptyMeansEnabled: true })
+      .then((enabled) => {
+        discoverSwipeResolved = enabled
+        return enabled
+      })
+      .catch(() => {
+        discoverSwipeInflight = null
+        return false
+      })
+      .finally(() => {
+        discoverSwipeInflight = null
+      })
+  }
+  return discoverSwipeInflight
 }
 
-/** App Store mode: conversations/messaging only. */
-export async function getMessagingOnlyMode(api) {
-  const [random, code] = await Promise.all([
+/** Random, code-connect, or discover needs the matching hub. */
+export async function getConnectHubEnabled(api) {
+  const [random, code, discover] = await Promise.all([
     getRandomChatEnabled(api),
-    getCodeConnectFeaturesEnabled(api)
+    getCodeConnectFeaturesEnabled(api),
+    getDiscoverSwipeEnabled(api)
   ])
-  return !random && !code
+  return random || code || discover
+}
+
+/** App Store mode: conversations/messaging only (all three connect-family flags off). */
+export async function getMessagingOnlyMode(api) {
+  const [random, code, discover] = await Promise.all([
+    getRandomChatEnabled(api),
+    getCodeConnectFeaturesEnabled(api),
+    getDiscoverSwipeEnabled(api)
+  ])
+  return !random && !code && !discover
 }
 
 /** Default landing route after login/splash. */
@@ -103,9 +131,15 @@ export function resetRandomChatCache() {
   randomChatInflight = null
 }
 
+export function resetDiscoverSwipeCache() {
+  discoverSwipeResolved = null
+  discoverSwipeInflight = null
+}
+
 export function resetConnectFeaturesCache() {
   resetCodeConnectFeaturesCache()
   resetRandomChatCache()
+  resetDiscoverSwipeCache()
 }
 
 /**

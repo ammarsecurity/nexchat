@@ -29,9 +29,7 @@ import 'bio_sheet.dart';
 import 'birth_date_sheet.dart';
 import 'profile_photos_sheet.dart';
 
-const _violet = Color(0xFF6C63FF);
-
-/// views/SettingsView.vue
+/// views/SettingsView.vue — profile & preferences, aligned with app chrome.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -304,20 +302,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _ => gender ?? '',
     };
 
+    final avatarUrl = () {
+      final a = auth.avatar;
+      if (a != null && (a.startsWith('http') || a.startsWith('/'))) return a;
+      final raw = _profile?['profilePhotos'] ?? _profile?['ProfilePhotos'];
+      if (raw is List) {
+        for (final e in raw) {
+          final s = '$e'.trim();
+          if (s.startsWith('http') || s.startsWith('/')) return s;
+        }
+      }
+      return a;
+    }();
+    final bio = (_profile?.s('bio') ?? '').trim();
+    final bioPreview = bio.isEmpty
+        ? t('settings.bioNotSet')
+        : (bio.length > 56 ? '${bio.substring(0, 56)}…' : bio);
+    final featuredAccent = light ? const Color(0xFFFF7300) : const Color(0xFFFFD700);
+
     return Stack(children: [
       ModernPage(
         title: t('settings.title'),
         showBack: false,
-        padding: EdgeInsets.fromLTRB(16, 0, 16, tabScrollPadding(context, extra: 16)),
+        padding: EdgeInsets.fromLTRB(16, 0, 16, tabScrollPadding(context, extra: 20)),
         body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          // Profile card
-          _Card(
+          // —— Profile hero ——
+          _Surface(
             padding: EdgeInsets.zero,
             child: Column(children: [
               SizedBox(
-                height: 120,
+                height: 132,
                 child: Stack(fit: StackFit.expand, children: [
-                  const ColoredBox(color: Color(0xFF1E3A8A)),
+                  ColoredBox(color: c.bgSecondary),
                   if (!_coverError && coverUrl != null && isImageAvatar(coverUrl))
                     CachedNetworkImage(
                       imageUrl: Api.absoluteUrl(coverUrl)!,
@@ -326,36 +342,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     )
                   else
                     Image.asset('assets/images/cover.jpg', fit: BoxFit.cover),
-                  const DecoratedBox(
+                  DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Color(0x260F172A), Color(0x730F172A)],
+                        colors: [
+                          c.bgPrimary.withValues(alpha: 0.05),
+                          c.bgPrimary.withValues(alpha: 0.55),
+                        ],
                       ),
                     ),
                   ),
                   PositionedDirectional(
                     end: 12,
-                    bottom: 10,
-                    child: GestureDetector(
-                      onTap: _uploadCover,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(color: const Color(0x8C0F172A), borderRadius: BorderRadius.circular(999)),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(LucideIcons.image, size: 16, color: Colors.white),
-                          const SizedBox(width: 6),
-                          Text(t('settings.changeCover'),
-                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                        ]),
+                    bottom: 12,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.48),
+                      borderRadius: BorderRadius.circular(999),
+                      child: InkWell(
+                        onTap: _uploadCover,
+                        borderRadius: BorderRadius.circular(999),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(LucideIcons.image, size: 15, color: Colors.white),
+                            const SizedBox(width: 6),
+                            Text(t('settings.changeCover'),
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ]),
+                        ),
                       ),
                     ),
                   ),
                 ]),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                 child: Row(children: [
                   GestureDetector(
                     onTap: () async {
@@ -363,174 +386,159 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       if (saved && mounted) await _loadProfile();
                     },
                     child: SizedBox(
-                      width: 56,
-                      height: 56,
+                      width: 72,
+                      height: 72,
                       child: Stack(clipBehavior: Clip.none, children: [
                         Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(color: c.border, width: 2),
-                            boxShadow: user?.isFeatured == true
-                                ? [BoxShadow(color: (light ? const Color(0xFFFF7300) : const Color(0xFFFFD700)).withValues(alpha: 0.3), blurRadius: 12)]
-                                : null,
+                            border: Border.all(color: c.bgCard, width: 3),
+                            boxShadow: [
+                              BoxShadow(color: c.shadow, blurRadius: 16, offset: const Offset(0, 6)),
+                              if (user?.isFeatured == true)
+                                BoxShadow(color: featuredAccent.withValues(alpha: 0.35), blurRadius: 14),
+                            ],
                           ),
                           foregroundDecoration: user?.isFeatured == true
                               ? BoxDecoration(
                                   shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: (light ? const Color(0xFFFF7300) : const Color(0xFFFFD700)).withValues(alpha: 0.6), width: 2))
+                                  border: Border.all(color: featuredAccent.withValues(alpha: 0.75), width: 2),
+                                )
                               : null,
-                          child: UserAvatar(
-                            url: () {
-                              final a = auth.avatar;
-                              if (a != null && (a.startsWith('http') || a.startsWith('/'))) return a;
-                              final raw = _profile?['profilePhotos'] ?? _profile?['ProfilePhotos'];
-                              if (raw is List) {
-                                for (final e in raw) {
-                                  final s = '$e'.trim();
-                                  if (s.startsWith('http') || s.startsWith('/')) return s;
-                                }
-                              }
-                              return a;
-                            }(),
-                            name: user?.name ?? '',
-                            size: 52,
-                          ),
+                          child: UserAvatar(url: avatarUrl, name: user?.name ?? '', size: 66),
                         ),
                         if (user?.isFeatured == true)
                           Positioned(
-                            top: -4,
-                            right: -4,
-                            child: Icon(LucideIcons.crown, size: 18, color: light ? const Color(0xFFFF7300) : const Color(0xFFFFD700)),
+                            top: -2,
+                            right: -2,
+                            child: Icon(LucideIcons.crown, size: 18, color: featuredAccent),
                           ),
                         PositionedDirectional(
-                          bottom: 0,
-                          end: 0,
+                          bottom: 2,
+                          end: 2,
                           child: Container(
-                            width: 20,
-                            height: 20,
-                            decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: c.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: c.bgCard, width: 2),
+                            ),
                             child: const Icon(LucideIcons.pencil, size: 11, color: Colors.white),
                           ),
                         ),
                       ]),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(user?.name ?? '', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(color: _violet.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(999)),
-                        child: Text(genderLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.primary)),
+                      Text(
+                        user?.name ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, height: 1.25, color: c.textPrimary),
                       ),
+                      if (genderLabel.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _Pill(genderLabel),
+                      ],
                     ]),
                   ),
                 ]),
               ),
             ]),
           ),
-          if (cc) ...[
-            _gap,
-            _InfoCard(
-              icon: LucideIcons.hash,
-              title: t('settings.contactCode'),
-              value: user?.uniqueCode ?? '',
-              onTap: _copyCode,
-              trailing: [
-                _SquareBtn(
-                  onTap: _copyCode,
-                  child: _copied
-                      ? Text(t('common.copiedShort'), style: TextStyle(color: c.success, fontSize: 11, fontWeight: FontWeight.w600))
-                      : Icon(LucideIcons.copy, size: 16, color: c.primary),
-                ),
-                const SizedBox(width: 10),
-                _SquareBtn(onTap: _shareInvite, child: Icon(LucideIcons.share2, size: 16, color: c.primary)),
-              ],
-            ),
-          ],
-          _gap,
-          _InfoCard(
-            icon: LucideIcons.globe,
-            title: '${t('completeProfile.country')} & ${t('completeProfile.phone')}',
-            value: (phone?.isNotEmpty ?? false) ? '+$phone' : t('completeProfile.selectCountry'),
-            ltrValue: phone?.isNotEmpty ?? false,
-            onTap: () async {
-              await context.push('/complete-profile?from=settings');
-              if (mounted) _loadProfile();
-            },
-            trailing: [_arrow(c, 18)],
-          ),
-          _gap,
-          _InfoCard(
-            icon: LucideIcons.calendar,
-            title: t('settings.birthDate'),
-            value: _formattedBirthDate ?? t('settings.birthDateNotSet'),
-            onTap: _openBirthDate,
-            trailing: [_arrow(c, 18)],
-          ),
-          _gap,
-          _InfoCard(
-            icon: LucideIcons.quote,
-            title: t('settings.bio'),
-            value: () {
-              final b = (_profile?.s('bio') ?? '').trim();
-              if (b.isEmpty) return t('settings.bioNotSet');
-              return b.length > 48 ? '${b.substring(0, 48)}…' : b;
-            }(),
-            onTap: _openBio,
-            trailing: [_arrow(c, 18)],
-          ),
-          _gap,
-          _BigRowCard(
-            icon: LucideIcons.messageCircle,
-            title: t('settings.supportChat'),
-            desc: t('settings.supportDesc'),
-            onTap: _supportLoading ? null : _openSupport,
-          ),
-          _section(t('settings.permissions')),
-          _Card(
-            padding: EdgeInsets.zero,
-            child: _LinkRow(
-              onTap: _mediaPermLoading ? null : _requestMediaPerms,
-              leading: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(color: _violet.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(AppRadius.sm)),
-                child: Stack(children: [
-                  Center(child: Icon(LucideIcons.camera, size: 18, color: c.primary)),
-                  Positioned(bottom: 3, right: 3, child: Icon(LucideIcons.mic, size: 12, color: c.primary)),
-                ]),
-              ),
-              title: t('settings.cameraMicPermissions'),
-              desc: t('settings.cameraMicDesc'),
-              trailing: _mediaPermMessage.isNotEmpty
-                  ? ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 160),
-                      child: Text(_mediaPermMessage,
-                          style: TextStyle(fontSize: 11, color: _mediaPermSuccess ? c.success : c.danger)),
-                    )
-                  : _arrow(c, 16),
-            ),
-          ),
-          _section(t('settings.general')),
-          _Card(
+
+          // —— Profile details (one grouped surface) ——
+          _section(t('settings.profile')),
+          _Surface(
             padding: EdgeInsets.zero,
             child: Column(children: [
-              _LinkRow(
-                onTap: () => ref.read(localeProvider.notifier).toggle(),
+              if (cc)
+                _InfoRow(
+                  icon: LucideIcons.hash,
+                  title: t('settings.contactCode'),
+                  value: user?.uniqueCode ?? '',
+                  onTap: _copyCode,
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    _IconChip(
+                      onTap: _copyCode,
+                      child: _copied
+                          ? Icon(LucideIcons.check, size: 16, color: c.success)
+                          : Icon(LucideIcons.copy, size: 16, color: c.primary),
+                    ),
+                    const SizedBox(width: 8),
+                    _IconChip(onTap: _shareInvite, child: Icon(LucideIcons.share2, size: 16, color: c.primary)),
+                  ]),
+                ),
+              if (cc) _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.globe,
+                title: '${t('completeProfile.country')} & ${t('completeProfile.phone')}',
+                value: (phone?.isNotEmpty ?? false) ? '+$phone' : t('completeProfile.selectCountry'),
+                ltrValue: phone?.isNotEmpty ?? false,
+                onTap: () async {
+                  await context.push('/complete-profile?from=settings');
+                  if (mounted) _loadProfile();
+                },
+              ),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.calendar,
+                title: t('settings.birthDate'),
+                value: _formattedBirthDate ?? t('settings.birthDateNotSet'),
+                onTap: _openBirthDate,
+              ),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.quote,
+                title: t('settings.bio'),
+                value: bioPreview,
+                onTap: _openBio,
+              ),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.messageCircle,
+                title: t('settings.supportChat'),
+                value: t('settings.supportDesc'),
+                onTap: _supportLoading ? null : _openSupport,
+              ),
+            ]),
+          ),
+
+          _section(t('settings.permissions')),
+          _Surface(
+            padding: EdgeInsets.zero,
+            child: _InfoRow(
+              icon: LucideIcons.camera,
+              title: t('settings.cameraMicPermissions'),
+              value: _mediaPermMessage.isNotEmpty ? _mediaPermMessage : t('settings.cameraMicDesc'),
+              valueColor: _mediaPermMessage.isNotEmpty ? (_mediaPermSuccess ? c.success : c.danger) : null,
+              onTap: _mediaPermLoading ? null : _requestMediaPerms,
+            ),
+          ),
+
+          _section(t('settings.general')),
+          _Surface(
+            padding: EdgeInsets.zero,
+            child: Column(children: [
+              _InfoRow(
                 icon: LucideIcons.globe,
                 title: t('settings.language'),
-                trailing: _Badge(locale.languageCode == 'ar' ? 'عربي' : 'English'),
+                onTap: () => ref.read(localeProvider.notifier).toggle(),
+                trailing: _Pill(locale.languageCode == 'ar' ? 'عربي' : 'English'),
+                showChevron: false,
               ),
-              _LinkRow(
-                onTap: () => ref.read(lightThemeProvider.notifier).toggle(),
+              _hairline(c),
+              _InfoRow(
                 icon: light ? LucideIcons.moon : LucideIcons.sun,
                 title: light ? t('settings.darkMode') : t('settings.lightMode'),
-                trailing: _Badge(light ? t('settings.dark') : t('settings.light')),
+                onTap: () => ref.read(lightThemeProvider.notifier).toggle(),
+                trailing: _Pill(light ? t('settings.dark') : t('settings.light')),
+                showChevron: false,
               ),
+              _hairline(c),
               _ToggleBlock(
                 icon: LucideIcons.bell,
                 on: _notificationsEnabled,
@@ -541,21 +549,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 offLabel: t('settings.disable'),
                 onSelect: (v) => v ? _enableNotifications() : _disableNotifications(),
               ),
-              _LinkRow(onTap: () => context.push('/notifications'), icon: LucideIcons.bell, title: t('settings.notificationCenter'), trailing: _arrow(c, 16)),
-              _LinkRow(onTap: () => context.push('/calls'), icon: LucideIcons.phone, title: t('calls.title'), trailing: _arrow(c, 16)),
-              if (cc)
-                _LinkRow(
-                    onTap: () => context.push('/connection-history'),
-                    icon: LucideIcons.send,
-                    title: t('connectionHistory.title'),
-                    trailing: _arrow(c, 16)),
-              _LinkRow(onTap: () => context.push('/blocked'), icon: LucideIcons.ban, title: t('blocked.title'), trailing: _arrow(c, 16)),
-              if (cc)
-                _LinkRow(
-                    onTap: () => context.push('/saved-codes'),
-                    icon: LucideIcons.bookmarkPlus,
-                    title: t('home.savedCodes'),
-                    trailing: _arrow(c, 16)),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.bellRing,
+                title: t('settings.notificationCenter'),
+                onTap: () => context.push('/notifications'),
+              ),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.phone,
+                title: t('calls.title'),
+                onTap: () => context.push('/calls'),
+              ),
+              if (cc) ...[
+                _hairline(c),
+                _InfoRow(
+                  icon: LucideIcons.send,
+                  title: t('connectionHistory.title'),
+                  onTap: () => context.push('/connection-history'),
+                ),
+              ],
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.ban,
+                title: t('blocked.title'),
+                onTap: () => context.push('/blocked'),
+              ),
+              if (cc) ...[
+                _hairline(c),
+                _InfoRow(
+                  icon: LucideIcons.bookmarkPlus,
+                  title: t('home.savedCodes'),
+                  onTap: () => context.push('/saved-codes'),
+                ),
+              ],
+              _hairline(c),
               _ToggleBlock(
                 icon: LucideIcons.eye,
                 on: _showOnline,
@@ -569,48 +597,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onColorSuccess: true,
                 onSelect: _setShowOnline,
               ),
-              _LinkRow(onTap: () => context.push('/privacy'), icon: LucideIcons.shield, title: t('settings.privacyPolicy'), trailing: _arrow(c, 16)),
-              _LinkRow(
-                  onTap: () => context.push('/terms'), icon: LucideIcons.scrollText, title: t('settings.termsOfService'), trailing: _arrow(c, 16)),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.shield,
+                title: t('settings.privacyPolicy'),
+                onTap: () => context.push('/privacy'),
+              ),
+              _hairline(c),
+              _InfoRow(
+                icon: LucideIcons.scrollText,
+                title: t('settings.termsOfService'),
+                onTap: () => context.push('/terms'),
+              ),
             ]),
           ),
+
           _section(t('settings.app')),
           if (update?.hasUpdate == true && update?.downloadUrl != null) ...[
-            _BigRowCard(
-              icon: LucideIcons.download,
-              title: t('settings.updateAvailable'),
-              desc: t('settings.updateAvailableDesc'),
+            _Surface(
+              padding: EdgeInsets.zero,
               accent: const Color(0xFF00D4FF),
-              onTap: _openUpdateUrl,
+              child: _InfoRow(
+                icon: LucideIcons.download,
+                title: t('settings.updateAvailable'),
+                value: t('settings.updateAvailableDesc'),
+                iconColor: const Color(0xFF00D4FF),
+                onTap: _openUpdateUrl,
+              ),
             ),
-            _gap,
+            const SizedBox(height: 10),
           ],
-          _Card(
+          _Surface(
             child: Row(children: [
-              Image.asset(light ? 'assets/images/logo-light.png' : 'assets/images/logo.png', height: 48),
-              const SizedBox(width: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.asset(light ? 'assets/images/logo-light.png' : 'assets/images/logo.png', height: 48, width: 48, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('NexChat', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text('NexChat', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
                   const SizedBox(height: 2),
-                  Text(t('settings.tagline'), style: TextStyle(fontSize: 13, color: c.textMuted)),
+                  Text(t('settings.tagline'), style: TextStyle(fontSize: 13, color: c.textMuted, height: 1.35)),
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _violet.withValues(alpha: 0.15),
-                      border: Border.all(color: _violet.withValues(alpha: 0.2)),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text('v$_version', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.primary)),
-                  ),
+                  _Pill('v$_version'),
                 ]),
               ),
             ]),
           ),
+
           _section(t('settings.account')),
           _DangerButton(icon: LucideIcons.logOut, label: t('home.logout'), filled: true, onTap: _confirmLogout),
-          _gap,
+          const SizedBox(height: 10),
           _DangerButton(icon: LucideIcons.trash2, label: t('settings.deleteAccount'), onTap: _openDelete),
         ]),
       ),
@@ -620,41 +658,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ]);
   }
 
-  static const _gap = SizedBox(height: 8);
-
   Widget _section(String label) => Padding(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
-        child: Text(label.toUpperCase(),
-            style: TextStyle(color: context.colors.textMuted, fontSize: 12, fontWeight: FontWeight.w500, letterSpacing: 0.5)),
+        padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
+        child: Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            color: context.colors.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            height: 1.2,
+          ),
+        ),
       );
 
-  Widget _arrow(AppColors c, double size) =>
-      Icon(Directionality.of(context) == TextDirection.rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight, size: size, color: c.textMuted);
+  Widget _hairline(AppColors c) => Divider(height: 1, thickness: 1, color: c.border, indent: 66, endIndent: 14);
 }
 
-class _Card extends StatelessWidget {
-  const _Card({required this.child, this.padding = const EdgeInsets.all(16), this.tint = false, this.accent});
+class _Surface extends StatelessWidget {
+  const _Surface({required this.child, this.padding = const EdgeInsets.all(16), this.accent});
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final bool tint;
   final Color? accent;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final a = accent ?? _violet;
+    final light = Theme.of(context).brightness == Brightness.light;
     return Container(
       decoration: BoxDecoration(
-        color: tint ? null : c.bgCard,
-        gradient: tint
-            ? LinearGradient(colors: [
-                Color.alphaBlend(a.withValues(alpha: 0.08), c.bgCard),
-                Color.alphaBlend(a.withValues(alpha: 0.02), c.bgCard),
-              ])
-            : null,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: tint ? a.withValues(alpha: 0.25) : c.border),
-        boxShadow: [BoxShadow(color: c.shadow, blurRadius: 20, offset: const Offset(0, 6))],
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent?.withValues(alpha: 0.28) ?? c.border),
+        boxShadow: [
+          BoxShadow(
+            color: light ? const Color(0x0A0F172A) : c.shadow,
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(color: Colors.transparent, child: Padding(padding: padding, child: child)),
@@ -662,43 +704,70 @@ class _Card extends StatelessWidget {
   }
 }
 
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.icon, required this.title, required this.value, required this.onTap, this.trailing = const [], this.ltrValue = false});
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.title,
+    this.value,
+    this.onTap,
+    this.trailing,
+    this.ltrValue = false,
+    this.showChevron = true,
+    this.iconColor,
+    this.valueColor,
+  });
   final IconData icon;
   final String title;
-  final String value;
-  final VoidCallback onTap;
-  final List<Widget> trailing;
+  final String? value;
+  final VoidCallback? onTap;
+  final Widget? trailing;
   final bool ltrValue;
+  final bool showChevron;
+  final Color? iconColor;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return _Card(
-      tint: true,
-      padding: EdgeInsets.zero,
-      child: InkWell(
-        onTap: onTap,
+    final accent = iconColor ?? c.primary;
+    final chevron = Icon(
+      Directionality.of(context) == TextDirection.rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
+      size: 18,
+      color: c.textMuted,
+    );
+    return InkWell(
+      onTap: onTap,
+      child: Opacity(
+        opacity: onTap == null && trailing == null ? 0.65 : 1,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           child: Row(children: [
             Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(color: _violet.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(AppRadius.sm)),
-              child: Icon(icon, size: 18, color: c.primary),
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 18, color: accent),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                const SizedBox(height: 1),
-                Text(value,
+                Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, height: 1.25, color: c.textPrimary)),
+                if (value != null && value!.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    value!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     textDirection: ltrValue ? TextDirection.ltr : null,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: c.primary)),
+                    style: TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w500, color: valueColor ?? c.textSecondary),
+                  ),
+                ],
               ]),
             ),
-            ...trailing,
+            if (trailing != null) ...[const SizedBox(width: 8), trailing!] else if (showChevron) chevron,
           ]),
         ),
       ),
@@ -706,123 +775,42 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
-class _SquareBtn extends StatelessWidget {
-  const _SquareBtn({required this.onTap, required this.child});
+class _IconChip extends StatelessWidget {
+  const _IconChip({required this.onTap, required this.child});
   final VoidCallback onTap;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _violet.withValues(alpha: 0.15),
-            border: Border.all(color: _violet.withValues(alpha: 0.3)),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-          ),
-          child: child,
-        ),
-      );
-}
-
-class _BigRowCard extends StatelessWidget {
-  const _BigRowCard({required this.icon, required this.title, required this.desc, required this.onTap, this.accent});
-  final IconData icon;
-  final String title;
-  final String desc;
-  final VoidCallback? onTap;
-  final Color? accent;
-
-  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final a = accent ?? _violet;
-    return _Card(
-      tint: true,
-      accent: a,
-      padding: EdgeInsets.zero,
+    return Material(
+      color: c.primarySoft,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        child: Opacity(
-          opacity: onTap == null ? 0.6 : 1,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(color: a.withValues(alpha: accent == null ? 0.2 : 0.25), borderRadius: BorderRadius.circular(AppRadius.sm)),
-                child: Icon(icon, size: 22, color: accent ?? c.primary),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                  const SizedBox(height: 2),
-                  Text(desc, style: TextStyle(fontSize: 13, color: c.textMuted)),
-                ]),
-              ),
-              Icon(Directionality.of(context) == TextDirection.rtl ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
-                  size: 20, color: c.textMuted),
-            ]),
-          ),
-        ),
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(width: 36, height: 36, child: Center(child: child)),
       ),
     );
   }
 }
 
-class _LinkRow extends StatelessWidget {
-  const _LinkRow({required this.onTap, required this.title, this.icon, this.leading, this.desc, this.trailing});
-  final VoidCallback? onTap;
-  final String title;
-  final IconData? icon;
-  final Widget? leading;
-  final String? desc;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return InkWell(
-      onTap: onTap,
-      child: Opacity(
-        opacity: onTap == null ? 0.6 : 1,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            leading ?? Icon(icon, size: 18, color: c.textMuted),
-            const SizedBox(width: 10),
-            Expanded(
-              child: desc == null
-                  ? Text(title, style: TextStyle(fontSize: 14, color: c.textSecondary))
-                  : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(title, style: TextStyle(fontSize: 14, color: c.textSecondary)),
-                      const SizedBox(height: 1),
-                      Text(desc!, style: TextStyle(fontSize: 11, height: 1.35, color: c.textMuted)),
-                    ]),
-            ),
-            ?trailing,
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge(this.label);
+class _Pill extends StatelessWidget {
+  const _Pill(this.label);
   final String label;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: _violet.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(999)),
-        child: Text(label, style: TextStyle(color: context.colors.primary, fontSize: 11, fontWeight: FontWeight.w600)),
-      );
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: c.primarySoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label, style: TextStyle(color: c.primary, fontSize: 12, fontWeight: FontWeight.w700)),
+    );
+  }
 }
 
 /// `.setting-toggle-block` — icon + title + status pill + segmented on/off.
@@ -891,9 +879,8 @@ class _ToggleBlock extends StatelessWidget {
 
     return Opacity(
       opacity: saving ? 0.72 : 1,
-      child: Container(
+      child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.border))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             AnimatedContainer(
@@ -901,7 +888,7 @@ class _ToggleBlock extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: on ? _violet.withValues(alpha: 0.18) : c.danger.withValues(alpha: light ? 0.1 : 0.12),
+                color: on ? c.primary.withValues(alpha: 0.18) : c.danger.withValues(alpha: light ? 0.1 : 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, size: 20, color: on ? c.primary : c.danger),

@@ -62,7 +62,7 @@ function confirmBan(user, ban) {
 }
 
 async function executeBan() {
-  await api.put(`/admin/users/${selectedUser.value.id}/ban`, banAction.value)
+  await api.put(`/admin/users/${selectedUser.value.id}/ban`, { ban: banAction.value })
   banDialog.value = false
   fetchUsers()
 }

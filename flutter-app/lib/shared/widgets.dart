@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -737,6 +738,19 @@ class LoaderOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!show) return const SizedBox.shrink();
     final light = Theme.of(context).brightness == Brightness.light;
+    final veil = ColoredBox(
+      color: light ? const Color(0x4D0F172A) : const Color(0x99000000),
+      child: Center(child: AppLoaderCard(text: text)),
+    );
+    // BackdropFilter blur can blank the surface on Android emulator GL.
+    final content = defaultTargetPlatform == TargetPlatform.android
+        ? veil
+        : ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: veil,
+            ),
+          );
     return Positioned.fill(
       child: AbsorbPointer(
         child: TweenAnimationBuilder<double>(
@@ -744,15 +758,7 @@ class LoaderOverlay extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
           builder: (context, value, child) => Opacity(opacity: value, child: child),
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: ColoredBox(
-                color: light ? const Color(0x4D0F172A) : const Color(0x99000000),
-                child: Center(child: AppLoaderCard(text: text)),
-              ),
-            ),
-          ),
+          child: content,
         ),
       ),
     );

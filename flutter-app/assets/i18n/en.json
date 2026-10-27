@@ -32,7 +32,7 @@
     "like": "LIKE",
     "pass": "NOPE",
     "empty": "No more profiles right now",
-    "emptyHint": "Check back later for new people to meet.",
+    "emptyHint": "After 24 hours, previous profiles return so you can like again.",
     "matchTitle": "It's a match!",
     "matchSubtitle": "You both liked each other. Say hello.",
     "keepSwiping": "Keep browsing",

@@ -192,7 +192,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               const _DiscoverHeader(),
               Expanded(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPad),
+                  padding: EdgeInsets.fromLTRB(10, 0, 10, bottomPad),
                   child: _body(context, state),
                 ),
               ),
@@ -251,94 +251,97 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     return Column(
       children: [
         Expanded(
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (behind != null)
-                Transform.scale(
-                  scale: 0.94,
-                  child: Opacity(
-                    opacity: 0.72,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 18),
-                      child: _CardFace(card: behind),
+          child: LayoutBuilder(builder: (context, box) {
+            // Fill available height; cap width so the card stays portrait and edge-to-edge.
+            const aspect = 0.72; // width / height
+            var h = box.maxHeight;
+            var w = h * aspect;
+            if (w > box.maxWidth) {
+              w = box.maxWidth;
+              h = w / aspect;
+            }
+            return Center(
+              child: SizedBox(
+                width: w,
+                height: h,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (behind != null)
+                      Positioned.fill(
+                        child: Transform.scale(
+                          scale: 0.96,
+                          child: Opacity(
+                            opacity: 0.7,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: _CardFace(card: behind),
+                            ),
+                          ),
+                        ),
+                      ),
+                    GestureDetector(
+                      onPanUpdate: _busy
+                          ? null
+                          : (d) => setState(() {
+                                _drag += d.delta;
+                                _angle = (_drag.dx / 320).clamp(-0.35, 0.35);
+                              }),
+                      onPanEnd: _busy ? null : _onPanEnd,
+                      child: AnimatedContainer(
+                        duration: _busy ? const Duration(milliseconds: 180) : Duration.zero,
+                        transform: Matrix4.translationValues(_drag.dx, _drag.dy, 0)..rotateZ(_angle),
+                        transformAlignment: Alignment.center,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _CardFace(
+                              card: top,
+                              onReport: () => _reportCard(top),
+                              onBlock: () => _blockCard(top),
+                            ),
+                            Positioned(
+                              top: 36,
+                              left: 28,
+                              child: Opacity(
+                                opacity: (-_drag.dx / 120).clamp(0.0, 1.0),
+                                child: _Stamp(label: t('discover.pass'), color: DiscoverTheme.slate),
+                              ),
+                            ),
+                            Positioned(
+                              top: 36,
+                              right: 28,
+                              child: Opacity(
+                                opacity: (_drag.dx / 120).clamp(0.0, 1.0),
+                                child: _Stamp(label: t('discover.like'), color: DiscoverTheme.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              GestureDetector(
-                onPanUpdate: _busy
-                    ? null
-                    : (d) => setState(() {
-                          _drag += d.delta;
-                          _angle = (_drag.dx / 320).clamp(-0.35, 0.35);
-                        }),
-                onPanEnd: _busy ? null : _onPanEnd,
-                child: AnimatedContainer(
-                  duration: _busy ? const Duration(milliseconds: 180) : Duration.zero,
-                  transform: Matrix4.translationValues(_drag.dx, _drag.dy, 0)..rotateZ(_angle),
-                  transformAlignment: Alignment.center,
-                  child: Stack(
-                    children: [
-                      _CardFace(
-                        card: top,
-                        onReport: () => _reportCard(top),
-                        onBlock: () => _blockCard(top),
-                      ),
-                      Positioned(
-                        top: 36,
-                        left: 28,
-                        child: Opacity(
-                          opacity: (-_drag.dx / 120).clamp(0.0, 1.0),
-                          child: _Stamp(label: t('discover.pass'), color: DiscoverTheme.slate),
-                        ),
-                      ),
-                      Positioned(
-                        top: 36,
-                        right: 28,
-                        child: Opacity(
-                          opacity: (_drag.dx / 120).clamp(0.0, 1.0),
-                          child: _Stamp(label: t('discover.like'), color: DiscoverTheme.red),
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          }),
         ),
-        const SizedBox(height: 18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _RoundAction(
-              variant: _ActionVariant.pass,
-              icon: LucideIcons.x,
-              onTap: _busy ? null : () => _act(like: false),
-            ),
-            const SizedBox(width: 22),
-            _UndoAction(
-              enabled: !_busy && state.canUndo,
-              onTap: _busy || !state.canUndo
-                  ? null
-                  : () async {
-                      setState(() => _busy = true);
-                      try {
-                        await ref.read(discoverProvider.notifier).undo();
-                      } catch (_) {
-                        if (mounted) showToast(context, t('common.error'), error: true);
-                      } finally {
-                        if (mounted) setState(() => _busy = false);
-                      }
-                    },
-            ),
-            const SizedBox(width: 22),
-            _RoundAction(
-              variant: _ActionVariant.like,
-              icon: LucideIcons.heart,
-              onTap: _busy ? null : () => _act(like: true),
-            ),
-          ],
+        const SizedBox(height: 10),
+        _DiscoverActionBar(
+          busy: _busy,
+          canUndo: state.canUndo,
+          onPass: () => _act(like: false),
+          onLike: () => _act(like: true),
+          onUndo: () async {
+            setState(() => _busy = true);
+            try {
+              await ref.read(discoverProvider.notifier).undo();
+            } catch (_) {
+              if (mounted) showToast(context, t('common.error'), error: true);
+            } finally {
+              if (mounted) setState(() => _busy = false);
+            }
+          },
         ),
         const SizedBox(height: 4),
       ],
@@ -418,48 +421,13 @@ class _HeaderIconButton extends StatelessWidget {
   }
 }
 
-class _UndoAction extends StatelessWidget {
-  const _UndoAction({required this.enabled, this.onTap});
-  final bool enabled;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: enabled ? 1 : 0.35,
-      child: Material(
-        color: Colors.white,
-        shape: const CircleBorder(),
-        elevation: 0,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: enabled ? () {
-            HapticFeedback.selectionClick();
-            onTap?.call();
-          } : null,
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
-              boxShadow: const [BoxShadow(color: Color(0x140F172A), blurRadius: 12, offset: Offset(0, 6))],
-            ),
-            child: const Icon(LucideIcons.rotateCcw, size: 22, color: Color(0xFFF59E0B)),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _DiscoverHeader extends StatelessWidget {
   const _DiscoverHeader();
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -469,7 +437,7 @@ class _DiscoverHeader extends StatelessWidget {
                 child: Text(
                   t('discover.title'),
                   style: const TextStyle(
-                    fontSize: 28,
+                    fontSize: 26,
                     fontWeight: FontWeight.w800,
                     color: DiscoverTheme.ink,
                     height: 1.15,
@@ -703,53 +671,149 @@ class _Stamp extends StatelessWidget {
   }
 }
 
-enum _ActionVariant { like, pass }
+/// Clean action dock — equal rhythm, no Material ink boxes.
+class _DiscoverActionBar extends StatelessWidget {
+  const _DiscoverActionBar({
+    required this.busy,
+    required this.canUndo,
+    required this.onPass,
+    required this.onLike,
+    required this.onUndo,
+  });
 
-class _RoundAction extends StatelessWidget {
-  const _RoundAction({required this.variant, required this.icon, this.onTap});
-  final _ActionVariant variant;
-  final IconData icon;
-  final VoidCallback? onTap;
+  final bool busy;
+  final bool canUndo;
+  final VoidCallback onPass;
+  final VoidCallback onLike;
+  final VoidCallback onUndo;
 
   @override
   Widget build(BuildContext context) {
-    final isLike = variant == _ActionVariant.like;
-    final size = isLike ? 76.0 : 62.0;
-    final iconSize = isLike ? 34.0 : 28.0;
-
-    final child = SizedBox(
-      width: size,
-      height: size,
-      child: Icon(
-        icon,
-        size: iconSize,
-        color: isLike ? Colors.white : DiscoverTheme.slate,
-        fill: isLike ? 1.0 : 0.0,
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
+          boxShadow: const [
+            BoxShadow(color: Color(0x14E11D48), blurRadius: 20, offset: Offset(0, 8)),
+            BoxShadow(color: Color(0x0A0F172A), blurRadius: 8, offset: Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _DockButton(
+              kind: _DockKind.pass,
+              enabled: !busy,
+              onTap: onPass,
+            ),
+            const SizedBox(width: 14),
+            _DockButton(
+              kind: _DockKind.undo,
+              enabled: !busy && canUndo,
+              onTap: onUndo,
+            ),
+            const SizedBox(width: 14),
+            _DockButton(
+              kind: _DockKind.like,
+              enabled: !busy,
+              onTap: onLike,
+            ),
+          ],
+        ),
       ),
     );
+  }
+}
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
+enum _DockKind { pass, undo, like }
+
+class _DockButton extends StatefulWidget {
+  const _DockButton({required this.kind, required this.enabled, required this.onTap});
+  final _DockKind kind;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  State<_DockButton> createState() => _DockButtonState();
+}
+
+class _DockButtonState extends State<_DockButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final kind = widget.kind;
+    final enabled = widget.enabled;
+    final isLike = kind == _DockKind.like;
+    final isUndo = kind == _DockKind.undo;
+    final size = isUndo ? 48.0 : 60.0;
+    final iconSize = isLike ? 28.0 : (isUndo ? 20.0 : 26.0);
+
+    final icon = switch (kind) {
+      _DockKind.pass => LucideIcons.x,
+      _DockKind.undo => LucideIcons.rotateCcw,
+      _DockKind.like => LucideIcons.heart,
+    };
+
+    final Color iconColor;
+    final Decoration decoration;
+    if (isLike) {
+      iconColor = Colors.white;
+      decoration = BoxDecoration(
         shape: BoxShape.circle,
-        gradient: isLike ? DiscoverTheme.ctaGradient : null,
-        color: isLike ? null : Colors.white,
-        boxShadow: isLike
-            ? DiscoverTheme.likeShadow
-            : const [BoxShadow(color: Color(0x1A0F172A), blurRadius: 16, offset: Offset(0, 8))],
-        border: isLike ? null : Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap == null
-              ? null
-              : () {
-                  HapticFeedback.selectionClick();
-                  onTap!();
-                },
-          child: child,
+        gradient: DiscoverTheme.ctaGradient,
+        boxShadow: enabled
+            ? const [BoxShadow(color: Color(0x55E11D48), blurRadius: 16, offset: Offset(0, 6))]
+            : null,
+      );
+    } else if (isUndo) {
+      const amber = Color(0xFFF59E0B);
+      iconColor = enabled ? amber : const Color(0xFFCBD5E1);
+      decoration = BoxDecoration(
+        shape: BoxShape.circle,
+        color: enabled ? const Color(0xFFFFFBEB) : const Color(0xFFF1F5F9),
+        border: Border.all(color: enabled ? amber.withValues(alpha: 0.55) : const Color(0xFFE2E8F0), width: 1.5),
+      );
+    } else {
+      iconColor = enabled ? DiscoverTheme.slate : const Color(0xFFCBD5E1);
+      decoration = BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+        boxShadow: enabled
+            ? const [BoxShadow(color: Color(0x140F172A), blurRadius: 10, offset: Offset(0, 4))]
+            : null,
+      );
+    }
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 160),
+      opacity: enabled ? 1 : 0.42,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+        onTapUp: enabled
+            ? (_) {
+                setState(() => _down = false);
+                HapticFeedback.selectionClick();
+                widget.onTap();
+              }
+            : null,
+        onTapCancel: enabled ? () => setState(() => _down = false) : null,
+        child: AnimatedScale(
+          scale: _down && enabled ? 0.9 : 1,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+          child: Container(
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: decoration,
+            child: Icon(icon, size: iconSize, color: iconColor, fill: isLike ? 1 : 0),
+          ),
         ),
       ),
     );
@@ -831,26 +895,25 @@ class _CardFaceState extends State<_CardFace> {
         color: c.bgElevated,
         borderRadius: BorderRadius.circular(DiscoverTheme.cardRadius),
         clipBehavior: Clip.antiAlias,
-        child: AspectRatio(
-          aspectRatio: 0.70,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (photos.isEmpty)
-                _fallback(name)
-              else
-                PageView.builder(
-                  controller: _page,
-                  itemCount: photos.length,
-                  onPageChanged: (i) => setState(() => _photoIndex = i),
-                  itemBuilder: (_, i) => CachedNetworkImage(
-                    imageUrl: photos[i],
-                    fit: BoxFit.cover,
-                    errorWidget: (_, _, _) => _fallback(name),
-                  ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (photos.isEmpty)
+              _fallback(name)
+            else
+              PageView.builder(
+                controller: _page,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: photos.length,
+                onPageChanged: (i) => setState(() => _photoIndex = i),
+                itemBuilder: (_, i) => CachedNetworkImage(
+                  imageUrl: photos[i],
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) => _fallback(name),
                 ),
-              // Tap zones to flip photos without conflicting with horizontal swipe of the card.
-              if (photos.length > 1) ...[
+              ),
+            // Tap left/right halves to flip photos (Tinder-style).
+            if (photos.length > 1) ...[
                 Positioned.fill(
                   child: Row(children: [
                     Expanded(
@@ -988,8 +1051,7 @@ class _CardFaceState extends State<_CardFace> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _fallback(String name) => Container(

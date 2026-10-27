@@ -91,6 +91,8 @@ public record AdminBroadcastNotificationDto(Guid Id, string Title, string Body, 
 
 public record SetFeaturedRequest(bool Featured);
 
+public record BanUserRequest(bool Ban);
+
 public record AdminSetPasswordRequest(string Password);
 
 public record DeleteUsersRequest(IEnumerable<Guid> Ids);

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -148,6 +149,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   }
 
   Widget _orb({double? left, double? right, double? top, double? bottom, required double size, required double scale, required Color color}) {
+    // Heavy ImageFiltered blur + Impeller OpenGLES has painted black surfaces on emulators.
+    final soft = defaultTargetPlatform == TargetPlatform.android;
     return Positioned(
       left: left,
       right: right,
@@ -155,10 +158,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       bottom: bottom,
       child: Transform.scale(
         scale: scale,
-        child: ImageFiltered(
-          imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60, tileMode: TileMode.decal),
-          child: Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        ),
+        child: soft
+            ? Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+                ),
+              )
+            : ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60, tileMode: TileMode.decal),
+                child: Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+              ),
       ),
     );
   }

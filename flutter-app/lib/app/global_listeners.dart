@@ -51,17 +51,20 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
   @override
   void initState() {
     super.initState();
-    unawaited(ConversationCache.removeLegacy());
-    _bindConversationHub();
-    _disposers.add(Hubs.chat.on('VideoCallEnded', (a) {
-      if (a.length < 3) return;
-      terminateMatchingCall(ref, '${a[1]}', a[2]?.toString(), isConversation: false);
-    }));
-    _bindStoryHub();
-    _disposers.addAll(bindMatchingHub(ref));
-    _bindPush();
-    _bindIncomingNative();
+    // Defer hub/push wiring until after the first frame — sync plugin work here
+    // was painting a black surface on Android emulators before splash could draw.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ConversationCache.removeLegacy());
+      _bindConversationHub();
+      _disposers.add(Hubs.chat.on('VideoCallEnded', (a) {
+        if (a.length < 3) return;
+        terminateMatchingCall(ref, '${a[1]}', a[2]?.toString(), isConversation: false);
+      }));
+      _bindStoryHub();
+      _disposers.addAll(bindMatchingHub(ref));
+      _bindPush();
+      _bindIncomingNative();
       _syncHubs();
       _initExistingSession();
       DeepLinks.init(ref);

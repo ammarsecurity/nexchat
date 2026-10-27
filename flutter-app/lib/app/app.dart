@@ -185,17 +185,15 @@ class _NexChatAppState extends ConsumerState<NexChatApp> with WidgetsBindingObse
         child: GlobalListeners(
           child: Stack(
             children: [
+              // Keep the route mounted under overlays so we never flash an empty/black surface.
+              Padding(
+                padding: EdgeInsets.only(top: (!_online && loggedIn) ? OfflineBanner.contentHeight : 0),
+                child: child ?? const ColoredBox(color: Color(0xFFF4F7FE)),
+              ),
               if (!_online && !loggedIn)
-                Positioned.fill(child: NoConnectionView(onRetry: _retryConnection))
-              else ...[
-                // Banner already includes status-bar SafeArea; only reserve the content strip
-                // so screens that also use MediaQuery.padding.top don't get a double gap.
-                Padding(
-                  padding: EdgeInsets.only(top: !_online ? OfflineBanner.contentHeight : 0),
-                  child: child ?? const SizedBox.shrink(),
-                ),
-                if (!_online) Positioned(top: 0, left: 0, right: 0, child: OfflineBanner(onRetry: _retryConnection)),
-              ],
+                Positioned.fill(child: NoConnectionView(onRetry: _retryConnection)),
+              if (!_online && loggedIn)
+                Positioned(top: 0, left: 0, right: 0, child: OfflineBanner(onRetry: _retryConnection)),
               if (requiredUpdate != null) UpdateRequiredModal(downloadUrl: requiredUpdate.downloadUrl),
               const AppToastHost(),
               ValueListenableBuilder<bool>(

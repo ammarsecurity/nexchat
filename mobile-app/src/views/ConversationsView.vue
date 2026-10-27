@@ -644,12 +644,12 @@ async function markAllRead() {
 
 .conv-main-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   margin: 0 var(--spacing) 12px;
   padding: 4px;
-  background: var(--bg-elevated);
-  border-radius: 16px;
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: 18px;
+  border: none;
   flex-shrink: 0;
 }
 
@@ -662,23 +662,24 @@ async function markAllRead() {
   justify-content: center;
   gap: 3px;
   min-height: 48px;
-  padding: 6px 4px;
+  padding: 7px 4px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-family: 'Cairo', sans-serif;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
 }
 
 .conv-main-tab--active {
-  background: var(--bg-card);
-  color: var(--primary);
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--primary) 40%, transparent);
 }
 
 .conv-main-tab__icon-wrap {
@@ -708,7 +709,7 @@ async function markAllRead() {
 }
 
 .conv-main-tab--active .conv-main-tab__badge {
-  border-color: var(--bg-card);
+  border-color: #3B82F6;
 }
 
 .conv-main-tab__label {

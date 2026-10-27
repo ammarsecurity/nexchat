@@ -24,6 +24,10 @@ public class DiscoverController(
     NotificationOutboxService notificationOutbox) : ControllerBase
 {
     private const int FeedLimit = 20;
+    /// <summary>Passed/liked (unmatched) profiles re-enter the feed after this window so it does not stay empty.</summary>
+    private const int SwipeCooldownHours = 24;
+
+    private static DateTime SwipeCooldownCutoffUtc() => DateTime.UtcNow.AddHours(-SwipeCooldownHours);
 
     private static DateOnly AdultBirthCutoff() =>
         DateOnly.FromDateTime(IraqTime.Now.Date.AddYears(-18));
@@ -69,6 +73,9 @@ public class DiscoverController(
         var youngestBirth = today.AddYears(-ageMin);       // age >= ageMin → BirthDate <= youngestBirth
         var oldestBirthExclusive = today.AddYears(-(ageMax + 1)); // age <= ageMax → BirthDate > oldestBirthExclusive
 
+        // Hide only recent swipes (24h). Older pass/like (without a match) can reappear.
+        var swipeFreshAfter = SwipeCooldownCutoffUtc();
+
         // Subqueries avoid huge NOT IN parameter lists for heavy swipers.
         var query = db.Users.AsNoTracking()
             .Where(u =>
@@ -85,7 +92,10 @@ public class DiscoverController(
                 !db.UserBlocks.Any(b =>
                     (b.BlockerId == meId && b.BlockedUserId == u.Id) ||
                     (b.BlockerId == u.Id && b.BlockedUserId == meId)) &&
-                !db.UserSwipes.Any(s => s.FromUserId == meId && s.ToUserId == u.Id) &&
+                !db.UserSwipes.Any(s =>
+                    s.FromUserId == meId &&
+                    s.ToUserId == u.Id &&
+                    s.CreatedAt >= swipeFreshAfter) &&
                 !db.UserMatches.Any(m =>
                     (m.UserAId == meId && m.UserBId == u.Id) ||
                     (m.UserAId == u.Id && m.UserBId == meId)));
@@ -180,17 +190,28 @@ public class DiscoverController(
             });
         }
 
+        var swipeFreshAfter = SwipeCooldownCutoffUtc();
         var existing = await db.UserSwipes
             .FirstOrDefaultAsync(s => s.FromUserId == CurrentUserId && s.ToUserId == req.TargetUserId);
         if (existing != null)
-            return Ok(new { matched = false, alreadySwiped = true, conversationId = (Guid?)null });
-
-        db.UserSwipes.Add(new UserSwipe
         {
-            FromUserId = CurrentUserId,
-            ToUserId = req.TargetUserId,
-            Direction = direction
-        });
+            // Still within cooldown — ignore duplicate swipe.
+            if (existing.CreatedAt >= swipeFreshAfter)
+                return Ok(new { matched = false, alreadySwiped = true, conversationId = (Guid?)null });
+
+            // Cooldown expired: refresh direction + timestamp (unique From/To row).
+            existing.Direction = direction;
+            existing.CreatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            db.UserSwipes.Add(new UserSwipe
+            {
+                FromUserId = CurrentUserId,
+                ToUserId = req.TargetUserId,
+                Direction = direction
+            });
+        }
 
         // Commit swipe first so a concurrent mutual like can see this row (avoids permanent no-match).
         try

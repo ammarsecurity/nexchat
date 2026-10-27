@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,17 +29,6 @@ import 'contacts_panel.dart';
 import 'conversations_list_controller.dart';
 import 'hidden_chats_vault.dart';
 import 'message_requests_panel.dart';
-
-/// Soft slate palette for conversations light mode (matches short-films hub/series).
-abstract final class _ConvLight {
-  static const sheet = Color(0xFFE6EBF3);
-  static const card = Color(0xFFEEF2F8);
-  static const ink = Color(0xFF0F172A);
-  static const secondary = Color(0xFF64748B);
-  static const muted = Color(0xFF94A3B8);
-  static const hairline = Color(0x1F0F172A);
-  static const shadow = Color(0x14000000);
-}
 
 /// views/ConversationsView.vue (mobile layout of MessagingLayout).
 class ConversationsScreen extends ConsumerStatefulWidget {
@@ -305,14 +293,11 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       }
     });
     final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
     final pending = ref.watch(pendingRequestsProvider);
     final notifCount = ref.watch(unreadNotificationsProvider);
-    final glassBg = light ? _ConvLight.card : null;
-    final glassBorder = light ? _ConvLight.hairline : null;
 
     return Scaffold(
-      backgroundColor: light ? _ConvLight.sheet : c.bgPrimary,
+      backgroundColor: c.bgPrimary,
       body: Stack(children: [
         Column(children: [
           AppTabHeader(
@@ -322,16 +307,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 GlassIconButton(
                   icon: LucideIcons.contact,
                   color: c.primary,
-                  backgroundColor: glassBg,
-                  borderColor: glassBorder,
                   onTap: () => _contactsKey.currentState?.openPhoneBookSync(),
                 ),
                 const SizedBox(width: 8),
                 GlassIconButton(
                   icon: LucideIcons.userPlus,
                   color: c.primary,
-                  backgroundColor: glassBg,
-                  borderColor: glassBorder,
                   onTap: () => _contactsKey.currentState?.openAddModal(),
                 ),
                 const SizedBox(width: 8),
@@ -340,17 +321,14 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 GlassIconButton(
                   icon: LucideIcons.phone,
                   color: c.primary,
-                  backgroundColor: glassBg,
-                  borderColor: glassBorder,
                   onTap: () => context.push('/calls'),
                 ),
                 const SizedBox(width: 8),
               ],
               GlassIconButton(
                 icon: LucideIcons.bell,
+                color: c.primary,
                 badgeDot: notifCount > 0,
-                backgroundColor: glassBg,
-                borderColor: glassBorder,
                 onTap: () => context.push('/notifications'),
               ),
             ],
@@ -536,17 +514,23 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: light ? _ConvLight.card : c.bgCard,
+                  color: c.bgCard,
                   borderRadius: BorderRadius.circular(AppRadius.md),
-                  border: light ? Border.all(color: _ConvLight.hairline) : null,
-                  boxShadow: [BoxShadow(color: light ? _ConvLight.shadow : c.shadow, blurRadius: 6)],
+                  border: Border.all(color: c.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: light ? const Color(0x0A0F172A) : c.shadow,
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Text(
                   label,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: light ? _ConvLight.ink : c.textPrimary,
+                    color: c.textPrimary,
                   ),
                 ),
               ),
@@ -595,12 +579,16 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: _fabOpen ? (light ? _ConvLight.card : c.bgCard) : c.primary,
+              color: _fabOpen ? c.bgCard : c.primary,
               shape: BoxShape.circle,
-              border: _fabOpen && light ? Border.all(color: _ConvLight.hairline) : null,
+              border: _fabOpen ? Border.all(color: c.border) : null,
               boxShadow: [
                 _fabOpen
-                    ? BoxShadow(color: light ? _ConvLight.shadow : const Color(0x2E000000), blurRadius: 12, offset: const Offset(0, 2))
+                    ? BoxShadow(
+                        color: light ? const Color(0x0A0F172A) : c.shadow,
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      )
                     : BoxShadow(
                         color: Color(light ? 0x403B82F6 : 0x663B82F6),
                         blurRadius: light ? 14 : 20,
@@ -611,7 +599,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             child: Icon(
               _fabOpen ? LucideIcons.x : LucideIcons.messageSquarePlus,
               size: 24,
-              color: _fabOpen ? (light ? _ConvLight.ink : c.textPrimary) : Colors.white,
+              color: _fabOpen ? c.textPrimary : Colors.white,
             ),
           ),
         ),
@@ -647,9 +635,9 @@ class _StoriesHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      margin: const EdgeInsets.fromLTRB(16, 2, 16, 12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -661,8 +649,8 @@ class _StoriesHeroCard extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: Color(light ? 0x281E3A8A : 0x472563EB),
-            blurRadius: light ? 16 : 24,
-            offset: const Offset(0, 6),
+            blurRadius: light ? 18 : 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -717,26 +705,25 @@ class _StoriesHeroCard extends StatelessWidget {
                 ),
               ),
             Container(
-              height: 40,
-              padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
+              height: 42,
+              padding: const EdgeInsetsDirectional.only(start: 14, end: 4),
               decoration: BoxDecoration(
-                color: light ? const Color(0xFFF1F5F9) : Colors.white,
-                borderRadius: BorderRadius.circular(AppRadius.xl),
-                border: light ? Border.all(color: const Color(0x140F172A)) : null,
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
                 boxShadow: const [BoxShadow(color: Color(0x140F172A), blurRadius: 12, offset: Offset(0, 3))],
               ),
               child: Row(children: [
-                Icon(LucideIcons.search, size: 18, color: light ? _ConvLight.muted : c.textMuted),
+                Icon(LucideIcons.search, size: 18, color: c.textMuted),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: search,
                     onChanged: onSearch,
                     obscureText: false,
-                    style: TextStyle(fontSize: 13, color: light ? _ConvLight.ink : const Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 13, color: c.textPrimary),
                     decoration: InputDecoration(
                       hintText: t('conversations.searchRecent'),
-                      hintStyle: TextStyle(color: light ? _ConvLight.muted : c.textMuted, fontSize: 13),
+                      hintStyle: TextStyle(color: c.textMuted, fontSize: 13),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
@@ -748,7 +735,7 @@ class _StoriesHeroCard extends StatelessWidget {
                 Opacity(
                   opacity: markingAll || totalUnread <= 0 ? 0.4 : 1,
                   child: Material(
-                    color: light ? const Color(0x1A2563EB) : c.primarySoft,
+                    color: c.primarySoft,
                     borderRadius: BorderRadius.circular(12),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
@@ -863,14 +850,15 @@ class _MainTabs extends StatelessWidget {
     final c = context.colors;
     final light = Theme.of(context).brightness == Brightness.light;
     const ids = ['chats', 'contacts', 'requests'];
-    const gap = 6.0;
+    const gap = 4.0;
     final index = ids.indexOf(section).clamp(0, ids.length - 1);
-    final track = light ? const Color(0x140F172A) : c.bgElevated;
-    final pill = light ? Colors.white : c.bgCard;
-    final muted = light ? _ConvLight.muted : c.textMuted;
+    final track = light ? c.primarySoft : c.bgElevated;
+    final muted = c.textMuted;
+    final activeFg = Colors.white;
 
     Widget tab(String id, IconData icon, String label, [int badge = 0]) {
       final active = section == id;
+      final fg = active ? activeFg : muted;
       return Expanded(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -878,10 +866,10 @@ class _MainTabs extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Stack(clipBehavior: Clip.none, children: [
-                  Icon(icon, size: 18, color: active ? c.primary : muted),
+                  Icon(icon, size: 18, color: fg),
                   if (badge > 0)
                     PositionedDirectional(
                       top: -5,
@@ -894,7 +882,7 @@ class _MainTabs extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFEF4444),
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: active ? pill : track, width: 2),
+                          border: Border.all(color: active ? c.primary : track, width: 2),
                         ),
                         child: Text(badge > 99 ? '99+' : '$badge',
                             style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700, height: 1)),
@@ -906,7 +894,12 @@ class _MainTabs extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? c.primary : muted, height: 1.2),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                    color: fg,
+                    height: 1.2,
+                  ),
                 ),
               ]),
             ),
@@ -920,14 +913,13 @@ class _MainTabs extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: track,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: light ? _ConvLight.hairline : c.border),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: LayoutBuilder(builder: (context, box) {
         final tabW = (box.maxWidth - gap * (ids.length - 1)) / ids.length;
         return Stack(clipBehavior: Clip.none, children: [
           AnimatedPositionedDirectional(
-            duration: const Duration(milliseconds: 220),
+            duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
             start: index * (tabW + gap),
             width: tabW,
@@ -935,13 +927,13 @@ class _MainTabs extends StatelessWidget {
             bottom: 0,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: pill,
-                borderRadius: BorderRadius.circular(12),
+                gradient: AppColors.msgMineGradient,
+                borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: light ? _ConvLight.shadow : c.shadow,
-                    blurRadius: light ? 8 : 6,
-                    offset: light ? const Offset(0, 2) : Offset.zero,
+                    color: Color(light ? 0x403B82F6 : 0x593B82F6),
+                    blurRadius: light ? 12 : 14,
+                    offset: const Offset(0, 3),
                   ),
                 ],
               ),
@@ -981,9 +973,9 @@ class _FilterChip extends StatelessWidget {
           height: 38,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: active ? c.primary : (light ? _ConvLight.card : c.bgCard),
+            color: active ? c.primary : c.bgCard,
             borderRadius: BorderRadius.circular(999),
-            border: active ? null : Border.all(color: light ? _ConvLight.hairline : c.border),
+            border: active ? null : Border.all(color: c.border),
             boxShadow: [
               if (active)
                 BoxShadow(
@@ -991,8 +983,12 @@ class _FilterChip extends StatelessWidget {
                   blurRadius: light ? 10 : 14,
                   offset: const Offset(0, 3),
                 )
-              else if (!light)
-                BoxShadow(color: c.shadow, blurRadius: 4),
+              else
+                BoxShadow(
+                  color: light ? const Color(0x080F172A) : c.shadow,
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
             ],
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1002,7 +998,7 @@ class _FilterChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: active ? Colors.white : (light ? _ConvLight.secondary : c.textSecondary),
+                color: active ? Colors.white : c.textSecondary,
               ),
             ),
             if (badge > 0) ...[
@@ -1013,7 +1009,7 @@ class _FilterChip extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: active ? Colors.white.withValues(alpha: 0.22) : (light ? const Color(0x1A2563EB) : c.primarySoft),
+                  color: active ? Colors.white.withValues(alpha: 0.22) : c.primarySoft,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(badge > 99 ? '99+' : '$badge',
@@ -1035,7 +1031,6 @@ class _SectionHead extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final light = Theme.of(context).brightness == Brightness.light;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 14, 4, 10),
       child: Row(children: [
@@ -1046,7 +1041,7 @@ class _SectionHead extends StatelessWidget {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w800,
-            color: light ? _ConvLight.ink : c.textPrimary,
+            color: c.textPrimary,
           ),
         ),
       ]),
@@ -1092,13 +1087,17 @@ class ConversationTile extends ConsumerWidget {
     final hasImage = avatar != null && (avatar.startsWith('http') || avatar.startsWith('/'));
     final hasEmoji = avatar != null && avatar.trim().isNotEmpty && !hasImage;
     final systemBorder = isGroup || isSupport || isOfficial;
-    final ink = light ? _ConvLight.ink : c.textPrimary;
-    final secondary = light ? _ConvLight.secondary : c.textSecondary;
-    final muted = light ? _ConvLight.muted : c.textMuted;
-    final hairline = light ? _ConvLight.hairline : c.border;
-    final tileBg = active
-        ? (light ? const Color(0xFFE2E8F0) : c.bgCardHover)
-        : (light ? _ConvLight.card : c.bgCard);
+    final tileBg = active ? c.bgCardHover : c.bgCard;
+
+    Widget badge(String label, {Color? tint}) => Container(
+          margin: const EdgeInsetsDirectional.only(start: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: tint ?? c.primarySoft,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary)),
+        );
 
     Widget avatarWidget;
     if (isOfficial && !hasImage && !hasEmoji) {
@@ -1107,8 +1106,8 @@ class ConversationTile extends ConsumerWidget {
         height: 50,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0x332E86FB),
-          border: Border.all(color: hairline),
+          color: c.primarySoft,
+          border: Border.all(color: c.border),
         ),
         alignment: Alignment.center,
         child: Icon(LucideIcons.megaphone, size: 20, color: c.primary),
@@ -1119,8 +1118,8 @@ class ConversationTile extends ConsumerWidget {
         height: 50,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0x332E86FB),
-          border: Border.all(color: hairline),
+          color: c.primarySoft,
+          border: Border.all(color: c.border),
         ),
         alignment: Alignment.center,
         child: Icon(LucideIcons.headphones, size: 20, color: c.primary),
@@ -1131,8 +1130,8 @@ class ConversationTile extends ConsumerWidget {
         height: 50,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0x336C63FF),
-          border: Border.all(color: hairline),
+          color: const Color(0x266C63FF),
+          border: Border.all(color: c.border),
         ),
         alignment: Alignment.center,
         child: Icon(LucideIcons.users, size: 16, color: c.primary),
@@ -1142,116 +1141,116 @@ class ConversationTile extends ConsumerWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: tileBg,
-        clipBehavior: Clip.antiAlias,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          side: BorderSide(color: light ? hairline : c.border.withValues(alpha: 0.55)),
-        ),
-        child: InkWell(
-          onTap: () => _open(context, '/conversation/${conv.str('id')}'),
-          onLongPress: () => _open(context, '/conversations/${conv.str('id')}/options'),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 72),
-            padding: EdgeInsetsDirectional.fromSTEB(systemBorder ? 11 : 14, 12, 14, 12),
-            decoration: BoxDecoration(
-              border: systemBorder ? BorderDirectional(start: BorderSide(color: c.primary, width: 3)) : null,
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: light ? const Color(0x0A0F172A) : c.shadow,
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
-            child: Row(children: [
-              avatarWidget,
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Expanded(
-                      child: Row(children: [
-                        Flexible(
-                          child: Text(name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 16, height: 1.2, fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600, color: ink)),
-                        ),
-                        if (isSupport || isOfficial) ...[
-                          const SizedBox(width: 4),
-                          Icon(Icons.verified, size: 16, color: c.primary),
-                        ],
-                      ]),
-                    ),
-                    Text(formatRelative(conv.date('lastMessageAt')), style: TextStyle(fontSize: 11, color: muted)),
-                  ]),
-                  const SizedBox(height: 2),
-                  Row(children: [
-                    Expanded(
-                      child: Text(_preview(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 13,
-                              height: 1.35,
-                              color: secondary,
-                              fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.w400)),
-                    ),
-                    if (isOfficial)
-                      Container(
-                        margin: const EdgeInsetsDirectional.only(start: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                        decoration: BoxDecoration(color: const Color(0x262E86FB), borderRadius: BorderRadius.circular(4)),
-                        child: Text(t('conversations.officialBadge'), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary)),
-                      )
-                    else if (isSupport)
-                      Container(
-                        margin: const EdgeInsetsDirectional.only(start: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                        decoration: BoxDecoration(color: const Color(0x262E86FB), borderRadius: BorderRadius.circular(4)),
-                        child: Text(t('settings.supportChat'), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary)),
-                      )
-                    else if (isGroup)
-                      Container(
-                        margin: const EdgeInsetsDirectional.only(start: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                        decoration: BoxDecoration(color: const Color(0x266C63FF), borderRadius: BorderRadius.circular(4)),
-                        child: Text(t('groups.groupLabel'), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary)),
-                      ),
-                    if (unread > 0)
-                      Container(
-                        margin: const EdgeInsetsDirectional.only(start: 6),
-                        constraints: const BoxConstraints(minWidth: 20),
-                        height: 20,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: c.primary,
-                          borderRadius: BorderRadius.circular(999),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(light ? 0x333B82F6 : 0x4D3B82F6),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Text(unread > 99 ? '99+' : '$unread',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, height: 1)),
-                      ),
-                    if (conv.s('partnerId') != null || conv.b('isGroup'))
-                      SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _open(context, '/conversations/${conv.str('id')}/options'),
-                          icon: Icon(LucideIcons.ellipsisVertical, size: 16, color: muted),
-                        ),
-                      ),
-                  ]),
-                ]),
+          ],
+        ),
+        child: Material(
+          color: tileBg,
+          clipBehavior: Clip.antiAlias,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: c.border),
+          ),
+          child: InkWell(
+            onTap: () => _open(context, '/conversation/${conv.str('id')}'),
+            onLongPress: () => _open(context, '/conversations/${conv.str('id')}/options'),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 76),
+              padding: EdgeInsetsDirectional.fromSTEB(systemBorder ? 11 : 14, 12, 10, 12),
+              decoration: BoxDecoration(
+                border: systemBorder ? BorderDirectional(start: BorderSide(color: c.primary, width: 3)) : null,
               ),
-            ]),
+              child: Row(children: [
+                avatarWidget,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Expanded(
+                        child: Row(children: [
+                          Flexible(
+                            child: Text(name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    height: 1.2,
+                                    fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w700,
+                                    color: c.textPrimary)),
+                          ),
+                          if (isSupport || isOfficial) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.verified, size: 16, color: c.primary),
+                          ],
+                        ]),
+                      ),
+                      Text(formatRelative(conv.date('lastMessageAt')), style: TextStyle(fontSize: 11, color: c.textMuted)),
+                    ]),
+                    const SizedBox(height: 3),
+                    Row(children: [
+                      Expanded(
+                        child: Text(_preview(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 13,
+                                height: 1.35,
+                                color: c.textSecondary,
+                                fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.w400)),
+                      ),
+                      if (isOfficial)
+                        badge(t('conversations.officialBadge'))
+                      else if (isSupport)
+                        badge(t('settings.supportChat'), tint: const Color(0x1F8B5CF6))
+                      else if (isGroup)
+                        badge(t('groups.groupLabel'), tint: const Color(0x266C63FF)),
+                      if (unread > 0)
+                        Container(
+                          margin: const EdgeInsetsDirectional.only(start: 6),
+                          constraints: const BoxConstraints(minWidth: 20),
+                          height: 20,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: c.primary,
+                            borderRadius: BorderRadius.circular(999),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(light ? 0x333B82F6 : 0x4D3B82F6),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(unread > 99 ? '99+' : '$unread',
+                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, height: 1)),
+                        ),
+                      if (conv.s('partnerId') != null || conv.b('isGroup'))
+                        SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _open(context, '/conversations/${conv.str('id')}/options'),
+                            icon: Icon(LucideIcons.ellipsisVertical, size: 16, color: c.textMuted),
+                          ),
+                        ),
+                    ]),
+                  ]),
+                ),
+              ]),
+            ),
           ),
         ),
       ),
@@ -1279,8 +1278,7 @@ class _ListSkeletonState extends State<_ListSkeleton> with SingleTickerProviderS
   Widget build(BuildContext context) {
     final c = context.colors;
     final light = Theme.of(context).brightness == Brightness.light;
-    final bone = light ? const Color(0xFFDDE3EE) : c.bgElevated;
-    final card = light ? _ConvLight.card : c.bgCard;
+    final bone = light ? c.bgSecondary : c.bgElevated;
     return FadeTransition(
       opacity: Tween(begin: 0.45, end: 1.0).animate(_ctrl),
       child: Padding(
@@ -1294,13 +1292,20 @@ class _ListSkeletonState extends State<_ListSkeleton> with SingleTickerProviderS
           ),
           for (var i = 0; i < 7; i++)
             Container(
-              height: 72,
-              margin: const EdgeInsets.only(bottom: 8),
+              height: 76,
+              margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                border: light ? Border.all(color: _ConvLight.hairline) : null,
+                color: c.bgCard,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: c.border),
+                boxShadow: [
+                  BoxShadow(
+                    color: light ? const Color(0x0A0F172A) : c.shadow,
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
               ),
               child: Row(children: [
                 Container(width: 48, height: 48, decoration: BoxDecoration(color: bone, shape: BoxShape.circle)),

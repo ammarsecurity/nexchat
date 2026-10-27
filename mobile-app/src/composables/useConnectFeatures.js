@@ -3,6 +3,7 @@ import api from '../services/api'
 import {
   getRandomChatEnabled,
   getCodeConnectFeaturesEnabled,
+  getDiscoverSwipeEnabled,
   getConnectHubEnabled,
   getMessagingOnlyMode,
   resetConnectFeaturesCache
@@ -10,15 +11,22 @@ import {
 
 const randomChatEnabled = ref(false)
 const codeConnectEnabled = ref(false)
+const discoverSwipeEnabled = ref(false)
 const loaded = ref(false)
 let loadPromise = null
 
 export function useConnectFeatures() {
   const messagingOnlyMode = computed(
-    () => loaded.value && !randomChatEnabled.value && !codeConnectEnabled.value
+    () =>
+      loaded.value &&
+      !randomChatEnabled.value &&
+      !codeConnectEnabled.value &&
+      !discoverSwipeEnabled.value
   )
   const connectHubEnabled = computed(
-    () => loaded.value && (randomChatEnabled.value || codeConnectEnabled.value)
+    () =>
+      loaded.value &&
+      (randomChatEnabled.value || codeConnectEnabled.value || discoverSwipeEnabled.value)
   )
 
   async function loadConnectFeatures() {
@@ -26,6 +34,7 @@ export function useConnectFeatures() {
       return {
         randomChatEnabled: randomChatEnabled.value,
         codeConnectEnabled: codeConnectEnabled.value,
+        discoverSwipeEnabled: discoverSwipeEnabled.value,
         messagingOnlyMode: messagingOnlyMode.value,
         connectHubEnabled: connectHubEnabled.value
       }
@@ -33,16 +42,19 @@ export function useConnectFeatures() {
     if (!loadPromise) {
       loadPromise = Promise.all([
         getRandomChatEnabled(api),
-        getCodeConnectFeaturesEnabled(api)
-      ]).then(([random, code]) => {
+        getCodeConnectFeaturesEnabled(api),
+        getDiscoverSwipeEnabled(api)
+      ]).then(([random, code, discover]) => {
         randomChatEnabled.value = random
         codeConnectEnabled.value = code
+        discoverSwipeEnabled.value = discover
         loaded.value = true
         return {
           randomChatEnabled: random,
           codeConnectEnabled: code,
-          messagingOnlyMode: !random && !code,
-          connectHubEnabled: random || code
+          discoverSwipeEnabled: discover,
+          messagingOnlyMode: !random && !code && !discover,
+          connectHubEnabled: random || code || discover
         }
       }).finally(() => {
         loadPromise = null
@@ -61,6 +73,7 @@ export function useConnectFeatures() {
   return {
     randomChatEnabled,
     codeConnectEnabled,
+    discoverSwipeEnabled,
     loaded,
     messagingOnlyMode,
     connectHubEnabled,

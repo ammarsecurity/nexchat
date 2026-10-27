@@ -134,16 +134,16 @@ public class AdminController(
     }
 
     [HttpPut("users/{id}/ban")]
-    public async Task<IActionResult> BanUser(Guid id, [FromBody] bool ban)
+    public async Task<IActionResult> BanUser(Guid id, [FromBody] BanUserRequest req)
     {
         var user = await db.Users.FindAsync(id);
         if (user == null) return NotFound();
-        if (user.IsFeatured && ban)
+        if (user.IsFeatured && req.Ban)
             return BadRequest(new { message = "لا يمكن حظر الحسابات المميزة" });
 
         await db.Users
             .Where(u => u.Id == id)
-            .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsBanned, ban));
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsBanned, req.Ban));
 
         return Ok();
     }

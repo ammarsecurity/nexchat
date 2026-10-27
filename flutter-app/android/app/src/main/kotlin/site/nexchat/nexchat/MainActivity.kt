@@ -17,7 +17,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        preferHighestRefreshRate()
+        // Emulator display modes + Impeller/OpenGLES often yield a black zero-size surface.
+        if (!isEmulator()) preferHighestRefreshRate()
         applyIncomingIntent(intent)
         applyLockScreen(intentHasIncoming(intent))
     }
