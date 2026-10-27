@@ -6,10 +6,11 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="نيكس شات — دردشة، مكالمات فيديو، ستوريز، وأفلام قصيرة.">
-  <meta name="theme-color" content="#0F172A">
+  <meta name="theme-color" content="#F8FAFC">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="NexChat">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
@@ -17,8 +18,68 @@
 
   <title>NexChat – نيكس شات</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #F8FAFC;
+      color: #0F172A;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    #nexchat-boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: #F8FAFC;
+      z-index: 9999;
+      transition: opacity .25s ease;
+    }
+    #nexchat-boot.hidden { opacity: 0; pointer-events: none; }
+    #nexchat-boot .logo {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      object-fit: contain;
+    }
+    #nexchat-boot .spin {
+      width: 28px;
+      height: 28px;
+      border: 3px solid #E2E8F0;
+      border-top-color: #0084FF;
+      border-radius: 50%;
+      animation: nexchat-spin .8s linear infinite;
+    }
+    @keyframes nexchat-spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
+  <div id="nexchat-boot" aria-hidden="true">
+    <img class="logo" src="icons/Icon-192.png" alt="NexChat" width="72" height="72">
+    <div class="spin"></div>
+  </div>
+  <script>
+    (function () {
+      var boot = document.getElementById('nexchat-boot');
+      function hide() {
+        if (!boot || boot.classList.contains('hidden')) return;
+        boot.classList.add('hidden');
+        setTimeout(function () { boot.remove(); }, 280);
+      }
+      var tries = 0;
+      var timer = setInterval(function () {
+        tries += 1;
+        if (document.querySelector('flt-glass-pane') || document.querySelector('flt-scene-host') || tries > 120) {
+          clearInterval(timer);
+          hide();
+        }
+      }, 250);
+      window.addEventListener('flutter-first-frame', hide);
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
