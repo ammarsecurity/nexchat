@@ -61,7 +61,11 @@
     "filterGender": "Gender",
     "filterAll": "Everyone",
     "filterAge": "Age",
-    "filtersApply": "Apply filters"
+    "filtersApply": "Apply filters",
+    "optInTitle": "Enable Discover?",
+    "optInBody": "When enabled, you can browse people and appear in their cards for mutual likes. You can turn this off anytime in Settings.",
+    "optInEnable": "Enable Discover",
+    "optInLater": "Not now"
   },
   "splash": {
     "tagline": "Connect with the world",
@@ -185,6 +189,12 @@
     "showOnlineStatusOff": "Hide",
     "onlineStatusVisible": "Others can see you as online",
     "onlineStatusHidden": "You always appear offline",
+    "discoverEnabled": "Discover",
+    "discoverEnabledDesc": "When off, the Discover tab is hidden and your profile won’t appear in others’ cards.",
+    "discoverEnabledOn": "On",
+    "discoverEnabledOff": "Off",
+    "discoverEnabledHintOn": "You can browse and appear in Discover",
+    "discoverEnabledHintOff": "Hidden for you and others",
     "privacyPolicy": "Privacy policy",
     "privacyEmpty": "Privacy policy has not been added yet.",
     "privacyLoading": "Loading privacy policy...",

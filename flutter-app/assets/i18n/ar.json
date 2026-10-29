@@ -61,7 +61,11 @@
     "filterGender": "الجنس",
     "filterAll": "الكل",
     "filterAge": "العمر",
-    "filtersApply": "تطبيق الفلتر"
+    "filtersApply": "تطبيق الفلتر",
+    "optInTitle": "هل تريد تفعيل صفحة التعارف؟",
+    "optInBody": "عند التفعيل تظهر لك بطاقات أشخاص جدد، ويظهر ملفك للآخرين للإعجاب المتبادل. يمكنك إيقافها لاحقاً من الإعدادات.",
+    "optInEnable": "تفعيل التعارف",
+    "optInLater": "لاحقاً"
   },
   "splash": {
     "tagline": "تواصل مع العالم",
@@ -185,6 +189,12 @@
     "showOnlineStatusOff": "إخفاء",
     "onlineStatusVisible": "يظهر أنك متصل للآخرين",
     "onlineStatusHidden": "تظهر كغير متصل دائماً",
+    "discoverEnabled": "صفحة التعارف",
+    "discoverEnabledDesc": "عند الإيقاف تختفي صفحة التعارف ولن يظهر ملفك في بطاقات الآخرين.",
+    "discoverEnabledOn": "مفعّل",
+    "discoverEnabledOff": "معطّل",
+    "discoverEnabledHintOn": "تظهر لك البطاقات ويظهر ملفك للآخرين",
+    "discoverEnabledHintOff": "مخفية عنك وعن الآخرين",
     "privacyPolicy": "سياسة الخصوصية",
     "privacyEmpty": "سياسة الخصوصية غير مضافة بعد.",
     "privacyLoading": "جاري تحميل سياسة الخصوصية...",

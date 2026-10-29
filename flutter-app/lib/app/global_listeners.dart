@@ -24,6 +24,7 @@ import '../features/conversations/message_contract.dart';
 import '../features/conversations/message_outbox.dart';
 import '../features/discover/discover_controller.dart';
 import '../features/discover/discover_match_dialog.dart';
+import '../features/discover/discover_opt_in.dart';
 import '../features/matching/matching_controller.dart';
 import '../features/matching/matching_dialogs.dart';
 import '../features/notifications/notifications_controller.dart';
@@ -470,6 +471,7 @@ class _GlobalListenersState extends ConsumerState<GlobalListeners> {
       if (loggedIn) const Positioned.fill(child: IncomingCallOverlay()),
       if (loggedIn && flags.codeConnect) const Positioned.fill(child: IncomingConnectionRequestOverlay()),
       if (loggedIn && flags.randomChat) const Positioned.fill(child: RandomMatchConsentOverlay()),
+      if (loggedIn && flags.discoverSwipe) const Positioned.fill(child: DiscoverOptInOverlay()),
     ]);
   }
 }

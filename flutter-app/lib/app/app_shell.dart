@@ -8,6 +8,7 @@ import '../core/feature_flags.dart';
 import '../core/i18n/i18n.dart';
 import '../core/theme/app_colors.dart';
 import '../features/conversations/conversations_list_controller.dart';
+import '../features/discover/discover_opt_in.dart';
 import '../features/discover/discover_theme.dart';
 import '../features/short_films/short_films_theme.dart';
 import 'router.dart';
@@ -50,16 +51,22 @@ class _AppShellState extends ConsumerState<AppShell> {
   Widget build(BuildContext context) {
     ref.watch(localeProvider);
     final flags = ref.watch(featureFlagsProvider).value ?? FeatureFlags.hiddenUntilLoaded;
+    final discoverOn = ref.watch(discoverOptInProvider).enabled;
     final unread = ref.watch(totalUnreadProvider);
     final pending = ref.watch(pendingRequestsProvider);
     final tabs = [
       _Tab('/conversations', t('nav.conversations'), 'chat', unread),
       if (flags.shortFilms) _Tab('/short-films', t('nav.discover'), 'films', 0),
-      if (flags.discoverSwipe || flags.randomChat || flags.codeConnect)
-        _Tab('/home', flags.discoverSwipe ? t('nav.people') : t('nav.connect'), 'home', 0),
+      if (showPeopleOrConnectTab(flags, discoverOn))
+        _Tab(
+          '/home',
+          useDiscoverHomeTab(flags, discoverOn) ? t('nav.people') : t('nav.connect'),
+          'home',
+          0,
+        ),
       _Tab('/settings', t('nav.profile'), 'profile', pending),
     ];
-    final showBar = isTabRoot(widget.location, flags);
+    final showBar = isTabRoot(widget.location, flags, discoverEnabled: discoverOn);
     final filmsStyle = widget.location == '/short-films' || widget.location.startsWith('/short-films/');
     final peopleStyle = widget.location == '/home';
 

@@ -23,6 +23,7 @@ import '../features/conversations/share_message_screen.dart';
 import '../features/groups/create_group_screen.dart';
 import '../features/groups/group_info_screen.dart';
 import '../features/matching/connection_history_screen.dart';
+import '../features/discover/discover_opt_in.dart';
 import '../features/discover/discover_screen.dart';
 import '../features/matching/home_screen.dart';
 import '../features/matching/invite_join_screen.dart';
@@ -80,14 +81,14 @@ _Meta _metaFor(String path) {
 }
 
 /// Paths that show the bottom tab bar (useAppNav.js tabBarPaths).
-bool isTabRoot(String path, FeatureFlags flags) {
+bool isTabRoot(String path, FeatureFlags flags, {bool discoverEnabled = false}) {
   if (path == '/conversations' || path == '/settings') return true;
-  if (path == '/home') return flags.discoverSwipe || flags.randomChat || flags.codeConnect;
+  if (path == '/home') return showPeopleOrConnectTab(flags, discoverEnabled);
   if (path == '/short-films') return flags.shortFilms;
   return false;
 }
 
-/// Home tab: Discover (default) or legacy connect hub when random/code still on and Discover off.
+/// Home tab: Discover when user opted in, else legacy connect hub.
 class _HomeTab extends ConsumerWidget {
   const _HomeTab({this.invite});
   final String? invite;
@@ -95,7 +96,8 @@ class _HomeTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final flags = ref.watch(featureFlagsProvider).value ?? FeatureFlags.hiddenUntilLoaded;
-    if (flags.discoverSwipe) return const DiscoverScreen();
+    final discoverOn = ref.watch(discoverOptInProvider).enabled;
+    if (useDiscoverHomeTab(flags, discoverOn)) return const DiscoverScreen();
     return HomeScreen(invite: invite);
   }
 }
@@ -140,7 +142,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       case _Requires.none:
         break;
     }
-    if (auth.isLoggedIn && path == '/home' && flags.messagingOnly) return '/conversations';
+    if (auth.isLoggedIn && path == '/home') {
+      final discoverOn = ref.read(discoverOptInProvider).enabled;
+      if (flags.messagingOnly || !showPeopleOrConnectTab(flags, discoverOn)) {
+        return '/conversations';
+      }
+    }
     return null;
   }
 

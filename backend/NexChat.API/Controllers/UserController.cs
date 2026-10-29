@@ -43,7 +43,8 @@ public class UserController(
             user.Bio,
             string.IsNullOrWhiteSpace(user.DiscoverPreferGender) ? "all" : user.DiscoverPreferGender,
             user.DiscoverAgeMin,
-            user.DiscoverAgeMax
+            user.DiscoverAgeMax,
+            user.DiscoverEnabled
         ));
     }
 
@@ -114,6 +115,16 @@ public class UserController(
             .Where(u => u.Id == CurrentUserId)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.ShowOnlineStatusToOthers, req.ShowOnlineStatusToOthers));
         return Ok();
+    }
+
+    /// <summary>تفعيل/إيقاف التعارف للمستخدم: يخفي التبويب ويمنع الظهور في فيد الآخرين.</summary>
+    [HttpPut("discover-enabled")]
+    public async Task<IActionResult> UpdateDiscoverEnabled([FromBody] UpdateDiscoverOptInRequest req)
+    {
+        await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.DiscoverEnabled, req.DiscoverEnabled));
+        return Ok(new { discoverEnabled = req.DiscoverEnabled });
     }
 
     [HttpPut("birth-date")]

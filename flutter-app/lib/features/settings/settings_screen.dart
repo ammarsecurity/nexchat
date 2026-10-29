@@ -24,6 +24,7 @@ import '../../services/update_check.dart';
 import '../../shared/widgets.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_widgets.dart';
+import '../discover/discover_opt_in.dart';
 import 'avatar_picker_sheet.dart';
 import 'bio_sheet.dart';
 import 'birth_date_sheet.dart';
@@ -144,6 +145,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (mounted) showToast(context, Api.errorMessage(e, t('common.error')), error: true);
     } finally {
       if (mounted) setState(() => _showOnlineSaving = false);
+    }
+  }
+
+  Future<void> _setDiscoverEnabled(bool value) async {
+    final ok = await ref.read(discoverOptInProvider.notifier).setEnabled(value);
+    if (!mounted) return;
+    if (!ok) {
+      showToast(context, t('common.error'), error: true);
+      return;
+    }
+    final flags = ref.read(featureFlagsProvider).value ?? FeatureFlags.hiddenUntilLoaded;
+    if (!value && !flags.randomChat && !flags.codeConnect && GoRouter.of(context).state.uri.path == '/home') {
+      context.go('/conversations');
     }
   }
 
@@ -290,8 +304,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final light = ref.watch(lightThemeProvider);
     final locale = ref.watch(localeProvider);
     final flags = ref.watch(featureFlagsProvider).value;
+    final discoverOpt = ref.watch(discoverOptInProvider);
     final update = ref.watch(appUpdateProvider);
     final cc = flags?.codeConnect == true;
+    final discoverAdmin = flags?.discoverSwipe == true;
     final phone = _profile?.s('phoneNumber');
     final coverUrl = _profile?.s('coverImageUrl');
     final gender = user?.gender;
@@ -597,6 +613,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onColorSuccess: true,
                 onSelect: _setShowOnline,
               ),
+              if (discoverAdmin) ...[
+                _hairline(c),
+                _ToggleBlock(
+                  icon: LucideIcons.heartHandshake,
+                  on: discoverOpt.enabled,
+                  title: t('settings.discoverEnabled'),
+                  hint: discoverOpt.enabled ? t('settings.discoverEnabledHintOn') : t('settings.discoverEnabledHintOff'),
+                  desc: t('settings.discoverEnabledDesc'),
+                  pill: discoverOpt.enabled ? t('settings.discoverEnabledOn') : t('settings.discoverEnabledOff'),
+                  onLabel: t('settings.discoverEnabledOn'),
+                  offLabel: t('settings.discoverEnabledOff'),
+                  onColorSuccess: true,
+                  onSelect: _setDiscoverEnabled,
+                ),
+              ],
               _hairline(c),
               _InfoRow(
                 icon: LucideIcons.shield,

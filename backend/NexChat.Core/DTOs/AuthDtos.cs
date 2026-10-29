@@ -42,10 +42,13 @@ public record UserProfileDto(
     string? Bio = null,
     string DiscoverPreferGender = "all",
     int DiscoverAgeMin = 18,
-    int DiscoverAgeMax = 60
+    int DiscoverAgeMax = 60,
+    bool DiscoverEnabled = false
 );
 
 public record UpdateBioRequest(string? Bio);
+
+public record UpdateDiscoverOptInRequest(bool DiscoverEnabled);
 
 public record UpdateDiscoverPrefsRequest(
     string? PreferGender = null,

@@ -29,6 +29,8 @@ public class User
     public int DiscoverAgeMin { get; set; } = 18;
     /// <summary>أعلى عمر يظهر في فيد التعارف (18–99).</summary>
     public int DiscoverAgeMax { get; set; } = 60;
+    /// <summary>موافقة المستخدم على التعارف: يظهر التبويب ويظهر في بطاقات الآخرين فقط إذا كان true.</summary>
+    public bool DiscoverEnabled { get; set; } = false;
     /// <summary>كود الدولة ISO 2 (مثل IQ, SA)</summary>
     public string? Country { get; set; } = null;
     /// <summary>رقم الهاتف مع مفتاح الدولة (مثل 9647712345678)</summary>

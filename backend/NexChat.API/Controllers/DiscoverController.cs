@@ -73,6 +73,17 @@ public class DiscoverController(
         var youngestBirth = today.AddYears(-ageMin);       // age >= ageMin → BirthDate <= youngestBirth
         var oldestBirthExclusive = today.AddYears(-(ageMax + 1)); // age <= ageMax → BirthDate > oldestBirthExclusive
 
+        if (!me.DiscoverEnabled)
+        {
+            return Ok(new
+            {
+                items = Array.Empty<object>(),
+                canSwipe = false,
+                discoverEnabled = false,
+                prefs = new { preferGender, ageMin, ageMax }
+            });
+        }
+
         // Hide only recent swipes (24h). Older pass/like (without a match) can reappear.
         var swipeFreshAfter = SwipeCooldownCutoffUtc();
 
@@ -80,6 +91,7 @@ public class DiscoverController(
         var query = db.Users.AsNoTracking()
             .Where(u =>
                 u.Id != meId &&
+                u.DiscoverEnabled &&
                 !u.IsBanned &&
                 !u.IsAdmin &&
                 u.Avatar != null &&
@@ -111,6 +123,7 @@ public class DiscoverController(
         {
             items = cards,
             canSwipe = true,
+            discoverEnabled = true,
             prefs = new { preferGender, ageMin, ageMax }
         });
     }
@@ -128,7 +141,8 @@ public class DiscoverController(
         var ageOk = hasBirthDate && me.BirthDate <= AdultBirthCutoff();
         return Ok(new
         {
-            canSwipe = hasAvatar && ageOk,
+            canSwipe = me.DiscoverEnabled && hasAvatar && ageOk,
+            discoverEnabled = me.DiscoverEnabled,
             hasAvatar,
             hasBirthDate,
             ageOk,
@@ -149,6 +163,9 @@ public class DiscoverController(
         var gate = ProfileGate(me);
         if (gate != null) return BadRequest(gate);
 
+        if (!me.DiscoverEnabled)
+            return BadRequest(new { message = "فعّل التعارف من الإعدادات أولاً", code = "DISCOVER_OPT_OUT" });
+
         var direction = (req.Direction ?? "").Trim().ToLowerInvariant();
         if (direction is not (SwipeDirection.Like or SwipeDirection.Pass))
             return BadRequest(new { message = "الاتجاه غير صالح", code = "INVALID_DIRECTION" });
@@ -162,8 +179,9 @@ public class DiscoverController(
         if (target == null)
             return NotFound(new { message = "المستخدم غير موجود" });
 
-        // Same gates as feed: never match minors / incomplete profiles via direct id.
-        if (!HasDiscoverPhoto(target) ||
+        // Same gates as feed: never match minors / incomplete / opted-out profiles via direct id.
+        if (!target.DiscoverEnabled ||
+            !HasDiscoverPhoto(target) ||
             target.BirthDate == null ||
             target.BirthDate > adultCutoff)
             return BadRequest(new { message = "هذا الملف غير مؤهل للتعارف", code = "TARGET_INELIGIBLE" });
