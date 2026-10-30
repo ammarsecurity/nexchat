@@ -1513,14 +1513,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
-  tiktok_events_sdk:
-    dependency: "direct main"
-    description:
-      name: tiktok_events_sdk
-      sha256: "7ca592c04984935a02c334cbd1714022b00005f7d236157a7a28e2786fe4e916"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.4.0"
   tuple:
     dependency: transitive
     description:

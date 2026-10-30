@@ -135,9 +135,11 @@ class FeatureFlagsNotifier extends AsyncNotifier<FeatureFlags> {
       _fetchFlag('short_films_enabled', emptyMeansEnabled: false),
     ]);
 
-    var randomChat = r[0].ok ? r[0].value : cached.randomChat;
-    var codeConnect = r[1].ok ? r[1].value : cached.codeConnect;
-    // Fail-closed when offline with no prior admin snapshot (except iOS App Store force-on below).
+    // Random chat + code connect: fail-closed. Never resurrect from cache after admin
+    // turns them off (App Store review must not briefly show Omegle-style UI).
+    var randomChat = r[0].ok ? r[0].value : false;
+    var codeConnect = r[1].ok ? r[1].value : false;
+    // Discover: allow last good cache when offline (except first launch).
     var discoverSwipe = r[2].ok
         ? r[2].value
         : (cached == FeatureFlags.hiddenUntilLoaded ? false : cached.discoverSwipe);

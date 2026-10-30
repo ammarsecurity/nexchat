@@ -10,6 +10,12 @@ const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
 const search = ref('')
+const accountType = ref('all')
+const accountTypeOptions = [
+  { title: 'الكل', value: 'all' },
+  { title: 'مستخدمين حقيقيين', value: 'real' },
+  { title: 'بوتات التعارف', value: 'bots' },
+]
 const banDialog = ref(false)
 const selectedUser = ref(null)
 const banAction = ref(true)
@@ -28,6 +34,7 @@ const passwordLoading = ref(false)
 
 const headers = [
   { title: 'المستخدم', key: 'name', sortable: false, minWidth: '220px' },
+  { title: 'النوع', key: 'accountType', sortable: false },
   { title: 'الكود', key: 'uniqueCode', sortable: false },
   { title: 'الجنس', key: 'gender', sortable: false },
   { title: 'العمر', key: 'age', sortable: false },
@@ -44,7 +51,12 @@ async function fetchUsers() {
   loading.value = true
   try {
     const res = await api.get('/admin/users', {
-      params: { page: page.value, pageSize: 20, search: search.value || undefined }
+      params: {
+        page: page.value,
+        pageSize: 20,
+        search: search.value || undefined,
+        accountType: accountType.value !== 'all' ? accountType.value : undefined,
+      }
     })
     users.value = res.data.items
     total.value = res.data.total
@@ -176,6 +188,11 @@ function onSearch() {
   searchTimeout = setTimeout(() => { page.value = 1; fetchUsers() }, 400)
 }
 
+function onAccountTypeChange() {
+  page.value = 1
+  fetchUsers()
+}
+
 onMounted(fetchUsers)
 </script>
 
@@ -201,18 +218,32 @@ onMounted(fetchUsers)
     </div>
 
     <v-card rounded="xl" elevation="0" class="pa-3 pa-sm-4 table-card">
-      <v-text-field
-        v-model="search"
-        label="بحث بالاسم أو الكود..."
-        prepend-inner-icon="mdi-magnify"
-        variant="outlined"
-        rounded="lg"
-        density="compact"
-        clearable
-        class="mb-4"
-        hide-details
-        @update:model-value="onSearch"
-      />
+      <div class="filters-row mb-4">
+        <v-text-field
+          v-model="search"
+          label="بحث بالاسم أو الكود..."
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+          rounded="lg"
+          density="compact"
+          clearable
+          hide-details
+          class="filters-search"
+          @update:model-value="onSearch"
+        />
+        <v-select
+          v-model="accountType"
+          :items="accountTypeOptions"
+          label="نوع الحساب"
+          prepend-inner-icon="mdi-account-filter"
+          variant="outlined"
+          rounded="lg"
+          density="compact"
+          hide-details
+          class="filters-type"
+          @update:model-value="onAccountTypeChange"
+        />
+      </div>
 
       <v-data-table
         v-model="selectedIds"
@@ -258,6 +289,14 @@ onMounted(fetchUsers)
               <div class="user-badges">
                 <v-chip
                   size="x-small"
+                  :color="item.isDiscoverBot ? 'deep-purple' : 'teal'"
+                  variant="tonal"
+                  :prepend-icon="item.isDiscoverBot ? 'mdi-robot' : 'mdi-account'"
+                >
+                  {{ item.isDiscoverBot ? 'بوت' : 'حقيقي' }}
+                </v-chip>
+                <v-chip
+                  size="x-small"
                   :color="item.isOnline ? 'success' : 'default'"
                   variant="tonal"
                 >
@@ -268,6 +307,17 @@ onMounted(fetchUsers)
               </div>
             </div>
           </div>
+        </template>
+
+        <template #item.accountType="{ item }">
+          <v-chip
+            size="small"
+            :color="item.isDiscoverBot ? 'deep-purple' : 'teal'"
+            variant="tonal"
+            :prepend-icon="item.isDiscoverBot ? 'mdi-robot' : 'mdi-account-check'"
+          >
+            {{ item.isDiscoverBot ? 'بوت تعارف' : 'مستخدم حقيقي' }}
+          </v-chip>
         </template>
 
         <template #item.uniqueCode="{ item }">
@@ -466,6 +516,24 @@ onMounted(fetchUsers)
 </template>
 
 <style scoped>
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.filters-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.filters-type {
+  flex: 0 1 220px;
+  min-width: 180px;
+  max-width: 260px;
+}
+
 .user-cell {
   display: flex;
   align-items: flex-start;

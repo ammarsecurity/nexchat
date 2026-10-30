@@ -46,6 +46,8 @@ const navItems = [
   { title: 'الإشعارات العامة', icon: 'mdi-bell-ring', to: '/notifications' },
   { title: 'تحديث التطبيق', icon: 'mdi-cellphone-arrow-down', to: '/app-update' },
   { title: 'ميزات التطبيق', icon: 'mdi-toggle-switch', to: '/features' },
+  { title: 'بوتات التعارف', icon: 'mdi-robot-happy', to: '/discover-bots' },
+  { title: 'LiveKit', icon: 'mdi-video-wireless', to: '/livekit' },
   { title: 'سياسة الخصوصية', icon: 'mdi-shield-account', to: '/privacy' },
   { title: 'شروط الاستخدام', icon: 'mdi-file-document-outline', to: '/terms' },
   { title: 'التواصل الاجتماعي', icon: 'mdi-share-variant', to: '/social' },

@@ -9,7 +9,6 @@ import '../../core/network/api_client.dart';
 import '../../core/network/hubs.dart';
 import '../../core/storage/prefs.dart';
 import '../../services/push_service.dart';
-import '../../services/tiktok_analytics_service.dart';
 import '../short_films/short_film_cache.dart';
 import '../conversations/conversation_cache.dart';
 
@@ -135,17 +134,17 @@ class AuthController extends Notifier<AuthState> {
     if (otpCode != null && otpCode.isNotEmpty) body['otpCode'] = otpCode;
     final data = await Api.post('/auth/register', body);
     if (generation != _authGeneration) return;
-    await _setAuth(data as Map<String, dynamic>, isNewRegistration: true, generation: generation);
+    await _setAuth(data as Map<String, dynamic>, generation: generation);
   }
 
   Future<void> login(String name, String password) async {
     final generation = ++_authGeneration;
     final data = await Api.post('/auth/login', {'name': name, 'password': password});
     if (generation != _authGeneration) return;
-    await _setAuth(data as Map<String, dynamic>, isNewRegistration: false, generation: generation);
+    await _setAuth(data as Map<String, dynamic>, generation: generation);
   }
 
-  Future<void> _setAuth(Map<String, dynamic> data, {required bool isNewRegistration, required int generation}) async {
+  Future<void> _setAuth(Map<String, dynamic> data, {required int generation}) async {
     final user = AppUser(
       id: '${data['userId']}',
       name: '${data['name'] ?? ''}',
@@ -183,14 +182,6 @@ class AuthController extends Notifier<AuthState> {
     PushService.instance.init(user.id).then((granted) {
       if (generation == _authGeneration && state.user?.id == user.id && !granted) PushService.promptNotifications.value = true;
     });
-    final tiktok = TikTokAnalyticsService.instance;
-    unawaited(tiktok.identify(userId: user.id, userName: user.name).then((_) async {
-      if (isNewRegistration) {
-        await tiktok.logCompleteRegistration();
-      } else {
-        await tiktok.logLogin();
-      }
-    }));
   }
 
   Future<void> setAvatar(String? value) async {
@@ -233,7 +224,6 @@ class AuthController extends Notifier<AuthState> {
     ++_authGeneration;
     final pushCleanup = PushService.instance.clear();
     state = const AuthState();
-    unawaited(TikTokAnalyticsService.instance.logout());
     final p = Prefs.instance;
     final stoppedHubs = Hubs.stopAll();
     final clearedToken = p.setToken(null);

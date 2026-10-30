@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Twitter, Instagram, Facebook, Youtube, Linkedin, MessageCircle, Send, Video } from 'lucide-vue-next'
+import { Twitter, Instagram, Facebook, Youtube, Linkedin, MessageCircle, Send } from 'lucide-vue-next'
 
 const socialLinks = ref([])
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
@@ -9,7 +9,6 @@ const platformIcons = {
   twitter: Twitter,
   instagram: Instagram,
   facebook: Facebook,
-  tiktok: Video,
   youtube: Youtube,
   linkedin: Linkedin,
   whatsapp: MessageCircle,
@@ -23,7 +22,10 @@ async function fetchSocialLinks() {
     const content = data?.content
     if (content) {
       try {
-        socialLinks.value = JSON.parse(content)
+        const parsed = JSON.parse(content)
+        socialLinks.value = Array.isArray(parsed)
+          ? parsed.filter((l) => String(l?.platform || '').toLowerCase() !== 'tiktok')
+          : []
       } catch {
         socialLinks.value = []
       }

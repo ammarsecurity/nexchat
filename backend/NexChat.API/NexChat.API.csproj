@@ -24,6 +24,10 @@
     <Folder Include="wwwroot\uploads\film\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="data\discover-bots\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

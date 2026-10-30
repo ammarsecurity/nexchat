@@ -83,6 +83,8 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<MatchingService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SiteContentFeatureService>();
+builder.Services.AddScoped<DiscoverBotsSettingsService>();
+builder.Services.AddScoped<NexChat.API.Services.DiscoverBotSeedService>();
 builder.Services.AddScoped<MediaStorageService>();
 builder.Services.AddScoped<ViewOnceMediaService>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -95,6 +97,11 @@ builder.Services.AddHttpClient<NexChat.Infrastructure.Services.EvolutionWhatsApp
 {
     c.Timeout = TimeSpan.FromSeconds(30);
 });
+builder.Services.AddHttpClient("livekit-admin", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12);
+});
+builder.Services.AddScoped<LiveKitSettingsService>();
 builder.Services.AddScoped<NexChat.API.Services.OtpService>();
 builder.Services.AddScoped<NotificationOutboxService>();
 builder.Services.AddSingleton<UserPresenceService>();

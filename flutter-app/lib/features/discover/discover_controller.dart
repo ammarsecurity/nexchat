@@ -87,6 +87,7 @@ class DiscoverState {
     this.eligibilityLoaded = false,
     this.prefs = const DiscoverPrefs(),
     this.canUndo = false,
+    this.nextResetAt,
   });
 
   final List<Json> deck;
@@ -97,6 +98,8 @@ class DiscoverState {
   final bool eligibilityLoaded;
   final DiscoverPrefs prefs;
   final bool canUndo;
+  /// When deck is empty: UTC time when oldest non-match swipe leaves the 24h window.
+  final DateTime? nextResetAt;
 
   Json? get top => deck.isEmpty ? null : deck.first;
 
@@ -109,6 +112,8 @@ class DiscoverState {
     bool? eligibilityLoaded,
     DiscoverPrefs? prefs,
     bool? canUndo,
+    DateTime? nextResetAt,
+    bool clearNextResetAt = false,
   }) =>
       DiscoverState(
         deck: deck ?? this.deck,
@@ -119,6 +124,7 @@ class DiscoverState {
         eligibilityLoaded: eligibilityLoaded ?? this.eligibilityLoaded,
         prefs: prefs ?? this.prefs,
         canUndo: canUndo ?? this.canUndo,
+        nextResetAt: clearNextResetAt ? null : (nextResetAt ?? this.nextResetAt),
       );
 }
 
@@ -181,6 +187,13 @@ class DiscoverController extends Notifier<DiscoverState> {
       if (feed is Map && feed['prefs'] is Map) {
         prefs = DiscoverPrefs.fromJson(Map<String, dynamic>.from(feed['prefs'] as Map));
       }
+      DateTime? nextResetAt;
+      if (feed is Map) {
+        final raw = feed['nextResetAt'] ?? feed['NextResetAt'];
+        if (raw != null) {
+          nextResetAt = DateTime.tryParse(raw.toString())?.toUtc();
+        }
+      }
       state = state.copyWith(
         loading: false,
         deck: items,
@@ -190,6 +203,8 @@ class DiscoverController extends Notifier<DiscoverState> {
         // Session-local: only enable after a successful new swipe this session.
         canUndo: false,
         error: '',
+        nextResetAt: nextResetAt,
+        clearNextResetAt: nextResetAt == null,
       );
     } catch (e) {
       state = state.copyWith(

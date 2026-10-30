@@ -28,6 +28,9 @@ public class AdminController(
     NotificationOutboxService notificationOutbox,
     OneSignalService oneSignal,
     EvolutionWhatsAppService evolution,
+    LiveKitSettingsService liveKitSettings,
+    SiteContentFeatureService siteContentFeatures,
+    DiscoverBotsSettingsService discoverBotsSettings,
     IWebHostEnvironment env,
     IConfiguration config,
     IConversationMessageCrypto messageCrypto,
@@ -66,18 +69,28 @@ public class AdminController(
     public async Task<ActionResult<PagedResult<AdminUserDto>>> GetUsers(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] string? accountType = null)
     {
         var query = db.Users.AsQueryable();
         if (!string.IsNullOrEmpty(search))
             query = query.Where(u => u.Name.Contains(search) || u.UniqueCode.Contains(search));
+
+        // all | real | bots — يفرّق بين المستخدم الحقيقي وبوت التعارف
+        var type = (accountType ?? "all").Trim().ToLowerInvariant();
+        query = type switch
+        {
+            "bots" or "bot" => query.Where(u => u.IsDiscoverBot),
+            "real" or "users" => query.Where(u => !u.IsDiscoverBot),
+            _ => query
+        };
 
         var total = await query.CountAsync();
         var users = await query
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt, u.BirthDate, u.PhoneNumber, u.Avatar))
+            .Select(u => new AdminUserDto(u.Id, u.Name, u.Gender, u.UniqueCode, u.IsOnline, u.IsBanned, u.IsFeatured, u.CreatedAt, u.BirthDate, u.PhoneNumber, u.Avatar, u.IsDiscoverBot))
             .ToListAsync();
 
         return Ok(new PagedResult<AdminUserDto>(users, total, page, pageSize));
@@ -1237,6 +1250,9 @@ public class AdminController(
             db.SiteContents.Add(new Core.Entities.SiteContent { Key = key, Content = dto.Content });
         }
         await db.SaveChangesAsync();
+        siteContentFeatures.Invalidate(key);
+        if (key == DiscoverBotsSettingsService.SiteContentKey)
+            discoverBotsSettings.Invalidate();
         return Ok();
     }
 
@@ -1293,6 +1309,63 @@ public class AdminController(
             // 422 (not nginx 502) so the dashboard shows Evolution's real message.
             return UnprocessableEntity(new { message = error ?? "فشل إرسال رسالة الاختبار" });
         return Ok(new { message = "تم إرسال رسالة الاختبار عبر واتساب" });
+    }
+
+    [HttpGet("livekit")]
+    public async Task<ActionResult<object>> GetLiveKitSettings()
+    {
+        var cfg = await liveKitSettings.GetConfigAsync();
+        return Ok(new
+        {
+            cfg.Url,
+            ApiKey = LiveKitSettingsService.MaskSecret(cfg.ApiKey),
+            ApiSecret = LiveKitSettingsService.MaskSecret(cfg.ApiSecret),
+            HasApiKey = !string.IsNullOrWhiteSpace(cfg.ApiKey),
+            HasApiSecret = !string.IsNullOrWhiteSpace(cfg.ApiSecret),
+            Configured = LiveKitSettingsService.IsConfigured(cfg),
+            HttpHost = string.IsNullOrWhiteSpace(cfg.Url) ? null : LiveKitSettingsService.ToHttpHost(cfg.Url),
+            Source = await LiveKitConfigSourceAsync()
+        });
+    }
+
+    [HttpPut("livekit")]
+    public async Task<IActionResult> UpdateLiveKitSettings([FromBody] LiveKitConfigDto dto)
+    {
+        if (dto == null)
+            return BadRequest(new { message = "بيانات غير صالحة" });
+
+        var current = await liveKitSettings.GetConfigAsync();
+        if (LiveKitSettingsService.LooksMasked(dto.ApiKey))
+            dto.ApiKey = current.ApiKey;
+        if (LiveKitSettingsService.LooksMasked(dto.ApiSecret))
+            dto.ApiSecret = current.ApiSecret;
+
+        try
+        {
+            await liveKitSettings.SaveConfigAsync(dto);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        return Ok(new { message = "تم حفظ إعدادات LiveKit" });
+    }
+
+    [HttpPost("livekit/probe")]
+    public async Task<ActionResult<LiveKitProbeResultDto>> ProbeLiveKit(CancellationToken ct)
+    {
+        var result = await liveKitSettings.ProbeAsync(ct);
+        if (!result.Ok)
+            return UnprocessableEntity(result);
+        return Ok(result);
+    }
+
+    private async Task<string> LiveKitConfigSourceAsync()
+    {
+        var row = await db.SiteContents.AsNoTracking()
+            .AnyAsync(c => c.Key == LiveKitSettingsService.SiteContentKey);
+        return row ? "database" : "appsettings";
     }
 
     [HttpPost("notifications/upload-image")]

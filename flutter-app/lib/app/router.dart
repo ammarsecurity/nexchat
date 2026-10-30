@@ -26,6 +26,8 @@ import '../features/matching/connection_history_screen.dart';
 import '../features/discover/discover_opt_in.dart';
 import '../features/discover/discover_screen.dart';
 import '../features/matching/home_screen.dart';
+import '../features/matching/instant_chat_screen.dart';
+import '../features/matching/people_hub_screen.dart';
 import '../features/matching/invite_join_screen.dart';
 import '../features/matching/matching_screen.dart';
 import '../features/matching/saved_codes_screen.dart';
@@ -88,16 +90,41 @@ bool isTabRoot(String path, FeatureFlags flags, {bool discoverEnabled = false}) 
   return false;
 }
 
-/// Home tab: Discover when user opted in, else legacy connect hub.
+/// Home tab: unified People hub when Discover + Instant Chat coexist.
 class _HomeTab extends ConsumerWidget {
   const _HomeTab({this.invite});
   final String? invite;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final flags = ref.watch(featureFlagsProvider).value ?? FeatureFlags.hiddenUntilLoaded;
-    final discoverOn = ref.watch(discoverOptInProvider).enabled;
+    final flags = ref.watch(featureFlagsProvider).value;
+    final opt = ref.watch(discoverOptInProvider);
+
+    // Avoid flashing InstantChat / old Connect while flags or Discover opt-in resolve.
+    if (flags == null || (flags.discoverSwipe && !opt.loaded && !opt.enabled)) {
+      return const ColoredBox(
+        color: Color(0xFFFFF7F8),
+        child: SizedBox.expand(),
+      );
+    }
+
+    final discoverOn = opt.enabled;
+
+    // Instant / random chat must not appear at all when admin flag is off (App Store).
+    if (!flags.randomChat) {
+      if (useDiscoverHomeTab(flags, discoverOn)) return const DiscoverScreen();
+      if (flags.codeConnect || (invite?.isNotEmpty ?? false)) return HomeScreen(invite: invite);
+      return const ColoredBox(color: Color(0xFFFFF7F8), child: SizedBox.expand());
+    }
+
+    if (usePeopleHub(flags, discoverOn)) {
+      if ((invite?.isNotEmpty ?? false) && flags.codeConnect) return HomeScreen(invite: invite);
+      return PeopleHubScreen(invite: invite);
+    }
     if (useDiscoverHomeTab(flags, discoverOn)) return const DiscoverScreen();
+    if (!((invite?.isNotEmpty ?? false) && flags.codeConnect)) {
+      return const InstantChatScreen();
+    }
     return HomeScreen(invite: invite);
   }
 }

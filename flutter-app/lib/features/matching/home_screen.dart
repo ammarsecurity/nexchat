@@ -32,12 +32,16 @@ import '../notifications/notifications_controller.dart';
 import '../settings/avatar_picker_sheet.dart';
 import '../short_films/short_films_controller.dart';
 import '../short_films/short_films_hub_screen.dart';
+import 'home_tab_accent.dart';
 import 'matching_controller.dart';
 
 /// views/HomeView.vue
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, this.invite});
+  const HomeScreen({super.key, this.invite, this.embedded = false});
   final String? invite;
+
+  /// When true, parent hub owns the title / notifications chrome.
+  final bool embedded;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -72,6 +76,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Hubs.conversation.start().catchError((_) {});
     _loadConversations();
     _bindHub();
+    Future.microtask(() {
+      if (mounted) ref.read(homeTabAccentProvider.notifier).set(HomeTabAccent.neutral);
+    });
   }
 
   void _onRouteChanged() {
@@ -348,15 +355,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppTabHeader(
-          title: t('nav.connect'),
-          actions: [
-            GlassIconButton(icon: LucideIcons.bell, badgeDot: unread > 0, onTap: () => context.push('/notifications')),
-          ],
-        ),
+        if (!widget.embedded)
+          AppTabHeader(
+            title: t('nav.connect'),
+            actions: [
+              GlassIconButton(icon: LucideIcons.bell, badgeDot: unread > 0, onTap: () => context.push('/notifications')),
+            ],
+          ),
         if (user != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            padding: EdgeInsets.fromLTRB(16, widget.embedded ? 4 : 0, 16, 6),
             child: Row(children: [
               avatarBadge(size: 42),
               const SizedBox(width: 10),

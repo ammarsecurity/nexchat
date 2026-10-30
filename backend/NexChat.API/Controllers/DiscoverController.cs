@@ -21,6 +21,7 @@ public class DiscoverController(
     AppDbContext db,
     IHubContext<ConversationHub> conversationHub,
     SiteContentFeatureService features,
+    DiscoverBotsSettingsService discoverBots,
     NotificationOutboxService notificationOutbox) : ControllerBase
 {
     private const int FeedLimit = 20;
@@ -84,8 +85,15 @@ public class DiscoverController(
             });
         }
 
-        // Hide only recent swipes (24h). Older pass/like (without a match) can reappear.
+        // Drop expired pass/like rows so profiles re-enter the deck after the cooldown.
+        // Matched users stay hidden via UserMatches (not via swipe rows).
         var swipeFreshAfter = SwipeCooldownCutoffUtc();
+        await db.UserSwipes
+            .Where(s => s.FromUserId == meId && s.CreatedAt < swipeFreshAfter)
+            .ExecuteDeleteAsync();
+
+        var botsCfg = await discoverBots.GetConfigAsync();
+        var botsEnabled = botsCfg.Enabled;
 
         // Subqueries avoid huge NOT IN parameter lists for heavy swipers.
         var query = db.Users.AsNoTracking()
@@ -94,8 +102,11 @@ public class DiscoverController(
                 u.DiscoverEnabled &&
                 !u.IsBanned &&
                 !u.IsAdmin &&
-                u.Avatar != null &&
-                (u.Avatar.StartsWith("http://") || u.Avatar.StartsWith("https://") || u.Avatar.StartsWith("/")) &&
+                (botsEnabled || !u.IsDiscoverBot) &&
+                (
+                    (u.Avatar != null && (u.Avatar.StartsWith("http://") || u.Avatar.StartsWith("https://") || u.Avatar.StartsWith("/"))) ||
+                    (u.ProfilePhotosJson != null && u.ProfilePhotosJson.Length > 2)
+                ) &&
                 u.BirthDate != null &&
                 u.BirthDate <= adultCutoff &&
                 u.BirthDate <= youngestBirth &&
@@ -106,8 +117,7 @@ public class DiscoverController(
                     (b.BlockerId == u.Id && b.BlockedUserId == meId)) &&
                 !db.UserSwipes.Any(s =>
                     s.FromUserId == meId &&
-                    s.ToUserId == u.Id &&
-                    s.CreatedAt >= swipeFreshAfter) &&
+                    s.ToUserId == u.Id) &&
                 !db.UserMatches.Any(m =>
                     (m.UserAId == meId && m.UserBId == u.Id) ||
                     (m.UserAId == u.Id && m.UserBId == meId)));
@@ -118,12 +128,34 @@ public class DiscoverController(
             .Take(limit)
             .ToListAsync();
 
-        var cards = candidates.Select(u => ToCard(u, today)).ToList();
+        // Only keep profiles that actually have a photo URL (matches HasDiscoverPhoto).
+        var cards = candidates
+            .Where(HasDiscoverPhoto)
+            .Select(u => ToCard(u, today))
+            .ToList();
+
+        DateTime? nextResetAt = null;
+        if (cards.Count == 0)
+        {
+            var oldestFreshSwipe = await db.UserSwipes.AsNoTracking()
+                .Where(s => s.FromUserId == meId && s.CreatedAt >= swipeFreshAfter)
+                .Where(s => !db.UserMatches.Any(m =>
+                    (m.UserAId == meId && m.UserBId == s.ToUserId) ||
+                    (m.UserAId == s.ToUserId && m.UserBId == meId)))
+                .OrderBy(s => s.CreatedAt)
+                .Select(s => (DateTime?)s.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (oldestFreshSwipe != null)
+                nextResetAt = oldestFreshSwipe.Value.AddHours(SwipeCooldownHours);
+        }
+
         return Ok(new
         {
             items = cards,
             canSwipe = true,
             discoverEnabled = true,
+            cooldownHours = SwipeCooldownHours,
+            nextResetAt,
             prefs = new { preferGender, ageMin, ageMax }
         });
     }
@@ -259,6 +291,42 @@ public class DiscoverController(
         if (direction != SwipeDirection.Like)
             return Ok(new { matched = false, conversationId = (Guid?)null });
 
+        // Discover bots: optional probabilistic reciprocal like → match.
+        if (target.IsDiscoverBot)
+        {
+            var botsCfg = await discoverBots.GetConfigAsync();
+            if (botsCfg.Enabled && Random.Shared.Next(100) < botsCfg.MatchPercent)
+            {
+                var botSwipe = await db.UserSwipes
+                    .FirstOrDefaultAsync(s => s.FromUserId == target.Id && s.ToUserId == CurrentUserId);
+                if (botSwipe == null)
+                {
+                    db.UserSwipes.Add(new UserSwipe
+                    {
+                        FromUserId = target.Id,
+                        ToUserId = CurrentUserId,
+                        Direction = SwipeDirection.Like
+                    });
+                }
+                else
+                {
+                    botSwipe.Direction = SwipeDirection.Like;
+                    botSwipe.CreatedAt = DateTime.UtcNow;
+                }
+                try { await db.SaveChangesAsync(); }
+                catch (DbUpdateException)
+                {
+                    // Concurrent insert of bot reciprocal swipe — still try to create the match.
+                    db.ChangeTracker.Clear();
+                    me = await db.Users.FirstAsync(u => u.Id == CurrentUserId);
+                    target = await db.Users.FirstAsync(u => u.Id == req.TargetUserId);
+                }
+
+                return await CreateOrGetMatchAsync(me, target, userA, userB);
+            }
+            return Ok(new { matched = false, conversationId = (Guid?)null });
+        }
+
         var reciprocal = await db.UserSwipes.AnyAsync(s =>
             s.FromUserId == req.TargetUserId &&
             s.ToUserId == CurrentUserId &&
@@ -339,7 +407,8 @@ public class DiscoverController(
 
         // ConversationHub is always connected while logged in; avoid dual-hub duplicate dialogs.
         await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("MatchCreated", payloadForMe);
-        await conversationHub.Clients.User(target.Id.ToString()).SendAsync("MatchCreated", payloadForThem);
+        if (!target.IsDiscoverBot)
+            await conversationHub.Clients.User(target.Id.ToString()).SendAsync("MatchCreated", payloadForThem);
 
         var listUpdate = new
         {
@@ -350,21 +419,25 @@ public class DiscoverController(
             SenderId = (Guid?)null
         };
         await conversationHub.Clients.User(CurrentUserId.ToString()).SendAsync("ConversationListUpdated", listUpdate);
-        await conversationHub.Clients.User(target.Id.ToString()).SendAsync("ConversationListUpdated", listUpdate);
+        if (!target.IsDiscoverBot)
+            await conversationHub.Clients.User(target.Id.ToString()).SendAsync("ConversationListUpdated", listUpdate);
 
-        // Push the *other* user (swiper already gets MatchCreated dialog on this device).
-        await notificationOutbox.EnqueueAsync(
-            target.Id,
-            "discover_match",
-            "تم التطابق!",
-            $"تطابق جديد مع {me.Name} — ابدأ المحادثة",
-            new Dictionary<string, string>
-            {
-                ["conversationId"] = conv.Id.ToString(),
-                ["matchId"] = match.Id.ToString(),
-                ["partnerId"] = me.Id.ToString(),
-                ["partnerName"] = me.Name
-            });
+        // Push the other human user only (never notify discover bots).
+        if (!target.IsDiscoverBot)
+        {
+            await notificationOutbox.EnqueueAsync(
+                target.Id,
+                "discover_match",
+                "تم التطابق!",
+                $"تطابق جديد مع {me.Name} — ابدأ المحادثة",
+                new Dictionary<string, string>
+                {
+                    ["conversationId"] = conv.Id.ToString(),
+                    ["matchId"] = match.Id.ToString(),
+                    ["partnerId"] = me.Id.ToString(),
+                    ["partnerName"] = me.Name
+                });
+        }
 
         return Ok(new
         {

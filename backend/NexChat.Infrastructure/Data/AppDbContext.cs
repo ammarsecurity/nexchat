@@ -46,6 +46,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<UserSwipe> UserSwipes => Set<UserSwipe>();
     public DbSet<UserMatch> UserMatches => Set<UserMatch>();
+    public DbSet<DiscoverBotPhotoUsage> DiscoverBotPhotoUsages => Set<DiscoverBotPhotoUsage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -63,6 +64,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.ProfilePhotosJson).HasMaxLength(2500);
             e.Property(x => x.Bio).HasMaxLength(160);
             e.Property(x => x.DiscoverPreferGender).HasMaxLength(10);
+            e.HasIndex(x => new { x.IsDiscoverBot, x.Gender, x.DiscoverEnabled });
+        });
+
+        modelBuilder.Entity<DiscoverBotPhotoUsage>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.RelativePath).HasMaxLength(260);
+            e.Property(x => x.Gender).HasMaxLength(10);
+            e.HasIndex(x => x.RelativePath).IsUnique();
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ChatSession>(e =>

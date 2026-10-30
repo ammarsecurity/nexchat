@@ -16,7 +16,7 @@ namespace NexChat.API.Controllers;
 [EnableRateLimiting("api")]
 public class LiveKitController(
     AppDbContext db,
-    IConfiguration config,
+    LiveKitSettingsService liveKitSettings,
     OfficialAnnouncementConversationService officialAnnouncements,
     SupportConversationService supportConversations) : ControllerBase
 {
@@ -77,11 +77,12 @@ public class LiveKitController(
             return Conflict(new { message = "المكالمة انتهت أو لم تُقبل بعد" });
         var mediaRoom = $"{roomId:N}:{pending.CallId:N}";
 
-        var apiKey = config["LiveKit:ApiKey"];
-        var apiSecret = config["LiveKit:ApiSecret"];
-        var url = config["LiveKit:Url"] ?? "wss://livelik.tanfeeth-iq.tech";
+        var lk = await liveKitSettings.GetConfigAsync();
+        var apiKey = lk.ApiKey;
+        var apiSecret = lk.ApiSecret;
+        var url = string.IsNullOrWhiteSpace(lk.Url) ? "wss://livelik.tanfeeth-iq.tech" : lk.Url;
 
-        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(apiSecret))
+        if (!LiveKitSettingsService.IsConfigured(lk))
             return StatusCode(500, new { message = "LiveKit غير مُعد بشكل صحيح" });
 
         var identity = userId.ToString("N");

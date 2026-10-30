@@ -14,6 +14,7 @@ import '../../core/theme/layout.dart';
 import '../../shared/widgets.dart';
 import '../settings/birth_date_sheet.dart';
 import '../settings/profile_photos_sheet.dart';
+import '../matching/home_tab_accent.dart';
 import 'discover_controller.dart';
 import 'discover_filters_sheet.dart';
 import 'discover_match_dialog.dart';
@@ -22,7 +23,10 @@ import 'discover_theme.dart';
 
 /// Tinder-style Discover: card stack, like/pass, mutual match dialog.
 class DiscoverScreen extends ConsumerStatefulWidget {
-  const DiscoverScreen({super.key});
+  const DiscoverScreen({super.key, this.embedded = false});
+
+  /// When true, parent hub owns the top chrome (title / segments).
+  final bool embedded;
 
   @override
   ConsumerState<DiscoverScreen> createState() => _DiscoverScreenState();
@@ -38,6 +42,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(discoverProvider.notifier).refresh();
+      if (!widget.embedded) {
+        ref.read(homeTabAccentProvider.notifier).set(HomeTabAccent.discover);
+      }
     });
   }
 
@@ -163,7 +170,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Widget build(BuildContext context) {
     ref.watch(localeProvider);
     final state = ref.watch(discoverProvider);
-    final bottomPad = MediaQuery.paddingOf(context).bottom + kTabBarContentHeight + 12;
+    final bottomPad = MediaQuery.paddingOf(context).bottom + kTabBarContentHeight + 4;
     final gating = state.eligibilityLoaded && !state.eligibility.canSwipe;
 
     if (gating) {
@@ -181,24 +188,26 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       );
     }
 
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: const BoxDecoration(gradient: DiscoverTheme.pageGradient),
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _DiscoverHeader(),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(10, 0, 10, bottomPad),
-                  child: _body(context, state),
-                ),
-              ),
-            ],
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _DiscoverHeader(compact: widget.embedded),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(2, 8, 2, bottomPad),
+            child: _body(context, state),
           ),
         ),
+      ],
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: DiscoverTheme.pageGradient),
+        child: widget.embedded
+            ? content
+            : SafeArea(bottom: false, child: content),
       ),
     );
   }
@@ -214,12 +223,24 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(t('common.error'), style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.7))),
             const SizedBox(height: 16),
-            _DiscoverRetryButton(onPressed: () => ref.read(discoverProvider.notifier).refresh()),
+            _DiscoverActionButton(
+              label: t('common.retry'),
+              onPressed: () => ref.read(discoverProvider.notifier).refresh(),
+            ),
           ]),
         ),
       );
     }
     if (state.deck.isEmpty) {
+      final reset = state.nextResetAt;
+      final hoursLeft = reset == null
+          ? null
+          : reset.difference(DateTime.now().toUtc()).inHours.clamp(0, 24);
+      final hint = hoursLeft != null && hoursLeft > 0
+          ? t('discover.emptyHintWaiting').replaceAll('{hours}', '$hoursLeft')
+          : (reset != null
+              ? t('discover.emptyHint')
+              : t('discover.emptyHintNoPool'));
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -237,9 +258,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             const SizedBox(height: 20),
             Text(t('discover.empty'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: DiscoverTheme.ink, height: 1.3)),
             const SizedBox(height: 8),
-            Text(t('discover.emptyHint'), textAlign: TextAlign.center, style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.55), fontSize: 14, height: 1.4)),
+            Text(hint, textAlign: TextAlign.center, style: TextStyle(color: DiscoverTheme.redDeep.withValues(alpha: 0.55), fontSize: 14, height: 1.4)),
             const SizedBox(height: 22),
-            _DiscoverRetryButton(onPressed: () => ref.read(discoverProvider.notifier).refresh()),
+            _DiscoverActionButton(
+              label: t('discover.refresh'),
+              onPressed: () => ref.read(discoverProvider.notifier).refresh(),
+            ),
           ]),
         ),
       );
@@ -248,110 +272,101 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final top = state.deck.first;
     final behind = state.deck.length > 1 ? state.deck[1] : null;
 
-    return Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(builder: (context, box) {
-            // Fill available height; cap width so the card stays portrait and edge-to-edge.
-            const aspect = 0.72; // width / height
-            var h = box.maxHeight;
-            var w = h * aspect;
-            if (w > box.maxWidth) {
-              w = box.maxWidth;
-              h = w / aspect;
-            }
-            return Center(
-              child: SizedBox(
-                width: w,
-                height: h,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (behind != null)
-                      Positioned.fill(
-                        child: Transform.scale(
-                          scale: 0.96,
-                          child: Opacity(
-                            opacity: 0.7,
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: _CardFace(card: behind),
-                            ),
-                          ),
-                        ),
-                      ),
-                    GestureDetector(
-                      onPanUpdate: _busy
-                          ? null
-                          : (d) => setState(() {
-                                _drag += d.delta;
-                                _angle = (_drag.dx / 320).clamp(-0.35, 0.35);
-                              }),
-                      onPanEnd: _busy ? null : _onPanEnd,
-                      child: AnimatedContainer(
-                        duration: _busy ? const Duration(milliseconds: 180) : Duration.zero,
-                        transform: Matrix4.translationValues(_drag.dx, _drag.dy, 0)..rotateZ(_angle),
-                        transformAlignment: Alignment.center,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            _CardFace(
-                              card: top,
-                              onReport: () => _reportCard(top),
-                              onBlock: () => _blockCard(top),
-                            ),
-                            Positioned(
-                              top: 36,
-                              left: 28,
-                              child: Opacity(
-                                opacity: (-_drag.dx / 120).clamp(0.0, 1.0),
-                                child: _Stamp(label: t('discover.pass'), color: DiscoverTheme.slate),
-                              ),
-                            ),
-                            Positioned(
-                              top: 36,
-                              right: 28,
-                              child: Opacity(
-                                opacity: (_drag.dx / 120).clamp(0.0, 1.0),
-                                child: _Stamp(label: t('discover.like'), color: DiscoverTheme.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+    // Full-bleed card: photo fills the deck; action dock floats over the bottom.
+    return LayoutBuilder(builder: (context, box) {
+      return SizedBox(
+        width: box.maxWidth,
+        height: box.maxHeight,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (behind != null)
+              Positioned.fill(
+                child: Transform.scale(
+                  scale: 0.97,
+                  child: Opacity(
+                    opacity: 0.65,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _CardFace(card: behind),
                     ),
-                  ],
+                  ),
                 ),
               ),
-            );
-          }),
+            Positioned.fill(
+              child: GestureDetector(
+                onPanUpdate: _busy
+                    ? null
+                    : (d) => setState(() {
+                          _drag += d.delta;
+                          _angle = (_drag.dx / 320).clamp(-0.35, 0.35);
+                        }),
+                onPanEnd: _busy ? null : _onPanEnd,
+                child: AnimatedContainer(
+                  duration: _busy ? const Duration(milliseconds: 180) : Duration.zero,
+                  transform: Matrix4.translationValues(_drag.dx, _drag.dy, 0)..rotateZ(_angle),
+                  transformAlignment: Alignment.center,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _CardFace(
+                        card: top,
+                        onReport: () => _reportCard(top),
+                        onBlock: () => _blockCard(top),
+                      ),
+                      Positioned(
+                        top: 36,
+                        left: 28,
+                        child: Opacity(
+                          opacity: (-_drag.dx / 120).clamp(0.0, 1.0),
+                          child: _Stamp(label: t('discover.pass'), color: DiscoverTheme.slate),
+                        ),
+                      ),
+                      Positioned(
+                        top: 36,
+                        right: 28,
+                        child: Opacity(
+                          opacity: (_drag.dx / 120).clamp(0.0, 1.0),
+                          child: _Stamp(label: t('discover.like'), color: DiscoverTheme.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 10,
+              child: _DiscoverActionBar(
+                busy: _busy,
+                canUndo: state.canUndo,
+                onPass: () => _act(like: false),
+                onLike: () => _act(like: true),
+                onUndo: () async {
+                  setState(() => _busy = true);
+                  try {
+                    await ref.read(discoverProvider.notifier).undo();
+                  } catch (_) {
+                    if (mounted) showToast(context, t('common.error'), error: true);
+                  } finally {
+                    if (mounted) setState(() => _busy = false);
+                  }
+                },
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        _DiscoverActionBar(
-          busy: _busy,
-          canUndo: state.canUndo,
-          onPass: () => _act(like: false),
-          onLike: () => _act(like: true),
-          onUndo: () async {
-            setState(() => _busy = true);
-            try {
-              await ref.read(discoverProvider.notifier).undo();
-            } catch (_) {
-              if (mounted) showToast(context, t('common.error'), error: true);
-            } finally {
-              if (mounted) setState(() => _busy = false);
-            }
-          },
-        ),
-        const SizedBox(height: 4),
-      ],
-    );
+      );
+    });
   }
 
 }
 
-class _DiscoverRetryButton extends StatelessWidget {
-  const _DiscoverRetryButton({required this.onPressed});
+class _DiscoverActionButton extends StatelessWidget {
+  const _DiscoverActionButton({required this.label, required this.onPressed});
+  final String label;
   final VoidCallback onPressed;
 
   @override
@@ -381,7 +396,7 @@ class _DiscoverRetryButton extends StatelessWidget {
                   const Icon(LucideIcons.refreshCw, size: 18, color: Colors.white),
                   const SizedBox(width: 10),
                   Text(
-                    t('common.retry'),
+                    label,
                     style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -422,28 +437,39 @@ class _HeaderIconButton extends StatelessWidget {
 }
 
 class _DiscoverHeader extends StatelessWidget {
-  const _DiscoverHeader();
+  const _DiscoverHeader({this.compact = false});
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      padding: EdgeInsets.fromLTRB(16, compact ? 2 : 6, 16, compact ? 4 : 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Expanded(
-                child: Text(
-                  t('discover.title'),
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: DiscoverTheme.ink,
-                    height: 1.15,
-                    letterSpacing: -0.4,
-                  ),
-                ),
+                child: compact
+                    ? Text(
+                        t('discover.policyShort'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          fontWeight: FontWeight.w500,
+                          color: DiscoverTheme.redDeep.withValues(alpha: 0.58),
+                        ),
+                      )
+                    : Text(
+                        t('discover.title'),
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: DiscoverTheme.ink,
+                          height: 1.15,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
               ),
               _HeaderIconButton(
                 icon: LucideIcons.slidersHorizontal,
@@ -457,16 +483,18 @@ class _DiscoverHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            t('discover.policyShort'),
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
-              color: DiscoverTheme.redDeep.withValues(alpha: 0.58),
+          if (!compact) ...[
+            const SizedBox(height: 6),
+            Text(
+              t('discover.policyShort'),
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w500,
+                color: DiscoverTheme.redDeep.withValues(alpha: 0.58),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -989,7 +1017,7 @@ class _CardFaceState extends State<_CardFace> {
               Positioned(
                 left: 18,
                 right: 18,
-                bottom: 22,
+                bottom: 88,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

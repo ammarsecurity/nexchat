@@ -24,7 +24,8 @@ public record AdminUserDto(
     DateTime CreatedAt,
     DateOnly? BirthDate,
     string? PhoneNumber,
-    string? Avatar
+    string? Avatar,
+    bool IsDiscoverBot = false
 );
 
 public record AdminSessionDto(

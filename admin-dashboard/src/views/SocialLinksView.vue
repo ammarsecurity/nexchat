@@ -11,7 +11,6 @@ const platforms = [
   { id: 'facebook', label: 'فيسبوك', icon: 'mdi-facebook', color: '#1877F2', hint: 'https://facebook.com/...' },
   { id: 'twitter', label: 'تويتر (X)', icon: 'mdi-twitter', color: '#0F1419', hint: 'https://x.com/...' },
   { id: 'instagram', label: 'انستغرام', icon: 'mdi-instagram', color: '#E4405F', hint: 'https://instagram.com/...' },
-  { id: 'tiktok', label: 'تيك توك', icon: null, color: '#111111', hint: 'https://tiktok.com/@...' },
   { id: 'youtube', label: 'يوتيوب', icon: 'mdi-youtube', color: '#FF0000', hint: 'https://youtube.com/...' },
   { id: 'linkedin', label: 'لينكد إن', icon: 'mdi-linkedin', color: '#0A66C2', hint: 'https://linkedin.com/...' },
   { id: 'whatsapp', label: 'واتساب', icon: 'mdi-whatsapp', color: '#25D366', hint: 'https://wa.me/9647...' },
@@ -56,7 +55,7 @@ async function save() {
   saving.value = true
   try {
     const toSave = links.value
-      .filter((l) => l.url?.trim())
+      .filter((l) => l.url?.trim() && String(l.platform).toLowerCase() !== 'tiktok')
       .map((l) => ({ platform: l.platform, url: l.url.trim() }))
     await api.put('/admin/site-content/social_links', {
       content: JSON.stringify(toSave),

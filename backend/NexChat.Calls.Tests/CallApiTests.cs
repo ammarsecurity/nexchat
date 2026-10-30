@@ -8,8 +8,10 @@ using NexChat.API.Controllers;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NexChat.API.Hubs;
 using NexChat.API.Services;
 using NexChat.Core.Entities;
@@ -95,7 +97,8 @@ static class CallApiTests
             CallPresenceStore.TryStart(room, a, b, true, attempt, out _);
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
                 ["LiveKit:ApiKey"] = "local-test", ["LiveKit:ApiSecret"] = "local-regression-test-secret-not-production", ["LiveKit:Url"] = "wss://localhost" }).Build();
-            var controller = new LiveKitController(db, config, null!, null!) {
+            var liveKit = new LiveKitSettingsService(db, new MemoryCache(new MemoryCacheOptions()), config, null!, NullLogger<LiveKitSettingsService>.Instance);
+            var controller = new LiveKitController(db, liveKit, null!, null!) {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new UserContext(a).User } } };
             Assert(await controller.GetToken(new LiveKitTokenRequest(room.ToString(), attempt)) is ConflictObjectResult, "ringing received media token");
             CallPresenceStore.TryAccept(room, attempt, b, out _);

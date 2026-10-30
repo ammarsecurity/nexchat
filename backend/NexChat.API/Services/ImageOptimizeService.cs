@@ -11,7 +11,7 @@ public static class ImageOptimizeService
 {
     public const int MaxEdge = 1600;
     public const int ThumbEdge = 256;
-    public const int JpegQuality = 82;
+    public const int JpegQuality = 90;
 
     public sealed record OptimizedImage(byte[] Bytes, string Extension, string ContentType, byte[]? ThumbBytes);
 

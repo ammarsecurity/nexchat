@@ -8,7 +8,7 @@ abstract final class DiscoverTheme {
   static const redSoft = Color(0x33E11D48);
   static const ink = Color(0xFF1A0A0F);
   static const slate = Color(0xFF64748B);
-  static const cardRadius = 24.0;
+  static const cardRadius = 20.0;
 
   static const heroGradient = LinearGradient(
     begin: Alignment.topCenter,

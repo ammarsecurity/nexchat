@@ -17,6 +17,7 @@ import 'discover_theme.dart';
 
 /// Local “already asked” flag — per account. Server `discoverEnabled` is authoritative for feed.
 String _askedKey(String userId) => 'nexchat_discover_optin_asked_$userId';
+String _enabledCacheKey(String userId) => 'nexchat_discover_enabled_$userId';
 
 class DiscoverOptInState {
   const DiscoverOptInState({
@@ -37,17 +38,30 @@ class DiscoverOptInState {
 }
 
 class DiscoverOptInNotifier extends Notifier<DiscoverOptInState> {
+  DiscoverOptInState _cachedFor(String? userId) {
+    if (userId == null) return const DiscoverOptInState();
+    final asked = Prefs.instance.getString(_askedKey(userId)) == '1';
+    final enabled = Prefs.instance.getString(_enabledCacheKey(userId)) == '1';
+    return DiscoverOptInState(enabled: enabled, asked: asked || enabled);
+  }
+
+  Future<void> _persistEnabled(String userId, bool enabled) async {
+    await Prefs.instance.setString(_enabledCacheKey(userId), enabled ? '1' : '0');
+  }
+
   @override
   DiscoverOptInState build() {
     ref.listen(authProvider.select((s) => s.user?.id), (prev, next) {
       if (next == null) {
         state = const DiscoverOptInState();
       } else if (next != prev) {
+        state = _cachedFor(next);
         unawaited(refresh());
       }
     });
+    final initial = _cachedFor(ref.read(authProvider).user?.id);
     Future.microtask(refresh);
-    return const DiscoverOptInState();
+    return initial;
   }
 
   Future<void> refresh() async {
@@ -60,17 +74,27 @@ class DiscoverOptInNotifier extends Notifier<DiscoverOptInState> {
     try {
       final data = await Api.get('/user/me');
       if (data is! Map) {
-        state = DiscoverOptInState(loaded: true, asked: asked);
+        state = DiscoverOptInState(
+          enabled: state.enabled,
+          loaded: true,
+          asked: asked || state.enabled,
+        );
         return;
       }
       final j = Json.from(data);
+      final enabled = j.v('discoverEnabled') == true;
+      await _persistEnabled(userId, enabled);
       state = DiscoverOptInState(
-        enabled: j.v('discoverEnabled') == true,
+        enabled: enabled,
         loaded: true,
-        asked: asked || j.v('discoverEnabled') == true,
+        asked: asked || enabled,
       );
     } catch (_) {
-      state = DiscoverOptInState(loaded: true, asked: asked);
+      state = DiscoverOptInState(
+        enabled: state.enabled,
+        loaded: true,
+        asked: asked || state.enabled,
+      );
     }
   }
 
@@ -84,7 +108,10 @@ class DiscoverOptInNotifier extends Notifier<DiscoverOptInState> {
     try {
       await Api.put('/user/discover-enabled', {'discoverEnabled': value});
       final userId = ref.read(authProvider).user?.id;
-      if (userId != null) await Prefs.instance.setString(_askedKey(userId), '1');
+      if (userId != null) {
+        await Prefs.instance.setString(_askedKey(userId), '1');
+        await _persistEnabled(userId, value);
+      }
       state = DiscoverOptInState(enabled: value, loaded: true, asked: true);
       return true;
     } catch (_) {

@@ -10,6 +10,9 @@ import '../core/theme/app_colors.dart';
 import '../features/conversations/conversations_list_controller.dart';
 import '../features/discover/discover_opt_in.dart';
 import '../features/discover/discover_theme.dart';
+import '../features/matching/home_tab_accent.dart';
+import '../features/matching/instant_theme.dart';
+import '../features/matching/people_hub_screen.dart';
 import '../features/short_films/short_films_theme.dart';
 import 'router.dart';
 
@@ -54,38 +57,64 @@ class _AppShellState extends ConsumerState<AppShell> {
     final discoverOn = ref.watch(discoverOptInProvider).enabled;
     final unread = ref.watch(totalUnreadProvider);
     final pending = ref.watch(pendingRequestsProvider);
+    final rawAccent = widget.location == '/home' ? ref.watch(homeTabAccentProvider) : HomeTabAccent.neutral;
+    // Never keep Instant chrome / label when random chat is admin-off.
+    final homeAccent = (!flags.randomChat && rawAccent == HomeTabAccent.instant)
+        ? (flags.discoverSwipe && discoverOn ? HomeTabAccent.discover : HomeTabAccent.neutral)
+        : rawAccent;
+    if (homeAccent != rawAccent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (ref.read(homeTabAccentProvider) == HomeTabAccent.instant && !flags.randomChat) {
+          ref.read(homeTabAccentProvider.notifier).set(homeAccent);
+        }
+      });
+    }
+    final homeLabel = homeAccent == HomeTabAccent.instant && flags.randomChat
+        ? t('home.hubInstant')
+        : homeAccent == HomeTabAccent.discover
+            ? t('nav.people')
+            : peopleOrConnectTabLabel(flags, discoverOn);
     final tabs = [
       _Tab('/conversations', t('nav.conversations'), 'chat', unread),
       if (flags.shortFilms) _Tab('/short-films', t('nav.discover'), 'films', 0),
       if (showPeopleOrConnectTab(flags, discoverOn))
-        _Tab(
-          '/home',
-          useDiscoverHomeTab(flags, discoverOn) ? t('nav.people') : t('nav.connect'),
-          'home',
-          0,
-        ),
+        _Tab('/home', homeLabel, 'home', 0),
       _Tab('/settings', t('nav.profile'), 'profile', pending),
     ];
     final showBar = isTabRoot(widget.location, flags, discoverEnabled: discoverOn);
     final filmsStyle = widget.location == '/short-films' || widget.location.startsWith('/short-films/');
-    final peopleStyle = widget.location == '/home';
+    final peopleStyle = homeAccent == HomeTabAccent.discover;
+    final instantStyle = homeAccent == HomeTabAccent.instant && flags.randomChat;
 
     return Scaffold(
       extendBody: true,
       body: widget.child,
       bottomNavigationBar: showBar
-          ? _TabBar(tabs: tabs, location: widget.location, filmsStyle: filmsStyle, peopleStyle: peopleStyle)
+          ? _TabBar(
+              tabs: tabs,
+              location: widget.location,
+              filmsStyle: filmsStyle,
+              peopleStyle: peopleStyle,
+              instantStyle: instantStyle,
+            )
           : null,
     );
   }
 }
 
 class _TabBar extends StatelessWidget {
-  const _TabBar({required this.tabs, required this.location, this.filmsStyle = false, this.peopleStyle = false});
+  const _TabBar({
+    required this.tabs,
+    required this.location,
+    this.filmsStyle = false,
+    this.peopleStyle = false,
+    this.instantStyle = false,
+  });
   final List<_Tab> tabs;
   final String location;
   final bool filmsStyle;
   final bool peopleStyle;
+  final bool instantStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -101,20 +130,26 @@ class _TabBar extends StatelessWidget {
             ? DramaWave.surface
             : peopleStyle
                 ? const Color(0xFFFFF1F2)
-                : c.bgCard,
+                : instantStyle
+                    ? InstantTheme.mist
+                    : c.bgCard,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
         border: filmsStyle
             ? const Border(top: BorderSide(color: DramaWave.hairline))
             : peopleStyle
                 ? const Border(top: BorderSide(color: Color(0x33E11D48)))
-                : null,
+                : instantStyle
+                    ? Border(top: BorderSide(color: InstantTheme.violet.withValues(alpha: 0.22)))
+                    : null,
         boxShadow: [
           BoxShadow(
             color: filmsStyle
                 ? const Color(0x66000000)
                 : peopleStyle
                     ? const Color(0x33E11D48)
-                    : c.shadow,
+                    : instantStyle
+                        ? const Color(0x337C3AED)
+                        : c.shadow,
             blurRadius: 24,
             offset: const Offset(0, -4),
           ),
@@ -131,6 +166,7 @@ class _TabBar extends StatelessWidget {
                 active: location == tab.to || (tab.to == '/short-films' && location.startsWith('/short-films')),
                 filmsStyle: filmsStyle,
                 peopleStyle: peopleStyle,
+                instantStyle: instantStyle,
               ),
             ),
         ],
@@ -140,11 +176,18 @@ class _TabBar extends StatelessWidget {
 }
 
 class _TabItem extends StatelessWidget {
-  const _TabItem({required this.tab, required this.active, this.filmsStyle = false, this.peopleStyle = false});
+  const _TabItem({
+    required this.tab,
+    required this.active,
+    this.filmsStyle = false,
+    this.peopleStyle = false,
+    this.instantStyle = false,
+  });
   final _Tab tab;
   final bool active;
   final bool filmsStyle;
   final bool peopleStyle;
+  final bool instantStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -157,12 +200,15 @@ class _TabItem extends StatelessWidget {
     } else if (peopleStyle) {
       color = active ? DiscoverTheme.red : c.textMuted;
       well = active ? DiscoverTheme.redSoft : Colors.transparent;
+    } else if (instantStyle) {
+      color = active ? InstantTheme.violet : c.textMuted;
+      well = active ? InstantTheme.violetSoft : Colors.transparent;
     } else {
       color = active ? c.primary : c.textMuted;
       well = active ? c.primarySoft : Colors.transparent;
     }
     final IconData iconData = switch (tab.icon) {
-      'home' => LucideIcons.heart,
+      'home' => instantStyle ? LucideIcons.zap : LucideIcons.heart,
       'chat' => LucideIcons.messageCircle,
       'films' => LucideIcons.clapperboard,
       _ => LucideIcons.user,
@@ -204,7 +250,9 @@ class _TabItem extends StatelessWidget {
                               ? DramaWave.gold
                               : peopleStyle
                                   ? DiscoverTheme.red
-                                  : c.primary,
+                                  : instantStyle
+                                      ? InstantTheme.violet
+                                      : c.primary,
                           borderRadius: BorderRadius.circular(999),
                           boxShadow: [
                             BoxShadow(
@@ -212,7 +260,9 @@ class _TabItem extends StatelessWidget {
                                   ? const Color(0x59E8B923)
                                   : peopleStyle
                                       ? const Color(0x59E11D48)
-                                      : const Color(0x593B82F6),
+                                      : instantStyle
+                                          ? const Color(0x597C3AED)
+                                          : const Color(0x593B82F6),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
